@@ -6,6 +6,9 @@ use crate::reactive;
 
 pub type SubId = usize;
 
+/// Subscriber callback for [`Signal`].
+type SubCallback<T> = Rc<dyn Fn(&T)>;
+
 static NEXT_SIGNAL_ID: AtomicUsize = AtomicUsize::new(1);
 
 pub struct Signal<T: 'static>(Rc<RefCell<Inner<T>>>);
@@ -19,7 +22,7 @@ impl<T> Clone for Signal<T> {
 struct Inner<T> {
     id: usize,
     value: T,
-    subs: Vec<Option<Box<dyn Fn(&T)>>>,
+    subs: Vec<Option<SubCallback<T>>>,
     free_list: Vec<SubId>,
 }
 
@@ -59,7 +62,7 @@ impl<T> Signal<T> {
     /// reactive graph, and the frame request when the value is unchanged.
     pub fn set_neq(&self, v: T)
     where
-        T: PartialEq,
+        T: PartialEq + Clone,
     {
         let id = {
             let mut inner = self.0.borrow_mut();
@@ -73,7 +76,12 @@ impl<T> Signal<T> {
     }
 
     /// Set the signal value and notify subscribers + the reactive graph.
-    pub fn set(&self, v: T) {
+    /// Subscribers observe a snapshot clone, so re-entrant `set`/`update`
+    /// inside a subscriber cannot alias the reference they hold.
+    pub fn set(&self, v: T)
+    where
+        T: Clone,
+    {
         let id = {
             let mut inner = self.0.borrow_mut();
             inner.value = v;
@@ -82,7 +90,10 @@ impl<T> Signal<T> {
         self.notify_and_request_frame(id);
     }
 
-    pub fn update<F: FnOnce(&mut T)>(&self, f: F) {
+    pub fn update<F: FnOnce(&mut T)>(&self, f: F)
+    where
+        T: Clone,
+    {
         let id = {
             let mut inner = self.0.borrow_mut();
             f(&mut inner.value);
@@ -91,56 +102,39 @@ impl<T> Signal<T> {
         self.notify_and_request_frame(id);
     }
 
-    fn notify_and_request_frame(&self, id: usize) {
-        let subs_snapshot: Vec<(SubId, *const T)> = Vec::new();
-        let callbacks: Vec<Box<dyn Fn(&T)>> = Vec::new();
-        let _ = subs_snapshot;
-        let _ = callbacks;
-        reactive::without_observer(|| {
-            let indices: Vec<SubId> = {
-                let inner = self.0.borrow();
-                inner
-                    .subs
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(i, s)| if s.is_some() { Some(i) } else { None })
-                    .collect()
+    fn notify_and_request_frame(&self, id: usize)
+    where
+        T: Clone,
+    {
+        let (cbs, snapshot): (Vec<SubCallback<T>>, T) = {
+            let inner = match self.0.try_borrow() {
+                Ok(b) => b,
+                Err(_) => {
+                    log::warn!("Signal notify: inner already borrowed, skipping notify");
+                    reactive::signal_changed(id);
+                    crate::signal_fired();
+                    crate::request_frame();
+                    return;
+                }
             };
-            for idx in indices {
-                let cb_opt = {
-                    let inner = match self.0.try_borrow() {
-                        Ok(b) => b,
-                        Err(_) => {
-                            log::warn!("Signal notify: inner already borrowed, skipping idx {idx}");
-                            continue;
-                        }
-                    };
-                    inner.subs[idx]
-                        .as_ref()
-                        .map(|b| b.as_ref() as *const dyn Fn(&T))
-                };
-                if let Some(ptr) = cb_opt {
-                    // Need value ref; get it via try_borrow (may fail if cb mutated, but we already dropped)
-                    let val_ptr = {
-                        let inner = match self.0.try_borrow() {
-                            Ok(b) => b,
-                            Err(_) => continue,
-                        };
-                        &inner.value as *const T
-                    };
-                    // Safety: ptr and val_ptr are valid for this call (no mutation of Vec during iteration
-                    // except via free_list push which doesn't reallocate subs Vec middle).
-                    let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
-                        (*ptr)(&*val_ptr)
-                    }));
-                    if let Err(e) = res {
-                        let msg = e
-                            .downcast_ref::<String>()
-                            .map(|s| s.as_str())
-                            .or_else(|| e.downcast_ref::<&str>().copied())
-                            .unwrap_or("unknown");
-                        log::error!("Signal subscriber panicked: {msg}");
-                    }
+            let cbs = inner
+                .subs
+                .iter()
+                .filter_map(|s| s.clone())
+                .collect::<Vec<_>>();
+            let snapshot = inner.value.clone();
+            (cbs, snapshot)
+        };
+        reactive::without_observer(|| {
+            for cb in cbs {
+                let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| cb(&snapshot)));
+                if let Err(e) = res {
+                    let msg = e
+                        .downcast_ref::<String>()
+                        .map(|s| s.as_str())
+                        .or_else(|| e.downcast_ref::<&str>().copied())
+                        .unwrap_or("unknown");
+                    log::error!("Signal subscriber panicked: {msg}");
                 }
             }
         });
@@ -153,10 +147,10 @@ impl<T> Signal<T> {
     pub fn subscribe(&self, f: impl Fn(&T) + 'static) -> SubId {
         let mut inner = self.0.borrow_mut();
         if let Some(free_id) = inner.free_list.pop() {
-            inner.subs[free_id] = Some(Box::new(f));
+            inner.subs[free_id] = Some(Rc::new(f));
             free_id
         } else {
-            inner.subs.push(Some(Box::new(f)));
+            inner.subs.push(Some(Rc::new(f)));
             inner.subs.len() - 1
         }
     }

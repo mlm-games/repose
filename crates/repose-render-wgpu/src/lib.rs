@@ -132,7 +132,14 @@ impl<I: bytemuck::Pod> InstancedPipe<I> {
         let bytes = bytemuck::cast_slice(data);
         self.ring.grow_to_fit(device, bytes.len() as u64);
         let (off, wrote) = self.ring.alloc_write(queue, bytes);
-        debug_assert_eq!(wrote as usize, bytes.len());
+        if wrote as usize != bytes.len() {
+            log::error!(
+                "upload skipped: batch {}B exceeds ring {}B",
+                bytes.len(),
+                self.ring.cap
+            );
+            return None;
+        }
         Some((off, data.len() as u32))
     }
 

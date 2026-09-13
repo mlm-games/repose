@@ -352,17 +352,39 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
     hash_opt_f32(m.render_z_index, hasher);
     m.input_blocker.hash(hasher);
 
-    // Clickable
+    fn hash_rc_ptr<T: ?Sized>(o: &Option<std::rc::Rc<T>>, hasher: &mut impl std::hash::Hasher) {
+        o.is_some().hash(hasher);
+    }
     m.click.hash(hasher);
     m.disabled.hash(hasher);
     m.focusable.hash(hasher);
+    m.hit_passthrough.hash(hasher);
     m.propagate_min.hash(hasher);
     m.focus_group.hash(hasher);
     (m.on_action.is_some()).hash(hasher);
-    (m.on_double_click.is_some()).hash(hasher);
-    (m.on_long_click.is_some()).hash(hasher);
+    hash_rc_ptr(&m.on_click, hasher);
+    hash_rc_ptr(&m.on_double_click, hasher);
+    hash_rc_ptr(&m.on_long_click, hasher);
+    hash_rc_ptr(&m.on_pointer_down, hasher);
+    hash_rc_ptr(&m.on_pointer_move, hasher);
+    hash_rc_ptr(&m.on_pointer_up, hasher);
+    hash_rc_ptr(&m.on_pointer_cancel, hasher);
+    hash_rc_ptr(&m.on_pointer_enter, hasher);
+    hash_rc_ptr(&m.on_pointer_leave, hasher);
+    hash_rc_ptr(&m.on_key_event, hasher);
+    hash_rc_ptr(&m.on_preview_key_event, hasher);
+    match &m.blur {
+        Some(b) => {
+            true.hash(hasher);
+            hash_dp(b.radius_x, hasher);
+            hash_dp(b.radius_y, hasher);
+            std::mem::discriminant(&b.edge_treatment).hash(hasher);
+        }
+        None => false.hash(hasher),
+    }
+    hash_rc_ptr(&m.indication, hasher);
+    hash_rc_ptr(&m.drag_preview, hasher);
 
-    // Scroll (presence + axis + show_scrollbar - closures intentionally not hashed)
     match &m.scroll {
         None => 0u8.hash(hasher),
         Some(ScrollBinding::Vertical(b)) => {
@@ -425,10 +447,89 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
         std::mem::discriminant(c).hash(hasher);
     }
 
-    // Text input (presence + stable flags)
     if let Some(ti) = &m.text_input {
         true.hash(hasher);
+        ti.hint.hash(hasher);
         ti.multiline.hash(hasher);
+        ti.value.hash(hasher);
+        ti.enabled.hash(hasher);
+        ti.read_only.hash(hasher);
+        ti.max_lines.hash(hasher);
+        ti.min_lines.hash(hasher);
+        std::mem::discriminant(&ti.keyboard_type).hash(hasher);
+        std::mem::discriminant(&ti.capitalization).hash(hasher);
+        std::mem::discriminant(&ti.ime_action).hash(hasher);
+        ti.auto_correct_enabled.hash(hasher);
+        hash_rc_ptr(&ti.on_change, hasher);
+        hash_rc_ptr(&ti.on_submit, hasher);
+        hash_rc_ptr(&ti.on_text_layout, hasher);
+        match &ti.focus_tracker {
+            Some(_) => true.hash(hasher),
+            None => false.hash(hasher),
+        }
+        match &ti.cursor_color {
+            Some(c) => {
+                true.hash(hasher);
+                hash_color(c, hasher);
+            }
+            None => false.hash(hasher),
+        }
+        match &ti.text_style {
+            Some(ts) => {
+                true.hash(hasher);
+                ((ts.font_size.0 * 100.0) as i32).hash(hasher);
+                ts.font_weight.hash(hasher);
+                ts.font_family.hash(hasher);
+                ts.font_style.hash(hasher);
+                std::mem::discriminant(&ts.text_align).hash(hasher);
+                ((ts.letter_spacing.0 * 100.0) as i32).hash(hasher);
+                ((ts.line_height.0 * 100.0) as i32).hash(hasher);
+                match &ts.color {
+                    Some(c) => {
+                        true.hash(hasher);
+                        hash_color(c, hasher);
+                    }
+                    None => false.hash(hasher),
+                }
+                match &ts.background {
+                    Some(c) => {
+                        true.hash(hasher);
+                        hash_color(c, hasher);
+                    }
+                    None => false.hash(hasher),
+                }
+            }
+            None => false.hash(hasher),
+        }
+        match &ti.keyboard_actions {
+            Some(ka) => {
+                true.hash(hasher);
+                hash_rc_ptr(&ka.on_done, hasher);
+                hash_rc_ptr(&ka.on_go, hasher);
+                hash_rc_ptr(&ka.on_next, hasher);
+                hash_rc_ptr(&ka.on_previous, hasher);
+                hash_rc_ptr(&ka.on_search, hasher);
+                hash_rc_ptr(&ka.on_send, hasher);
+            }
+            None => false.hash(hasher),
+        }
+        ti.interaction_source.is_some().hash(hasher);
+        match &ti.line_limits {
+            Some(repose_core::text::TextFieldLineLimits::SingleLine) => 1u8.hash(hasher),
+            Some(repose_core::text::TextFieldLineLimits::MultiLine {
+                min_height_in_lines,
+                max_height_in_lines,
+            }) => {
+                2u8.hash(hasher);
+                min_height_in_lines.hash(hasher);
+                max_height_in_lines.hash(hasher);
+            }
+            None => 0u8.hash(hasher),
+        }
+        match &ti.visual_transformation {
+            Some(_) => true.hash(hasher),
+            None => false.hash(hasher),
+        }
     } else {
         false.hash(hasher);
     }

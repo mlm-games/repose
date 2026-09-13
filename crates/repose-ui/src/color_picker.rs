@@ -64,10 +64,11 @@ fn lerp_u8(a: u8, b: u8, t: f32) -> u8 {
 }
 
 fn lerp_color(c0: Color, c1: Color, t: f32) -> Color {
-    Color::from_rgb(
+    Color::from_rgba(
         lerp_u8(c0.0, c1.0, t),
         lerp_u8(c0.1, c1.1, t),
         lerp_u8(c0.2, c1.2, t),
+        lerp_u8(c0.3, c1.3, t),
     )
 }
 
@@ -81,7 +82,7 @@ type Painter = Rc<dyn Fn(&mut Scene, repose_core::Rect, f32)>;
 
 fn gradient_painter(stops: Vec<(f32, Color)>) -> Painter {
     Rc::new(
-        move |scene: &mut Scene, rect: repose_core::Rect, _alpha: f32| {
+        move |scene: &mut Scene, rect: repose_core::Rect, alpha: f32| {
             if stops.len() < 2 {
                 return;
             }
@@ -106,7 +107,8 @@ fn gradient_painter(stops: Vec<(f32, Color)>) -> Painter {
                 } else {
                     (t - c0.0) / (c1.0 - c0.0)
                 };
-                let col = lerp_color(c0.1, c1.1, local_t);
+                let mut col = lerp_color(c0.1, c1.1, local_t);
+                col.3 = ((col.3 as f32) * alpha.clamp(0.0, 1.0)) as u8;
                 scene.nodes.push(SceneNode::Rect {
                     rect: repose_core::Rect {
                         x: rect.x + i as f32 * seg_w,

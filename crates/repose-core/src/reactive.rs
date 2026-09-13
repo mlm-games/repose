@@ -69,10 +69,24 @@ fn run_observer_guarded(obs: ObserverId, f: Rc<dyn Fn()>) {
     }
     impl Drop for ObserverGuard {
         fn drop(&mut self) {
-            CURRENT_OBSERVER.with(|co| *co.borrow_mut() = self.prev);
+            CURRENT_OBSERVER.with(|co| {
+                if let Ok(mut b) = co.try_borrow_mut() {
+                    *b = self.prev;
+                } else {
+                    log::error!(
+                        "reactive: CURRENT_OBSERVER busy while finishing observer {}; stale observer reference retained",
+                        self.obs
+                    );
+                }
+            });
             GRAPH.with(|gcell| {
                 if let Ok(mut g) = gcell.try_borrow_mut() {
                     g.running.remove(&self.obs);
+                } else {
+                    log::error!(
+                        "reactive: dependency graph busy while finishing observer {}; running flag retained",
+                        self.obs
+                    );
                 }
             });
         }
@@ -223,23 +237,42 @@ pub fn new_observer(f: impl Fn() + 'static) -> ObserverId {
     })
 }
 
-/// Remove an observer and all of its dependency edges.
+/// Remove an observer and all of its dependency edges. Idempotent: removing
+/// an unknown or already-removed id is a no-op. Uses `try_borrow_mut` so
+/// disposal from `Drop` (e.g. `ProduceHandle`, scope teardown) can never
+/// panic while the graph is borrowed; contention is logged instead of
+/// silently leaking the observer.
 pub fn remove_observer(id: ObserverId) {
-    let _ = GRAPH.try_with(|g| {
-        let mut g = g.borrow_mut();
-        g.remove_observer(id);
+    let _ = GRAPH.try_with(|g| match g.try_borrow_mut() {
+        Ok(mut g) => g.remove_observer(id),
+        Err(_) => {
+            log::error!("reactive: dependency graph busy while removing observer {id}; observer retained");
+        }
     });
 }
 
-/// Run a closure with `CURRENT_OBSERVER` cleared
+/// Run a closure with `CURRENT_OBSERVER` cleared (panic-safe restore).
 pub fn without_observer<R>(f: impl FnOnce() -> R) -> R {
-    CURRENT_OBSERVER.with(|co| {
-        let prev = *co.borrow();
-        *co.borrow_mut() = None;
-        let result = f();
-        *co.borrow_mut() = prev;
-        result
-    })
+    struct Guard {
+        prev: Option<ObserverId>,
+    }
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            CURRENT_OBSERVER.with(|co| {
+                if let Ok(mut b) = co.try_borrow_mut() {
+                    *b = self.prev.take();
+                } else {
+                    log::error!(
+                        "reactive: CURRENT_OBSERVER busy after without_observer block; stale observer reference retained"
+                    );
+                }
+            });
+        }
+    }
+    let prev = CURRENT_OBSERVER.with(|co| co.borrow().clone());
+    CURRENT_OBSERVER.with(|co| *co.borrow_mut() = None);
+    let _guard = Guard { prev };
+    f()
 }
 
 pub fn run_observer_now(id: ObserverId) {
@@ -260,6 +293,10 @@ pub fn run_observer_now(id: ObserverId) {
         GRAPH.with(|gcell| {
             if let Ok(mut g) = gcell.try_borrow_mut() {
                 g.running.remove(&id);
+            } else {
+                log::error!(
+                    "reactive: dependency graph busy after running observer {id}; running flag retained"
+                );
             }
         });
         Some(())

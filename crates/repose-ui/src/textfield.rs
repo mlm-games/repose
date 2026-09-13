@@ -571,8 +571,13 @@ impl TextFieldState {
     pub fn undo(&mut self) -> bool {
         self.flush_undo();
         if let Some(op) = self.undo_stack.pop() {
-            let end = (op.index + op.post_text.len()).min(self.text.len());
-            self.text.replace_range(op.index..end, &op.pre_text);
+            let idx = clamp_to_char_boundary(&self.text, op.index.min(self.text.len()));
+            let end = clamp_to_char_boundary(
+                &self.text,
+                (op.index + op.post_text.len()).min(self.text.len()),
+            );
+            let end = end.max(idx);
+            self.text.replace_range(idx..end, &op.pre_text);
             self.selection = op.pre_selection.clone();
             self.redo_stack.push(op);
             self.preferred_x_px = None;
@@ -586,8 +591,13 @@ impl TextFieldState {
     /// Re-apply a previously undone edit. Returns true if a redo was performed.
     pub fn redo(&mut self) -> bool {
         if let Some(op) = self.redo_stack.pop() {
-            let end = (op.index + op.pre_text.len()).min(self.text.len());
-            self.text.replace_range(op.index..end, &op.post_text);
+            let idx = clamp_to_char_boundary(&self.text, op.index.min(self.text.len()));
+            let end = clamp_to_char_boundary(
+                &self.text,
+                (op.index + op.pre_text.len()).min(self.text.len()),
+            );
+            let end = end.max(idx);
+            self.text.replace_range(idx..end, &op.post_text);
             self.selection = op.post_selection.clone();
             self.undo_stack.push(op);
             self.preferred_x_px = None;
@@ -637,8 +647,10 @@ impl TextFieldState {
     }
 
     fn insert_text_impl(&mut self, text: &str, can_merge: bool) {
-        let start = self.selection.start.min(self.text.len());
-        let end = self.selection.end.min(self.text.len());
+        let a = self.selection.start.min(self.text.len());
+        let b = self.selection.end.min(self.text.len());
+        let start = clamp_to_char_boundary(&self.text, a.min(b));
+        let end = clamp_to_char_boundary(&self.text, a.max(b));
         let pre_text = self.text[start..end].to_string();
         let pre_selection = self.selection.clone();
 
@@ -746,11 +758,26 @@ impl TextFieldState {
     }
 
     pub fn selected_text(&self) -> String {
-        if self.selection.start == self.selection.end {
+        let a = self.selection.start.min(self.text.len());
+        let b = self.selection.end.min(self.text.len());
+        let (lo, hi) = (a.min(b), a.max(b));
+        if lo == hi {
             String::new()
         } else {
-            self.text[self.selection.clone()].to_string()
+            let lo = clamp_to_char_boundary(&self.text, lo);
+            let hi = clamp_to_char_boundary(&self.text, hi);
+            self.text[lo..hi].to_string()
         }
+    }
+
+    /// Normalized (ordered, clamped) selection range.
+    pub fn selection_range(&self) -> std::ops::Range<usize> {
+        let a = self.selection.start.min(self.text.len());
+        let b = self.selection.end.min(self.text.len());
+        let (mut lo, mut hi) = (a.min(b), a.max(b));
+        lo = clamp_to_char_boundary(&self.text, lo);
+        hi = clamp_to_char_boundary(&self.text, hi);
+        lo..hi
     }
 
     pub fn set_composition(&mut self, text: String, cursor: Option<(usize, usize)>) {
@@ -853,24 +880,68 @@ impl TextFieldState {
         self.preferred_x_px = None;
         self.reset_caret_blink();
     }
+}
 
+fn is_grapheme_boundary(text: &str, byte: usize) -> bool {
+    if byte == 0 || byte == text.len() {
+        return true;
+    }
+    if !text.is_char_boundary(byte) {
+        return false;
+    }
+    for (i, _) in text.grapheme_indices(true) {
+        if i == byte {
+            return true;
+        }
+        if i > byte {
+            return false;
+        }
+    }
+    false
+}
+
+/// Smallest grapheme boundary at or after `pos` (inward for a delete start).
+fn snap_inward_start(text: &str, pos: usize) -> usize {
+    let pos = pos.min(text.len());
+    if is_grapheme_boundary(text, pos) {
+        return pos;
+    }
+    next_grapheme_boundary(text, pos)
+}
+
+/// Largest grapheme boundary at or before `pos` (inward for a delete end).
+fn snap_inward_end(text: &str, pos: usize) -> usize {
+    let pos = pos.min(text.len());
+    if is_grapheme_boundary(text, pos) {
+        return pos;
+    }
+    let mut b = pos;
+    while b > 0 && !text.is_char_boundary(b) {
+        b -= 1;
+    }
+    if is_grapheme_boundary(text, b) {
+        return b;
+    }
+    prev_grapheme_boundary(text, pos)
+}
+
+impl TextFieldState {
     pub fn delete_surrounding(&mut self, before_bytes: usize, after_bytes: usize) {
         if self.selection.start != self.selection.end {
-            let start = self.selection.start.min(self.text.len());
-            let end = self.selection.end.min(self.text.len());
-            self.text.replace_range(start..end, "");
-            self.selection = start..start;
+            let range = self.selection_range();
+            self.text.replace_range(range.start..range.end, "");
+            self.selection = range.start..range.start;
             self.preferred_x_px = None;
             self.reset_caret_blink();
             return;
         }
 
-        let caret = self.selection.end.min(self.text.len());
+        let caret = clamp_to_char_boundary(&self.text, self.selection.end.min(self.text.len()));
         let start_raw = caret.saturating_sub(before_bytes);
         let end_raw = (caret + after_bytes).min(self.text.len());
 
-        let start = prev_grapheme_boundary(&self.text, start_raw);
-        let end = next_grapheme_boundary(&self.text, end_raw);
+        let start = snap_inward_start(&self.text, start_raw).min(caret);
+        let end = snap_inward_end(&self.text, end_raw).max(caret);
         if start < end {
             self.text.replace_range(start..end, "");
             self.selection = start..start;
@@ -938,8 +1009,11 @@ impl TextFieldState {
 
         let idx = idx_byte.min(self.text.len());
 
+        if count > 3 {
+            count = (count - 1) % 3 + 1;
+            self.tap_count = count;
+        }
         if count >= 3 {
-            // Triple-tap: select all
             self.selection = 0..self.text.len();
             self.drag_anchor = None;
             self.preferred_x_px = None;
@@ -1544,18 +1618,21 @@ pub fn line_home_end(
     if to_end { e } else { s }
 }
 
+/// Clamp to a valid cursor position: a grapheme-cluster boundary (which
+/// implies a char boundary). The old version kept char boundaries, splitting
+/// multi-char graphemes like 👍🏽 (U+1F44D U+1F3FD) or ZWJ sequences.
 fn clamp_to_char_boundary(s: &str, i: usize) -> usize {
     if i >= s.len() {
         return s.len();
-    }
-    if s.is_char_boundary(i) {
-        return i;
     }
     let mut j = i;
     while j > 0 && !s.is_char_boundary(j) {
         j -= 1;
     }
-    j
+    if j == 0 || j == s.len() || is_grapheme_boundary(s, j) {
+        return j;
+    }
+    prev_grapheme_boundary(s, j)
 }
 
 fn char_to_byte(s: &str, ci: usize) -> usize {

@@ -193,12 +193,7 @@ impl LayoutEngine {
             )
         };
 
-        let non_scope_children: Vec<NodeId> = children
-            .iter()
-            .filter(|&c| !self.scope_root_map.contains_key(c))
-            .copied()
-            .collect();
-        let child_taffy_ids: Vec<taffy::NodeId> = non_scope_children
+        let child_taffy_ids: Vec<taffy::NodeId> = children
             .iter()
             .map(|&child_id| self.update_taffy_node(child_id, font_px))
             .collect();
@@ -573,14 +568,23 @@ impl LayoutEngine {
         }
 
         if let Some(pv) = m.padding_values {
-            s.padding = taffy::geometry::Rect {
-                left: length(px(pv.left)),
-                right: length(px(pv.right)),
-                top: length(px(pv.top)),
-                bottom: length(px(pv.bottom)),
+            let fin = |v: Dp| {
+                if v.0.is_finite() {
+                    length(px(v.max(Dp::ZERO)))
+                } else {
+                    length(0.0_f32)
+                }
             };
-        } else if let Some(p) = m.padding {
-            let v = length(px(p));
+            s.padding = taffy::geometry::Rect {
+                left: fin(pv.left),
+                right: fin(pv.right),
+                top: fin(pv.top),
+                bottom: fin(pv.bottom),
+            };
+        } else if let Some(p) = m.padding
+            && p.0.is_finite()
+        {
+            let v = length(px(p.max(Dp::ZERO)));
             s.padding = taffy::geometry::Rect {
                 left: v,
                 right: v,
@@ -602,16 +606,18 @@ impl LayoutEngine {
             }
         }
         if let Some(w) = m.width {
-            s.size.width = length(px(w.max(Dp::ZERO)));
-            width_set = true;
+            if w.0.is_finite() {
+                s.size.width = length(px(w.max(Dp::ZERO)));
+                width_set = true;
+            }
         }
         if let Some(h) = m.height {
-            s.size.height = length(px(h.max(Dp::ZERO)));
-            height_set = true;
+            if h.0.is_finite() {
+                s.size.height = length(px(h.max(Dp::ZERO)));
+                height_set = true;
+            }
         }
-        // Intrinsic / fit-content sizing keywords (taffy 0.14). These revive
-        // the previously unmapped `intrinsic_*` modifiers via min/max-content.
-        // Explicit width/height above take precedence.
+
         if !width_set {
             if let Some(mode) = m.intrinsic_width {
                 s.size.width = match mode {
@@ -638,17 +644,18 @@ impl LayoutEngine {
         }
 
         if let Some(sz) = m.required_size {
-            s.size.width = length(px(sz.width.max(Dp::ZERO)));
-            s.size.height = length(px(sz.height.max(Dp::ZERO)));
-            s.min_size.width = length(px(sz.width.max(Dp::ZERO)));
-            s.min_size.height = length(px(sz.height.max(Dp::ZERO)));
-            s.max_size.width = length(px(sz.width.max(Dp::ZERO)));
-            s.max_size.height = length(px(sz.height.max(Dp::ZERO)));
-            width_set = true;
-            height_set = true;
+            if sz.width.0.is_finite() && sz.height.0.is_finite() {
+                s.size.width = length(px(sz.width.max(Dp::ZERO)));
+                s.size.height = length(px(sz.height.max(Dp::ZERO)));
+                s.min_size.width = length(px(sz.width.max(Dp::ZERO)));
+                s.min_size.height = length(px(sz.height.max(Dp::ZERO)));
+                s.max_size.width = length(px(sz.width.max(Dp::ZERO)));
+                s.max_size.height = length(px(sz.height.max(Dp::ZERO)));
+                width_set = true;
+                height_set = true;
+            }
         }
 
-        // Fill max (with optional fraction). Per-axis fields override both-dims field.
         let fill_w = m.fill_max_w.or(m.fill_max);
         if let Some(frac) = fill_w {
             if !width_set {
@@ -686,16 +693,24 @@ impl LayoutEngine {
 
         if m.required_size.is_none() {
             if let Some(v) = m.min_width {
-                s.min_size.width = length(px(v.max(Dp::ZERO)));
+                if v.0.is_finite() {
+                    s.min_size.width = length(px(v.max(Dp::ZERO)));
+                }
             }
             if let Some(v) = m.min_height {
-                s.min_size.height = length(px(v.max(Dp::ZERO)));
+                if v.0.is_finite() {
+                    s.min_size.height = length(px(v.max(Dp::ZERO)));
+                }
             }
             if let Some(v) = m.max_width {
-                s.max_size.width = length(px(v.max(Dp::ZERO)));
+                if v.0.is_finite() {
+                    s.max_size.width = length(px(v.max(Dp::ZERO)));
+                }
             }
             if let Some(v) = m.max_height {
-                s.max_size.height = length(px(v.max(Dp::ZERO)));
+                if v.0.is_finite() {
+                    s.max_size.height = length(px(v.max(Dp::ZERO)));
+                }
             }
         }
 

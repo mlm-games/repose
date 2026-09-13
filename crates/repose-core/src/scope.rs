@@ -40,13 +40,28 @@ impl Scope {
     }
 
     pub fn run<R>(&self, f: impl FnOnce() -> R) -> R {
+        struct Guard {
+            prev: Option<Weak<ScopeInner>>,
+        }
+        impl Drop for Guard {
+            fn drop(&mut self) {
+                CURRENT_SCOPE.with(|current| {
+                    if let Ok(mut b) = current.try_borrow_mut() {
+                        *b = self.prev.take();
+                    } else {
+                        log::error!(
+                            "scope: CURRENT_SCOPE busy during scope exit; stale scope reference retained"
+                        );
+                    }
+                });
+            }
+        }
+        let prev = CURRENT_SCOPE.with(|current| current.borrow().clone());
         CURRENT_SCOPE.with(|current| {
-            let prev = current.borrow().clone();
             *current.borrow_mut() = Some(Rc::downgrade(&self.inner));
-            let result = f();
-            *current.borrow_mut() = prev;
-            result
-        })
+        });
+        let _guard = Guard { prev };
+        f()
     }
 
     pub fn add_disposer(&self, disposer: impl FnOnce() + 'static) {

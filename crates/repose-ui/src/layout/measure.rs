@@ -81,9 +81,19 @@ impl LayoutEngine {
                                         max_height: Dp(avail_h.min(known_h)),
                                     };
                                     let (w_dp, h_dp) = layout_cb(constraints);
+                                    let w = if w_dp.0.is_finite() {
+                                        w_dp.0.max(0.0) * scale
+                                    } else {
+                                        0.0
+                                    };
+                                    let h = if h_dp.0.is_finite() {
+                                        h_dp.0.max(0.0) * scale
+                                    } else {
+                                        0.0
+                                    };
                                     return taffy::geometry::Size {
-                                        width: w_dp.0 * scale,
-                                        height: h_dp.0 * scale,
+                                        width: w,
+                                        height: h,
                                     };
                                 }
                                 if scope_root_map.contains_key(&node_id)
@@ -369,6 +379,7 @@ impl LayoutEngine {
                 || m.height.is_some()
                 || m.required_size.is_some()
                 || m.fill_max_h.is_some()
+                || m.fill_max.is_some()
             {
                 continue;
             }

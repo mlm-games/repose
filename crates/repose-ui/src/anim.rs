@@ -168,13 +168,43 @@ pub fn animate_keyframes(
     spec: AnimationSpec,
 ) -> f32 {
     let key = key.into();
-    let anim = remember_state_with_key(format!("anim:kf:{key}"), || AnimatedValue::new(0.0, spec));
+    let anim_key = format!("anim:kf:{key}");
+    let anim = remember_state_with_key(&anim_key, || AnimatedValue::new(0.0, spec));
+    let last = remember_state_with_key(format!("anim:kf_last:{key}"), || None::<String>);
+    animation_driver::touch(&anim_key);
+
+    let fingerprint = format!("{:?}|{:?}", keyframes.keyframes, spec);
+    let should_restart = {
+        let lt = last.borrow();
+        lt.as_ref() != Some(&fingerprint)
+    };
     let mut a = anim.borrow_mut();
-    if !a.has_keyframes() {
+    if should_restart {
+        a.set_spec(spec);
         a.set_keyframes(keyframes);
+        *last.borrow_mut() = Some(fingerprint);
+        drop(a);
+        let reg_anim = anim.clone();
+        animation_driver::register(
+            anim_key.clone(),
+            Rc::new(RefCell::new(move || reg_anim.borrow_mut().update())),
+        );
+        request_frame();
+        *anim.borrow().get()
+    } else {
+        let needs_reregister = !animation_driver::is_registered(&anim_key) && a.is_animating();
+        let cur = *a.get();
+        drop(a);
+        if needs_reregister {
+            let reg_anim = anim.clone();
+            animation_driver::register(
+                anim_key,
+                Rc::new(RefCell::new(move || reg_anim.borrow_mut().update())),
+            );
+            request_frame();
+        }
+        cur
     }
-    a.update();
-    *a.get()
 }
 
 /// Animate f32 through a sequence of keyframes using a smooth cubic Hermite spline.
@@ -201,15 +231,48 @@ pub fn animate_spline_keyframes(
     let anim = remember_state_with_key(format!("anim:spkf_progress:{key}"), || {
         AnimatedValue::new(0.0, spec)
     });
-    let spline = remember_state_with_key(format!("anim:spkf:{key}"), || keyframes);
+    let spline = remember_state_with_key(format!("anim:spkf:{key}"), || keyframes.clone());
 
-    let mut a = anim.borrow_mut();
-    let s = spline.borrow();
+    let anim_key = format!("anim:spkf_progress:{key}");
+    let last = remember_state_with_key(format!("anim:spkf_last:{key}"), || None::<String>);
+    animation_driver::touch(&anim_key);
+    let fingerprint = format!("{}|{spec:?}", keyframes.fingerprint());
+    let should_restart = {
+        let lt = last.borrow();
+        lt.as_ref() != Some(&fingerprint)
+    };
 
-    a.set_target(1.0);
-    a.update();
-    let progress = *a.get();
-    s.evaluate(progress)
+    let progress = {
+        let mut a = anim.borrow_mut();
+        if should_restart {
+            a.set_spec(spec);
+            a.set_target(1.0);
+            *last.borrow_mut() = Some(fingerprint);
+            *spline.borrow_mut() = keyframes;
+            drop(a);
+            let reg_anim = anim.clone();
+            animation_driver::register(
+                anim_key.clone(),
+                Rc::new(RefCell::new(move || reg_anim.borrow_mut().update())),
+            );
+            request_frame();
+            *anim.borrow().get()
+        } else {
+            let needs_reregister = !animation_driver::is_registered(&anim_key) && a.is_animating();
+            let cur = *a.get();
+            drop(a);
+            if needs_reregister {
+                let reg_anim = anim.clone();
+                animation_driver::register(
+                    anim_key,
+                    Rc::new(RefCell::new(move || reg_anim.borrow_mut().update())),
+                );
+                request_frame();
+            }
+            cur
+        }
+    };
+    spline.borrow().evaluate(progress)
 }
 
 fn with_infinite_repeat(spec: AnimationSpec) -> AnimationSpec {

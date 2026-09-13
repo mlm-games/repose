@@ -195,6 +195,8 @@ pub(crate) fn map_cursor(c: repose_core::CursorIcon) -> winit::window::CursorIco
         repose_core::CursorIcon::Text => W::Text,
         repose_core::CursorIcon::EwResize => W::EwResize,
         repose_core::CursorIcon::NsResize => W::NsResize,
+        repose_core::CursorIcon::NwseResize => W::NwseResize,
+        repose_core::CursorIcon::NeswResize => W::NeswResize,
         repose_core::CursorIcon::Grab => W::Grab,
         repose_core::CursorIcon::Grabbing => W::Grabbing,
     }

@@ -685,6 +685,13 @@ impl SplineKeyframes {
     pub fn evaluate(&self, t: f32) -> f32 {
         self.spline.evaluate(t.clamp(0.0, 1.0))
     }
+
+    /// Stable fingerprint of the keyframe times/values for change detection.
+    /// Used by `animate_spline_keyframes` to restart when keyframes change
+    /// without exposing the private spline internals.
+    pub fn fingerprint(&self) -> String {
+        format!("{:?}", self.spline)
+    }
 }
 
 /// A repeatable animation specification.
@@ -1046,7 +1053,7 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
             return false;
         }
         let t = (animation_time.as_secs_f32() / self.spec.duration.as_secs_f32()).clamp(0.0, 1.0);
-        let eased_t = self.spec.easing.interpolate(t).clamp(0.0, 1.0);
+        let eased_t = self.spec.easing.interpolate(t);
         if let Some(ref kf) = self.keyframes {
             self.current = kf.evaluate(eased_t);
         }
@@ -1114,7 +1121,6 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
             let t =
                 (animation_time.as_secs_f32() / self.spec.duration.as_secs_f32()).clamp(0.0, 1.0);
             let eased_t = self.spec.easing.interpolate(t);
-            let eased_t = eased_t.clamp(0.0, 1.0);
 
             self.current = self.start.interpolate(&self.target, eased_t);
             true

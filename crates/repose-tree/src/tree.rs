@@ -45,6 +45,9 @@ pub struct ViewTree {
     /// changes or the node's content changes. Each cached slot view has its
     /// `Modifier::key` overwritten with its slot id.
     subcompose_cache: FxHashMap<NodeId, (SubcomposeScope, Vec<(u64, View)>)>,
+    /// Per-frame re-invocation counts for oscillation damping
+    /// (node -> (generation, count)).
+    subcompose_runs: FxHashMap<NodeId, (u64, u8)>,
 }
 
 impl Default for ViewTree {
@@ -66,6 +69,7 @@ impl ViewTree {
             removed_ids: Vec::new(),
             subcompose_scope: SubcomposeScope::UNBOUNDED,
             subcompose_cache: FxHashMap::default(),
+            subcompose_runs: FxHashMap::default(),
         }
     }
 
@@ -101,10 +105,33 @@ impl ViewTree {
         if let Some((cached_scope, cached_slots)) = self.subcompose_cache.get(&node_id)
             && *cached_scope == scope
         {
+            self.subcompose_runs.remove(&node_id);
             return cached_slots.clone();
         }
+        if self.subcompose_cache.contains_key(&node_id) {
+            let cur_gen = self.generation;
+            let streak = match self.subcompose_runs.get(&node_id) {
+                Some((last_gen, count)) if *last_gen == cur_gen => count.saturating_add(1),
+                Some((last_gen, count)) if *last_gen + 1 == cur_gen => count.saturating_add(1),
+                _ => 1,
+            };
+            if streak >= 4 {
+                log::warn!(
+                    "SubcomposeLayout {:?} oscillating; holding last scope this frame",
+                    node_id
+                );
+                self.subcompose_runs.insert(node_id, (cur_gen, streak));
+                return self
+                    .subcompose_cache
+                    .get(&node_id)
+                    .map(|(_, slots)| slots.clone())
+                    .unwrap_or_default();
+            }
+            self.subcompose_runs.insert(node_id, (cur_gen, streak));
+        } else {
+            self.subcompose_runs.remove(&node_id);
+        }
         let mut slots = content(&scope);
-        // Assign each subcomposed slot its own scope tree for per-scope TaffyTree
         let scope_key = format!("subcompose_{:?}", node_id);
         for (slot_id, view) in slots.iter_mut() {
             view.modifier.key = Some(*slot_id);
@@ -138,17 +165,14 @@ impl ViewTree {
         for ancestor_id in chain {
             if let Some(node) = self.nodes.get(ancestor_id) {
                 scope = intersect_scope_with_modifier(scope, &node.modifier);
-                // Apply cached Taffy-computed size for this ancestor if
-                // available.
                 if let Some(cache) = &node.layout_cache {
-                    // Layout cache rects are px; the scope is Dp.
                     let w = cache.rect.w;
                     if w > 0.0 && w.is_finite() {
-                        scope.max_width = scope.max_width.min(repose_core::Px(w).to_dp());
+                        scope.max_width = scope.max_width.min(repose_core::Dp(w));
                     }
                     let h = cache.rect.h;
                     if h > 0.0 && h.is_finite() {
-                        scope.max_height = scope.max_height.min(repose_core::Px(h).to_dp());
+                        scope.max_height = scope.max_height.min(repose_core::Dp(h));
                     }
                 }
             }
@@ -161,12 +185,14 @@ impl ViewTree {
     /// reconciliation re-invokes the closure.
     pub fn invalidate_subcompose_cache(&mut self, node_id: NodeId) {
         self.subcompose_cache.remove(&node_id);
+        self.subcompose_runs.remove(&node_id);
     }
 
     /// Recursively drop cached subcomposed views for a subtree rooted at
     /// `node_id`. Called when the node is being removed.
     fn collect_subcompose_cache(&mut self, node_id: &NodeId) {
         self.subcompose_cache.remove(node_id);
+        self.subcompose_runs.remove(node_id);
         let children: Vec<NodeId> = self
             .nodes
             .get(*node_id)
@@ -342,6 +368,11 @@ impl ViewTree {
         let new_subtree_hash = hash_subtree(content_hash, &new_children_hashes);
 
         let view_id = self.compute_view_id(view, node_id, parent, index_in_parent);
+        let old_view_id: u64 = self
+            .nodes
+            .get(node_id)
+            .map(|n| n.view_id)
+            .unwrap_or(view_id);
 
         let subtree_changed;
         {
@@ -380,6 +411,9 @@ impl ViewTree {
         if subtree_changed {
             self.mark_dirty(node_id);
         }
+        if old_view_id != view_id && self.view_id_map.get(&old_view_id).copied() == Some(node_id) {
+            self.view_id_map.remove(&old_view_id);
+        }
         self.view_id_map.insert(view_id, node_id);
 
         node_id
@@ -406,9 +440,7 @@ impl ViewTree {
 
         for &child_id in &old_children {
             if let Some(node) = self.nodes.get(child_id) {
-                if matches!(node.kind, ViewKind::SubcomposeLayout { .. }) {
-                    unkeyed_children.push(child_id);
-                } else if let Some(key) = node.user_key {
+                if let Some(key) = node.user_key {
                     keyed_children.insert(key, child_id);
                 } else {
                     unkeyed_children.push(child_id);
@@ -425,8 +457,62 @@ impl ViewTree {
         for (i, new_child) in new_children.iter().enumerate() {
             let is_subcompose = matches!(new_child.kind, ViewKind::SubcomposeLayout { .. });
             if is_subcompose {
-                if let Some(key) = new_child.modifier.key {
-                    new_seen_keys.insert(key);
+                let mut deduped: Option<View> = None;
+                if let Some(key) = new_child.modifier.key
+                    && !new_seen_keys.insert(key)
+                {
+                    log::error!(
+                        "reconcile_children: duplicate modifier.key={} in children of node {:?} - deduplicating (suffixing).",
+                        key,
+                        parent_id
+                    );
+                    let mut d = new_child.clone();
+                    let salt = (key.wrapping_mul(0x9E3779B97F4A7C15)
+                        ^ (i as u64).wrapping_add(0xBF58476D1CE4E5B9))
+                    .wrapping_add(parent_id.data().as_ffi());
+                    d.modifier.key = Some(salt);
+                    new_seen_keys.insert(salt);
+                    deduped = Some(d);
+                }
+                let child_ref = deduped.as_ref().unwrap_or(new_child);
+                if let Some(key) = child_ref.modifier.key {
+                    if let Some(&existing_id) = keyed_children.get(&key) {
+                        if used_nodes.contains(&existing_id) {
+                            log::error!(
+                                "reconcile_children: modifier.key={} already claimed in children of node {:?} - deduplicating (suffixing).",
+                                key,
+                                parent_id
+                            );
+                            let mut fresh = child_ref.clone();
+                            let salt = (key.wrapping_mul(0x9E3779B97F4A7C15)
+                                ^ (i as u64).wrapping_add(0xBF58476D1CE4E5B9))
+                            .wrapping_add(parent_id.data().as_ffi());
+                            fresh.modifier.key = Some(salt);
+                            let idx = i as u32;
+                            let child_id =
+                                self.create_node(&fresh, Some(parent_id), child_depth, idx, ctx);
+                            new_child_ids.push(child_id);
+                            if let Some(node) = self.nodes.get(child_id) {
+                                new_subtree_hashes.push(node.subtree_hash);
+                            }
+                            continue;
+                        }
+                        used_nodes.insert(existing_id);
+                        let idx = i as u32;
+                        let child_id = self.reconcile_node(
+                            existing_id,
+                            child_ref,
+                            Some(parent_id),
+                            child_depth,
+                            idx,
+                            ctx,
+                        );
+                        new_child_ids.push(child_id);
+                        if let Some(node) = self.nodes.get(child_id) {
+                            new_subtree_hashes.push(node.subtree_hash);
+                        }
+                        continue;
+                    }
                 }
                 let idx = i as u32;
                 let child_id = if unkeyed_index < unkeyed_children.len() {
@@ -435,14 +521,14 @@ impl ViewTree {
                     used_nodes.insert(existing_id);
                     self.reconcile_node(
                         existing_id,
-                        new_child,
+                        child_ref,
                         Some(parent_id),
                         child_depth,
                         idx,
                         ctx,
                     )
                 } else {
-                    self.create_node(new_child, Some(parent_id), child_depth, idx, ctx)
+                    self.create_node(child_ref, Some(parent_id), child_depth, idx, ctx)
                 };
                 new_child_ids.push(child_id);
                 if let Some(node) = self.nodes.get(child_id) {
@@ -656,6 +742,7 @@ impl ViewTree {
         };
         self.view_id_map.remove(&view_id);
         self.subcompose_cache.remove(&node_id);
+        self.subcompose_runs.remove(&node_id);
         for child_id in children.iter() {
             self.collect_subcompose_cache(child_id);
         }
@@ -684,11 +771,14 @@ impl ViewTree {
             if let Some(node) = self.nodes.remove(id) {
                 self.view_id_map.remove(&node.view_id);
                 self.dirty.remove(&id);
+                self.subcompose_cache.remove(&id);
+                self.subcompose_runs.remove(&id);
 
-                // Track removal for external sync
                 self.removed_ids.push(id);
             }
         }
+        self.subcompose_runs
+            .retain(|id, _| self.nodes.contains_key(*id));
     }
 
     /// Set cached layout for a node.
@@ -803,6 +893,16 @@ fn intersect_scope_with_modifier(scope: SubcomposeScope, modifier: &Modifier) ->
         s.max_width = (s.max_width - h_total).max(repose_core::Dp::ZERO);
         s.min_height = (s.min_height - v_total).max(repose_core::Dp::ZERO);
         s.max_height = (s.max_height - v_total).max(repose_core::Dp::ZERO);
+    }
+    if s.min_width > s.max_width {
+        let coerced = s.max_width.max(repose_core::Dp::ZERO);
+        s.min_width = coerced;
+        s.max_width = coerced;
+    }
+    if s.min_height > s.max_height {
+        let coerced = s.max_height.max(repose_core::Dp::ZERO);
+        s.min_height = coerced;
+        s.max_height = coerced;
     }
     s
 }

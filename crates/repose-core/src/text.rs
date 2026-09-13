@@ -477,12 +477,85 @@ impl Default for PasswordVisualTransformation {
     }
 }
 
+/// Char-index offset mapping for masked text: the Nth original char maps to
+/// the Nth mask char (byte offsets differ when widths differ, e.g. `a\U0001F44D`
+/// (5B) masked to `\u{2022}\u{2022}` (6B)). Identity mapping here silently
+/// mis-placed carets mid-mask-char for non-BMP input.
+#[derive(Clone, Debug)]
+pub struct PasswordOffsetMapping {
+    original: Vec<usize>,
+    transformed: Vec<usize>,
+}
+
+impl PasswordOffsetMapping {
+    pub fn new(original: &str, mask: char, masked: &str) -> Self {
+        let mut o = Vec::with_capacity(original.chars().count() + 1);
+        for (i, _) in original.char_indices() {
+            o.push(i);
+        }
+        o.push(original.len());
+        let mut t = vec![0usize];
+        let n = original.chars().count();
+        let mut byte = 0usize;
+        for _ in 0..n {
+            byte += mask.len_utf8();
+            t.push(byte);
+        }
+        if byte != masked.len() {
+            t.clear();
+            t.push(0);
+            let mut b = 0usize;
+            for ch in masked.chars() {
+                b += ch.len_utf8();
+                t.push(b);
+            }
+        }
+        Self {
+            original: o,
+            transformed: t,
+        }
+    }
+
+    fn snap_back(offsets: &[usize], text_len: usize, offset: usize) -> usize {
+        let o = offset.min(text_len);
+        match offsets.binary_search(&o) {
+            Ok(_) => o,
+            Err(i) => offsets.get(i.saturating_sub(1)).copied().unwrap_or(0),
+        }
+    }
+    fn index_of(offsets: &[usize], snapped: usize) -> usize {
+        match offsets.binary_search(&snapped) {
+            Ok(i) => i,
+            Err(i) => i.min(offsets.len().saturating_sub(1)),
+        }
+    }
+}
+
+impl OffsetMapping for PasswordOffsetMapping {
+    fn original_to_transformed(&self, offset: usize) -> usize {
+        let o_text_len = *self.original.last().unwrap_or(&0);
+        let snapped = Self::snap_back(&self.original, o_text_len, offset);
+        let idx = Self::index_of(&self.original, snapped);
+        self.transformed.get(idx).copied().unwrap_or(0)
+    }
+    fn transformed_to_original(&self, offset: usize) -> usize {
+        let t_text_len = *self.transformed.last().unwrap_or(&0);
+        let snapped = Self::snap_back(&self.transformed, t_text_len, offset);
+        let idx = Self::index_of(&self.transformed, snapped);
+        self.original.get(idx).copied().unwrap_or(0)
+    }
+    fn clone_box(&self) -> Box<dyn OffsetMapping> {
+        Box::new(self.clone())
+    }
+}
+
 impl VisualTransformation for PasswordVisualTransformation {
     fn filter(&self, text: &AnnotatedString) -> TransformedText {
         let masked_text: String = text.text.chars().map(|_| self.mask).collect();
+        let mapping = PasswordOffsetMapping::new(&text.text, self.mask, &masked_text);
         TransformedText {
             text: AnnotatedString::new(masked_text, vec![]),
-            offset_mapping: Box::new(IdentityOffsetMapping),
+            offset_mapping: Box::new(mapping),
         }
     }
 }

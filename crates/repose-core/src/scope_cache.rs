@@ -4,7 +4,13 @@ use std::cell::RefCell;
 use crate::View;
 
 thread_local! {
-    /// The scope key currently being composed (set by `scope!`).
+    /// Stack of scope keys currently being composed (set by `scope!`).
+    /// A stack (not a single slot) so nested scopes attribute signal reads
+    /// to every ancestor: otherwise an outer scope stays `clean` while an
+    /// inner scope is dirty, and the outer cache short-circuits the inner
+    /// re-execution, swallowing the update.
+    static CURRENT_SCOPE_STACK: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    /// Legacy alias kept for the single-key fast path.
     static CURRENT_SCOPE_KEY: RefCell<Option<String>> =
         const { RefCell::new(None) };
 
@@ -22,19 +28,33 @@ thread_local! {
 
 /// Record that the current composition scope (if any) depends on `signal_id`.
 /// Called from `reactive::register_signal_read`.
+/// Records against every scope on the stack so ancestor scopes are dirtied
+/// when a signal read only inside a nested scope changes.
 pub fn record_scope_signal_dep(signal_id: usize) {
-    let key = CURRENT_SCOPE_KEY.with(|k| k.borrow().clone());
-    if let Some(key) = key {
-        SCOPE_SIGNAL_DEPS.with(|deps| {
-            deps.borrow_mut()
-                .entry(signal_id)
-                .or_default()
-                .insert(key.clone());
-        });
-        SCOPE_TO_SIGNALS.with(|m| {
-            m.borrow_mut().entry(key).or_default().insert(signal_id);
-        });
+    let stack: Vec<String> = CURRENT_SCOPE_STACK.with(|s| s.borrow().clone());
+    let stack = if stack.is_empty() {
+        match CURRENT_SCOPE_KEY.with(|k| k.borrow().clone()) {
+            Some(k) => vec![k],
+            None => Vec::new(),
+        }
+    } else {
+        stack
+    };
+    if stack.is_empty() {
+        return;
     }
+    SCOPE_SIGNAL_DEPS.with(|deps| {
+        let mut deps = deps.borrow_mut();
+        for key in &stack {
+            deps.entry(signal_id).or_default().insert(key.clone());
+        }
+    });
+    SCOPE_TO_SIGNALS.with(|m| {
+        let mut m = m.borrow_mut();
+        for key in &stack {
+            m.entry(key.clone()).or_default().insert(signal_id);
+        }
+    });
 }
 
 /// Mark all scopes that depend on `signal_id` as dirty.
@@ -54,14 +74,55 @@ pub fn mark_scope_deps_dirty(signal_id: usize) {
 }
 
 /// Run `f` with the given scope key tracking any signal reads inside.
+/// Panic-safe: the scope stack is restored via a Drop guard.
 pub fn with_scope_key<R>(key: &str, f: impl FnOnce() -> R) -> R {
-    CURRENT_SCOPE_KEY.with(|k| {
-        let prev = k.borrow_mut().take();
-        *k.borrow_mut() = Some(key.to_string());
-        let result = f();
-        *k.borrow_mut() = prev;
-        result
-    })
+    struct Guard;
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            if CURRENT_SCOPE_STACK
+                .try_with(|s| {
+                    if let Ok(mut s) = s.try_borrow_mut() {
+                        s.pop();
+                    } else {
+                        log::error!(
+                            "scope_cache: scope stack busy during scope exit; scope entry leaked"
+                        );
+                    }
+                })
+                .is_err()
+            {
+                log::error!(
+                    "scope_cache: scope stack unavailable during scope exit (thread teardown?)"
+                );
+            }
+            let top = CURRENT_SCOPE_STACK
+                .try_with(|s| s.try_borrow().ok().and_then(|s| s.last().cloned()))
+                .ok()
+                .flatten();
+            if CURRENT_SCOPE_KEY
+                .try_with(|k| {
+                    if let Ok(mut k) = k.try_borrow_mut() {
+                        *k = top;
+                    } else {
+                        log::error!(
+                            "scope_cache: current scope key busy during scope exit; stale scope key retained"
+                        );
+                    }
+                })
+                .is_err()
+            {
+                log::error!(
+                    "scope_cache: current scope key unavailable during scope exit (thread teardown?)"
+                );
+            }
+        }
+    }
+    CURRENT_SCOPE_STACK.with(|s| s.borrow_mut().push(key.to_string()));
+    CURRENT_SCOPE_KEY.with(|k| *k.borrow_mut() = Some(key.to_string()));
+    let _guard = Guard;
+    let result = f();
+    drop(_guard);
+    result
 }
 
 /// Clear all signal->scope tracking for the given scope key.

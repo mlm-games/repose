@@ -599,4 +599,28 @@ mod tests {
             assert_eq!(*content_runs.borrow(), 2);
         }
     }
+
+    #[test]
+    fn nested_scope_macro_compiles_and_bubbles_deps() {
+        use crate::Modifier;
+        crate::runtime::clear_composer();
+        let sig = signal(0);
+        let mut sched = crate::runtime::Scheduler::new();
+        let _v = crate::scope!("outer_nest_reg", &mut sched, [], {
+            let n = sig.get();
+            let _inner = crate::scope!("inner_nest_reg", &mut sched, [], {
+                let _m = sig.get();
+                View::new(0, ViewKind::Box)
+            });
+            let _ = (n, _inner);
+            View::new(0, ViewKind::Box)
+        });
+        let _ = Modifier::new();
+        sig.set(1);
+        assert!(
+            crate::scope_cache::should_run("outer_nest_reg", 0),
+            "outer scope must be dirtied by nested signal read"
+        );
+        assert!(crate::scope_cache::should_run("inner_nest_reg", 0));
+    }
 }

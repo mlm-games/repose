@@ -2,9 +2,7 @@ use std::any::Any;
 use std::cell::{Ref, RefCell, RefMut};
 use std::rc::Rc;
 
-use crate::{
-    Signal, on_unmount, reactive, remember_with_key, request_frame, scoped_effect, signal,
-};
+use crate::{Signal, reactive, remember_with_key, request_frame, signal};
 
 #[allow(dead_code)]
 pub struct MutableState<T: Clone + 'static> {
@@ -54,12 +52,28 @@ pub fn produce_state_eq<T: Clone + PartialEq + 'static>(
     produce_state_inner(key.into(), producer, |out, v| out.set_neq(v))
 }
 
+/// Owner of a `produce_state` observer. Stored in the keyed slot; when the
+/// slot is replaced (type change or key reuse) or explicitly cleared, `Drop`
+/// removes the reactive observer so zombie recomputes cannot accumulate.
+/// Navigation-entry scopes additionally dispose via their own `Scope`, which
+/// is idempotent with this path.
+struct ProduceHandle {
+    obs: reactive::ObserverId,
+}
+
+impl Drop for ProduceHandle {
+    fn drop(&mut self) {
+        reactive::remove_observer(self.obs);
+    }
+}
+
 fn produce_state_inner<T: Clone + 'static>(
     key: String,
     producer: impl Fn() -> T + 'static + Clone,
     write: impl Fn(Signal<T>, T) + 'static + Copy,
 ) -> Rc<Signal<T>> {
-    remember_with_key(format!("produce:{key}"), || {
+    let full_key = format!("produce:{key}");
+    let rc: Rc<(Signal<T>, ProduceHandle)> = remember_with_key(full_key.clone(), || {
         let out: Signal<T> = signal(producer());
         let out_clone = out.clone();
 
@@ -74,14 +88,29 @@ fn produce_state_inner<T: Clone + 'static>(
         // Establish initial deps and value
         reactive::run_observer_now(obs_id);
 
-        scoped_effect(move || {
-            on_unmount(move || {
-                reactive::remove_observer(obs_id);
-            })
+        (out, ProduceHandle { obs: obs_id })
+    });
+    if let Some(scope) = crate::scope::current_scope() {
+        let obs = rc.1.obs;
+        scope.memo(&format!("produce-cleanup:{full_key}"), || {
+            let fk = full_key.clone();
+            scope.add_disposer(move || {
+                reactive::remove_observer(obs);
+                crate::runtime::COMPOSER.with(|c| match c.try_borrow_mut() {
+                    Ok(mut c) => {
+                        c.keyed_slots.remove(&fk);
+                    }
+                    Err(_) => {
+                        log::error!(
+                            "produce_state: composer busy during unmount cleanup for '{fk}'; observer removed but slot retained"
+                        );
+                    }
+                });
+            });
+            ()
         });
-
-        out
-    })
+    }
+    Rc::new(rc.0.clone())
 }
 
 /// Local widget state that drives recomposition on every write.

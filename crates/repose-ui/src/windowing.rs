@@ -220,9 +220,12 @@ pub struct WindowHostHandle {
 }
 
 fn cursor_for_resize_handle(handle: ResizeHandle) -> CursorIcon {
+    use ResizeHandle::*;
     match handle {
-        ResizeHandle::Top | ResizeHandle::Bottom => CursorIcon::NsResize,
-        _ => CursorIcon::EwResize,
+        Top | Bottom => CursorIcon::NsResize,
+        Left | Right => CursorIcon::EwResize,
+        TopLeft | BottomRight => CursorIcon::NwseResize,
+        TopRight | BottomLeft => CursorIcon::NeswResize,
     }
 }
 
@@ -282,6 +285,9 @@ impl WindowModifierExt for Modifier {
                     (w.position, w.size, w.min_size, w.max_size)
                 };
 
+                if drag_state_down.borrow().is_some() {
+                    return;
+                }
                 *drag_state_down.borrow_mut() = Some(DragState {
                     window_id,
                     kind: DragKind::Move,
@@ -334,6 +340,9 @@ impl WindowModifierExt for Modifier {
                     (w.position, w.size, w.min_size, w.max_size)
                 };
 
+                if drag_state_down.borrow().is_some() {
+                    return;
+                }
                 *drag_state_down.borrow_mut() = Some(DragState {
                     window_id,
                     kind: DragKind::Resize(handle),

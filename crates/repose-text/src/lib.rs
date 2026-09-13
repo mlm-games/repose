@@ -185,8 +185,38 @@ pub struct GlyphKey(pub u64);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct CacheKey {
     pub font_id: u64,
-    pub glyph_id: u16,
+    pub glyph_id: u32,
     pub font_size_bits: u32,
+}
+
+static GLYPH_ID_WARNED: OnceLock<Mutex<std::collections::HashSet<(u64, u32)>>> = OnceLock::new();
+
+/// Map a `u32` glyph id to the `u16` id swash accepts.
+///
+/// Glyph ids above `u16::MAX` (possible in very large fonts) cannot be
+/// rendered by swash. Remap those to `.notdef` (0) and emit a warn once per
+/// `(font_id, glyph_id)` instead of silently dropping the glyph. The public
+/// [`CacheKey`] keeps the full `u32` id so no API changes are needed.
+fn swash_glyph_id(font_id: u64, glyph_id: u32) -> u16 {
+    match u16::try_from(glyph_id) {
+        Ok(v) => v,
+        Err(_) => {
+            let warned =
+                GLYPH_ID_WARNED.get_or_init(|| Mutex::new(std::collections::HashSet::new()));
+            let is_new = warned
+                .lock()
+                .map(|mut g| g.insert((font_id, glyph_id)))
+                .unwrap_or(false);
+            if is_new {
+                log::warn!(
+                    "glyph id {} (font {}) exceeds u16::MAX; falling back to .notdef (0)",
+                    glyph_id,
+                    font_id
+                );
+            }
+            0
+        }
+    }
 }
 
 /// Vector path command for glyph outlines.
@@ -231,13 +261,13 @@ struct Engine {
     font_cx: parley::FontContext,
     layout_cx: parley::LayoutContext<()>,
     swash_cx: swash::scale::ScaleContext,
-    key_map: HashMap<GlyphKey, (u64, u16)>,
+    key_map: HashMap<GlyphKey, (u64, u32)>,
     font_registry: Vec<FontRecord>,
     next_font_id: u64,
     /// Cache of rendered glyphs keyed by (font_id, glyph_id, font_size_bits).
     /// Contains (width, height, left, top, content, data).
     glyph_cache:
-        HashMap<(u64, u16, u32), (u32, u32, i32, i32, swash::scale::image::Content, Vec<u8>)>,
+        HashMap<(u64, u32, u32), (u32, u32, i32, i32, swash::scale::image::Content, Vec<u8>)>,
     /// Cache of (ascent, descent) in px keyed by
     /// (family hash, weight, px bits). Used for baseline alignment.
     ascent_cache: RapidHashMap<(u64, u16, u32), (f32, f32)>,
@@ -303,12 +333,7 @@ impl Engine {
 
     /// Best-weight-match `(ascent, descent)` for a named family, or `None`
     /// when the family (or its data) is unavailable.
-    fn metrics_for_family(
-        &mut self,
-        name: &str,
-        font_weight: u16,
-        px: f32,
-    ) -> Option<(f32, f32)> {
+    fn metrics_for_family(&mut self, name: &str, font_weight: u16, px: f32) -> Option<(f32, f32)> {
         let info = self.font_cx.collection.family_by_name(name)?;
         let target = font_weight as f32;
         let mut best: Option<(f32, Vec<u8>, u32)> = None;
@@ -338,7 +363,7 @@ impl Engine {
     fn raster_placement(
         &mut self,
         font_id: u64,
-        glyph_id: u16,
+        glyph_id: u32,
         px: f32,
     ) -> Option<(f32, f32, f32, f32)> {
         use swash::scale::{Render, Source, StrikeWith};
@@ -374,7 +399,7 @@ impl Engine {
             Source::ColorBitmap(StrikeWith::BestFit),
             Source::ColorOutline(0),
         ])
-        .render(&mut scaler, glyph_id)?;
+        .render(&mut scaler, swash_glyph_id(font_id, glyph_id))?;
         log::debug!(
             "[raster_placement] MISS fid={} gid={} px={} => {}x{} {}x{}",
             font_id,
@@ -602,22 +627,25 @@ pub fn register_font_data(bytes: &[u8]) {
 
 pub(crate) fn clear_caches_for_fallback() {
     if let Some(c) = METRICS_LRU.get()
-        && let Ok(mut g) = c.lock() {
-            g.clear_both();
-        }
+        && let Ok(mut g) = c.lock()
+    {
+        g.clear_both();
+    }
     if let Some(c) = WRAP_LRU.get()
-        && let Ok(mut g) = c.lock() {
-            g.clear_both();
-        }
+        && let Ok(mut g) = c.lock()
+    {
+        g.clear_both();
+    }
     if let Some(c) = WRAP_RANGES_LRU.get()
-        && let Ok(mut g) = c.lock() {
-            g.clear_both();
-        }
+        && let Ok(mut g) = c.lock()
+    {
+        g.clear_both();
+    }
     if let Some(c) = ELLIP_LRU.get()
-        && let Ok(mut g) = c.lock() {
-            g.clear_both();
-        }
-    // Also bump frame counter to signal stale
+        && let Ok(mut g) = c.lock()
+    {
+        g.clear_both();
+    }
     bump_frame_for_fallback();
 }
 
@@ -690,7 +718,7 @@ pub fn font_family_name(bytes: &[u8]) -> Option<String> {
         })
 }
 
-fn key_from_pair(font_id: u64, glyph_id: u16) -> GlyphKey {
+fn key_from_pair(font_id: u64, glyph_id: u32) -> GlyphKey {
     let mut h = RapidHasher::default();
     font_id.hash(&mut h);
     glyph_id.hash(&mut h);
@@ -924,7 +952,7 @@ fn shape_line_inner(
                 font_data.data.as_ref().len()
             );
             for g in glyph_run.positioned_glyphs() {
-                let gid = g.id as u16;
+                let gid = g.id;
                 let key = key_from_pair(fid, gid);
                 eng.key_map.insert(key, (fid, gid));
 
@@ -1021,7 +1049,7 @@ pub fn rasterize(key: GlyphKey, px: f32) -> Option<GlyphBitmap> {
         Source::ColorBitmap(StrikeWith::BestFit),
         Source::ColorOutline(0),
     ])
-    .render(&mut scaler, gid)?;
+    .render(&mut scaler, swash_glyph_id(fid, gid))?;
     log::debug!(
         "[rasterize] MISS fid={} gid={} px={} => {}x{}",
         fid,
@@ -1062,11 +1090,11 @@ pub fn lookup_cache_key(key: GlyphKey, px: f32) -> Option<CacheKey> {
     })
 }
 
-fn extract_outlines_for(data_bytes: &[u8], glyph_id: u16) -> Option<Box<[Command]>> {
+fn extract_outlines_for(data_bytes: &[u8], glyph_id: u32) -> Option<Box<[Command]>> {
     let font = skrifa::FontRef::new(data_bytes).ok()?;
     let mut pen = OutlinePenCollector(Vec::new());
     font.outline_glyphs()
-        .get(skrifa::GlyphId::new(glyph_id as u32))?
+        .get(skrifa::GlyphId::new(glyph_id))?
         .draw(skrifa::instance::Size::new(1.0), &mut pen)
         .ok()?;
     Some(pen.0.into_boxed_slice())
@@ -1366,24 +1394,17 @@ fn lookup_right(edges: &[(usize, f32)], b: usize) -> f32 {
     }
 }
 
-pub fn wrap_lines(
+fn wrap_single_hard_line(
     text: &str,
     px: f32,
     max_width: f32,
     max_lines: Option<usize>,
-    soft_wrap: bool,
     font_weight: u16,
     font_style: u8,
     letter_spacing: f32,
     font_variation_settings: Option<&str>,
 ) -> (Vec<String>, bool) {
-    if text.is_empty() || max_width <= 0.0 {
-        return (vec![String::new()], false);
-    }
-    if !soft_wrap {
-        return (vec![text.to_string()], false);
-    }
-
+    let soft_wrap = true;
     let max_lines_key: u16 = match max_lines {
         None => 0,
         Some(n) => {
@@ -1494,6 +1515,52 @@ pub fn wrap_lines(
 
     wrap_cache().lock().unwrap().put(key, res.clone());
     res
+}
+
+pub fn wrap_lines(
+    text: &str,
+    px: f32,
+    max_width: f32,
+    max_lines: Option<usize>,
+    soft_wrap: bool,
+    font_weight: u16,
+    font_style: u8,
+    letter_spacing: f32,
+    font_variation_settings: Option<&str>,
+) -> (Vec<String>, bool) {
+    if text.is_empty() || max_width <= 0.0 {
+        return (vec![String::new()], false);
+    }
+    if !soft_wrap {
+        return (text.split('\n').map(|s| s.to_string()).collect(), false);
+    }
+
+    let mut combined: Vec<String> = Vec::new();
+    let mut any_truncated = false;
+    for (seg_i, seg) in text.split('\n').enumerate() {
+        let remaining = max_lines.map(|ml| ml.saturating_sub(combined.len()));
+        if max_lines.is_some_and(|ml| combined.len() >= ml) {
+            any_truncated = true;
+            break;
+        }
+        let (mut lines, trunc) = wrap_single_hard_line(
+            seg,
+            px,
+            max_width,
+            remaining,
+            font_weight,
+            font_style,
+            letter_spacing,
+            font_variation_settings,
+        );
+        if lines.is_empty() {
+            lines.push(String::new());
+        }
+        combined.append(&mut lines);
+        any_truncated |= trunc;
+        let _ = seg_i;
+    }
+    return (combined, any_truncated);
 }
 
 pub fn wrap_line_ranges(

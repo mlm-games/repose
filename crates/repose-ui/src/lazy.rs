@@ -65,9 +65,17 @@ where
     } = config;
 
     let mut items = items;
+    let src_len = items.len();
     if reverse_layout {
         items.reverse();
     }
+    let to_data_idx = |visual_i: usize| {
+        if reverse_layout {
+            src_len.saturating_sub(1).saturating_sub(visual_i)
+        } else {
+            visual_i
+        }
+    };
 
     {
         let mut seen = std::collections::HashSet::new();
@@ -219,7 +227,12 @@ where
         total_slots = items.len().max(max_exit_slot + 1);
 
         let state_id = Rc::as_ptr(&state) as usize;
-        let mut normal_ptr = 0usize;
+        let avg_item_px = if total_slots > 0 {
+            (content_height_px - padding_top_px - padding_bottom_px).max(0.0)
+                / total_slots.max(1) as f32
+        } else {
+            0.0
+        };
         for visual_i in first_with_buffer..vis_end {
             let entry = still_exiting
                 .iter()
@@ -230,7 +243,7 @@ where
                 let exit_top_px = cumulative_px
                     .get(*old_idx)
                     .copied()
-                    .unwrap_or(*old_idx as f32 * 1.0);
+                    .unwrap_or(*old_idx as f32 * avg_item_px);
                 let exit_bottom_px = exit_top_px + Dp(*exit_h_dp).to_px().0;
                 let in_view =
                     exit_bottom_px > padded_visible_start && exit_top_px < padded_visible_end;
@@ -248,9 +261,13 @@ where
                         state_id,
                     ));
                 }
-            } else if let Some(item) = items.get(normal_ptr) {
+            }
+            if visual_i < items.len()
+                && let Some(item) = items.get(visual_i)
+            {
                 let key = get_key(item);
                 let h_dp = item_height.get(item).max(1.0);
+                let data_i = to_data_idx(visual_i);
                 if had_prev && added.contains(&key) {
                     let enter_key = format!("_lz_n:{aid}:{key}");
                     let alpha = animate_f32_from(enter_key, 0.0, 1.0, spec);
@@ -261,19 +278,18 @@ where
                                 .height(Dp(h_dp))
                                 .alpha(alpha),
                         )
-                        .child(item_builder(item.clone(), normal_ptr)),
+                        .child(item_builder(item.clone(), data_i)),
                         key,
                         state_id,
                     ));
                 } else {
                     combined_children.push(scope_item(
                         crate::Box(Modifier::new().fill_max_width().height(Dp(h_dp)))
-                            .child(item_builder(item.clone(), normal_ptr)),
+                            .child(item_builder(item.clone(), data_i)),
                         key,
                         state_id,
                     ));
                 }
-                normal_ptr += 1;
             }
         }
 
@@ -287,7 +303,7 @@ where
                 let key = get_key(item);
                 combined_children.push(scope_item_static(
                     crate::Box(Modifier::new().fill_max_width().height(Dp(h_dp)))
-                        .child(item_builder(item.clone(), i)),
+                        .child(item_builder(item.clone(), to_data_idx(i))),
                     key,
                     state_id,
                 ));
@@ -474,15 +490,19 @@ where
     let item_h_px = Dp(item_height_dp).to_px().0.max(1.0);
     let total_items = items.len();
 
-    let mut row_indices: Vec<usize> = (0..total_items.div_ceil(columns)).collect();
-    if reverse_layout {
-        row_indices.reverse();
-    }
+    let rg_dp = modifier.row_gap.or(modifier.gap).unwrap_or(Dp::ZERO);
+    let row_gap_px = rg_dp.to_px().0.max(0.0);
+    let stride_px = item_h_px + row_gap_px;
 
-    let total_rows = row_indices.len();
-    let content_height_px = total_rows as f32 * item_h_px
-        + content_padding.top.to_px().0
-        + content_padding.bottom.to_px().0;
+    let total_rows = total_items.div_ceil(columns);
+    let content_height_px = if total_rows == 0 {
+        content_padding.top.to_px().0 + content_padding.bottom.to_px().0
+    } else {
+        total_rows as f32 * item_h_px
+            + (total_rows.saturating_sub(1)) as f32 * row_gap_px
+            + content_padding.top.to_px().0
+            + content_padding.bottom.to_px().0
+    };
 
     let padding_top_px = content_padding.top.to_px().0;
     let scroll_offset_px = state.scroll_offset.get();
@@ -490,32 +510,14 @@ where
 
     let padded_offset = scroll_offset_px - padding_top_px;
     let buffer_rows = 2usize;
-    let first_row = ((padded_offset / item_h_px).floor().max(0.0)) as usize;
-    let first_row = first_row.saturating_sub(buffer_rows);
-    let last_row = (((padded_offset + viewport_height_px) / item_h_px).ceil() as usize
+    let first_row = ((padded_offset / stride_px).floor().max(0.0)) as usize;
+    let first_row = first_row.saturating_sub(buffer_rows).min(total_rows);
+    let last_row = (((padded_offset + viewport_height_px) / stride_px).ceil() as usize
         + buffer_rows)
         .min(total_rows);
 
-    let first_item = if reverse_layout {
-        let row_idx = if first_row < row_indices.len() {
-            row_indices[first_row]
-        } else {
-            0
-        };
-        row_idx * columns
-    } else {
-        first_row * columns
-    };
-    let last_item = if reverse_layout {
-        let row_idx = if last_row > 0 && last_row <= row_indices.len() {
-            row_indices[last_row - 1]
-        } else {
-            0
-        };
-        ((row_idx + 1) * columns).min(total_items)
-    } else {
-        (last_row * columns).min(total_items)
-    };
+    let first_item = (first_row * columns).min(total_items);
+    let last_item = (last_row * columns).min(total_items);
 
     let mut children: Vec<View> = Vec::new();
 
@@ -527,17 +529,30 @@ where
     }
 
     if first_row > 0 {
+        let top_px = (first_row as f32 * stride_px - row_gap_px).max(0.0);
         children.push(crate::Box(
             Modifier::new()
                 .fill_max_width()
-                .height(Dp(first_row as f32 * item_height_dp)),
+                .height(Dp(Px(top_px).to_dp().0.max(0.0))),
         ));
     }
 
     if first_item < last_item {
         let state_id = Rc::as_ptr(&state) as usize;
+        let n = items.len();
         let visible_items: Vec<View> = (first_item..last_item)
-            .map(|i| scope_item(item_builder(items[i].clone(), i), i as u64, state_id))
+            .map(|visual_i| {
+                let data_i = if reverse_layout {
+                    n.saturating_sub(1).saturating_sub(visual_i)
+                } else {
+                    visual_i
+                };
+                scope_item(
+                    item_builder(items[data_i].clone(), data_i),
+                    data_i as u64,
+                    state_id,
+                )
+            })
             .collect();
 
         let rg = modifier.row_gap.or(modifier.gap).unwrap_or(Dp::ZERO);
@@ -547,10 +562,12 @@ where
     }
 
     if last_row < total_rows {
+        let skipped = (total_rows - last_row) as f32;
+        let bottom_px = (skipped * stride_px - row_gap_px).max(0.0);
         children.push(crate::Box(
             Modifier::new()
                 .fill_max_width()
-                .height(Dp((total_rows - last_row) as f32 * item_height_dp)),
+                .height(Dp(Px(bottom_px).to_dp().0.max(0.0))),
         ));
     }
 
@@ -685,15 +702,19 @@ where
     let item_w_px = Dp(item_width_dp).to_px().0.max(1.0);
     let total_items = items.len();
 
-    let mut col_indices: Vec<usize> = (0..total_items.div_ceil(rows)).collect();
-    if reverse_layout {
-        col_indices.reverse();
-    }
+    let cg_dp = modifier.column_gap.or(modifier.gap).unwrap_or(Dp::ZERO);
+    let col_gap_px = cg_dp.to_px().0.max(0.0);
+    let stride_px = item_w_px + col_gap_px;
 
-    let total_cols = col_indices.len();
-    let content_width_px = total_cols as f32 * item_w_px
-        + content_padding.left.to_px().0
-        + content_padding.right.to_px().0;
+    let total_cols = total_items.div_ceil(rows);
+    let content_width_px = if total_cols == 0 {
+        content_padding.left.to_px().0 + content_padding.right.to_px().0
+    } else {
+        total_cols as f32 * item_w_px
+            + (total_cols.saturating_sub(1)) as f32 * col_gap_px
+            + content_padding.left.to_px().0
+            + content_padding.right.to_px().0
+    };
 
     let padding_left_px = content_padding.left.to_px().0;
     let scroll_offset_px = state.scroll_offset.get();
@@ -701,32 +722,14 @@ where
 
     let padded_offset = scroll_offset_px - padding_left_px;
     let buffer_cols = 2usize;
-    let first_col = ((padded_offset / item_w_px).floor().max(0.0)) as usize;
-    let first_col = first_col.saturating_sub(buffer_cols);
-    let last_col = (((padded_offset + viewport_width_px) / item_w_px).ceil() as usize
+    let first_col = ((padded_offset / stride_px).floor().max(0.0)) as usize;
+    let first_col = first_col.saturating_sub(buffer_cols).min(total_cols);
+    let last_col = (((padded_offset + viewport_width_px) / stride_px).ceil() as usize
         + buffer_cols)
         .min(total_cols);
 
-    let first_item = if reverse_layout {
-        let col_idx = if first_col < col_indices.len() {
-            col_indices[first_col]
-        } else {
-            0
-        };
-        col_idx * rows
-    } else {
-        first_col * rows
-    };
-    let last_item = if reverse_layout {
-        let col_idx = if last_col > 0 && last_col <= col_indices.len() {
-            col_indices[last_col - 1]
-        } else {
-            0
-        };
-        ((col_idx + 1) * rows).min(total_items)
-    } else {
-        (last_col * rows).min(total_items)
-    };
+    let first_item = (first_col * rows).min(total_items);
+    let last_item = (last_col * rows).min(total_items);
 
     let mut children: Vec<View> = Vec::new();
 
@@ -738,10 +741,11 @@ where
     }
 
     if first_col > 0 {
+        let left_px = (first_col as f32 * stride_px - col_gap_px).max(0.0);
         children.push(crate::Box(
             Modifier::new()
                 .fill_max_height()
-                .width(Dp(first_col as f32 * item_width_dp)),
+                .width(Dp(Px(left_px).to_dp().0.max(0.0))),
         ));
     }
 
@@ -749,12 +753,24 @@ where
         let visible_count = last_item - first_item;
         let total_chunks = visible_count.div_ceil(rows);
         let state_id = Rc::as_ptr(&state) as usize;
+        let n = items.len();
         let chunked: Vec<Vec<View>> = (0..total_chunks)
             .map(|ci| {
                 let start = first_item + ci * rows;
                 let end = (start + rows).min(last_item);
                 (start..end)
-                    .map(|i| scope_item(item_builder(items[i].clone(), i), i as u64, state_id))
+                    .map(|visual_i| {
+                        let data_i = if reverse_layout {
+                            n.saturating_sub(1).saturating_sub(visual_i)
+                        } else {
+                            visual_i
+                        };
+                        scope_item(
+                            item_builder(items[data_i].clone(), data_i),
+                            data_i as u64,
+                            state_id,
+                        )
+                    })
                     .collect()
             })
             .collect();
@@ -779,10 +795,12 @@ where
     }
 
     if last_col < total_cols {
+        let skipped = (total_cols - last_col) as f32;
+        let right_px = (skipped * stride_px - col_gap_px).max(0.0);
         children.push(crate::Box(
             Modifier::new()
                 .fill_max_height()
-                .width(Dp((total_cols - last_col) as f32 * item_width_dp)),
+                .width(Dp(Px(right_px).to_dp().0.max(0.0))),
         ));
     }
 
@@ -919,10 +937,15 @@ where
         user_scroll_enabled,
     } = config;
 
-    let mut items = items;
-    if reverse_layout {
-        items.reverse();
-    }
+    let items = items;
+    let src_len = items.len();
+    let to_data_idx = |visual_i: usize| {
+        if reverse_layout {
+            src_len.saturating_sub(1).saturating_sub(visual_i)
+        } else {
+            visual_i
+        }
+    };
 
     let padding_left_px = content_padding.left.to_px().0;
     let padding_right_px = content_padding.right.to_px().0;
@@ -962,10 +985,14 @@ where
 
     let state_id = Rc::as_ptr(&state) as usize;
     for i in first_with_buffer..last_visible {
-        if let Some(item) = items.get(i) {
+        if i >= src_len {
+            continue;
+        }
+        let data_i = to_data_idx(i);
+        if let Some(item) = items.get(data_i) {
             children.push(scope_item(
-                item_builder(item.clone(), i),
-                i as u64,
+                item_builder(item.clone(), data_i),
+                data_i as u64,
                 state_id,
             ));
         }
@@ -1156,9 +1183,17 @@ where
     let gap_px = gap_dp.to_px().0;
 
     let mut items = items;
+    let src_len = items.len();
     if reverse_layout {
         items.reverse();
     }
+    let to_data_idx = |visual_i: usize| {
+        if reverse_layout {
+            src_len.saturating_sub(1).saturating_sub(visual_i)
+        } else {
+            visual_i
+        }
+    };
 
     let heights_px: Vec<f32> = items
         .iter()
@@ -1236,11 +1271,12 @@ where
                 let vis_bot = vis_top + p.h_px;
                 let in_view =
                     vis_bot > scroll_offset_px && vis_top < scroll_offset_px + viewport_height_px;
+                let data_i = to_data_idx(i);
                 if in_view {
                     col_child.push(scope_item(
                         crate::Box(Modifier::new().fill_max_width().height(Dp(h_dp)))
-                            .child(item_builder(item.clone(), i)),
-                        i as u64,
+                            .child(item_builder(item.clone(), data_i)),
+                        data_i as u64,
                         state_id,
                     ));
                 } else {
@@ -1251,7 +1287,8 @@ where
             }
             prev_y = p.y_px + p.h_px + padding_top_px;
         }
-        let remaining = total_content_height_px - prev_y;
+        let pad_bottom_px = content_padding.bottom.to_px().0;
+        let remaining = total_content_height_px - pad_bottom_px - prev_y;
         if remaining > 0.0 {
             col_child.push(crate::Box(
                 Modifier::new()

@@ -328,7 +328,12 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                     fit,
                 } => {
                     scene.nodes.push(SceneNode::Image {
-                        rect: *r,
+                        rect: repose_core::Rect {
+                            x: r.x + rect.x,
+                            y: r.y + rect.y,
+                            w: r.w,
+                            h: r.h,
+                        },
                         handle: *handle,
                         tint: *tint,
                         fit: *fit,

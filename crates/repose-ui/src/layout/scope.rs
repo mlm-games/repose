@@ -75,22 +75,22 @@ impl LayoutEngine {
         for key in &scope_keys {
             let mut changed = false;
 
-            // Removals from scope tree
             for &node_id in &removed_ids {
                 if node_to_scope.get(&node_id).map(|k| k.as_str()) != Some(key) {
                     continue;
                 }
-                if let Some(st) = self.scope_trees.get_mut(key)
-                    && let Some(tid) = st.taffy_map.remove(&node_id)
-                {
-                    let _ = st.taffy.remove(tid);
-                    st.reverse_map.remove(&tid);
+                if let Some(st) = self.scope_trees.get_mut(key) {
+                    if let Some(tid) = st.taffy_map.remove(&node_id) {
+                        let _ = st.taffy.remove(tid);
+                        st.reverse_map.remove(&tid);
+                        changed = true;
+                    }
                     st.text_cache.remove(&node_id);
-                    changed = true;
                 }
+                self.paint_cache.remove(&node_id);
+                self.view_ids.remove(&node_id);
             }
 
-            // Dirty scope-internal nodes
             for &node_id in &dirty_nodes {
                 if node_to_scope.get(&node_id).map(|k| k.as_str()) != Some(key) {
                     continue;

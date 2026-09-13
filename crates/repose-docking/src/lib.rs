@@ -139,6 +139,8 @@ impl DockState {
     }
 
     pub fn dock_panel(&mut self, target_node_id: u64, zone: DropZone, pid: PanelId) -> bool {
+        let prev = find_panel_home(&self.root, pid);
+        let was_present = prev.is_some();
         self.remove_panel_no_normalize(pid);
 
         let result = match zone {
@@ -149,8 +151,49 @@ impl DockState {
             DropZone::Float => false,
         };
 
+        if !result {
+            if was_present {
+                self.restore_panel(pid, prev);
+            } else {
+                self.remove_panel_no_normalize(pid);
+            }
+        }
         self.normalize();
         result
+    }
+
+    /// Re-insert a panel that a rejected drop removed. Prefers its previous
+    /// home; falls back to the root / first available tabs node.
+    fn restore_panel(&mut self, pid: PanelId, prev: Option<(u64, usize)>) {
+        if let Some((home_id, idx)) = prev
+            && let Some(n) = find_node_mut(&mut self.root, home_id)
+            && let DockKind::Tabs { tabs, active } = &mut n.kind
+        {
+            let at = idx.min(tabs.len());
+            if !tabs.contains(&pid) {
+                tabs.insert(at, pid);
+            }
+            if active.is_none() {
+                *active = Some(pid);
+            }
+            return;
+        }
+        if let DockKind::Tabs { tabs, active } = &mut self.root.kind {
+            if !tabs.contains(&pid) {
+                tabs.push(pid);
+            }
+            if active.is_none() {
+                *active = Some(pid);
+            }
+            return;
+        }
+        if insert_into_first_tabs(&mut self.root, pid) {
+            return;
+        }
+        self.root.kind = DockKind::Tabs {
+            tabs: vec![pid],
+            active: Some(pid),
+        };
     }
 
     fn insert_as_tab(&mut self, target_node_id: u64, pid: PanelId) -> bool {
@@ -180,7 +223,10 @@ impl DockState {
     }
 
     fn insert_as_split(&mut self, target_node_id: u64, zone: DropZone, pid: PanelId) -> bool {
-        // Allocate all IDs upfront before borrowing
+        if find_node(&self.root, target_node_id).is_none() {
+            return false;
+        }
+
         let new_tabs_id = self.alloc_id();
         let new_split_id = self.alloc_id();
 
@@ -1104,6 +1150,43 @@ fn render_split(
             divider,
             Box(Modifier::new().weight(1.0 - ratio)).child(b_view),
         )),
+    }
+}
+
+/// Locate the tabs node holding `pid`: (node id, index within tabs).
+fn find_panel_home(node: &DockNode, pid: PanelId) -> Option<(u64, usize)> {
+    match &node.kind {
+        DockKind::Tabs { tabs, .. } => tabs.iter().position(|t| *t == pid).map(|i| (node.id, i)),
+        DockKind::Split { a, b, .. } => find_panel_home(a, pid).or_else(|| find_panel_home(b, pid)),
+        DockKind::Empty => None,
+    }
+}
+
+fn insert_into_first_tabs(node: &mut DockNode, pid: PanelId) -> bool {
+    match &mut node.kind {
+        DockKind::Tabs { tabs, active } => {
+            if !tabs.contains(&pid) {
+                tabs.push(pid);
+            }
+            if active.is_none() {
+                *active = Some(pid);
+            }
+            true
+        }
+        DockKind::Split { a, b, .. } => {
+            insert_into_first_tabs(a, pid) || insert_into_first_tabs(b, pid)
+        }
+        DockKind::Empty => false,
+    }
+}
+
+fn find_node<'a>(node: &'a DockNode, id: u64) -> Option<&'a DockNode> {
+    if node.id == id {
+        return Some(node);
+    }
+    match &node.kind {
+        DockKind::Split { a, b, .. } => find_node(a, id).or_else(|| find_node(b, id)),
+        _ => None,
     }
 }
 

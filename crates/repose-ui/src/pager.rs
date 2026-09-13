@@ -24,6 +24,113 @@ impl Default for PagerConfig {
     }
 }
 
+/// Shared swipe-gesture state for pagers: start point + per-gesture handling
+/// with axis lock, density-scaled threshold, and cancel safety.
+struct PagerDrag {
+    start: Option<(f32, f32)>,
+}
+
+fn pager_threshold_px() -> f32 {
+    Dp(24.0).to_px().0.max(8.0)
+}
+
+/// Build down/up/cancel handlers for a horizontal pager.
+fn horizontal_handlers(
+    key: &str,
+    state: &Rc<PagerState>,
+) -> (
+    impl Fn(PointerEvent) + Clone + 'static,
+    impl Fn(PointerEvent) + Clone + 'static,
+    impl Fn(PointerEvent) + Clone + 'static,
+) {
+    let drag = Rc::new(remember_with_key(format!("pager_drag:{key}"), || {
+        RefCell::new(PagerDrag { start: None })
+    }));
+    let st = state.clone();
+    let on_down = {
+        let drag = drag.clone();
+        move |e: PointerEvent| {
+            drag.borrow_mut().start = Some((e.position.x, e.position.y));
+        }
+    };
+    let on_up = {
+        let drag = drag.clone();
+        move |e: PointerEvent| {
+            if let Some((sx, sy)) = drag.borrow().start {
+                let dx = e.position.x - sx;
+                let dy = e.position.y - sy;
+                let threshold = pager_threshold_px();
+                if dx.abs() > threshold && dx.abs() > dy.abs() * 1.5 {
+                    if dx < 0.0 {
+                        let next =
+                            (st.current_page.get() + 1).min(st.page_count.get().saturating_sub(1));
+                        st.current_page.set(next);
+                    } else {
+                        let prev = st.current_page.get().saturating_sub(1);
+                        st.current_page.set(prev);
+                    }
+                }
+            }
+            drag.borrow_mut().start = None;
+        }
+    };
+    let on_cancel = {
+        let drag = drag.clone();
+        move |_: PointerEvent| {
+            drag.borrow_mut().start = None;
+        }
+    };
+    (on_down, on_up, on_cancel)
+}
+
+fn vertical_handlers(
+    key: &str,
+    state: &Rc<PagerState>,
+) -> (
+    impl Fn(PointerEvent) + Clone + 'static,
+    impl Fn(PointerEvent) + Clone + 'static,
+    impl Fn(PointerEvent) + Clone + 'static,
+) {
+    let drag = Rc::new(remember_with_key(format!("vpager_drag:{key}"), || {
+        RefCell::new(PagerDrag { start: None })
+    }));
+    let st = state.clone();
+    let on_down = {
+        let drag = drag.clone();
+        move |e: PointerEvent| {
+            drag.borrow_mut().start = Some((e.position.x, e.position.y));
+        }
+    };
+    let on_up = {
+        let drag = drag.clone();
+        move |e: PointerEvent| {
+            if let Some((sx, sy)) = drag.borrow().start {
+                let dx = e.position.x - sx;
+                let dy = e.position.y - sy;
+                let threshold = pager_threshold_px();
+                if dy.abs() > threshold && dy.abs() > dx.abs() * 1.5 {
+                    if dy < 0.0 {
+                        let next =
+                            (st.current_page.get() + 1).min(st.page_count.get().saturating_sub(1));
+                        st.current_page.set(next);
+                    } else {
+                        let prev = st.current_page.get().saturating_sub(1);
+                        st.current_page.set(prev);
+                    }
+                }
+            }
+            drag.borrow_mut().start = None;
+        }
+    };
+    let on_cancel = {
+        let drag = drag.clone();
+        move |_: PointerEvent| {
+            drag.borrow_mut().start = None;
+        }
+    };
+    (on_down, on_up, on_cancel)
+}
+
 /// State for a horizontal pager with page snapping.
 pub struct PagerState {
     current_page: Signal<usize>,
@@ -83,39 +190,7 @@ pub fn HorizontalPager(
     let page_spacing = config.page_spacing;
     let slide_offset = Dp(800.0) + page_spacing;
 
-    // Drag-to-swipe gesture handling
-    let drag_start_x = Rc::new(remember_with_key(format!("pager_drag:{key}"), || {
-        RefCell::new(None::<f32>)
-    }));
-
-    let on_down = {
-        let d = drag_start_x.clone();
-        move |e: PointerEvent| {
-            *d.borrow_mut() = Some(e.position.x);
-        }
-    };
-
-    let st = state.clone();
-    let on_up = {
-        let d = drag_start_x.clone();
-        move |e: PointerEvent| {
-            if let Some(start_x) = *d.borrow() {
-                let delta = e.position.x - start_x;
-                let threshold = 50.0;
-                if delta.abs() > threshold {
-                    if delta < 0.0 {
-                        let next =
-                            (st.current_page.get() + 1).min(st.page_count.get().saturating_sub(1));
-                        st.current_page.set(next);
-                    } else {
-                        let prev = st.current_page.get().saturating_sub(1);
-                        st.current_page.set(prev);
-                    }
-                }
-            }
-            *d.borrow_mut() = None;
-        }
-    };
+    let (on_down, on_up, on_cancel) = horizontal_handlers(&key, &state);
 
     let content = AnimatedContent(
         page,
@@ -140,22 +215,22 @@ pub fn HorizontalPager(
         },
     );
 
-    let gesture = if config.user_scroll_enabled {
+    let pager_mod = Modifier::new().fill_max_size().then(config.modifier);
+    if config.user_scroll_enabled {
         crate::Box(
-            Modifier::new()
-                .fill_max_size()
-                .hit_passthrough()
+            pager_mod
                 .on_pointer_down(on_down)
-                .on_pointer_up(on_up),
+                .on_pointer_up(on_up)
+                .on_pointer_cancel(on_cancel),
         )
+        .with_children(vec![
+            crate::Box(Modifier::new().fill_max_size()).with_children(vec![content]),
+        ])
     } else {
-        crate::Box(Modifier::new().fill_max_size().hit_passthrough())
-    };
-
-    crate::ZStack(Modifier::new().fill_max_size().then(config.modifier)).with_children(vec![
-        crate::Box(Modifier::new().fill_max_size()).with_children(vec![content]),
-        gesture,
-    ])
+        crate::Box(pager_mod).with_children(vec![
+            crate::Box(Modifier::new().fill_max_size()).with_children(vec![content]),
+        ])
+    }
 }
 
 /// A vertically swipable pager with animated page transitions.
@@ -173,38 +248,7 @@ pub fn VerticalPager(
     let page_spacing = config.page_spacing;
     let slide_offset = Dp(600.0) + page_spacing;
 
-    let drag_start_y = Rc::new(remember_with_key(format!("vpager_drag:{key}"), || {
-        RefCell::new(None::<f32>)
-    }));
-
-    let on_down = {
-        let d = drag_start_y.clone();
-        move |e: PointerEvent| {
-            *d.borrow_mut() = Some(e.position.y);
-        }
-    };
-
-    let st = state.clone();
-    let on_up = {
-        let d = drag_start_y.clone();
-        move |e: PointerEvent| {
-            if let Some(start_y) = *d.borrow() {
-                let delta = e.position.y - start_y;
-                let threshold = 50.0;
-                if delta.abs() > threshold {
-                    if delta < 0.0 {
-                        let next =
-                            (st.current_page.get() + 1).min(st.page_count.get().saturating_sub(1));
-                        st.current_page.set(next);
-                    } else {
-                        let prev = st.current_page.get().saturating_sub(1);
-                        st.current_page.set(prev);
-                    }
-                }
-            }
-            *d.borrow_mut() = None;
-        }
-    };
+    let (on_down, on_up, on_cancel) = vertical_handlers(&key, &state);
 
     let content = AnimatedContent(
         page,
@@ -229,20 +273,20 @@ pub fn VerticalPager(
         },
     );
 
-    let gesture = if config.user_scroll_enabled {
+    let pager_mod = Modifier::new().fill_max_size().then(config.modifier);
+    if config.user_scroll_enabled {
         crate::Box(
-            Modifier::new()
-                .fill_max_size()
-                .hit_passthrough()
+            pager_mod
                 .on_pointer_down(on_down)
-                .on_pointer_up(on_up),
+                .on_pointer_up(on_up)
+                .on_pointer_cancel(on_cancel),
         )
+        .with_children(vec![
+            crate::Box(Modifier::new().fill_max_size()).with_children(vec![content]),
+        ])
     } else {
-        crate::Box(Modifier::new().fill_max_size().hit_passthrough())
-    };
-
-    crate::ZStack(Modifier::new().fill_max_size().then(config.modifier)).with_children(vec![
-        crate::Box(Modifier::new().fill_max_size()).with_children(vec![content]),
-        gesture,
-    ])
+        crate::Box(pager_mod).with_children(vec![
+            crate::Box(Modifier::new().fill_max_size()).with_children(vec![content]),
+        ])
+    }
 }

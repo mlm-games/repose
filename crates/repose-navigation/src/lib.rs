@@ -118,20 +118,26 @@ impl<K: NavKey> NavBackStack<K> {
     }
 
     fn replace_inner(&self, key: K) {
-        let mut s = self.inner.borrow_mut();
-        if let Some(last) = s.entries.last_mut() {
-            last.key = key;
-        } else {
+        let saved = {
+            let mut s = self.inner.borrow_mut();
+            s.entries.pop().map(|e| {
+                let saved = e.saved.clone();
+                e.scope.dispose();
+                saved
+            })
+        };
+        {
+            let mut s = self.inner.borrow_mut();
             let id = s.next_id;
             s.next_id += 1;
             s.entries.push(Entry {
                 id,
                 key,
-                saved: Rc::new(SavedState::default()),
+                saved: saved.unwrap_or_else(|| Rc::new(SavedState::default())),
                 scope: Scope::new(),
             });
+            s.last_dir = TransitionDir::Push;
         }
-        s.last_dir = TransitionDir::Push;
     }
 
     pub fn to_json(&self) -> String
@@ -208,8 +214,11 @@ impl<K: NavKey> Navigator<K> {
     pub fn pop_to<F: Fn(&K) -> bool>(&self, pred: F, inclusive: bool) {
         let count = {
             let s = self.stack.inner.borrow();
-            if let Some(idx) = s.entries.iter().rposition(|e| pred(&e.key)) {
-                s.entries.len() - idx - (if inclusive { 0 } else { 1 })
+            if s.entries.is_empty() {
+                0
+            } else if let Some(idx) = s.entries.iter().rposition(|e| pred(&e.key)) {
+                let raw = s.entries.len() - idx - (if inclusive { 0 } else { 1 });
+                raw.min(s.entries.len().saturating_sub(1))
             } else {
                 0
             }

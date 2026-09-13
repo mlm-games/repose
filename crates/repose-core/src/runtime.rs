@@ -1,5 +1,5 @@
 use std::any::Any;
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::panic::Location;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -13,10 +13,11 @@ thread_local! {
     pub static COMPOSER: RefCell<Composer> = RefCell::new(Composer::default());
     static ROOT_SCOPE: RefCell<Option<Scope>> = const { RefCell::new(None) };
 
-    /// A programmatic focus request, set by `FocusRequester::request_focus()` /
-    /// `free_focus()`. Stores the view ID that should receive focus on the next frame,
-    /// or `Some(CLEAR_FOCUS_MARKER)` to clear focus.
-    static FOCUS_REQUEST: Cell<Option<u64>> = const { Cell::new(None) };
+    /// Programmatic focus requests queued by `FocusRequester`. A queue (not a
+    /// single slot) so multiple requests in one frame are honored in order
+    /// instead of last-wins. `CLEAR_FOCUS_MARKER` entries clear focus.
+    static FOCUS_REQUESTS: RefCell<std::collections::VecDeque<u64>> =
+        const { RefCell::new(std::collections::VecDeque::new()) };
 }
 
 /// Sentinel value meaning "clear focus entirely".
@@ -32,7 +33,12 @@ pub fn unique_component_id() -> u64 {
 }
 
 pub fn take_focus_request() -> Option<u64> {
-    FOCUS_REQUEST.with(|r| r.replace(None))
+    FOCUS_REQUESTS.with(|r| r.borrow_mut().pop_front())
+}
+
+/// Drain all queued focus requests in FIFO order.
+pub fn drain_focus_requests() -> Vec<u64> {
+    FOCUS_REQUESTS.with(|r| r.borrow_mut().drain(..).collect())
 }
 
 /// A handle that can programmatically request focus for a widget.
@@ -54,9 +60,12 @@ impl FocusRequester {
     }
 
     /// Request focus for the associated widget on the next frame.
+    /// Queued; unlike the old single-slot behavior, multiple requests in one
+    /// frame are all honored in order. If the target is not laid out yet the
+    /// request is dropped (target assigned during layout/paint).
     pub fn request_focus(&self) {
         if let Some(id) = *self.target.borrow() {
-            FOCUS_REQUEST.with(|r| r.set(Some(id)));
+            FOCUS_REQUESTS.with(|r| r.borrow_mut().push_back(id));
         }
     }
 
@@ -64,7 +73,7 @@ impl FocusRequester {
     /// If the associated widget currently has focus, focus is cleared entirely.
     /// Corresponds to Compose's `freeFocus()`.
     pub fn free_focus(&self) {
-        FOCUS_REQUEST.with(|r| r.set(Some(CLEAR_FOCUS_MARKER)));
+        FOCUS_REQUESTS.with(|r| r.borrow_mut().push_back(CLEAR_FOCUS_MARKER));
     }
 
     /// Request focus for the associated widget on the next frame,
@@ -132,7 +141,7 @@ impl FocusManager {
     /// The `force` parameter is accepted for API compatibility. In repose
     /// focus is always cleared immediately (no keep-focus mechanism).
     pub fn clear_focus(&self, _force: bool) {
-        FOCUS_REQUEST.with(|r| r.set(Some(CLEAR_FOCUS_MARKER)));
+        FOCUS_REQUESTS.with(|r| r.borrow_mut().push_back(CLEAR_FOCUS_MARKER));
     }
 
     /// Spatial focus navigation: find the closest focusable element in a given
@@ -652,10 +661,11 @@ pub struct Scheduler {
     /// Keyed by the scope key string from `scope!`.
     scope_key_to_id: FxHashMap<String, u32>,
     next_scope_id: u32,
-    /// When set, `id()` allocates from this scope's local counter instead of the global counter.
-    /// The returned ID is `(scope_id << 32) | local_id`, which is stable even when
-    /// prior sibling scopes change their view count.
-    current_scope: Option<String>,
+    /// Stack of active scope keys. `id()` allocates from the innermost scope
+    /// so nested `scope!` bodies get stable packed IDs and the outer scope
+    /// resumes correctly after the inner exits (previously `exit_scope` reset
+    /// to `None`, leaking outer IDs into the global sequence).
+    current_scope: Vec<String>,
     /// Per-scope local ID counters. Reset to 0 when a scope re-executes.
     scope_local_counters: FxHashMap<String, u32>,
     pub focused: Option<u64>,
@@ -674,7 +684,7 @@ impl Scheduler {
             next_id: 1,
             scope_key_to_id: FxHashMap::default(),
             next_scope_id: 1,
-            current_scope: None,
+            current_scope: Vec::new(),
             scope_local_counters: FxHashMap::default(),
             focused: None,
             size: (1280, 800),
@@ -684,18 +694,35 @@ impl Scheduler {
     /// Enter a named scope. Subsequent `id()` calls within this scope
     /// will allocate from the scope's local counter, producing packed
     /// `(scope_id << 32) | local_id` values that are stable across sibling
-    /// recompositions.
+    /// recompositions. Nested scopes push; `exit_scope` pops.
     pub fn enter_scope(&mut self, key: &str) {
-        self.current_scope = Some(key.to_string());
-        // Reset local counter -> the body will re-assign IDs fresh
-        self.scope_local_counters.insert(key.to_string(), 0);
-        // Ensure a scope_id exists (lazy allocation)
+        if !self.current_scope.iter().any(|k| k == key) {
+            self.scope_local_counters.insert(key.to_string(), 0);
+        }
+        self.current_scope.push(key.to_string());
         self.get_or_create_scope_id(key);
     }
 
-    /// Exit the current scope. Subsequent `id()` calls return global IDs again.
+    /// Exit the innermost scope. No-op if the stack is empty or the top does
+    /// not match (defensive: never corrupt an outer scope).
     pub fn exit_scope(&mut self) {
-        self.current_scope = None;
+        self.current_scope.pop();
+    }
+
+    /// RAII scope entry: pops on drop, so a panicking scope body cannot leave
+    /// the scheduler stuck in the wrong scope (which previously leaked outer
+    /// IDs into the global sequence).
+    pub fn scope_guard<'a>(&'a mut self, key: &str) -> SchedulerScopeGuard<'a> {
+        self.enter_scope(key);
+        SchedulerScopeGuard { sched: self }
+    }
+
+    /// Panic-safe scope entry that does NOT hold a borrow: the guarded body
+    /// (including nested `scope!`) can keep using the `Scheduler`. Used by
+    /// the `scope!` macro.
+    pub fn scope_guard_raw(&mut self, key: &str) -> SchedulerScopeGuardRaw {
+        let ptr = self as *mut Scheduler;
+        unsafe { SchedulerScopeGuardRaw::enter(ptr, key) }
     }
 
     fn get_or_create_scope_id(&mut self, key: &str) -> u32 {
@@ -710,10 +737,9 @@ impl Scheduler {
     }
 
     pub fn id(&mut self) -> u64 {
-        if let Some(key) = &self.current_scope {
-            // Scope-local ID: packed (scope_id << 32) | local_id
-            let scope_id = self.scope_key_to_id.get(key).copied().unwrap_or(0);
-            let local = self.scope_local_counters.get_mut(key).unwrap();
+        if let Some(key) = self.current_scope.last().cloned() {
+            let scope_id = self.scope_key_to_id.get(&key).copied().unwrap_or(0);
+            let local = self.scope_local_counters.get_mut(&key).unwrap();
             let id = *local;
             *local += 1;
             (scope_id as u64) << 32 | id as u64
@@ -746,7 +772,51 @@ impl Scheduler {
     pub fn ids_used_since(&self, prev_id: u64) -> u32 {
         (self.next_id - prev_id) as u32
     }
+}
 
+/// RAII guard from [`Scheduler::scope_guard`]. Pops the scope on drop.
+pub struct SchedulerScopeGuard<'a> {
+    sched: &'a mut Scheduler,
+}
+
+impl Drop for SchedulerScopeGuard<'_> {
+    fn drop(&mut self) {
+        self.sched.exit_scope();
+    }
+}
+
+/// Panic-safe scope guard that does NOT hold a borrow across the body.
+///
+/// The `scope!` macro uses this (not [`SchedulerScopeGuard`]) so the guarded
+/// body — including nested `scope!` invocations — can keep using the
+/// `Scheduler` normally. At drop time (normal or unwind) no other borrows of
+/// the scheduler are live, since the body has ended.
+pub struct SchedulerScopeGuardRaw {
+    sched: *mut Scheduler,
+}
+
+impl SchedulerScopeGuardRaw {
+    /// # Safety
+    /// `sched` must point to a valid `Scheduler` for the guard's lifetime,
+    /// and the scheduler must not be used while the guard is being dropped
+    /// (guaranteed when the guard outlives the body it protects).
+    pub unsafe fn enter(sched: *mut Scheduler, key: &str) -> Self {
+        unsafe {
+            (*sched).enter_scope(key);
+        }
+        Self { sched }
+    }
+}
+
+impl Drop for SchedulerScopeGuardRaw {
+    fn drop(&mut self) {
+        unsafe {
+            (*self.sched).exit_scope();
+        }
+    }
+}
+
+impl Scheduler {
     pub fn repose<F>(
         &mut self,
         mut build_root: F,

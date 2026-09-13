@@ -245,9 +245,9 @@ macro_rules! scope {
 
             let _prev_cursor = $crate::runtime::COMPOSER.with(|c| c.borrow().cursor);
 
-            $s.enter_scope(_key);
+            let _sched_guard = $s.scope_guard_raw(_key);
             let mut _result = $crate::scope_cache::with_scope_key(_key, || $body);
-            $s.exit_scope();
+            drop(_sched_guard);
 
             _result.modifier.repaint_boundary = true;
             _result.scope_key = Some(_key.to_string());
@@ -272,9 +272,9 @@ macro_rules! scope {
 
             let _prev_cursor = $crate::runtime::COMPOSER.with(|c| c.borrow().cursor);
 
-            $s.enter_scope(_key);
+            let _sched_guard = $s.scope_guard_raw(_key);
             let mut _result = $crate::scope_cache::with_scope_key(_key, || $body);
-            $s.exit_scope();
+            drop(_sched_guard);
 
             _result.modifier.repaint_boundary = true;
             _result.scope_key = Some(_key.to_string());

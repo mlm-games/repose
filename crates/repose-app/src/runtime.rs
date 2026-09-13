@@ -12,7 +12,6 @@ use repose_core::runtime::{Frame, Scheduler};
 use repose_core::shortcuts::DragAction;
 use repose_core::{
     CursorIcon, Dp, HitRegion, Interaction, RenderContext, Scene, Sp, Vec2, View, request_frame,
-    take_focus_request,
 };
 use repose_ui::textfield::{
     TF_FONT_SP, TextFieldState, TextMeasureConfig, caret_xy_for_byte, measure_text,
@@ -821,6 +820,12 @@ impl ReposeRuntime {
         } else {
             self.hit_path = None;
             if self.ime_preedit {
+                for state_rc in self.textfield_states.values() {
+                    let mut st = state_rc.borrow_mut();
+                    if st.composition.is_some() {
+                        st.commit_composition(String::new());
+                    }
+                }
                 self.ime_preedit = false;
             }
             self.sched.focused = None;
@@ -961,6 +966,15 @@ impl ReposeRuntime {
 
     /// Cancel pointer state (focus lost, cursor left window, etc.).
     pub fn handle_pointer_cancel(&mut self) {
+        if let Some(f) = &self.frame_cache
+            && let Some(cid) = self.capture_id
+            && is_tf_hit(f, cid)
+        {
+            let key = tf_key_of(f, cid);
+            if let Some(state_rc) = self.textfield_states.get(&key) {
+                state_rc.borrow_mut().end_drag();
+            }
+        }
         self.long_press = None;
         self.last_up = None;
         dnd::handle_drag_action(&DragAction::Cancel);
@@ -2186,12 +2200,12 @@ pub fn compose_frame_inner_with_ancestors<F>(
 where
     F: FnMut(&mut Scheduler) -> View,
 {
-    if let Some(requested_id) = take_focus_request() {
+    for requested_id in repose_core::runtime::drain_focus_requests() {
         if requested_id == repose_core::runtime::CLEAR_FOCUS_MARKER {
             sched.focused = None;
-        } else {
-            sched.focused = Some(requested_id);
+            continue;
         }
+        sched.focused = Some(requested_id);
     }
 
     set_density_default(Density { scale });
@@ -2445,6 +2459,8 @@ fn dispatch_scroll(
     delta: Vec2,
     scroll_capture: Option<u64>,
 ) -> (bool, Option<u64>) {
+    let mut remaining = delta;
+    let mut first_consumer: Option<u64> = None;
     if let Some(cid) = scroll_capture
         && let Some(cb) = frame
             .hit_regions
@@ -2452,33 +2468,44 @@ fn dispatch_scroll(
             .find(|h| h.id == cid)
             .and_then(|h| h.on_scroll.as_ref())
     {
-        cb(delta);
-        return (true, Some(cid));
+        let leftover = cb(delta);
+        if (delta.x - leftover.x).abs() > 0.001 || (delta.y - leftover.y).abs() > 0.001 {
+            first_consumer = Some(cid);
+        }
+        remaining = leftover;
+        if remaining.x.abs() <= 0.001 && remaining.y.abs() <= 0.001 {
+            return (true, Some(cid));
+        }
     }
-    // Captured region vanished from the tree -> fall through and re-pick.
 
-    let mut remaining = delta;
+    let mut consumed_any = first_consumer.is_some();
     for hit in frame
         .hit_regions
         .iter()
         .rev()
         .filter(|h| h.rect.contains(pos))
+        .filter(|h| Some(h.id) != scroll_capture)
     {
+        if remaining.x.abs() <= 0.001 && remaining.y.abs() <= 0.001 {
+            break;
+        }
         if let Some(cb) = &hit.on_scroll {
             let before = remaining;
             let leftover = cb(before);
-            let consumed =
-                (before.x - leftover.x).abs() > 0.001 || (before.y - leftover.y).abs() > 0.001;
-            if consumed {
-                return (true, Some(hit.id));
+            if (before.x - leftover.x).abs() > 0.001 || (before.y - leftover.y).abs() > 0.001 {
+                consumed_any = true;
+                if first_consumer.is_none() {
+                    first_consumer = Some(hit.id);
+                }
             }
             remaining = leftover;
-            if remaining.x.abs() <= 0.001 && remaining.y.abs() <= 0.001 {
-                break;
-            }
         }
     }
-    (false, scroll_capture)
+    if consumed_any {
+        (true, first_consumer)
+    } else {
+        (false, None)
+    }
 }
 
 #[cfg(test)]
