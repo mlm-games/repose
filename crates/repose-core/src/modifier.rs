@@ -1681,10 +1681,22 @@ impl Modifier {
         self.grid_row_span = Some(row_span);
         self
     }
+    /// Take this node out of flow: siblings lay out as if it were absent
+    /// and this node is positioned by [`offset`](Self::offset) instead.
+    ///
+    /// Load-bearing for hand-placed overlays: without it taffy ignores the
+    /// offsets and every absolutely-placed sibling stacks at the same
+    /// in-flow spot. Pair with `.size(...)` + `.offset(Some(x), Some(y),
+    /// None, None)` to pin a box at an exact point (e.g. world-anchored
+    /// actor surfaces over a viewport).
     pub fn absolute(mut self) -> Self {
         self.position_type = Some(PositionType::Absolute);
         self
     }
+    /// In-flow offsets are ignored unless paired with
+    /// [`absolute`](Self::absolute): taffy only applies these to
+    /// out-of-flow nodes. Each side is independent; `None` leaves that
+    /// edge to default flow placement.
     pub fn offset(
         mut self,
         left: Option<Dp>,

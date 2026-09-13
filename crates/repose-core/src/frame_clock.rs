@@ -7,6 +7,11 @@ thread_local! {
 }
 
 /// Request another frame (coalesced). Sets both compose and present flags.
+///
+/// Repose only composes/presents on demand: a static tree paints once and
+/// then idles. Anything that animates or polls external state (playback
+/// ticking, sim stepping, viewport mounts) must call this every frame it
+/// wants a follow-up.
 #[inline]
 pub fn request_frame() {
     NEEDS_COMPOSE.set(true);

@@ -157,6 +157,50 @@ impl DrawScope {
     pub fn pop_vector_clip(&mut self) {
         self.commands.push(DrawCommand::PopVectorClip);
     }
+
+    /// Push a 2D transform for subsequent draws (rotation, mirroring,
+    /// extra translation). Composes with the canvas offset and any outer
+    /// scene-graph transforms; the GPU backend rotates in-shader
+    /// (`fwd_mat`), so rotated rects stay crisp — no AABB fallback needed.
+    /// Balance with [`pop_transform`](Self::pop_transform).
+    pub fn push_transform(&mut self, transform: Transform) {
+        self.commands.push(DrawCommand::PushTransform { transform });
+    }
+
+    /// Pop the most recent [`push_transform`](Self::push_transform).
+    pub fn pop_transform(&mut self) {
+        self.commands.push(DrawCommand::PopTransform);
+    }
+
+    /// Draw a rect rotated `rotation` radians about `pivot` (canvas-local
+    /// px, y-down positive-clockwise like the rest of the canvas API).
+    /// Exact on canvas and GPU alike: the rotation rides the transform
+    /// stack instead of baking an axis-aligned bounding box.
+    pub fn draw_rect_rotated(
+        &mut self,
+        rect: Rect,
+        color: Color,
+        radius: Px,
+        rotation: f32,
+        pivot: Vec2,
+    ) {
+        if !rotation.is_finite() || rotation.abs() < 1e-7 {
+            self.draw_rect(rect, color, radius);
+            return;
+        }
+        let mut spin = Transform::identity();
+        spin.rotate = rotation;
+        let mut t = Transform::translate(pivot.x, pivot.y)
+            .combine(&spin)
+            .combine(&Transform::translate(-pivot.x, -pivot.y));
+        // Pivot is baked into the rows above, and zero the origin so pivot-aware
+        // consumers never apply it twice (same shape the paint bake emits).
+        t.origin_x = 0.0;
+        t.origin_y = 0.0;
+        self.push_transform(t);
+        self.draw_rect(rect, color, radius);
+        self.pop_transform();
+    }
 }
 
 fn translate_mesh_data(m: &VectorMeshData, dx: f32, dy: f32) -> VectorMeshData {
