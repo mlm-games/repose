@@ -2,9 +2,9 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use repose_core::{
-    AlignItems, Color, CursorIcon, Dp, DpOffset, DpSize, JustifyContent, Modifier, PaddingValues,
-    PointerButton, PointerEvent, PointerEventKind, Px, Rect, Size, Sp, StateColors, Vec2, View,
-    request_frame,
+    AlignItems, Color, CursorIcon, Dp, DpOffset, DpSize, JustifyContent, Modifier,
+    MutableInteractionSource, PaddingValues, PointerButton, PointerEvent, PointerEventKind, Px,
+    Rect, Size, Sp, StateColors, Vec2, View, request_frame,
 };
 
 use crate::{Box, Column, Row, Spacer, Text, TextStyle, ViewExt, ZStack};
@@ -527,6 +527,11 @@ pub fn WindowHost(
                     let on_click = action.on_click.clone();
                     let focus_state = focus_state.clone();
                     let action_id = window_id;
+                    let action_src: Rc<MutableInteractionSource> =
+                        repose_core::remember_with_key(
+                            format!("window:action_src:{window_id}:{idx}"),
+                            MutableInteractionSource::new,
+                        );
                     action_views.push(
                         Row(Modifier::new()
                             .padding_values(PaddingValues {
@@ -539,6 +544,7 @@ pub fn WindowHost(
                             .clip_rounded(Dp(10.0))
                             .justify_content(JustifyContent::CENTER)
                             .align_items(AlignItems::CENTER)
+                            .interaction_source(&action_src)
                             .state_colors(StateColors {
                                 default: th.surface_variant,
                                 hovered: th.on_surface.with_alpha(16),
@@ -567,6 +573,11 @@ pub fn WindowHost(
                 if close_enabled {
                     let close_id = window_id;
                     let focus_state = focus_state.clone();
+                    let close_src: Rc<MutableInteractionSource> =
+                        repose_core::remember_with_key(
+                            format!("window:close_src:{window_id}"),
+                            MutableInteractionSource::new,
+                        );
                     action_views.push(
                         Row(Modifier::new()
                             .width(Dp(20.0))
@@ -574,6 +585,7 @@ pub fn WindowHost(
                             .clip_rounded(Dp(10.0))
                             .justify_content(JustifyContent::CENTER)
                             .align_items(AlignItems::CENTER)
+                            .interaction_source(&close_src)
                             .state_colors(StateColors {
                                 default: th.error.with_alpha(20),
                                 hovered: th.error.with_alpha(40),
@@ -595,7 +607,7 @@ pub fn WindowHost(
                             .z_index(1.0)
                             .key(key_for(window_id, 90)))
                         .child(
-                            Text("")
+                            Text("\u{E5CD}")
                                 .font_family("Material Symbols Outlined")
                                 .size(Sp(14.0))
                                 .color(th.error),

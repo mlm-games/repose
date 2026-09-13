@@ -132,6 +132,7 @@ pub fn screen() -> View {
             Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child((
                 Button(Modifier::new(), { let x = long_text.clone(); move || x.update(|v| *v = !*v) }, ButtonConfig::default(), || Text("Toggle Long Text")),
                 Box(Modifier::new()
+                    .fill_max_width()
                     .animate_content_size(AnimationSpec::spring_gentle())
                     .background(theme().surface_container_highest)
                     .clip_rounded(Dp(12.0))

@@ -548,6 +548,7 @@ impl ReposeRuntime {
     /// Process a pointer-move event. Returns cursor suggestion.
     pub fn handle_pointer_move(&mut self, pos: Vec2) -> PointerMoveResult {
         self.mouse_pos_px = (pos.x, pos.y);
+        self.pointer_inside = true;
 
         if dnd::handle_drag_action(&DragAction::Move {
             position: pos,
