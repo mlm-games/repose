@@ -46,6 +46,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 /// with [`DepthComposite::begin_scene`], composited back with
 /// [`DepthComposite::blit`]. Textures recreate on format/sample/size
 /// change; buffer contents are per-frame and never retained.
+#[derive(Default)]
 pub struct DepthComposite {
     targets: HashMap<String, Target>,
 }
@@ -63,14 +64,6 @@ struct Target {
     blit_bind: wgpu::BindGroup,
 }
 
-impl Default for DepthComposite {
-    fn default() -> Self {
-        Self {
-            targets: HashMap::new(),
-        }
-    }
-}
-
 impl DepthComposite {
     /// Fetch the composite store from callback resources (creating it on
     /// first use). One store per render pass; ids disambiguate viewports.
@@ -81,6 +74,7 @@ impl DepthComposite {
     /// Ensure the offscreen target for `id` at `w`x`h` (recreates on
     /// format/sample/size change, like every other viewport-owned target).
     /// Dimensions clamp to >= 1.
+    #[allow(clippy::too_many_arguments)] // (device, screen, id, w, h) — mirrors ensure_resources conventions
     pub fn ensure(
         &mut self,
         device: &wgpu::Device,
