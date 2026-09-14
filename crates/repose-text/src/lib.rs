@@ -646,6 +646,9 @@ pub(crate) fn clear_caches_for_fallback() {
     {
         g.clear_both();
     }
+    if let Ok(mut eng) = engine().lock() {
+        eng.ascent_cache.clear();
+    }
     bump_frame_for_fallback();
 }
 
@@ -1830,7 +1833,19 @@ pub fn ellipsize_line(
 
 fn ellipsis_width(px: f32, letter_spacing: f32) -> f32 {
     static ELLIP_W_LRU: OnceLock<Mutex<Lru<(u32, i32), f32>>> = OnceLock::new();
+    /// Bump when the fallback font set changes: the width cache is keyed only
+    /// by size, so without a generation tag it would serve pre-fallback widths
+    /// forever. `clear_caches_for_fallback` can't reach this function-local
+    /// static, so the generation check below does the invalidation instead.
+    static ELLIP_W_GEN: AtomicU64 = AtomicU64::new(0);
     let cache = ELLIP_W_LRU.get_or_init(|| Mutex::new(Lru::new(64)));
+    let generation = font_generation();
+    if ELLIP_W_GEN.load(Ordering::Relaxed) != generation {
+        if let Ok(mut g) = cache.lock() {
+            g.clear_both();
+        }
+        ELLIP_W_GEN.store(generation, Ordering::Relaxed);
+    }
     let key = ((px * 100.0) as u32, (letter_spacing * 100.0) as i32);
     if let Some(w) = cache.lock().unwrap().get(&key).copied() {
         return w;

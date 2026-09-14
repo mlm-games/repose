@@ -105,8 +105,13 @@ impl<K: NavKey> NavBackStack<K> {
     fn pop_inner(&self) -> bool {
         let entry = {
             let mut s = self.inner.borrow_mut();
-            s.last_dir = TransitionDir::Pop;
-            s.entries.pop()
+            match s.entries.pop() {
+                Some(e) => {
+                    s.last_dir = TransitionDir::Pop;
+                    Some(e)
+                }
+                None => None,
+            }
         };
 
         if let Some(e) = entry {
@@ -117,15 +122,17 @@ impl<K: NavKey> NavBackStack<K> {
         }
     }
 
+    /// Replace the top entry with a fresh destination.
+    /// The replacement always gets a fresh `SavedState`: carrying the popped
+    /// entry's state across would leak scroll/`remember_saveable` values
+    /// between unrelated destinations.
     fn replace_inner(&self, key: K) {
-        let saved = {
+        if let Some(e) = {
             let mut s = self.inner.borrow_mut();
-            s.entries.pop().map(|e| {
-                let saved = e.saved.clone();
-                e.scope.dispose();
-                saved
-            })
-        };
+            s.entries.pop()
+        } {
+            e.scope.dispose();
+        }
         {
             let mut s = self.inner.borrow_mut();
             let id = s.next_id;
@@ -133,7 +140,7 @@ impl<K: NavKey> NavBackStack<K> {
             s.entries.push(Entry {
                 id,
                 key,
-                saved: saved.unwrap_or_else(|| Rc::new(SavedState::default())),
+                saved: Rc::new(SavedState::default()),
                 scope: Scope::new(),
             });
             s.last_dir = TransitionDir::Push;
@@ -146,39 +153,50 @@ impl<K: NavKey> NavBackStack<K> {
     {
         let s = self.inner.borrow();
         let keys: Vec<&K> = s.entries.iter().map(|e| &e.key).collect();
-        serde_json::to_string(&keys).unwrap_or("[]".into())
+        serde_json::to_string(&keys).unwrap_or_else(|e| {
+            log::error!("NavBackStack::to_json serialization failed: {e}; keeping stack");
+            serde_json::to_string(&keys).unwrap_or("[]".into())
+        })
     }
 
+    /// Restore from `to_json` output. Rejects empty/malformed payloads and
+    /// always keeps at least one entry, so a failed restore can never leave
+    /// the navigator rendering an empty screen with a dead back handler.
     pub fn from_json(&self, json: &str)
     where
         K: for<'de> Deserialize<'de>,
     {
-        if let Ok(keys) = serde_json::from_str::<Vec<K>>(json) {
-            // Dispose all existing scopes before clearing.
-            let old_entries = {
-                let mut s = self.inner.borrow_mut();
-                std::mem::take(&mut s.entries)
-            };
-            for e in old_entries {
-                e.scope.dispose();
-            }
-
-            let mut s = self.inner.borrow_mut();
-            s.entries = Vec::new();
-            for k in keys {
-                let id = s.next_id;
-                s.next_id += 1;
-                s.entries.push(Entry {
-                    id,
-                    key: k,
-                    saved: Rc::new(SavedState::default()),
-                    scope: Scope::new(),
-                });
-            }
-            s.last_dir = TransitionDir::None;
-            drop(s);
-            self.bump();
+        let Ok(keys) = serde_json::from_str::<Vec<K>>(json) else {
+            log::error!("NavBackStack::from_json: malformed payload; keeping current stack");
+            return;
+        };
+        if keys.is_empty() {
+            log::error!("NavBackStack::from_json: empty stack rejected; keeping current stack");
+            return;
         }
+        let old_entries = {
+            let mut s = self.inner.borrow_mut();
+            std::mem::take(&mut s.entries)
+        };
+        for e in old_entries {
+            e.scope.dispose();
+        }
+
+        let mut s = self.inner.borrow_mut();
+        s.entries = Vec::new();
+        for k in keys {
+            let id = s.next_id;
+            s.next_id += 1;
+            s.entries.push(Entry {
+                id,
+                key: k,
+                saved: Rc::new(SavedState::default()),
+                scope: Scope::new(),
+            });
+        }
+        s.last_dir = TransitionDir::None;
+        drop(s);
+        self.bump();
     }
 }
 
@@ -404,4 +422,50 @@ pub fn InstallBackHandler<K: NavKey>(stack: NavBackStack<K>) -> Dispose {
     };
     back::set(Some(Rc::new(move || nav.pop())));
     on_unmount(|| back::set(None))
+}
+
+#[cfg(test)]
+mod nav_state_tests {
+    use super::*;
+
+    #[test]
+    fn from_json_rejects_empty_and_malformed() {
+        repose_core::runtime::ComposeGuard::begin();
+        let stack = remember_back_stack("home".to_string());
+        let _hold = repose_core::runtime::ComposeGuard::begin();
+        let nav = Navigator {
+            stack: (*stack).clone(),
+        };
+        nav.push("details".to_string());
+        assert_eq!(nav.stack.size(), 2);
+
+        nav.stack.from_json("[]");
+        assert_eq!(nav.stack.size(), 2, "empty restore must keep the stack");
+
+        nav.stack.from_json("not json");
+        assert_eq!(nav.stack.size(), 2, "malformed restore must keep the stack");
+
+        nav.stack.from_json("[\"only\"]");
+        assert_eq!(nav.stack.size(), 1);
+    }
+
+    #[test]
+    fn replace_does_not_carry_saved_state() {
+        repose_core::runtime::ComposeGuard::begin();
+        let stack = remember_back_stack("home".to_string());
+        let _hold = repose_core::runtime::ComposeGuard::begin();
+        let nav = Navigator {
+            stack: (*stack).clone(),
+        };
+        {
+            let (_, _, saved, _) = nav.stack.top().expect("top");
+            saved.set_result("slot", 42u32);
+        }
+        nav.replace("other".to_string());
+        let (_, _, saved, _) = nav.stack.top().expect("top");
+        assert!(
+            saved.take_result::<u32>("slot").is_none(),
+            "replace must start with fresh SavedState"
+        );
+    }
 }

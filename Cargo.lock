@@ -3027,6 +3027,7 @@ dependencies = [
 name = "repose-navigation"
 version = "0.30.4"
 dependencies = [
+ "log",
  "repose-core",
  "repose-ui",
  "serde",

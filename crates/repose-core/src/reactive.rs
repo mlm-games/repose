@@ -188,9 +188,24 @@ pub fn signal_changed(sig: SignalId) {
                     new_g.running.remove(&obs);
                     g = new_g;
                 }
-                Err(_) => {
-                    log::error!("GRAPH poisoned after observer {obs} panic - resetting");
-                    *gcell.borrow_mut() = DepGraph::default();
+                Err(e) => {
+                    // Re-entrant contention: the graph is borrowed elsewhere
+                    // (e.g. a nested `signal_changed` holding a shared borrow).
+                    log::error!(
+                        "reactive: dependency graph busy after observer {obs}; deferring {} remaining observer(s): {e}",
+                        queue.len()
+                    );
+                    PENDING_SET.with(|set_cell| {
+                        PENDING_OBSERVERS.with(|q| {
+                            let mut set = set_cell.borrow_mut();
+                            let mut pending_q = q.borrow_mut();
+                            for queued in queue.drain(..) {
+                                if set.insert(queued) {
+                                    pending_q.push_back(queued);
+                                }
+                            }
+                        });
+                    });
                     break;
                 }
             }
@@ -245,8 +260,10 @@ pub fn new_observer(f: impl Fn() + 'static) -> ObserverId {
 pub fn remove_observer(id: ObserverId) {
     let _ = GRAPH.try_with(|g| match g.try_borrow_mut() {
         Ok(mut g) => g.remove_observer(id),
-        Err(_) => {
-            log::error!("reactive: dependency graph busy while removing observer {id}; observer retained");
+        Err(e) => {
+            log::error!(
+                "reactive: dependency graph busy while removing observer {id}, observer retained: {e}"
+            );
         }
     });
 }

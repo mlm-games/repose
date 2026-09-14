@@ -403,9 +403,32 @@ impl MonoSpline {
     /// Build a spline from keyframe times and values.
     /// Times must be sorted ascending and have at least 2 entries.
     /// Values must have the same length as times.
+    ///
+    /// Degenerate segments (duplicate/unsorted/non-finite times) are coerced
+    /// to zero slope instead of producing `inf`/`NaN` tangents: dividing by a
+    /// zero `dt` in `f32` arithmetic does not panic, it silently corrupts every
+    /// later evaluation, so the constructor sanitizes here.
     pub fn new(times: Vec<f32>, values: Vec<f32>) -> Self {
         assert!(times.len() >= 2, "MonoSpline requires at least 2 keyframes");
         assert_eq!(times.len(), values.len());
+        assert!(
+            times.iter().all(|t| t.is_finite()),
+            "MonoSpline times must be finite"
+        );
+        assert!(
+            values.iter().all(|v| v.is_finite()),
+            "MonoSpline values must be finite"
+        );
+        if cfg!(debug_assertions) {
+            for w in times.windows(2) {
+                if !(w[1] > w[0]) {
+                    log::warn!(
+                        "MonoSpline: times not strictly ascending; degenerate segments coerce to zero slope"
+                    );
+                    break;
+                }
+            }
+        }
         let n = times.len();
         let mut tangents = vec![0.0; n];
 
@@ -413,7 +436,12 @@ impl MonoSpline {
         let mut slopes = vec![0.0; n.saturating_sub(1)];
         for i in 0..n - 1 {
             let dt = times[i + 1] - times[i];
-            slopes[i] = (values[i + 1] - values[i]) / dt;
+            if dt > 0.0 {
+                slopes[i] = (values[i + 1] - values[i]) / dt;
+            } else {
+                log::warn!("MonoSpline: non-positive dt at segment {i}; coercing slope to 0");
+                slopes[i] = 0.0;
+            }
         }
 
         // Tangents at interior knots: average of adjacent slopes
@@ -1041,23 +1069,22 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
             self.update_tween()
         };
 
-        if !still
-            && let Some(repeat) = &self.spec.repeat {
-                let maxed = repeat
-                    .iterations
-                    .is_some_and(|max| self.iteration + 1 >= max);
-                if !maxed {
-                    self.iteration += 1;
-                    if repeat.reverse {
-                        std::mem::swap(&mut self.start, &mut self.target);
-                    }
-                    self.progress = 0.0;
-                    self.velocity = 0.0;
-                    self.start_time = Some(now());
-                    self.last_update = None;
-                    still = true;
+        if !still && let Some(repeat) = &self.spec.repeat {
+            let maxed = repeat
+                .iterations
+                .is_some_and(|max| self.iteration + 1 >= max);
+            if !maxed {
+                self.iteration += 1;
+                if repeat.reverse {
+                    std::mem::swap(&mut self.start, &mut self.target);
                 }
+                self.progress = 0.0;
+                self.velocity = 0.0;
+                self.start_time = Some(now());
+                self.last_update = None;
+                still = true;
             }
+        }
 
         still
     }
@@ -1257,5 +1284,29 @@ mod tests {
         // Bounce out reaches its first apex (1.0) at t = 1/2.75, then settles.
         assert!((BounceOut.interpolate(1.0 / 2.75) - 1.0).abs() < 1e-4);
         assert!((BounceOut.interpolate(0.5) - 0.765625).abs() < 1e-4);
+    }
+
+    #[test]
+    fn monospline_duplicate_times_stay_finite() {
+        // Regression: duplicate times divided by zero dt, yielding inf/NaN
+        // tangents that silently corrupted every later evaluation.
+        let s = MonoSpline::new(vec![0.0, 0.5, 0.5, 1.0], vec![0.0, 1.0, 1.0, 2.0]);
+        for t in [0.0, 0.25, 0.5, 0.75, 1.0] {
+            assert!(s.evaluate(t).is_finite(), "t={t}");
+        }
+    }
+
+    #[test]
+    fn scroll_offset_sanitizes_nan() {
+        // Regression: `off.clamp(0,max)` propagates NaN into the signal.
+        let st = crate::scroll::ScrollState::new();
+        st.set_viewport_height(100.0);
+        st.set_content_height(1000.0);
+        st.set_offset(f32::NAN);
+        assert!(st.get().is_finite());
+        assert_eq!(st.get(), 0.0);
+        let leftover = st.scroll_immediate(f32::NAN);
+        assert!(leftover.is_finite());
+        assert!(st.get().is_finite());
     }
 }

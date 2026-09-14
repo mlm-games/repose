@@ -1324,7 +1324,7 @@ impl CollapsiblePanelState {
             side,
             open: true,
             open_t: 1.0,
-            size_px,
+            size_px: size_px.clamp(120.0, 800.0),
             min_size_px: 120.0,
             max_size_px: 800.0,
             separator_px: 4.0,
@@ -1405,12 +1405,15 @@ impl CollapsiblePanelState {
             DockSide::Left | DockSide::Top => pointer_along_axis - a.start_pointer,
             DockSide::Right | DockSide::Bottom => a.start_pointer - pointer_along_axis,
         };
-        let size = (a.start_size + delta).max(0.0);
+        let size = (a.start_size + delta).clamp(0.0, self.max_size_px * 2.0);
         self.drag_size_px = Some(size);
         if size < self.min_size_px * 0.5 {
             self.open = false;
-            // Reflect the collapse progress so the panel visibly folds shut.
-            self.open_t = (size / self.size_px).clamp(0.0, 1.0);
+            self.open_t = if self.size_px > 0.0 {
+                (size / self.size_px).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
         } else {
             self.open = true;
             self.open_t = 1.0;

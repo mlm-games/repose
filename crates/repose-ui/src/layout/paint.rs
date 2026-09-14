@@ -1261,10 +1261,12 @@ impl LayoutEngine {
                                 url: info.url.clone(),
                                 font_variation_settings: info.font_variation_settings.clone(),
                             });
-                            // Create hit region for clickable links
                             if let Some(url) = &info.url {
-                                let link_id =
-                                    view_id ^ ((info.start as u64) << 32) | (info.end as u64);
+                                let mut link_hash = view_id.wrapping_mul(0x9E3779B97F4A7C15);
+                                link_hash ^= (info.start as u64).wrapping_mul(0xBF58476D1CE4E5B9);
+                                link_hash ^= (info.end as u64).wrapping_mul(0x94D049BB133111EB);
+                                link_hash ^= link_hash >> 29;
+                                let link_id = if link_hash == 0 { 1 } else { link_hash };
                                 let link_url = url.clone();
                                 hits.push(HitRegion {
                                     id: link_id,

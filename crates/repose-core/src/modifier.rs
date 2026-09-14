@@ -99,23 +99,32 @@ macro_rules! impl_option_fields {
                     fill_max, fill_max_w, fill_max_h,
                     background, state_colors, state_elevation, border,
                     flex_grow, flex_shrink, flex_basis, flex_wrap, flex_dir,
+                    flex_line_count,
                     gap, row_gap, column_gap,
                     align_self, justify_content, align_items_container, align_content,
+                    baseline_align,
                     clip_rounded, clip_rect, overflow, render_z_index,
                     on_scroll,
                     nested_scroll_connection,
                     scroll,
                     on_pointer_down, on_pointer_move, on_pointer_up,
+                    on_pointer_cancel,
                     on_pointer_enter, on_pointer_leave,
                     on_click, on_double_click, on_long_click,
+                    on_globally_positioned, on_size_changed,
+                    on_key_event, on_preview_key_event,
                     semantics, alpha, transform,
                     grid, grid_col_span, grid_row_span,
                     position_type,
                     offset_left, offset_right, offset_top, offset_bottom,
                     margin_left, margin_right, margin_top, margin_bottom,
                     aspect_ratio, intrinsic_width, intrinsic_height,
+                    fit_content_width, fit_content_height,
+                    contain,
                     painter,
                     paint_callback,
+                    layout,
+                    blur, graphics_layer, shadow,
                     on_drag_start, on_drag_end, on_drag_enter, on_drag_over, on_drag_leave, on_drop,
                     drag_preview,
                     on_action, cursor, animate_content_size, focus_requester, on_focus_changed,
@@ -126,15 +135,17 @@ macro_rules! impl_option_fields {
                     propagate_min, focus_group,
                 );
 
+                // `flex_basis_content` is a plain bool flag: OR like the rest.
+                self.flex_basis_content |= other.flex_basis_content;
+
                 if let Some(f) = other.focusable {
                     self.focusable = Some(f);
                 }
                 if other.indication.is_some() {
                     self.indication = other.indication;
                 }
-                if other.z_index != 0.0 {
-                    self.z_index = other.z_index;
-                }
+                // Always overwrite so `then(z_index(0.0))` resets layering.
+                self.z_index = other.z_index;
                 self
             }
         }

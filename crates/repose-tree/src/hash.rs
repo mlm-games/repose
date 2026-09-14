@@ -8,22 +8,35 @@ use repose_core::{
 };
 use std::hash::{Hash, Hasher};
 
+fn hash_view_content_inner(view: &View, hasher: &mut impl Hasher) {
+    hash_view_kind(&view.kind, hasher);
+
+    hash_modifier(&view.modifier, hasher);
+
+    if let Some(sem) = &view.semantics {
+        1u8.hash(hasher);
+        std::mem::discriminant(&sem.role).hash(hasher);
+        sem.label.hash(hasher);
+        sem.focused.hash(hasher);
+        sem.enabled.hash(hasher);
+        sem.selectable_group.hash(hasher);
+        sem.checked.hash(hasher);
+        sem.selected.hash(hasher);
+        sem.value.hash(hasher);
+    } else {
+        0u8.hash(hasher);
+    }
+
+    if let Some(key) = view.modifier.key {
+        key.hash(hasher);
+    }
+}
+
 /// Compute a content hash for a View's immediate properties.
 /// This does NOT include children - that's handled separately.
 pub fn hash_view_content(view: &View) -> u64 {
     let mut hasher = RapidHasher::default();
-
-    // Hash the kind
-    hash_view_kind(&view.kind, &mut hasher);
-
-    // Hash relevant modifier properties
-    hash_modifier(&view.modifier, &mut hasher);
-
-    // Hash user key if present
-    if let Some(key) = view.modifier.key {
-        key.hash(&mut hasher);
-    }
-
+    hash_view_content_inner(view, &mut hasher);
     hasher.finish()
 }
 
@@ -59,7 +72,7 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
             text_decoration,
             letter_spacing,
             line_height,
-            url: _,
+            url,
             font_variation_settings,
         } => {
             font_family.hash(hasher);
@@ -79,6 +92,7 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
             }
             hash_sp(*letter_spacing, hasher);
             hash_sp(*line_height, hasher);
+            url.hash(hasher);
             font_variation_settings.hash(hasher);
             if let Some(annos) = annotations {
                 annos.len().hash(hasher);
@@ -176,9 +190,33 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
         }
         ViewKind::SubcomposeLayout { .. } => {
             // Closure contents are not part of the hash; the content closure
-            // is re-invoked on every reconcile of a SubcomposeLayout.
         }
-        _ => {} // Future ViewKind variants
+        ViewKind::Expander {
+            expanded,
+            on_toggle,
+        } => {
+            expanded.hash(hasher);
+            on_toggle.is_some().hash(hasher);
+        }
+        ViewKind::TreeRow {
+            depth,
+            has_children,
+            is_expanded,
+            is_selected,
+            on_toggle,
+            on_select,
+        } => {
+            depth.hash(hasher);
+            has_children.hash(hasher);
+            is_expanded.hash(hasher);
+            is_selected.hash(hasher);
+            on_toggle.is_some().hash(hasher);
+            on_select.is_some().hash(hasher);
+        }
+        _ => {
+            0x9E3779B97F4A7C15u64.hash(hasher);
+            format!("{kind:?}").hash(hasher);
+        }
     }
 }
 
@@ -442,6 +480,9 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
         sem.focused.hash(hasher);
         sem.enabled.hash(hasher);
         sem.selectable_group.hash(hasher);
+        sem.checked.hash(hasher);
+        sem.selected.hash(hasher);
+        sem.value.hash(hasher);
     }
     if let Some(c) = &m.cursor {
         std::mem::discriminant(c).hash(hasher);
@@ -726,5 +767,124 @@ mod tests {
 
         assert_eq!(hash_view_content(&v1), hash_view_content(&v2));
         assert_ne!(hash_view_content(&v1), hash_view_content(&v3));
+    }
+
+    fn text_view_with_url(url: Option<&str>) -> View {
+        View::new(
+            0,
+            ViewKind::Text {
+                text: "link".to_string(),
+                color: Color::WHITE,
+                font_size: 16.0.sp(),
+                soft_wrap: true,
+                max_lines: None,
+                overflow: TextOverflow::Visible,
+                font_family: None,
+                annotations: None,
+                text_align: TextAlign::Unspecified,
+                font_weight: FontWeight::NORMAL,
+                font_style: FontStyle::Normal,
+                text_decoration: TextDecoration::default(),
+                letter_spacing: Sp::ZERO,
+                line_height: Sp::ZERO,
+                url: url.map(|u| std::sync::Arc::from(u)),
+                font_variation_settings: None,
+            },
+        )
+    }
+
+    #[test]
+    fn test_text_url_change_invalidates() {
+        let a = text_view_with_url(None);
+        let b = text_view_with_url(Some("https://a.example"));
+        let c = text_view_with_url(Some("https://b.example"));
+        assert_ne!(hash_view_content(&a), hash_view_content(&b));
+        assert_ne!(hash_view_content(&b), hash_view_content(&c));
+    }
+
+    #[test]
+    fn test_expander_toggle_invalidates() {
+        let open = View::new(
+            0,
+            ViewKind::Expander {
+                expanded: true,
+                on_toggle: None,
+            },
+        );
+        let shut = View::new(
+            0,
+            ViewKind::Expander {
+                expanded: false,
+                on_toggle: None,
+            },
+        );
+        assert_ne!(hash_view_content(&open), hash_view_content(&shut));
+    }
+
+    #[test]
+    fn test_treerow_state_invalidates() {
+        let mk = |expanded: bool, selected: bool| {
+            View::new(
+                0,
+                ViewKind::TreeRow {
+                    depth: 1,
+                    has_children: true,
+                    is_expanded: expanded,
+                    is_selected: selected,
+                    on_toggle: None,
+                    on_select: None,
+                },
+            )
+        };
+        assert_ne!(
+            hash_view_content(&mk(false, false)),
+            hash_view_content(&mk(true, false))
+        );
+        assert_ne!(
+            hash_view_content(&mk(false, false)),
+            hash_view_content(&mk(false, true))
+        );
+    }
+
+    #[test]
+    fn test_semantics_state_invalidates() {
+        let mk = |checked: Option<bool>| {
+            View::new(0, ViewKind::Box).semantics(
+                repose_core::Semantics::new(repose_core::Role::Checkbox)
+                    .with_checked(checked.unwrap_or(false)),
+            )
+        };
+        assert_ne!(
+            hash_view_content(&mk(Some(true))),
+            hash_view_content(&mk(Some(false)))
+        );
+        let m1 = View::new(0, ViewKind::Box).modifier(
+            Modifier::new().semantics(repose_core::Semantics::new(repose_core::Role::Button)),
+        );
+        let m2 = View::new(0, ViewKind::Box).modifier(
+            Modifier::new()
+                .semantics(repose_core::Semantics::new(repose_core::Role::Button).with_value("v")),
+        );
+        assert_ne!(hash_view_content(&m1), hash_view_content(&m2));
+    }
+
+    #[test]
+    fn test_then_preserves_layer_fields() {
+        let base = Modifier::new().width(10.0.dp());
+        let overlay = Modifier::new()
+            .blur(4.0.dp())
+            .shadow_with_color(8.0.dp(), 2.0.dp(), Color::BLACK)
+            .graphics_layer(0.5);
+        let merged = base.then(overlay);
+        assert!(merged.blur.is_some());
+        assert!(merged.shadow.is_some());
+        assert!(merged.graphics_layer.is_some());
+        assert_eq!(
+            Modifier::new()
+                .z_index(5.0)
+                .then(Modifier::new().z_index(0.0))
+                .z_index,
+            0.0
+        );
     }
 }

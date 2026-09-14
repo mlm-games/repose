@@ -144,6 +144,7 @@ impl LazyColumnState {
     pub fn set_offset(&self, off: f32, content_height: f32) {
         let vh = self.viewport_height.get();
         let max_off = (content_height - vh).max(0.0);
+        let off = if off.is_finite() { off } else { 0.0 };
         let clamped = off.clamp(0.0, max_off);
         if (self.scroll_offset.get() - clamped).abs() > 0.5 {
             self.scroll_offset.set(clamped);
@@ -155,7 +156,9 @@ impl LazyColumnState {
         let viewport = self.viewport_height.get();
         let max_offset = (content_height_px - viewport).max(0.0);
 
+        let delta_px = if delta_px.is_finite() { delta_px } else { 0.0 };
         let new_offset = (before + delta_px).clamp(0.0, max_offset);
+        let new_offset = if new_offset.is_finite() { new_offset } else { before };
         self.scroll_offset.set(new_offset);
 
         let consumed = new_offset - before;
@@ -216,6 +219,7 @@ impl LazyGridState {
     pub fn set_offset(&self, off: f32, content_height: f32) {
         let vh = self.viewport_height.get();
         let max_off = (content_height - vh).max(0.0);
+        let off = if off.is_finite() { off } else { 0.0 };
         let clamped = off.clamp(0.0, max_off);
         if (self.scroll_offset.get() - clamped).abs() > 0.5 {
             self.scroll_offset.set(clamped);
@@ -226,7 +230,9 @@ impl LazyGridState {
         let before = self.scroll_offset.get();
         let viewport = self.viewport_height.get();
         let max_offset = (content_height_px - viewport).max(0.0);
+        let delta_px = if delta_px.is_finite() { delta_px } else { 0.0 };
         let new_offset = (before + delta_px).clamp(0.0, max_offset);
+        let new_offset = if new_offset.is_finite() { new_offset } else { before };
         self.scroll_offset.set(new_offset);
         let consumed = new_offset - before;
         self.physics.borrow_mut().record_input(consumed);
@@ -249,6 +255,7 @@ impl LazyGridState {
     pub fn set_offset_x(&self, off: f32, content_width: f32) {
         let vw = self.viewport_width.get();
         let max_off = (content_width - vw).max(0.0);
+        let off = if off.is_finite() { off } else { 0.0 };
         let clamped = off.clamp(0.0, max_off);
         if (self.scroll_offset.get() - clamped).abs() > 0.5 {
             self.scroll_offset.set(clamped);
@@ -259,7 +266,9 @@ impl LazyGridState {
         let before = self.scroll_offset.get();
         let viewport = self.viewport_width.get();
         let max_offset = (content_width_px - viewport).max(0.0);
+        let delta_px = if delta_px.is_finite() { delta_px } else { 0.0 };
         let new_offset = (before + delta_px).clamp(0.0, max_offset);
+        let new_offset = if new_offset.is_finite() { new_offset } else { before };
         self.scroll_offset.set(new_offset);
         let consumed = new_offset - before;
         self.physics.borrow_mut().record_input(consumed);
@@ -312,6 +321,7 @@ impl LazyRowState {
     pub fn set_offset(&self, off: f32, content_width: f32) {
         let vw = self.viewport_width.get();
         let max_off = (content_width - vw).max(0.0);
+        let off = if off.is_finite() { off } else { 0.0 };
         let clamped = off.clamp(0.0, max_off);
         if (self.scroll_offset.get() - clamped).abs() > 0.5 {
             self.scroll_offset.set(clamped);
@@ -322,7 +332,9 @@ impl LazyRowState {
         let before = self.scroll_offset.get();
         let viewport = self.viewport_width.get();
         let max_offset = (content_width_px - viewport).max(0.0);
+        let delta_px = if delta_px.is_finite() { delta_px } else { 0.0 };
         let new_offset = (before + delta_px).clamp(0.0, max_offset);
+        let new_offset = if new_offset.is_finite() { new_offset } else { before };
         self.scroll_offset.set(new_offset);
         let consumed = new_offset - before;
         self.physics.borrow_mut().record_input(consumed);
@@ -375,6 +387,7 @@ impl LazyVerticalStaggeredGridState {
     pub fn set_offset(&self, off: f32, content_height: f32) {
         let vh = self.viewport_height.get();
         let max_off = (content_height - vh).max(0.0);
+        let off = if off.is_finite() { off } else { 0.0 };
         let clamped = off.clamp(0.0, max_off);
         if (self.scroll_offset.get() - clamped).abs() > 0.5 {
             self.scroll_offset.set(clamped);
@@ -385,7 +398,9 @@ impl LazyVerticalStaggeredGridState {
         let before = self.scroll_offset.get();
         let viewport = self.viewport_height.get();
         let max_offset = (content_height_px - viewport).max(0.0);
+        let delta_px = if delta_px.is_finite() { delta_px } else { 0.0 };
         let new_offset = (before + delta_px).clamp(0.0, max_offset);
+        let new_offset = if new_offset.is_finite() { new_offset } else { before };
         self.scroll_offset.set(new_offset);
         let consumed = new_offset - before;
         self.physics.borrow_mut().record_input(consumed);

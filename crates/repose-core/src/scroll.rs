@@ -104,6 +104,19 @@ impl ScrollBinding {
 
 const OVERSHOOT_DECAY_PER_60HZ: f32 = 0.78;
 
+/// Clamp a scroll offset into `[0, max]` with NaN/inf sanitization.
+/// `f32::clamp` propagates NaN, so one bad write would poison the offset
+/// signal permanently (every later frame reads NaN). Central helper so all
+/// `set_offset`/`scroll_immediate` paths stay sanitized long-term.
+fn clamp_offset(off: f32, max: f32) -> f32 {
+    let max = if max.is_finite() { max.max(0.0) } else { 0.0 };
+    if off.is_finite() {
+        off.clamp(0.0, max)
+    } else {
+        0.0
+    }
+}
+
 /// Handles velocity estimation from input deltas, frame-rate-independent
 /// exponential decay, edge snapping, and animation state tracking.
 #[derive(Clone)]
@@ -166,7 +179,11 @@ impl ScrollPhysics {
             self.animating = false;
             return None;
         }
-        let new = (current + vel0 * dt).clamp(min, max);
+        let new = {
+            let raw = current + vel0 * dt;
+            let raw = if raw.is_finite() { raw } else { current };
+            raw.clamp(min, max.max(min))
+        };
         if (new - current).abs() < 0.01 && (current <= min || current >= max) {
             self.vel = 0.0;
             self.animating = false;
@@ -288,10 +305,11 @@ impl ScrollState {
     }
 
     pub fn set_offset(&self, off: f32) {
+        let off = if off.is_finite() { off } else { 0.0 };
         let vh = self.viewport_height.get();
         let ch = self.content_height.get();
         let max_off = (ch - vh).max(0.0);
-        self.scroll_offset.set(off.clamp(0.0, max_off));
+        self.scroll_offset.set(clamp_offset(off, max_off));
     }
 
     fn clamp_offset(&self) {
@@ -313,12 +331,13 @@ impl ScrollState {
     }
 
     pub fn scroll_immediate(&self, dy: f32) -> f32 {
+        let dy = if dy.is_finite() { dy } else { 0.0 };
         let before = self.scroll_offset.get();
         let vh = self.viewport_height.get();
         let ch = self.content_height.get();
         let max_off = (ch - vh).max(0.0);
 
-        let new_off = (before + dy).clamp(0.0, max_off);
+        let new_off = clamp_offset(before + dy, max_off);
         self.scroll_offset.set(new_off);
         let consumed = new_off - before;
         self.physics.borrow_mut().record_input(consumed);
@@ -344,7 +363,7 @@ impl ScrollState {
             self.overscroll.set(os - os.signum() * reduction);
             let remainder = leftover - leftover.signum() * reduction;
             if remainder.abs() > 0.5 {
-                let new_off = (before + remainder).clamp(0.0, max_off);
+                let new_off = clamp_offset(before + remainder, max_off);
                 self.scroll_offset.set(new_off);
                 let consumed = new_off - before;
                 self.physics.borrow_mut().record_input(consumed);
@@ -576,13 +595,13 @@ impl HorizontalScrollState {
 
     pub fn set_offset(&self, off: f32) {
         let max_off = (self.content_width.get() - self.viewport_width.get()).max(0.0);
-        self.scroll_offset.set(off.clamp(0.0, max_off));
+        self.scroll_offset.set(clamp_offset(off, max_off));
     }
 
     fn clamp(&self) {
         let max_off = (self.content_width.get() - self.viewport_width.get()).max(0.0);
         self.scroll_offset.update(|o| {
-            *o = o.clamp(0.0, max_off);
+            *o = clamp_offset(*o, max_off);
         });
     }
 
@@ -591,10 +610,11 @@ impl HorizontalScrollState {
     }
 
     pub fn scroll_immediate(&self, dx: f32) -> f32 {
+        let dx = if dx.is_finite() { dx } else { 0.0 };
         let before = self.scroll_offset.get();
         let max_off = (self.content_width.get() - self.viewport_width.get()).max(0.0);
 
-        let new_off = (before + dx).clamp(0.0, max_off);
+        let new_off = clamp_offset(before + dx, max_off);
         self.scroll_offset.set(new_off);
         let consumed = new_off - before;
         self.physics.borrow_mut().record_input(consumed);
@@ -615,7 +635,7 @@ impl HorizontalScrollState {
             self.overscroll.set(os - os.signum() * reduction);
             let remainder = leftover - leftover.signum() * reduction;
             if remainder.abs() > 0.5 {
-                let new_off = (before + remainder).clamp(0.0, max_off);
+                let new_off = clamp_offset(before + remainder, max_off);
                 self.scroll_offset.set(new_off);
                 let consumed = new_off - before;
                 self.physics.borrow_mut().record_input(consumed);
@@ -836,14 +856,14 @@ impl ScrollStateXY {
     pub fn set_offset_xy(&self, x: f32, y: f32) {
         let max_x = (self.c_w.get() - self.vp_w.get()).max(0.0);
         let max_y = (self.c_h.get() - self.vp_h.get()).max(0.0);
-        self.off_x.set(x.clamp(0.0, max_x));
-        self.off_y.set(y.clamp(0.0, max_y));
+        self.off_x.set(clamp_offset(x, max_x));
+        self.off_y.set(clamp_offset(y, max_y));
     }
     fn clamp(&self) {
         let max_x = (self.c_w.get() - self.vp_w.get()).max(0.0);
         let max_y = (self.c_h.get() - self.vp_h.get()).max(0.0);
-        self.off_x.update(|x| *x = x.clamp(0.0, max_x));
-        self.off_y.update(|y| *y = y.clamp(0.0, max_y));
+        self.off_x.update(|x| *x = clamp_offset(*x, max_x));
+        self.off_y.update(|y| *y = clamp_offset(*y, max_y));
     }
     pub fn get(&self) -> (f32, f32) {
         (self.off_x.get(), self.off_y.get())
@@ -878,7 +898,7 @@ impl ScrollStateXY {
             os.set(os_val - os_val.signum() * reduction);
             let remainder = leftover - leftover.signum() * reduction;
             if remainder.abs() > 0.5 {
-                let new_off = (before + remainder).clamp(0.0, max_off);
+                let new_off = clamp_offset(before + remainder, max_off);
                 off.set(new_off);
                 let consumed = new_off - before;
                 physics.borrow_mut().record_input(consumed);
@@ -898,12 +918,16 @@ impl ScrollStateXY {
         leftover
     }
     pub fn scroll_immediate(&self, d: Vec2) -> Vec2 {
+        let d = Vec2 {
+            x: if d.x.is_finite() { d.x } else { 0.0 },
+            y: if d.y.is_finite() { d.y } else { 0.0 },
+        };
         let max_x = (self.c_w.get() - self.vp_w.get()).max(0.0);
         let max_y = (self.c_h.get() - self.vp_h.get()).max(0.0);
         let (bx, by) = (self.off_x.get(), self.off_y.get());
 
-        let nx = (bx + d.x).clamp(0.0, max_x);
-        let ny = (by + d.y).clamp(0.0, max_y);
+        let nx = clamp_offset(bx + d.x, max_x);
+        let ny = clamp_offset(by + d.y, max_y);
         self.off_x.set(nx);
         self.off_y.set(ny);
         let (cx, cy) = (nx - bx, ny - by);
@@ -990,7 +1014,7 @@ impl ScrollStateXY {
                 px.vel = 0.0;
                 px.animating = false;
             } else {
-                let nx = (bx + px.vel * dt).clamp(0.0, max_x);
+                let nx = clamp_offset(bx + px.vel * dt, max_x);
                 if (nx - bx).abs() < 0.01 && (bx <= 0.0 || bx >= max_x) {
                     px.vel = 0.0;
                     px.animating = false;
@@ -1013,7 +1037,7 @@ impl ScrollStateXY {
                 py.vel = 0.0;
                 py.animating = false;
             } else {
-                let ny = (by + py.vel * dt).clamp(0.0, max_y);
+                let ny = clamp_offset(by + py.vel * dt, max_y);
                 if (ny - by).abs() < 0.01 && (by <= 0.0 || by >= max_y) {
                     py.vel = 0.0;
                     py.animating = false;
