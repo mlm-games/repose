@@ -614,8 +614,7 @@ pub fn register_font_data(bytes: &[u8]) {
             );
         }
     }
-    // Invalidate caches so text with newly available glyphs will relayout
-    clear_caches_for_fallback();
+    clear_caches_for_fallback_in(&mut eng);
     // Notify unresolved registry (mirrors Compose: fontFamilyResolver.preload + onNewFontInstalled)
     #[cfg(target_arch = "wasm32")]
     {
@@ -626,6 +625,21 @@ pub fn register_font_data(bytes: &[u8]) {
 }
 
 pub(crate) fn clear_caches_for_fallback() {
+    clear_lru_caches();
+    if let Ok(mut eng) = engine().lock() {
+        eng.ascent_cache.clear();
+    }
+    bump_frame_for_fallback();
+}
+
+/// Variant for callers that already hold the engine guard.
+pub(crate) fn clear_caches_for_fallback_in(eng: &mut Engine) {
+    clear_lru_caches();
+    eng.ascent_cache.clear();
+    bump_frame_for_fallback();
+}
+
+fn clear_lru_caches() {
     if let Some(c) = METRICS_LRU.get()
         && let Ok(mut g) = c.lock()
     {
@@ -646,10 +660,6 @@ pub(crate) fn clear_caches_for_fallback() {
     {
         g.clear_both();
     }
-    if let Ok(mut eng) = engine().lock() {
-        eng.ascent_cache.clear();
-    }
-    bump_frame_for_fallback();
 }
 
 pub(crate) fn bump_frame_for_fallback() {
