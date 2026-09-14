@@ -260,8 +260,8 @@ pub fn DropdownMenu(
                     // Keep the card on-screen horizontally (cursor menus near
                     // the right edge used to overflow off-window).
                     let menu_w = config.max_width.0.max(config.min_width.0).max(1.0);
-                    let popup_x = (rect.x + config.offset_x.0)
-                        .clamp(hm, (win_w - hm - menu_w).max(hm));
+                    let popup_x =
+                        (rect.x + config.offset_x.0).clamp(hm, (win_w - hm - menu_w).max(hm));
                     let constrained_width = config.max_width;
 
                     let mut adjusted_config = config.clone();

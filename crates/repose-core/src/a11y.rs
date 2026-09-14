@@ -1,5 +1,5 @@
 use accesskit::{
-    Action, ActionHandler, ActionRequest, Node, NodeId, Rect, Role, TreeInfo, TreeId, TreeUpdate,
+    Action, ActionHandler, ActionRequest, Node, NodeId, Rect, Role, TreeId, TreeInfo, TreeUpdate,
 };
 use rustc_hash::FxHashMap;
 use std::hash::{Hash, Hasher};

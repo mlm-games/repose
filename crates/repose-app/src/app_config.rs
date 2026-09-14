@@ -39,11 +39,9 @@ impl Default for AppConfig {
 }
 
 /// Options for the Android runner.
-#[derive(Clone, Copy, Debug)]
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct AndroidOptions {
     pub continuous_redraw: bool,
     pub ime_height_px: Option<f32>,
     pub common: ReposeOptions,
 }
-

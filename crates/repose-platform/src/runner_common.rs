@@ -22,20 +22,22 @@ pub fn on_cursor_moved(
 ) -> Option<repose_core::CursorIcon> {
     let result = rt.handle_pointer_move(pos);
     if let (Some(inspector), Some(f)) = (inspector, &rt.frame_cache)
-        && inspector.hud.inspector_enabled {
-            let hit = f.hit_regions.iter().find(|h| h.rect.contains(pos));
-            let hover_rect = hit.map(|h| h.rect);
-            let hover_info = hit.and_then(|h| {
-                f.semantics_nodes.iter().find(|s| s.id == h.id).map(|s| {
-                    repose_devtools::HoveredInfo {
-                        id: s.id,
-                        role: format!("{:?}", s.role),
-                        label: s.label.clone(),
-                    }
+        && inspector.hud.inspector_enabled
+    {
+        let hit = f.hit_regions.iter().find(|h| h.rect.contains(pos));
+        let hover_rect = hit.map(|h| h.rect);
+        let hover_info = hit.and_then(|h| {
+            f.semantics_nodes
+                .iter()
+                .find(|s| s.id == h.id)
+                .map(|s| repose_devtools::HoveredInfo {
+                    id: s.id,
+                    role: format!("{:?}", s.role),
+                    label: s.label.clone(),
                 })
-            });
-            inspector.hud.set_hovered(hover_rect, hover_info);
-        }
+        });
+        inspector.hud.set_hovered(hover_rect, hover_info);
+    }
     result.cursor
 }
 
@@ -129,20 +131,23 @@ pub fn on_touch(
         && dispatch(Action::Gesture(Gesture::PinchWithCenter {
             delta_scale,
             center,
-        })) {
-            dirty = true;
-        }
+        }))
+    {
+        dirty = true;
+    }
     if let Some(delta) = r.pan
-        && dispatch(Action::Gesture(Gesture::Pan { delta })) {
-            dirty = true;
-        }
+        && dispatch(Action::Gesture(Gesture::Pan { delta }))
+    {
+        dirty = true;
+    }
     if let Some((delta_rotation, center)) = r.rotation
         && dispatch(Action::Gesture(Gesture::Rotate {
             delta_rotation,
             center,
-        })) {
-            dirty = true;
-        }
+        }))
+    {
+        dirty = true;
+    }
     if let Some(right) = r.swipe_right {
         let g = if right {
             Gesture::SwipeRight
@@ -197,10 +202,11 @@ pub fn on_keyboard_input(
         && rt.modifiers.ctrl
         && rt.modifiers.shift
         && key_event.physical_key == PhysicalKey::Code(KeyCode::KeyI)
-        && let Some(inspector) = inspector {
-            inspector.hud.toggle_inspector();
-            return true;
-        }
+        && let Some(inspector) = inspector
+    {
+        inspector.hud.toggle_inspector();
+        return true;
+    }
     let mapped = map_key(key_event.physical_key, &rt.modifiers);
     let ke = winit_key_to_repose(key_event, &mapped, &rt.modifiers);
     rt.handle_key_with_text(&ke, key_event.text.as_deref())

@@ -8,9 +8,9 @@
 //!   XInput-WGI / Web Gamepad API), `gamepad` feature.
 //! - android: [`AndroidBackend`] (non-joystick).
 
-use repose_core::input::{GamepadEvent, GamepadId};
 #[cfg(feature = "gamepad")]
 use repose_core::input::{GamepadAxis, GamepadButton};
+use repose_core::input::{GamepadEvent, GamepadId};
 
 /// Hardware poller: drain pending events since the last call.
 pub trait GamepadBackend {

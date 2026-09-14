@@ -527,11 +527,10 @@ pub fn WindowHost(
                     let on_click = action.on_click.clone();
                     let focus_state = focus_state.clone();
                     let action_id = window_id;
-                    let action_src: Rc<MutableInteractionSource> =
-                        repose_core::remember_with_key(
-                            format!("window:action_src:{window_id}:{idx}"),
-                            MutableInteractionSource::new,
-                        );
+                    let action_src: Rc<MutableInteractionSource> = repose_core::remember_with_key(
+                        format!("window:action_src:{window_id}:{idx}"),
+                        MutableInteractionSource::new,
+                    );
                     action_views.push(
                         Row(Modifier::new()
                             .padding_values(PaddingValues {
@@ -573,11 +572,10 @@ pub fn WindowHost(
                 if close_enabled {
                     let close_id = window_id;
                     let focus_state = focus_state.clone();
-                    let close_src: Rc<MutableInteractionSource> =
-                        repose_core::remember_with_key(
-                            format!("window:close_src:{window_id}"),
-                            MutableInteractionSource::new,
-                        );
+                    let close_src: Rc<MutableInteractionSource> = repose_core::remember_with_key(
+                        format!("window:close_src:{window_id}"),
+                        MutableInteractionSource::new,
+                    );
                     action_views.push(
                         Row(Modifier::new()
                             .width(Dp(20.0))
