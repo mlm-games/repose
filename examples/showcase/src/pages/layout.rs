@@ -21,11 +21,11 @@ pub fn screen() -> View {
         Section("view! macro - declarative syntax", {
             Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child((
                 Hint("Layout built via view! macro instead of nested function calls"),
-                repose_core::View!(Row(Modifier::new().gap(Dp(8.0))).child((
+                repose_core::View!(Row {
                     Box(Modifier::new().size(Dp(32.0), Dp(32.0)).background(theme().primary).clip_rounded(Dp(6.0))),
                     Text("Macro").size(Sp(18.0)).color(theme().on_surface),
                     Box(Modifier::new().size(Dp(32.0), Dp(32.0)).background(theme().tertiary).clip_rounded(Dp(6.0))),
-                ))),
+                }),
                 Hint("Equivalent: Row(Modifier::new().gap(Dp(8.0)).align_items(AlignItems::CENTER)).child(("),
             ))
         }),

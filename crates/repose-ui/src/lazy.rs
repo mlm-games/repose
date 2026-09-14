@@ -1215,11 +1215,13 @@ where
     let buffer = 2;
     let mut first_visible = usize::MAX;
     let mut last_visible = 0usize;
+    let mut any_visible = false;
 
     for (i, p) in placements.iter().enumerate() {
         let item_top = p.y_px + padding_top_px;
         let item_bot = p.y_px + p.h_px + padding_top_px;
         if item_bot > scroll_offset_px && item_top < scroll_offset_px + viewport_height_px {
+            any_visible = true;
             if i < first_visible {
                 first_visible = i;
             }
@@ -1229,15 +1231,14 @@ where
         }
     }
 
-    if first_visible == usize::MAX {
-        first_visible = 0;
-    }
-    if last_visible == 0 && !items.is_empty() {
-        last_visible = items.len().saturating_sub(1);
-    }
-
-    let first_idx = first_visible.saturating_sub(buffer);
-    let last_idx = (last_visible + buffer).min(items.len());
+    let (first_idx, last_idx) = if !any_visible || items.is_empty() {
+        (0, 0)
+    } else {
+        (
+            first_visible.saturating_sub(buffer),
+            (last_visible + buffer).min(items.len()),
+        )
+    };
 
     let state_id = Rc::as_ptr(&state) as usize;
     let mut col_children: Vec<Vec<View>> = (0..columns).map(|_| Vec::new()).collect();

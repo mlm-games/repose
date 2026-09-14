@@ -13,6 +13,17 @@ thread_local! {
     static SIGNAL_DEPTH: Cell<u32> = const { Cell::new(0) };
     static PENDING_OBSERVERS: RefCell<VecDeque<ObserverId>> = const { RefCell::new(VecDeque::new()) };
     static PENDING_SET: RefCell<FxHashSet<ObserverId>> = RefCell::new(FxHashSet::default());
+    /// Observers whose `running` flag could not be cleared because the graph
+    /// was borrowed (`try_borrow_mut` failed in a guard `Drop`). Retried on
+    /// the next drain instead of pinning the observer forever.
+    static PENDING_RUNNING_CLEANUP: RefCell<Vec<ObserverId>> = const { RefCell::new(Vec::new()) };
+    /// Observer removals deferred for the same reason. Retried on next drain.
+    static PENDING_REMOVALS: RefCell<Vec<ObserverId>> = const { RefCell::new(Vec::new()) };
+    /// `CURRENT_OBSERVER` restores deferred for the same reason. Each entry is
+    /// `(finished_observer, prev_value)`; applied only if the cell still holds
+    /// the stale `finished_observer`.
+    static PENDING_OBSERVER_RESTORE: RefCell<Vec<(ObserverId, Option<ObserverId>)>> =
+        const { RefCell::new(Vec::new()) };
 }
 
 #[derive(Default)]
@@ -70,31 +81,59 @@ fn run_observer_guarded(obs: ObserverId, f: Rc<dyn Fn()>) {
     impl Drop for ObserverGuard {
         fn drop(&mut self) {
             CURRENT_OBSERVER.with(|co| {
-                if let Ok(mut b) = co.try_borrow_mut() {
-                    *b = self.prev;
-                } else {
-                    log::error!(
-                        "reactive: CURRENT_OBSERVER busy while finishing observer {}; stale observer reference retained",
-                        self.obs
-                    );
+                match co.try_borrow_mut() {
+                    Ok(mut b) => {
+                        if *b == Some(self.obs) {
+                            *b = self.prev;
+                        }
+                    }
+                    Err(_) => {
+                        PENDING_OBSERVER_RESTORE.with(|q| {
+                            if let Ok(mut q) = q.try_borrow_mut() {
+                                q.push((self.obs, self.prev));
+                            } else {
+                                log::error!(
+                                    "reactive: CURRENT_OBSERVER and restore queue busy while finishing observer {}; stale observer reference retained",
+                                    self.obs
+                                );
+                            }
+                        });
+                    }
                 }
             });
             GRAPH.with(|gcell| {
-                if let Ok(mut g) = gcell.try_borrow_mut() {
-                    g.running.remove(&self.obs);
-                } else {
-                    log::error!(
-                        "reactive: dependency graph busy while finishing observer {}; running flag retained",
-                        self.obs
-                    );
+                match gcell.try_borrow_mut() {
+                    Ok(mut g) => {
+                        g.running.remove(&self.obs);
+                    }
+                    Err(_) => {
+                        PENDING_RUNNING_CLEANUP.with(|q| {
+                            if let Ok(mut q) = q.try_borrow_mut() {
+                                if !q.contains(&self.obs) {
+                                    q.push(self.obs);
+                                }
+                            } else {
+                                log::error!(
+                                    "reactive: dependency graph and cleanup queue busy while finishing observer {}; running flag retained",
+                                    self.obs
+                                );
+                            }
+                        });
+                    }
                 }
             });
         }
     }
 
     let prev = CURRENT_OBSERVER.with(|co| {
-        let prev = *co.borrow();
-        *co.borrow_mut() = Some(obs);
+        let prev = co.try_borrow().map(|b| *b).unwrap_or(None);
+        if let Ok(mut b) = co.try_borrow_mut() {
+            *b = Some(obs);
+        } else {
+            log::error!(
+                "reactive: CURRENT_OBSERVER busy while starting observer {obs}; dependency attribution may be incomplete"
+            );
+        }
         prev
     });
     let _guard = ObserverGuard { obs, prev };
@@ -119,38 +158,178 @@ pub fn signal_changed(sig: SignalId) {
     // Mark composition scopes that depend on this signal as dirty
     crate::scope_cache::mark_scope_deps_dirty(sig);
 
-    let is_outer = SIGNAL_DEPTH.with(|depth| {
-        let prev = depth.get();
-        depth.set(prev + 1);
-        if prev > 0 {
-            // Re-entrant: defer affected observers for later draining (O(1) dedup).
-            GRAPH.with(|gcell| {
-                let g = gcell.borrow();
-                if let Some(obs_set) = g.edges.get(&sig) {
-                    PENDING_SET.with(|set_cell| {
-                        PENDING_OBSERVERS.with(|q| {
-                            let mut set = set_cell.borrow_mut();
-                            let mut queue = q.borrow_mut();
+    if in_batch() {
+        enqueue_affected(sig);
+        return;
+    }
+
+    enqueue_affected(sig);
+
+    if SIGNAL_DEPTH.with(|d| d.get()) != 0 {
+        return;
+    }
+
+    drain_pending();
+}
+
+/// Explicit batching scope: notifications inside `f` are coalesced and
+/// drained once with dedup when `f` returns (long-term fix for redundant +
+/// torn recomputes on multi-signal updates, e.g. `A.set(); B.set();` inside
+/// `batch` recomputes a shared observer once on the final state).
+/// Nested `batch` calls collapse into the outermost drain. Panic-safe: the
+/// drain still runs on unwind.
+pub fn batch<R>(f: impl FnOnce() -> R) -> R {
+    struct BatchGuard {
+        outer: bool,
+    }
+    impl Drop for BatchGuard {
+        fn drop(&mut self) {
+            if self.outer {
+                BATCH_ACTIVE.with(|b| b.set(false));
+                if SIGNAL_DEPTH.with(|d| d.get()) == 0 {
+                    drain_pending();
+                }
+            }
+        }
+    }
+
+    let outer = !in_batch();
+    if outer {
+        BATCH_ACTIVE.with(|b| b.set(true));
+    }
+    let _guard = BatchGuard { outer };
+    f()
+}
+
+fn in_batch() -> bool {
+    BATCH_ACTIVE.with(|b| b.get())
+}
+
+thread_local! {
+    static BATCH_ACTIVE: Cell<bool> = const { Cell::new(false) };
+}
+
+fn enqueue_affected(sig: SignalId) {
+    GRAPH.with(|gcell| {
+        let g = match gcell.try_borrow() {
+            Ok(g) => g,
+            Err(_) => {
+                log::error!(
+                    "reactive: dependency graph busy while enqueueing signal {sig}; notification deferred to next drain"
+                );
+                return;
+            }
+        };
+        if let Some(obs_set) = g.edges.get(&sig) {
+            PENDING_SET.with(|set_cell| {
+                PENDING_OBSERVERS.with(|q| {
+                    match (set_cell.try_borrow_mut(), q.try_borrow_mut()) {
+                        (Ok(mut set), Ok(mut queue)) => {
                             for &obs in obs_set {
                                 if !g.running.contains(&obs) && set.insert(obs) {
                                     queue.push_back(obs);
                                 }
                             }
-                        });
-                    });
-                }
+                        }
+                        _ => {
+                            log::error!(
+                                "reactive: pending queue busy while enqueueing signal {sig}"
+                            );
+                        }
+                    }
+                });
             });
-            false
-        } else {
-            true
         }
     });
+}
 
-    if !is_outer {
-        SIGNAL_DEPTH.with(|d| d.set(d.get() - 1));
-        return;
-    }
+/// Best-effort retry of housekeeping deferred by earlier `try_borrow_mut`
+/// contention. Runs at the head of every drain so a transient contention
+/// never permanently pins an observer (`running`), leaks a removal, or
+/// leaves a stale `CURRENT_OBSERVER`.
+fn retry_deferred_housekeeping() {
+    PENDING_OBSERVER_RESTORE.with(|q| {
+        if let Ok(mut q) = q.try_borrow_mut() {
+            let mut i = 0;
+            while i < q.len() {
+                let (finished, prev) = q[i];
+                let applied = CURRENT_OBSERVER.with(|co| {
+                    if let Ok(mut b) = co.try_borrow_mut() {
+                        if *b == Some(finished) {
+                            *b = prev;
+                            true
+                        } else if *b == prev {
+                            true
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                });
+                if applied {
+                    q.swap_remove(i);
+                } else {
+                    i += 1;
+                }
+            }
+        }
+    });
+    PENDING_RUNNING_CLEANUP.with(|q| {
+        if let Ok(pending) = q.try_borrow_mut().map(|mut q| std::mem::take(&mut *q)) {
+            GRAPH.with(|gcell| {
+                if let Ok(mut g) = gcell.try_borrow_mut() {
+                    for obs in pending {
+                        g.running.remove(&obs);
+                    }
+                } else if let Ok(mut q) = q.try_borrow_mut() {
+                    q.extend(pending);
+                }
+            });
+        }
+    });
+    PENDING_REMOVALS.with(|q| {
+        if let Ok(pending) = q.try_borrow_mut().map(|mut q| std::mem::take(&mut *q)) {
+            GRAPH.with(|gcell| {
+                if let Ok(mut g) = gcell.try_borrow_mut() {
+                    for obs in pending {
+                        g.remove_observer(obs);
+                    }
+                } else if let Ok(mut q) = q.try_borrow_mut() {
+                    q.extend(pending);
+                }
+            });
+        }
+    });
+}
 
+/// Clear an observer's `running` flag, deferring on contention (with retry
+/// via [`retry_deferred_housekeeping`]) instead of pinning it forever.
+fn clear_running(obs: ObserverId) {
+    GRAPH.with(|gcell| match gcell.try_borrow_mut() {
+        Ok(mut g) => {
+            g.running.remove(&obs);
+        }
+        Err(_) => {
+            PENDING_RUNNING_CLEANUP.with(|q| {
+                if let Ok(mut q) = q.try_borrow_mut() {
+                    if !q.contains(&obs) {
+                        q.push(obs);
+                    }
+                } else {
+                    log::error!(
+                        "reactive: dependency graph and cleanup queue busy while clearing observer {obs}; running flag retained"
+                    );
+                }
+            });
+        }
+    });
+}
+
+/// Drain the coalesced pending queue until empty. Runs observers outside the
+/// graph borrow; re-entrant `signal_changed` calls during an observer simply
+/// enqueue and are picked up by this loop.
+fn drain_pending() {
     struct DepthGuard;
     impl Drop for DepthGuard {
         fn drop(&mut self) {
@@ -161,84 +340,54 @@ pub fn signal_changed(sig: SignalId) {
             });
         }
     }
+    SIGNAL_DEPTH.with(|d| d.set(d.get() + 1));
     let _depth_guard = DepthGuard;
 
-    GRAPH.with(|gcell| {
-        let mut g = gcell.borrow_mut();
-        let mut queue: VecDeque<ObserverId> = g
-            .edges
-            .get(&sig)
-            .cloned()
-            .unwrap_or_default()
-            .into_iter()
-            .collect();
-        while let Some(obs) = queue.pop_front() {
-            if g.running.contains(&obs) {
-                continue;
-            }
-            g.running.insert(obs);
-            g.remove_all_edges_for(obs);
-            let f = g.observers.get(&obs).cloned();
-            drop(g);
-            if let Some(f) = f {
-                run_observer_guarded(obs, f);
-            }
-            match gcell.try_borrow_mut() {
-                Ok(mut new_g) => {
-                    new_g.running.remove(&obs);
-                    g = new_g;
-                }
-                Err(e) => {
-                    // Re-entrant contention: the graph is borrowed elsewhere
-                    // (e.g. a nested `signal_changed` holding a shared borrow).
-                    log::error!(
-                        "reactive: dependency graph busy after observer {obs}; deferring {} remaining observer(s): {e}",
-                        queue.len()
-                    );
-                    PENDING_SET.with(|set_cell| {
-                        PENDING_OBSERVERS.with(|q| {
-                            let mut set = set_cell.borrow_mut();
-                            let mut pending_q = q.borrow_mut();
-                            for queued in queue.drain(..) {
-                                if set.insert(queued) {
-                                    pending_q.push_back(queued);
-                                }
-                            }
-                        });
-                    });
-                    break;
-                }
-            }
-        }
-    });
-
-    // Drain any observers that were deferred during re-entrant notifications.
-    SIGNAL_DEPTH.with(|depth| depth.set(0));
     loop {
-        let obs = PENDING_OBSERVERS.with(|q| q.borrow_mut().pop_front());
+        retry_deferred_housekeeping();
+        let obs =
+            PENDING_OBSERVERS.with(|q| q.try_borrow_mut().ok().and_then(|mut q| q.pop_front()));
         let Some(obs) = obs else { break };
-        PENDING_SET.with(|s| {
-            s.borrow_mut().remove(&obs);
+        let still_queued = PENDING_SET.with(|s| {
+            s.try_borrow_mut()
+                .map(|mut s| s.remove(&obs))
+                .unwrap_or(true)
         });
-        let should_run = GRAPH.with(|gcell| {
-            if let Ok(mut g) = gcell.try_borrow_mut() {
-                if g.running.contains(&obs) {
-                    return false;
-                }
-                g.running.insert(obs);
-                g.remove_all_edges_for(obs);
-                true
-            } else {
-                false
-            }
-        });
-        if !should_run {
+        if !still_queued {
             continue;
         }
-        let f = GRAPH.with(|gcell| gcell.borrow().observers.get(&obs).cloned());
-        if let Some(f) = f {
-            run_observer_guarded(obs, f);
-        }
+        let f = GRAPH.with(|gcell| match gcell.try_borrow_mut() {
+            Ok(mut g) => {
+                if g.running.contains(&obs) {
+                    None
+                } else {
+                    g.running.insert(obs);
+                    g.remove_all_edges_for(obs);
+                    g.observers.get(&obs).cloned()
+                }
+            }
+            Err(_) => None,
+        });
+        let Some(f) = f else {
+            PENDING_SET.with(|s| {
+                PENDING_OBSERVERS.with(|q| {
+                    if let (Ok(mut s), Ok(mut q)) =
+                        (s.try_borrow_mut(), q.try_borrow_mut())
+                    {
+                        if s.insert(obs) {
+                            q.push_front(obs);
+                        }
+                    } else {
+                        log::error!(
+                            "reactive: graph and pending queue busy; deferred observer {obs} retained in set for next drain"
+                        );
+                    }
+                });
+            });
+            break;
+        };
+        run_observer_guarded(obs, f);
+        clear_running(obs);
     }
 }
 
@@ -255,39 +404,64 @@ pub fn new_observer(f: impl Fn() + 'static) -> ObserverId {
 /// Remove an observer and all of its dependency edges. Idempotent: removing
 /// an unknown or already-removed id is a no-op. Uses `try_borrow_mut` so
 /// disposal from `Drop` (e.g. `ProduceHandle`, scope teardown) can never
-/// panic while the graph is borrowed; contention is logged instead of
-/// silently leaking the observer.
+/// panic while the graph is borrowed; on contention the removal is deferred
+/// and retried by the next drain instead of silently leaking the observer.
 pub fn remove_observer(id: ObserverId) {
     let _ = GRAPH.try_with(|g| match g.try_borrow_mut() {
         Ok(mut g) => g.remove_observer(id),
         Err(e) => {
             log::error!(
-                "reactive: dependency graph busy while removing observer {id}, observer retained: {e}"
+                "reactive: dependency graph busy while removing observer {id}, deferring removal: {e}"
             );
+            PENDING_REMOVALS.with(|q| {
+                if let Ok(mut q) = q.try_borrow_mut()
+                    && !q.contains(&id)
+                {
+                    q.push(id);
+                }
+            });
         }
     });
 }
 
 /// Run a closure with `CURRENT_OBSERVER` cleared (panic-safe restore).
+/// Re-entrancy safe: if the cell is already borrowed elsewhere, the closure
+/// still runs (untracked) and the restore is skipped because there is no
+/// locally-held previous value to corrupt.
 pub fn without_observer<R>(f: impl FnOnce() -> R) -> R {
     struct Guard {
-        prev: Option<ObserverId>,
+        prev: Option<Option<ObserverId>>,
     }
     impl Drop for Guard {
         fn drop(&mut self) {
-            CURRENT_OBSERVER.with(|co| {
-                if let Ok(mut b) = co.try_borrow_mut() {
-                    *b = self.prev.take();
-                } else {
-                    log::error!(
-                        "reactive: CURRENT_OBSERVER busy after without_observer block; stale observer reference retained"
-                    );
-                }
-            });
+            if let Some(prev) = self.prev.take() {
+                CURRENT_OBSERVER.with(|co| {
+                    match co.try_borrow_mut() {
+                        Ok(mut b) => {
+                            if b.is_none() {
+                                *b = prev;
+                            }
+                        }
+                        Err(_) => {
+                            log::error!(
+                                "reactive: CURRENT_OBSERVER busy after without_observer block; stale observer reference retained"
+                            );
+                        }
+                    }
+                });
+            }
         }
     }
-    let prev = CURRENT_OBSERVER.with(|co| co.borrow().clone());
-    CURRENT_OBSERVER.with(|co| *co.borrow_mut() = None);
+    let prev = CURRENT_OBSERVER.with(|co| {
+        co.try_borrow().ok().map(|b| *b).and_then(|prev| {
+            co.try_borrow_mut()
+                .map(|mut b| {
+                    *b = None;
+                    prev
+                })
+                .ok()
+        })
+    });
     let _guard = Guard { prev };
     f()
 }

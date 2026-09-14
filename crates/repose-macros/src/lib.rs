@@ -44,8 +44,13 @@ impl Parse for ViewMacro {
                 mods.push((name, value));
                 if content.peek(Token![,]) {
                     content.parse::<Token![,]>()?;
-                } else {
+                } else if content.is_empty() {
                     break;
+                } else {
+                    return Err(syn::Error::new(
+                        content.span(),
+                        "expected `,` between modifier args",
+                    ));
                 }
             }
             mods
@@ -63,8 +68,13 @@ impl Parse for ViewMacro {
                 kids.push(expr);
                 if content.peek(Token![,]) {
                     content.parse::<Token![,]>()?;
-                } else {
+                } else if content.is_empty() {
                     break;
+                } else {
+                    return Err(syn::Error::new(
+                        content.span(),
+                        "expected `,` between children",
+                    ));
                 }
             }
             kids
@@ -109,16 +119,15 @@ impl Parse for ViewMacro {
 pub fn View(input: TokenStream) -> TokenStream {
     // Try ViewMacro parser first (handles `Ident { ... }` and `Ident(m: v) { ... }`)
     let cloned = input.clone();
-    if let Ok(m) = syn::parse::<ViewMacro>(cloned) {
-        return expand_view(m).into();
+    match syn::parse::<ViewMacro>(cloned) {
+        Ok(m) => expand_view(m).into(),
+        Err(macro_err) => {
+            if let Ok(expr) = syn::parse::<Expr>(input) {
+                return quote!(#expr).into();
+            }
+            macro_err.to_compile_error().into()
+        }
     }
-
-    // Fallback: pass-through single expression
-    if let Ok(expr) = syn::parse::<Expr>(input.clone()) {
-        return quote!(#expr).into();
-    }
-
-    quote!({}).into()
 }
 
 fn expand_view(m: ViewMacro) -> proc_macro2::TokenStream {
@@ -128,11 +137,17 @@ fn expand_view(m: ViewMacro) -> proc_macro2::TokenStream {
         children,
     } = m;
 
-    if children.is_empty() && modifiers.is_empty() {
-        return quote!({});
-    }
+    let compile_err = || {
+        syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "View!: expected a single expression or `Layout(modifiers) { children }`",
+        )
+        .to_compile_error()
+    };
 
-    let layout_name = layout.as_ref().map(|i| i.to_string()).unwrap_or_default();
+    if children.is_empty() && modifiers.is_empty() {
+        return compile_err();
+    }
 
     let mod_calls = modifiers.iter().map(|(name, value)| {
         if let Some(val) = value {
@@ -145,24 +160,33 @@ fn expand_view(m: ViewMacro) -> proc_macro2::TokenStream {
     if children.is_empty() {
         // Layout with modifiers but no children
         if modifiers.is_empty() {
-            quote!({})
+            compile_err()
+        } else if let Some(layout) = layout {
+            quote! {
+                ::repose_ui::#layout(::repose_core::Modifier::new() #(#mod_calls)*)
+            }
         } else {
             quote! {
-                repose_ui::#layout_name(repose_core::Modifier::new() #(#mod_calls)*)
+                ::repose_ui::Column(::repose_core::Modifier::new() #(#mod_calls)*)
             }
         }
-    } else if layout.is_some() {
+    } else if let Some(layout) = layout {
         // Layout with children
         let child_exprs = &children;
         quote! {
-            repose_ui::#layout_name(repose_core::Modifier::new() #(#mod_calls)*)
+            ::repose_ui::#layout(::repose_core::Modifier::new() #(#mod_calls)*)
                 .child((#(#child_exprs,)*))
         }
     } else {
         // Bare children without layout: wrap in Column
         let child_exprs = &children;
+        let mod_tokens = if modifiers.is_empty() {
+            quote!(::repose_core::Modifier::new())
+        } else {
+            quote!(::repose_core::Modifier::new() #(#mod_calls)*)
+        };
         quote! {
-            repose_ui::Column(repose_core::Modifier::new()).child((#(#child_exprs,)*))
+            ::repose_ui::Column(#mod_tokens).child((#(#child_exprs,)*))
         }
     }
 }

@@ -250,8 +250,28 @@ impl<K: NavKey> Navigator<K> {
     }
 }
 
+#[track_caller]
 pub fn remember_back_stack<K: NavKey>(start: K) -> std::rc::Rc<NavBackStack<K>> {
-    remember_with_key("nav3:stack", || NavBackStack {
+    let caller = std::panic::Location::caller();
+    remember_back_stack_with_key(
+        format!(
+            "nav3:stack:{}:{}:{}",
+            file!(),
+            caller.line(),
+            caller.column()
+        ),
+        start,
+    )
+}
+
+/// Explicit-key variant for dynamic hosts (loops, tab hosts) where several
+/// stacks share one call site. Keys must be unique per stack.
+pub fn remember_back_stack_with_key<K: NavKey>(
+    key: impl Into<String>,
+    start: K,
+) -> std::rc::Rc<NavBackStack<K>> {
+    let key = key.into();
+    remember_with_key(key, || NavBackStack {
         inner: std::rc::Rc::new(std::cell::RefCell::new(BackState {
             entries: vec![Entry {
                 id: 1,
@@ -382,9 +402,23 @@ pub fn NavDisplay<K: NavKey>(
     maybe_intercept_back(framed, on_back)
 }
 
-fn maybe_intercept_back(v: View, _on_back: Option<Rc<dyn Fn()>>) -> View {
-    // placeholder: platform loop will call the back handler; we expose setter below.
-    v
+fn maybe_intercept_back(v: View, on_back: Option<Rc<dyn Fn()>>) -> View {
+    let Some(on_back) = on_back else { return v };
+    // Per-screen handler runs on Escape key-down (desktop) and takes
+    // precedence over the global `InstallBackHandler`..
+    VBox(
+        Modifier::new()
+            .semantics(Semantics::new(Role::Container))
+            .on_preview_key_event(move |ke: KeyEvent| {
+                if ke.key == Key::Escape && ke.event_type == KeyEventType::Down {
+                    on_back();
+                    true
+                } else {
+                    false
+                }
+            }),
+    )
+    .child(v)
 }
 
 /// Back-dispatcher

@@ -223,6 +223,49 @@ mod tests {
     }
 
     #[test]
+    fn test_batch_coalesces_multi_signal_updates() {
+        use crate::batch;
+        let a = signal(1);
+        let b = signal(2);
+        let observed = Rc::new(RefCell::new(Vec::new()));
+
+        let obs = {
+            let a = a.clone();
+            let b = b.clone();
+            let observed = observed.clone();
+            new_observer(move || {
+                observed.borrow_mut().push(a.get() + b.get());
+            })
+        };
+        run_observer_now(obs);
+        assert_eq!(*observed.borrow(), vec![3]);
+
+        let (a2, b2) = (a.clone(), b.clone());
+        batch(move || {
+            a2.set(10);
+            b2.set(20);
+        });
+        assert_eq!(*observed.borrow(), vec![3, 30]);
+
+        remove_observer(obs);
+    }
+
+    #[test]
+    fn test_without_observer_reentrant_no_panic() {
+        use crate::without_observer;
+        let sig = signal(0);
+        let obs = {
+            let sig = sig.clone();
+            new_observer(move || {
+                let _ = sig.with(|v| without_observer(|| *v));
+            })
+        };
+        run_observer_now(obs);
+        sig.set(1);
+        remove_observer(obs);
+    }
+
+    #[test]
     fn test_produce_state_tracks_dependencies() {
         let a = signal(1);
         let b = signal(2);

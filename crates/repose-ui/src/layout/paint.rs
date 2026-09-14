@@ -2014,11 +2014,35 @@ impl LayoutEngine {
                         let set_y = b
                             .set_offset_xy
                             .clone()
-                            .map(|s| Rc::new(move |y| s(ox, y)) as Rc<dyn Fn(f32)>);
+                            .and_then(|s| {
+                                b.get_offset_xy.clone().map(|g| {
+                                    Rc::new(move |y| {
+                                        let (ox, _) = g();
+                                        s(ox, y)
+                                    }) as Rc<dyn Fn(f32)>
+                                })
+                            })
+                            .or_else(|| {
+                                b.set_offset_xy
+                                    .clone()
+                                    .map(|s| Rc::new(move |y| s(ox, y)) as Rc<dyn Fn(f32)>)
+                            });
                         let set_x = b
                             .set_offset_xy
                             .clone()
-                            .map(|s| Rc::new(move |x| s(x, oy)) as Rc<dyn Fn(f32)>);
+                            .and_then(|s| {
+                                b.get_offset_xy.clone().map(|g| {
+                                    Rc::new(move |x| {
+                                        let (_, oy) = g();
+                                        s(x, oy)
+                                    }) as Rc<dyn Fn(f32)>
+                                })
+                            })
+                            .or_else(|| {
+                                b.set_offset_xy
+                                    .clone()
+                                    .map(|s| Rc::new(move |x| s(x, oy)) as Rc<dyn Fn(f32)>)
+                            });
                         push_scrollbar(
                             scene,
                             hits,

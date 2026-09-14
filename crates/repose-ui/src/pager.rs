@@ -62,12 +62,9 @@ fn horizontal_handlers(
                 let threshold = pager_threshold_px();
                 if dx.abs() > threshold && dx.abs() > dy.abs() * 1.5 {
                     if dx < 0.0 {
-                        let next =
-                            (st.current_page.get() + 1).min(st.page_count.get().saturating_sub(1));
-                        st.current_page.set(next);
+                        st.set_page(st.current_page.get().saturating_add(1));
                     } else {
-                        let prev = st.current_page.get().saturating_sub(1);
-                        st.current_page.set(prev);
+                        st.set_page(st.current_page.get().saturating_sub(1));
                     }
                 }
             }
@@ -110,12 +107,9 @@ fn vertical_handlers(
                 let threshold = pager_threshold_px();
                 if dy.abs() > threshold && dy.abs() > dx.abs() * 1.5 {
                     if dy < 0.0 {
-                        let next =
-                            (st.current_page.get() + 1).min(st.page_count.get().saturating_sub(1));
-                        st.current_page.set(next);
+                        st.set_page(st.current_page.get().saturating_add(1));
                     } else {
-                        let prev = st.current_page.get().saturating_sub(1);
-                        st.current_page.set(prev);
+                        st.set_page(st.current_page.get().saturating_sub(1));
                     }
                 }
             }
@@ -134,6 +128,7 @@ fn vertical_handlers(
 /// State for a horizontal pager with page snapping.
 pub struct PagerState {
     current_page: Signal<usize>,
+    previous_page: Signal<usize>,
     page_count: Signal<usize>,
 }
 
@@ -141,6 +136,7 @@ impl PagerState {
     pub fn new(page_count: usize) -> Self {
         Self {
             current_page: signal(0),
+            previous_page: signal(0),
             page_count: signal(page_count.max(1)),
         }
     }
@@ -152,11 +148,45 @@ impl PagerState {
     /// Programmatically set the current page (with animation).
     pub fn set_page(&self, page: usize) {
         let max_page = self.page_count.get().saturating_sub(1);
-        self.current_page.set(page.min(max_page));
+        let prev = self.current_page.get();
+        let next = page.min(max_page);
+        if next == prev {
+            return;
+        }
+        // Batched: observers of both signals recompute once on the final
+        // state instead of seeing torn (prev, next) / (prev, prev) pairs.
+        batch(|| {
+            self.previous_page.set(prev);
+            self.current_page.set(next);
+        });
+    }
+
+    /// Direction of the last page change: +1 forward, -1 backward, 0 none yet.
+    /// Used to sign enter/exit slide offsets so back navigation animates the
+    /// correct way instead of reusing a fixed direction.
+    fn direction(&self) -> i32 {
+        let cur = self.current_page.get() as i64;
+        let prev = self.previous_page.get() as i64;
+        (cur - prev).signum() as i32
     }
 
     pub fn page_count(&self) -> usize {
         self.page_count.get()
+    }
+
+    /// Update the page count (e.g. list shrank/grew). Clamps `current_page`
+    /// so it can never go out of bounds against a stale count.
+    pub fn set_page_count(&self, count: usize) {
+        let count = count.max(1);
+        let cur = self.current_page.get();
+        let max_page = count - 1;
+        batch(|| {
+            self.page_count.set(count);
+            if cur > max_page {
+                self.previous_page.set(cur);
+                self.current_page.set(max_page);
+            }
+        });
     }
 }
 
@@ -188,7 +218,8 @@ pub fn HorizontalPager(
     let key = key.into();
     let page = state.current_page.get();
     let page_spacing = config.page_spacing;
-    let slide_offset = Dp(800.0) + page_spacing;
+    let dir = if state.direction() < 0 { -1.0 } else { 1.0 };
+    let slide_offset = (Dp(800.0) + page_spacing) * dir;
 
     let (on_down, on_up, on_cancel) = horizontal_handlers(&key, &state);
 
@@ -246,7 +277,8 @@ pub fn VerticalPager(
     let key = key.into();
     let page = state.current_page.get();
     let page_spacing = config.page_spacing;
-    let slide_offset = Dp(600.0) + page_spacing;
+    let dir = if state.direction() < 0 { -1.0 } else { 1.0 };
+    let slide_offset = (Dp(600.0) + page_spacing) * dir;
 
     let (on_down, on_up, on_cancel) = vertical_handlers(&key, &state);
 

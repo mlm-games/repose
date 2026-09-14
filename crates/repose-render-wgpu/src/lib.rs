@@ -3003,7 +3003,7 @@ impl WgpuSceneRenderer {
         let uv_w = w.div_ceil(2);
         let uv_h = h.div_ceil(2);
 
-        let y_expected = (w as usize) * 2;
+        let y_expected = (w as usize) * (h as usize) * 2;
         let uv_expected = (uv_w as usize) * (uv_h as usize) * 4;
 
         if y.len() < y_expected {
@@ -3100,7 +3100,7 @@ impl WgpuSceneRenderer {
                 ],
             });
 
-            let bytes = (w as u64) * 2
+            let bytes = (w as u64) * (h as u64) * 2
                 + (uv_w as u64) * (uv_h as u64) * 4
                 + std::mem::size_of::<YuvTransformRaw>() as u64;
             self.image_bytes_total += bytes;
