@@ -23,6 +23,9 @@ pub mod offscreen;
 mod callback;
 pub use callback::{Callback, CallbackResources, ScreenDescriptor, WgpuCallback};
 
+mod depth_composite;
+pub use depth_composite::DepthComposite;
+
 #[derive(Clone)]
 struct UploadRing {
     buf: wgpu::Buffer,
