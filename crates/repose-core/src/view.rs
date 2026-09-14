@@ -80,8 +80,6 @@ pub enum ImageFit {
     None,
 }
 
-pub type Callback = Rc<dyn Fn()>;
-
 #[derive(Clone)]
 pub struct OverlayEntry {
     pub id: u64,
@@ -134,22 +132,6 @@ pub enum ViewKind {
     SubcomposeLayout {
         content: Arc<dyn Fn(&SubcomposeScope) -> Vec<(u64, View)>>,
     },
-    /// A collapsible section with a clickable header.
-    /// First child is the header content. Remaining children shown only when expanded.
-    Expander {
-        expanded: bool,
-        on_toggle: Option<Callback>,
-    },
-    /// A single row in a tree view with indentation and expand/select support.
-    /// First child is rendered as the row label/content.
-    TreeRow {
-        depth: usize,
-        has_children: bool,
-        is_expanded: bool,
-        is_selected: bool,
-        on_toggle: Option<Callback>,
-        on_select: Option<Callback>,
-    },
 }
 
 impl std::fmt::Debug for ViewKind {
@@ -164,27 +146,6 @@ impl std::fmt::Debug for ViewKind {
             Self::Image { .. } => f.write_str("Image"),
             Self::SubcomposeLayout { .. } => f.write_str("SubcomposeLayout"),
             Self::Text { text, .. } => write!(f, "Text({:?})", text),
-
-            Self::Expander { expanded, .. } => {
-                if *expanded {
-                    write!(f, "Expander(expanded)")
-                } else {
-                    write!(f, "Expander(collapsed)")
-                }
-            }
-            Self::TreeRow {
-                depth,
-                has_children,
-                is_expanded,
-                is_selected,
-                ..
-            } => {
-                write!(
-                    f,
-                    "TreeRow(depth={}, children={}, expanded={}, selected={})",
-                    depth, has_children, is_expanded, is_selected
-                )
-            }
         }
     }
 }

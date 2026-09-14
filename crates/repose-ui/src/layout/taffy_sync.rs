@@ -21,19 +21,9 @@ impl LayoutEngine {
         let is_zstack = matches!(view.kind, ViewKind::ZStack);
         let scroll_axis = view.modifier.scroll.as_ref().map(|s| s.axis());
 
-        let visible_children: Vec<&View> = if matches!(
-            view.kind,
-            ViewKind::Expander {
-                expanded: false,
-                ..
-            }
-        ) {
-            view.children.iter().take(1).collect()
-        } else {
-            view.children.iter().collect()
-        };
-        let child_tids: Vec<taffy::NodeId> = visible_children
-            .into_iter()
+        let child_tids: Vec<taffy::NodeId> = view
+            .children
+            .iter()
             .map(|c| self.build_taffy_subtree(c, taffy, font_px))
             .collect();
 
@@ -167,18 +157,7 @@ impl LayoutEngine {
 
         let (style, ctx, children, is_zstack, scroll_axis, viewport_main_is_definite) = {
             let node = self.tree.get(node_id).expect("Node missing in update");
-            let collapsed = matches!(
-                node.kind,
-                ViewKind::Expander {
-                    expanded: false,
-                    ..
-                }
-            );
-            let children: Vec<NodeId> = if collapsed {
-                node.children.iter().take(1).copied().collect()
-            } else {
-                node.children.to_vec()
-            };
+            let children: Vec<NodeId> = node.children.to_vec();
             (
                 self.style_from_node(node, font_px),
                 self.context_from_node(node),
@@ -248,18 +227,7 @@ impl LayoutEngine {
 
         let (new_style, new_ctx, children, is_zstack, scroll_axis, viewport_main_is_definite) = {
             let node = self.tree.get(node_id).unwrap();
-            let collapsed = matches!(
-                node.kind,
-                ViewKind::Expander {
-                    expanded: false,
-                    ..
-                }
-            );
-            let children: Vec<NodeId> = if collapsed {
-                node.children.iter().take(1).copied().collect()
-            } else {
-                node.children.to_vec()
-            };
+            let children: Vec<NodeId> = node.children.to_vec();
             (
                 self.style_from_node(node, font_px),
                 self.context_from_node(node),
@@ -440,7 +408,7 @@ impl LayoutEngine {
                     FlexDirection::Row
                 };
             }
-            ViewKind::Column | ViewKind::OverlayHost | ViewKind::Expander { .. } => {
+            ViewKind::Column | ViewKind::OverlayHost => {
                 s.flex_direction = FlexDirection::Column;
             }
             ViewKind::ZStack => s.display = Display::Grid,
@@ -679,18 +647,6 @@ impl LayoutEngine {
         // is correct - it prevents content from shrinking below its natural
         // size, which is essential for scroll containers to overflow properly.
 
-        if let ViewKind::TreeRow {
-            depth,
-            has_children,
-            ..
-        } = kind
-        {
-            // Indent leaves more than parent nodes for visual tree structure:
-            // depth * 16dp + chevron space if has_children.
-            let indent = Dp(*depth as f32 * 16.0 + if *has_children { 16.0 } else { 24.0 });
-            s.padding.left = length(px(indent));
-        }
-
         if m.required_size.is_none() {
             if let Some(v) = m.min_width {
                 if v.0.is_finite() {
@@ -815,7 +771,6 @@ impl LayoutEngine {
                 font_variation_settings: font_variation_settings.clone(),
                 annotations: annotations.clone(),
             },
-            ViewKind::Expander { .. } => NodeContext::Container,
             ViewKind::OverlayHost => NodeContext::Container,
             ViewKind::SubcomposeLayout { .. } => NodeContext::Container,
             _ => NodeContext::Container,

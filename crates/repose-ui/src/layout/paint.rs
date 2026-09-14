@@ -359,9 +359,7 @@ impl LayoutEngine {
             || modifier.on_drag_leave.is_some()
             || modifier.on_drop.is_some();
 
-        let kind_handles_hit = modifier.text_input.is_some()
-            || modifier.scroll.is_some()
-            || matches!(kind, ViewKind::Expander { .. } | ViewKind::TreeRow { .. });
+        let kind_handles_hit = modifier.text_input.is_some() || modifier.scroll.is_some();
 
         let this_alpha = modifier.alpha.unwrap_or(1.0);
         let alpha_accum = (alpha_accum * this_alpha).clamp(0.0, 1.0);
@@ -1629,132 +1627,6 @@ impl LayoutEngine {
                 });
                 next_sem_parent = Some(view_id);
             }
-            ViewKind::Expander { on_toggle, .. } => {
-                if let Some(cb) = on_toggle.clone() {
-                    hits.push(HitRegion {
-                        id: view_id,
-                        rect,
-                        on_click: Some(cb),
-                        focusable: true,
-                        z_index: modifier.z_index,
-                        focus_group_id: if modifier.focus_group {
-                            Some(view_id)
-                        } else {
-                            self.focus_group_stack.last().copied()
-                        },
-                        ..HitRegion::from_modifier(view_id, rect, &modifier)
-                    });
-                }
-                sems.push(SemNode {
-                    id: view_id,
-                    parent: sem_parent,
-                    role: Role::Button,
-                    label: infer_label(&self.tree, node_id),
-                    rect,
-                    focused: is_focused,
-                    enabled: !modifier.disabled,
-                    ..Default::default()
-                });
-                next_sem_parent = Some(view_id);
-            }
-            ViewKind::TreeRow {
-                depth,
-                has_children,
-                is_expanded,
-                is_selected,
-                on_toggle,
-                on_select,
-            } => {
-                let indent_px = Dp(*depth as f32 * 16.0).to_px().0;
-                let chevron_w = if *has_children {
-                    Dp(16.0).to_px().0
-                } else {
-                    0.0
-                };
-
-                // Selection highlight
-                if *is_selected {
-                    let th = locals::theme();
-                    scene.nodes.push(SceneNode::Rect {
-                        rect,
-                        brush: Brush::Solid(th.primary.with_alpha_f32(0.15)),
-                        radius: [Px::ZERO; 4],
-                    });
-                }
-
-                // Expand/collapse chevron
-                if *has_children {
-                    let chevron_text = if *is_expanded { "▼" } else { "▶" };
-                    let chevron_px = Dp(12.0).to_px().0;
-                    scene.nodes.push(SceneNode::Text {
-                        rect: repose_core::Rect {
-                            x: rect.x + indent_px,
-                            y: rect.y + (rect.h - chevron_px) * 0.5,
-                            w: chevron_w,
-                            h: chevron_px,
-                        },
-                        text: Arc::from(chevron_text),
-                        color: mul_alpha_color(locals::theme().on_surface, alpha_accum),
-                        size: Px(chevron_px),
-                        font_family: None,
-                        text_align: TextAlign::Start,
-                        font_weight: FontWeight::NORMAL,
-                        font_style: FontStyle::Normal,
-                        text_decoration: TextDecoration::default(),
-                        letter_spacing: Px::ZERO,
-                        line_height: Px::ZERO,
-                        extra_style: Default::default(),
-                        url: None,
-                        font_variation_settings: None,
-                    });
-
-                    // Toggle hit region (chevron area)
-                    if let Some(cb) = on_toggle.clone() {
-                        hits.push(HitRegion {
-                            id: view_id.wrapping_mul(2).wrapping_add(1),
-                            rect: repose_core::Rect {
-                                x: rect.x + indent_px,
-                                y: rect.y,
-                                w: chevron_w,
-                                h: rect.h,
-                            },
-                            on_click: Some(cb),
-                            focusable: false,
-                            z_index: modifier.z_index,
-                            ..HitRegion::from_modifier(view_id, rect, &modifier)
-                        });
-                    }
-                }
-
-                // Select hit region (label area)
-                if let Some(cb) = on_select.clone() {
-                    hits.push(HitRegion {
-                        id: view_id,
-                        rect: repose_core::Rect {
-                            x: rect.x + indent_px + chevron_w,
-                            y: rect.y,
-                            w: (rect.w - indent_px - chevron_w).max(0.0),
-                            h: rect.h,
-                        },
-                        on_click: Some(cb),
-                        focusable: true,
-                        z_index: modifier.z_index,
-                        ..HitRegion::from_modifier(view_id, rect, &modifier)
-                    });
-                }
-
-                sems.push(SemNode {
-                    id: view_id,
-                    parent: sem_parent,
-                    role: Role::Button,
-                    label: infer_label(&self.tree, node_id),
-                    rect,
-                    focused: is_focused,
-                    enabled: !modifier.disabled,
-                    ..Default::default()
-                });
-                next_sem_parent = Some(view_id);
-            }
             _ => {
                 if let Some(s) = &modifier.semantics {
                     sems.push(SemNode {
@@ -2226,48 +2098,6 @@ impl LayoutEngine {
                         deferred,
                         skip_defer,
                     );
-                }
-            }
-            ViewKind::Expander { expanded, .. } => {
-                if let Some(&first) = children.first() {
-                    self.walk_paint(
-                        first,
-                        scene,
-                        hits,
-                        sems,
-                        textfield_states,
-                        interactions,
-                        focused,
-                        child_offset_px,
-                        alpha_accum,
-                        next_sem_parent,
-                        child_interaction_source,
-                        font_px,
-                        allow_cache,
-                        deferred,
-                        skip_defer,
-                    );
-                }
-                if *expanded {
-                    for &child_id in children.iter().skip(1) {
-                        self.walk_paint(
-                            child_id,
-                            scene,
-                            hits,
-                            sems,
-                            textfield_states,
-                            interactions,
-                            focused,
-                            child_offset_px,
-                            alpha_accum,
-                            next_sem_parent,
-                            child_interaction_source,
-                            font_px,
-                            allow_cache,
-                            deferred,
-                            skip_defer,
-                        );
-                    }
                 }
             }
             _ => {

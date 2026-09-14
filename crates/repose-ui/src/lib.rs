@@ -366,45 +366,6 @@ pub fn Grid(
     Column(modifier.grid(columns, row_gap, column_gap)).with_children(children)
 }
 
-pub fn Expander(modifier: Modifier, expanded: bool, on_toggle: impl Fn() + 'static) -> View {
-    View::new(
-        0,
-        ViewKind::Expander {
-            expanded,
-            on_toggle: Some(Rc::new(on_toggle)),
-        },
-    )
-    .modifier(modifier)
-}
-
-/// A single row in a tree view.
-///
-/// Renders with indentation based on `depth`, an expand/collapse arrow if
-/// `has_children` is true, and a highlight background if `is_selected`.
-/// The first child is the row's label/content.
-pub fn TreeRow(
-    modifier: Modifier,
-    depth: usize,
-    has_children: bool,
-    is_expanded: bool,
-    is_selected: bool,
-    on_toggle: impl Fn() + 'static,
-    on_select: impl Fn() + 'static,
-) -> View {
-    View::new(
-        0,
-        ViewKind::TreeRow {
-            depth,
-            has_children,
-            is_expanded,
-            is_selected,
-            on_toggle: Some(Rc::new(on_toggle)),
-            on_select: Some(Rc::new(on_select)),
-        },
-    )
-    .modifier(modifier)
-}
-
 static DRAGVALUE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// A drag-to-change numeric value field (like egui's `DragValue`).

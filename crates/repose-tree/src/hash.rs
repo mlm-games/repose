@@ -191,28 +191,6 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
         ViewKind::SubcomposeLayout { .. } => {
             // Closure contents are not part of the hash; the content closure
         }
-        ViewKind::Expander {
-            expanded,
-            on_toggle,
-        } => {
-            expanded.hash(hasher);
-            on_toggle.is_some().hash(hasher);
-        }
-        ViewKind::TreeRow {
-            depth,
-            has_children,
-            is_expanded,
-            is_selected,
-            on_toggle,
-            on_select,
-        } => {
-            depth.hash(hasher);
-            has_children.hash(hasher);
-            is_expanded.hash(hasher);
-            is_selected.hash(hasher);
-            on_toggle.is_some().hash(hasher);
-            on_select.is_some().hash(hasher);
-        }
         _ => {
             0x9E3779B97F4A7C15u64.hash(hasher);
             format!("{kind:?}").hash(hasher);
@@ -800,50 +778,6 @@ mod tests {
         let c = text_view_with_url(Some("https://b.example"));
         assert_ne!(hash_view_content(&a), hash_view_content(&b));
         assert_ne!(hash_view_content(&b), hash_view_content(&c));
-    }
-
-    #[test]
-    fn test_expander_toggle_invalidates() {
-        let open = View::new(
-            0,
-            ViewKind::Expander {
-                expanded: true,
-                on_toggle: None,
-            },
-        );
-        let shut = View::new(
-            0,
-            ViewKind::Expander {
-                expanded: false,
-                on_toggle: None,
-            },
-        );
-        assert_ne!(hash_view_content(&open), hash_view_content(&shut));
-    }
-
-    #[test]
-    fn test_treerow_state_invalidates() {
-        let mk = |expanded: bool, selected: bool| {
-            View::new(
-                0,
-                ViewKind::TreeRow {
-                    depth: 1,
-                    has_children: true,
-                    is_expanded: expanded,
-                    is_selected: selected,
-                    on_toggle: None,
-                    on_select: None,
-                },
-            )
-        };
-        assert_ne!(
-            hash_view_content(&mk(false, false)),
-            hash_view_content(&mk(true, false))
-        );
-        assert_ne!(
-            hash_view_content(&mk(false, false)),
-            hash_view_content(&mk(false, true))
-        );
     }
 
     #[test]
