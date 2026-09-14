@@ -133,6 +133,33 @@ pub enum Easing {
     BounceInOut,
 }
 
+/// Size/alpha curve over life, for games driving per-tick curves
+/// (particle size/alpha, gradient sampling) off the shared [`Easing`]
+/// family. `Default` is [`EaseKind::Linear`]; `serde` impls ride the
+/// crate `serde` feature (asset formats like `.fx.ron` enable it).
+#[derive(Clone, Copy, Debug, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum EaseKind {
+    #[default]
+    Linear,
+    QuadOut,
+    CubicOut,
+    BackOut,
+}
+
+impl EaseKind {
+    /// Ease life fraction 0..1 into curve value 0..1.
+    pub fn apply(self, t: f32) -> f32 {
+        let ease = match self {
+            EaseKind::Linear => Easing::Linear,
+            EaseKind::QuadOut => Easing::EaseOut,
+            EaseKind::CubicOut => Easing::CubicOut,
+            EaseKind::BackOut => Easing::BackOut,
+        };
+        ease.interpolate(t.clamp(0.0, 1.0))
+    }
+}
+
 impl Easing {
     pub fn interpolate(&self, t: f32) -> f32 {
         match self {
@@ -1206,6 +1233,20 @@ mod tests {
         for e in [BackIn, ElasticIn] {
             assert!(e.interpolate(0.5) < 0.0, "{e:?} undershoots");
         }
+    }
+
+    #[test]
+    fn ease_kind_endpoints_hold() {
+        for ease in [
+            EaseKind::Linear,
+            EaseKind::QuadOut,
+            EaseKind::CubicOut,
+            EaseKind::BackOut,
+        ] {
+            assert!(ease.apply(0.0).abs() < 1e-4);
+            assert!((ease.apply(1.0) - 1.0).abs() < 1e-4);
+        }
+        assert!(EaseKind::QuadOut.apply(0.5) > 0.5);
     }
 
     #[test]

@@ -8,12 +8,13 @@ repository = { workspace = true }
 
 [features]
 inspector = []
-serde = []
+serde = ["dep:serde"]
 accesskit = ["dep:accesskit"]
 
 [dependencies]
 parking_lot = { workspace = true }
 log = { workspace = true }
+serde = { workspace = true, optional = true }
 taffy.workspace = true
 web-time.workspace = true
 repose-macros.workspace = true
