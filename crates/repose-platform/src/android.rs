@@ -70,10 +70,10 @@ pub fn run_android_app_with_options(
         // Shared touch-scroll / pinch / swipe gesture state
         touch_gestures: rc::TouchGestureState,
 
-        // IME (soft keyboard) tracking
         ime_visible: bool,
+        /// Focused id the keyboard was last shown for.
+        ime_shown_for: Option<u64>,
 
-        // redraw control
         dirty: bool,
 
         /// Buttons arrive as native keycodes, axes have no source yet.
@@ -110,6 +110,7 @@ pub fn run_android_app_with_options(
                 touch_gestures: rc::TouchGestureState::default(),
 
                 ime_visible: false,
+                ime_shown_for: None,
                 dirty: true,
                 #[cfg(feature = "gamepad")]
                 gamepad: crate::gamepad::create_android_backend().expect("android gamepad backend"),
@@ -158,25 +159,27 @@ pub fn run_android_app_with_options(
             dp * self.scale()
         }
 
-        fn is_textfield(&self, id: u64) -> bool {
-            rc::is_textfield_in_frame(&self.rt.frame_cache, id)
-        }
-
-        fn update_ime_state(&mut self) {
+        /// Sync the soft keyboard with the currently focused textfield.
+        /// When `force` is set, re-show the keyboard even if it is already
+        /// marked visible.
+        fn update_ime_state(&mut self, force: bool) {
             let Some(win) = &self.window else { return };
+            let Some(frame) = &self.rt.frame_cache else {
+                return;
+            };
 
-            let allow = self
-                .rt
-                .sched
-                .focused
-                .map_or(false, |id| self.rt.is_textfield(id));
-            let (purpose, auto_correct, capitalization) = self.rt.focused_keyboard_hints();
+            let focused_tf = self.rt.sched.focused.filter(|id| self.rt.is_textfield(*id));
+            if focused_tf == self.ime_shown_for && self.ime_visible && !force {
+                return;
+            }
+            if focused_tf.is_none() && !self.ime_visible {
+                return;
+            }
 
-            rc::set_ime_for_textfield_ex(win, allow, purpose, auto_correct, capitalization);
-
-            if allow {
-                self.update_ime_cursor_area(win);
-            } else {
+            rc::sync_ime_for_focused(win, &self.rt, frame);
+            self.ime_visible = focused_tf.is_some();
+            self.ime_shown_for = focused_tf;
+            if focused_tf.is_none() {
                 self.rt.ime_preedit = false;
             }
         }
@@ -259,15 +262,7 @@ pub fn run_android_app_with_options(
 
         fn dispatch_action(&mut self, action: repose_core::shortcuts::Action) -> bool {
             if self.rt.dispatch_action(action) {
-                if let Some(win) = &self.window {
-                    rc::set_ime_for_textfield(
-                        win,
-                        self.rt
-                            .sched
-                            .focused
-                            .map_or(false, |id| self.rt.is_textfield(id)),
-                    );
-                }
+                self.update_ime_state(false);
                 return true;
             }
 
@@ -358,39 +353,10 @@ pub fn run_android_app_with_options(
                 // Touch handling (Android primary). Scroll / pinch / swipe
                 // recognition lives in common.rs, shared with web + desktop.
                 WindowEvent::Touch(t) => {
-                    // Started needs Android-specific IME cursor area handling..
                     if t.phase == winit::event::TouchPhase::Started {
                         let pos_px = (t.location.x as f32, t.location.y as f32);
-                        let focused = self
-                            .touch_gestures
+                        self.touch_gestures
                             .touch_started(&mut self.rt, t.id, pos_px);
-                        if let Some(fid) = focused
-                            && self.is_textfield(fid)
-                        {
-                            if let Some(win) = &self.window
-                                && let Some(f) = &self.rt.frame_cache
-                                && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
-                            {
-                                let sf = win.scale_factor() as f32;
-                                rc::set_ime_for_textfield_ex(
-                                    win,
-                                    true,
-                                    hit.keyboard_type.ime_purpose_hint(),
-                                    hit.auto_correct.unwrap_or(true),
-                                    hit.capitalization,
-                                );
-                                win.set_ime_cursor_area(
-                                    PhysicalPosition::new(
-                                        (hit.rect.x * sf) as i32,
-                                        (hit.rect.y * sf) as i32,
-                                    ),
-                                    PhysicalSize::new(
-                                        (hit.rect.w * sf) as u32,
-                                        (hit.rect.h * sf) as u32,
-                                    ),
-                                );
-                            }
-                        }
                         self.dirty = true;
                         self.request_redraw();
                     } else {
@@ -401,42 +367,8 @@ pub fn run_android_app_with_options(
                             &t,
                             scale,
                         );
-                        // without this the keyboard never appears on first tap.
-                        if t.phase == winit::event::TouchPhase::Ended {
-                            match r.press {
-                                Some(Some(fid)) if self.is_textfield(fid) => {
-                                    if let Some(win) = &self.window
-                                        && let Some(f) = &self.rt.frame_cache
-                                        && let Some(hit) =
-                                            f.hit_regions.iter().find(|h| h.id == fid)
-                                    {
-                                        let sf = win.scale_factor() as f32;
-                                        rc::set_ime_for_textfield_ex(
-                                            win,
-                                            true,
-                                            hit.keyboard_type.ime_purpose_hint(),
-                                            hit.auto_correct.unwrap_or(true),
-                                            hit.capitalization,
-                                        );
-                                        win.set_ime_cursor_area(
-                                            PhysicalPosition::new(
-                                                (hit.rect.x * sf) as i32,
-                                                (hit.rect.y * sf) as i32,
-                                            ),
-                                            PhysicalSize::new(
-                                                (hit.rect.w * sf) as u32,
-                                                (hit.rect.h * sf) as u32,
-                                            ),
-                                        );
-                                    }
-                                }
-                                Some(_) => {
-                                    if let Some(win) = &self.window {
-                                        win.set_ime_allowed(false);
-                                    }
-                                }
-                                None => {}
-                            }
+                        if t.phase == winit::event::TouchPhase::Ended && r.press.is_some() {
+                            self.update_ime_state(true);
                         }
                         let mut dirty = r.dirty;
                         if let Some((delta_scale, center)) = r.pinch {
@@ -598,34 +530,7 @@ pub fn run_android_app_with_options(
                     // Drain upload commands queued during compose before presenting
                     self.process_render_commands();
 
-                    if output.wants_keyboard && !self.ime_visible {
-                        log::info!(
-                            "ime-sync: show focused={:?} purpose={:?}",
-                            self.rt.sched.focused,
-                            output.platform.ime_purpose,
-                        );
-                        if let Some(win) = self.window.as_ref() {
-                            rc::set_ime_for_textfield_ex(
-                                win,
-                                true,
-                                output.platform.ime_purpose,
-                                output.platform.ime_auto_correct,
-                                output.platform.ime_capitalization,
-                            );
-                            if let Some((x, y, w, h)) = output.platform.ime_cursor_area {
-                                win.set_ime_cursor_area(
-                                    PhysicalPosition::new(x as i32, y as i32),
-                                    PhysicalSize::new(w as u32, h as u32),
-                                );
-                            }
-                        }
-                        self.ime_visible = true;
-                    } else if !output.wants_keyboard && self.ime_visible {
-                        if let Some(win) = self.window.as_ref() {
-                            win.set_ime_allowed(false);
-                        }
-                        self.ime_visible = false;
-                    }
+                    self.update_ime_state(false);
 
                     if !output.wants_keyboard
                         && focused.is_some()
