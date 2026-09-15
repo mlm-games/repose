@@ -8,6 +8,9 @@ use std::rc::Rc;
 pub enum Gesture {
     SwipeLeft,
     SwipeRight,
+    /// Center-less pinch kept for back-compat with producers that do not
+    /// track a centroid (none in-tree emit this, handlers must treat it as
+    /// unroutable and return false unless they own the whole surface).
     Pinch {
         delta_scale: f32,
     },

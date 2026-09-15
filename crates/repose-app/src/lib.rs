@@ -6,4 +6,4 @@ pub mod touch_gesture;
 pub use app_config::*;
 pub use lifecycle::*;
 pub use runtime::*;
-pub use touch_gesture::{MultiTouchDelta, TouchGestureState};
+pub use touch_gesture::{MultiTouchDelta, TouchEnded, TouchGestureState};

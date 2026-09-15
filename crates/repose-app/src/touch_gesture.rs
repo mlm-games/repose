@@ -67,6 +67,14 @@ impl Default for TouchGestureState {
     }
 }
 
+pub struct TouchEnded {
+    pub swipe_right: Option<bool>,
+    /// Focus result of a press dispatched on release. `None` when no press
+    /// ran (scroll/pinch release, cancel); `Some` carries the press's
+    /// focused id (`None` inside means the tap explicitly defocused).
+    pub press: Option<Option<u64>>,
+}
+
 impl TouchGestureState {
     fn calc_dynamic_state(&self) -> Option<DynGestureState> {
         let n = self.active_touches.len();
@@ -330,7 +338,7 @@ impl TouchGestureState {
         tid: u64,
         pos_px: (f32, f32),
         cancelled: bool,
-    ) -> Option<bool> {
+    ) -> TouchEnded {
         rt.mouse_pos_px = pos_px;
         let pos = Vec2 {
             x: pos_px.0,
@@ -340,10 +348,14 @@ impl TouchGestureState {
         let is_primary = self.primary_touch_id == Some(tid);
         let was_multi = self.active_touches.len() >= 2;
 
+        let mut press = None;
         if is_primary {
             if let Some((pending_pos, _, _)) = self.pending_primary.take() {
                 if !cancelled && !was_multi && self.active_touches.len() < 2 {
-                    let _ = rt.handle_pointer_press(pending_pos, PointerButton::Primary);
+                    press = Some(
+                        rt.handle_pointer_press(pending_pos, PointerButton::Primary)
+                            .focused,
+                    );
                     rt.handle_pointer_release(pos, PointerButton::Primary);
                 }
                 self.primary_press_dispatched = false;
@@ -389,7 +401,10 @@ impl TouchGestureState {
             self.scroll_capture_id = None;
             self.prev_touch_px = None;
         }
-        swipe_right
+        TouchEnded {
+            swipe_right,
+            press,
+        }
     }
 
     pub fn multi_touch_info(&self) -> Option<MultiTouchDelta> {

@@ -71,6 +71,10 @@ pub struct TouchResult {
     pub pan: Option<(Vec2, Vec2)>,
     pub rotation: Option<(f32, Vec2)>,
     pub swipe_right: Option<bool>,
+    /// Press result of a tap dispatched on `Ended`. `None` when no press ran
+    /// (scroll/pinch release); `Some` carries the press's focused id, with
+    /// `None` inside meaning the tap explicitly defocused.
+    pub press: Option<Option<u64>>,
 }
 
 pub fn handle_touch_raw(
@@ -90,6 +94,7 @@ pub fn handle_touch_raw(
                 pan: None,
                 rotation: None,
                 swipe_right: None,
+                press: None,
             }
         }
         winit::event::TouchPhase::Moved => {
@@ -100,17 +105,19 @@ pub fn handle_touch_raw(
                 pan,
                 rotation,
                 swipe_right: None,
+                press: None,
             }
         }
         winit::event::TouchPhase::Ended | winit::event::TouchPhase::Cancelled => {
             let cancelled = t.phase == winit::event::TouchPhase::Cancelled;
-            let swipe_right = touch_gestures.touch_ended(rt, tid, pos_px, cancelled);
+            let ended = touch_gestures.touch_ended(rt, tid, pos_px, cancelled);
             TouchResult {
                 dirty: false,
                 pinch: None,
                 pan: None,
                 rotation: None,
-                swipe_right,
+                swipe_right: ended.swipe_right,
+                press: ended.press,
             }
         }
     }

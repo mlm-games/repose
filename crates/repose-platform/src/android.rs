@@ -390,8 +390,6 @@ pub fn run_android_app_with_options(
                                     ),
                                 );
                             }
-                        } else if let Some(win) = &self.window {
-                            win.set_ime_allowed(false);
                         }
                         self.dirty = true;
                         self.request_redraw();
@@ -403,6 +401,43 @@ pub fn run_android_app_with_options(
                             &t,
                             scale,
                         );
+                        // without this the keyboard never appears on first tap.
+                        if t.phase == winit::event::TouchPhase::Ended {
+                            match r.press {
+                                Some(Some(fid)) if self.is_textfield(fid) => {
+                                    if let Some(win) = &self.window
+                                        && let Some(f) = &self.rt.frame_cache
+                                        && let Some(hit) =
+                                            f.hit_regions.iter().find(|h| h.id == fid)
+                                    {
+                                        let sf = win.scale_factor() as f32;
+                                        rc::set_ime_for_textfield_ex(
+                                            win,
+                                            true,
+                                            hit.keyboard_type.ime_purpose_hint(),
+                                            hit.auto_correct.unwrap_or(true),
+                                            hit.capitalization,
+                                        );
+                                        win.set_ime_cursor_area(
+                                            PhysicalPosition::new(
+                                                (hit.rect.x * sf) as i32,
+                                                (hit.rect.y * sf) as i32,
+                                            ),
+                                            PhysicalSize::new(
+                                                (hit.rect.w * sf) as u32,
+                                                (hit.rect.h * sf) as u32,
+                                            ),
+                                        );
+                                    }
+                                }
+                                Some(_) => {
+                                    if let Some(win) = &self.window {
+                                        win.set_ime_allowed(false);
+                                    }
+                                }
+                                None => {}
+                            }
+                        }
                         let mut dirty = r.dirty;
                         if let Some((delta_scale, center)) = r.pinch {
                             if self.dispatch_action(repose_core::shortcuts::Action::Gesture(
@@ -563,15 +598,41 @@ pub fn run_android_app_with_options(
                     // Drain upload commands queued during compose before presenting
                     self.process_render_commands();
 
+                    if output.wants_keyboard && !self.ime_visible {
+                        log::info!(
+                            "ime-sync: show focused={:?} purpose={:?}",
+                            self.rt.sched.focused,
+                            output.platform.ime_purpose,
+                        );
+                        if let Some(win) = self.window.as_ref() {
+                            rc::set_ime_for_textfield_ex(
+                                win,
+                                true,
+                                output.platform.ime_purpose,
+                                output.platform.ime_auto_correct,
+                                output.platform.ime_capitalization,
+                            );
+                            if let Some((x, y, w, h)) = output.platform.ime_cursor_area {
+                                win.set_ime_cursor_area(
+                                    PhysicalPosition::new(x as i32, y as i32),
+                                    PhysicalSize::new(w as u32, h as u32),
+                                );
+                            }
+                        }
+                        self.ime_visible = true;
+                    } else if !output.wants_keyboard && self.ime_visible {
+                        if let Some(win) = self.window.as_ref() {
+                            win.set_ime_allowed(false);
+                        }
+                        self.ime_visible = false;
+                    }
+
                     if !output.wants_keyboard
                         && focused.is_some()
                         && self.rt.sched.focused.is_none()
                         && self.rt.ime_preedit
                     {
                         self.rt.ime_preedit = false;
-                        if let Some(win) = self.window.as_ref() {
-                            win.set_ime_allowed(false);
-                        }
                     }
 
                     let frame = output.into_frame();
