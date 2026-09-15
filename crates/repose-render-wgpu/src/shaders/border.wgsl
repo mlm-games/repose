@@ -91,10 +91,22 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
     let w0 = max(fwidth(d_outer), 1e-4);
     let w1 = max(fwidth(d_inner), 1e-4);
 
-    let cov_outer = 1.0 - smoothstep(-w0, w0, d_outer);
-    let cov_inner = 1.0 - smoothstep(-w1, w1, d_inner);
-
-    let ring = max(cov_outer - cov_inner, 0.0);
+    let taps = array<vec2<f32>, 4>(
+        vec2(-0.25, -0.25),
+        vec2(0.25, -0.25),
+        vec2(-0.25, 0.25),
+        vec2(0.25, 0.25),
+    );
+    var ring_sum = 0.0;
+    for (var i = 0; i < 4; i++) {
+        let p_tap = unrotated_px + taps[i] * vec2(w0, w1);
+        let d_o = sdf_round_box_px(p_tap, half_px, radii_clamped);
+        let d_i = sdf_round_box_px(p_tap, half_inner, r_inner);
+        let c_o = 1.0 - smoothstep(-w0, w0, d_o);
+        let c_i = 1.0 - smoothstep(-w1, w1, d_i);
+        ring_sum += max(c_o - c_i, 0.0);
+    }
+    let ring = ring_sum * 0.25;
 
     let a = in.color.a * ring;
     return vec4(in.color.rgb * a, a);
