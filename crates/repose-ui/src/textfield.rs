@@ -86,7 +86,11 @@ pub fn ensure_caret_visible(state: &mut TextFieldState, multiline: bool) {
             (state.text.clone(), caret_idx)
         };
         let m = crate::textfield::measure_text(&display, font_px, TextMeasureConfig::default());
-        let caret_x = m.positions.get(caret_display_off).copied().unwrap_or(0.0);
+        let caret_x = m
+            .positions
+            .get(byte_to_char_index(&m, caret_display_off))
+            .copied()
+            .unwrap_or(0.0);
         state.ensure_caret_visible(caret_x, wrap_width, Dp(2.0).to_px().0);
     }
 }
@@ -1564,6 +1568,7 @@ pub fn caret_xy_for_byte(
     let line = &text[s..e];
     let m = measure_text(line, font_px, TextMeasureConfig::default());
     let ci = byte_to_char_index(&m, local);
+    // local is a byte offset within the line; ci maps it to char index.
     let x = m.positions.get(ci).copied().unwrap_or(0.0);
     let y = (li as f32) * line_h;
     (x, y, li)
@@ -1997,17 +2002,23 @@ pub(crate) fn paint_text_field(
                         .get(byte_to_char_index(&m, ls))
                         .copied()
                         .unwrap_or(0.0);
-                    let ex = m
-                        .positions
-                        .get(byte_to_char_index(&m, le))
-                        .copied()
-                        .unwrap_or(sx);
+                    let newline_covered = sel_b > e && i + 1 < layout.ranges.len();
                     let draw_y = rect.y + (i as f32) * lh - st.scroll_offset_y;
+                    let w = if newline_covered {
+                        (rect.x + rect.w - (rect.x + sx)).max(0.0)
+                    } else {
+                        let ex = m
+                            .positions
+                            .get(byte_to_char_index(&m, le))
+                            .copied()
+                            .unwrap_or(sx);
+                        (ex - sx).max(0.0)
+                    };
                     scene.nodes.push(SceneNode::Rect {
                         rect: repose_core::Rect {
                             x: rect.x + sx,
                             y: draw_y,
-                            w: (ex - sx).max(0.0),
+                            w,
                             h: lh,
                         },
                         brush: Brush::Solid(selection),
@@ -2396,7 +2407,12 @@ pub fn tf_ensure_visible_in_rect(state: &mut TextFieldState, inner_rect: repose_
     use crate::textfield::{TF_FONT_SP, TF_PADDING_X, TextMeasureConfig, measure_text};
     let font_px = TF_FONT_SP.to_px().0;
     let m = measure_text(&state.text, font_px, TextMeasureConfig::default());
-    let caret_x_px = m.positions.get(state.caret_index()).copied().unwrap_or(0.0);
+    // caret_index() is a BYTE offset; map to char index first.
+    let caret_x_px = m
+        .positions
+        .get(byte_to_char_index(&m, state.caret_index()))
+        .copied()
+        .unwrap_or(0.0);
     state.ensure_caret_visible(
         caret_x_px,
         inner_rect.w - 2.0 * TF_PADDING_X.to_px().0,
