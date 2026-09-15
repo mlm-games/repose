@@ -199,7 +199,12 @@ impl TouchGestureState {
         tid: u64,
         pos_px: (f32, f32),
         scale: f32,
-    ) -> (bool, Option<(f32, Vec2)>, Option<Vec2>, Option<(f32, Vec2)>) {
+    ) -> (
+        bool,
+        Option<(f32, Vec2)>,
+        Option<(Vec2, Vec2)>,
+        Option<(f32, Vec2)>,
+    ) {
         rt.mouse_pos_px = pos_px;
         let pos = Vec2 {
             x: pos_px.0,
@@ -207,7 +212,7 @@ impl TouchGestureState {
         };
         let mut dirty = false;
         let mut pinch: Option<(f32, Vec2)> = None;
-        let mut pan: Option<Vec2> = None;
+        let mut pan: Option<(Vec2, Vec2)> = None;
         let mut rotation: Option<(f32, Vec2)> = None;
         self.active_touches.insert(tid, pos_px);
 
@@ -243,7 +248,7 @@ impl TouchGestureState {
                 }
                 if self.past_touch_slop {
                     pinch = Some((raw_zoom, center));
-                    pan = Some(raw_pan);
+                    pan = Some((raw_pan, center));
                     if raw_rot != 0.0 {
                         rotation = Some((raw_rot, center));
                     }

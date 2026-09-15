@@ -758,9 +758,9 @@ pub fn run_desktop_app_with_config(
                     {
                         dirty = true;
                     }
-                    if let Some(delta) = r.pan
+                    if let Some((delta, center)) = r.pan
                         && self.dispatch_action(repose_core::shortcuts::Action::Gesture(
-                            repose_core::shortcuts::Gesture::Pan { delta },
+                            repose_core::shortcuts::Gesture::Pan { delta, center },
                         ))
                     {
                         dirty = true;

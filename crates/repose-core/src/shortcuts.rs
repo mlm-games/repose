@@ -23,9 +23,11 @@ pub enum Gesture {
         center: Vec2,
     },
     /// 2/3-finger pan (centroid translation). `delta` is in physical px,
-    /// positive = content moves right/down (natural scrolling).
+    /// positive = content moves right/down (natural scrolling). `center` is
+    /// the gesture centroid in physical px (Compose `calculateCentroid`).
     Pan {
         delta: Vec2,
+        center: Vec2,
     },
 }
 

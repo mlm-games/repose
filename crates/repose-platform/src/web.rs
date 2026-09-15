@@ -835,11 +835,11 @@ impl ApplicationHandler<()> for App {
                             dirty = true;
                         }
                     }
-                    if let Some(delta) = r.pan {
+                    if let Some((delta, center)) = r.pan {
                         if self.dispatch_action(
                             &window,
                             repose_core::shortcuts::Action::Gesture(
-                                repose_core::shortcuts::Gesture::Pan { delta },
+                                repose_core::shortcuts::Gesture::Pan { delta, center },
                             ),
                         ) {
                             dirty = true;

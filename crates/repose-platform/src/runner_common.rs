@@ -68,7 +68,7 @@ pub fn map_mouse_button(btn: winit::event::MouseButton) -> Option<PointerButton>
 pub struct TouchResult {
     pub dirty: bool,
     pub pinch: Option<(f32, Vec2)>,
-    pub pan: Option<Vec2>,
+    pub pan: Option<(Vec2, Vec2)>,
     pub rotation: Option<(f32, Vec2)>,
     pub swipe_right: Option<bool>,
 }
@@ -135,8 +135,8 @@ pub fn on_touch(
     {
         dirty = true;
     }
-    if let Some(delta) = r.pan
-        && dispatch(Action::Gesture(Gesture::Pan { delta }))
+    if let Some((delta, center)) = r.pan
+        && dispatch(Action::Gesture(Gesture::Pan { delta, center }))
     {
         dirty = true;
     }
