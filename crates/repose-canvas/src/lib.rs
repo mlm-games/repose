@@ -31,6 +31,10 @@ pub enum DrawCommand {
         pos: Vec2,
         color: Color,
         size: Px,
+        /// `None` = default UI font (Open Sans). `Some("monospace")` resolves
+        /// via the font-awl `monospace` feature (JetBrains Mono when bundled,
+        /// system monospace otherwise). `&'static str` to match `ViewKind::Text`.
+        font_family: Option<&'static str>,
     },
     /// Pre-tessellated vector mesh (fill or stroke) in mesh-local space.
     /// `transform` is a 2x3 affine mapping local -> world pixels and is applied
@@ -113,6 +117,27 @@ impl DrawScope {
             pos,
             color,
             size,
+            font_family: None,
+        });
+    }
+
+    /// Like [`draw_text`](Self::draw_text) but with an explicit font family.
+    /// Pass `"monospace"` for code (JetBrains Mono via font-awl `monospace`
+    /// feature, else system monospace fallback).
+    pub fn draw_text_with_family(
+        &mut self,
+        text: impl Into<String>,
+        pos: Vec2,
+        color: Color,
+        size: Px,
+        font_family: Option<&'static str>,
+    ) {
+        self.commands.push(DrawCommand::Text {
+            text: text.into(),
+            pos,
+            color,
+            size,
+            font_family,
         });
     }
 
@@ -290,6 +315,7 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                     pos,
                     color,
                     size,
+                    font_family,
                 } => {
                     scene.nodes.push(SceneNode::Text {
                         rect: Rect {
@@ -301,7 +327,7 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                         text: Arc::<str>::from(text.clone()),
                         color: *color,
                         size: *size,
-                        font_family: None,
+                        font_family: *font_family,
                         text_align: TextAlign::Unspecified,
                         font_weight: FontWeight::NORMAL,
                         font_style: FontStyle::Normal,

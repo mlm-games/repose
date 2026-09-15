@@ -1370,6 +1370,10 @@ pub fn metrics_for_textfield(
     byte_offsets.push(0);
     let mut last_byte = 0usize;
     for (b, _) in text.grapheme_indices(true) {
+        // Boundary 0 is already covered by the initial entries above...
+        if b == 0 {
+            continue;
+        }
         positions
             .push(positions.last().copied().unwrap_or(0.0) + width_between(&edges, last_byte, b));
         byte_offsets.push(b);
