@@ -276,14 +276,18 @@ fn top_app_bar_layout(
             .collect::<Vec<_>>(),
     );
 
-    let title_column = Column(Modifier::new().justify_content(JustifyContent::CENTER)).child((
-        Box(Modifier::new()).child(with_content_color(colors.title_content_color, || title)),
-        subtitle
-            .map(|s| {
-                Box(Modifier::new()).child(with_content_color(colors.subtitle_content_color, || s))
-            })
-            .unwrap_or(Box(Modifier::new())),
-    ));
+    let title_column = Column(Modifier::new().content_alignment(Alignment::Center)).child({
+        let mut children: Vec<View> = Vec::new();
+        children.push(
+            Box(Modifier::new()).child(with_content_color(colors.title_content_color, || title)),
+        );
+        if let Some(s) = subtitle {
+            children.push(
+                Box(Modifier::new()).child(with_content_color(colors.subtitle_content_color, || s)),
+            );
+        }
+        children
+    });
 
     let content_padding = PaddingValues {
         left: config.content_padding.left + Px(insets.left).to_dp(),
@@ -296,18 +300,23 @@ fn top_app_bar_layout(
         // True center alignment: nav/actions sit at the edges while the title
         // overlays the bar, centered across the FULL width (not the leftover
         // space between nav and actions), matching Compose's optical centering.
+        // The overlay pins all four edges so it fills the bar height: the
+        // title column's Center arrangement then centers vertically within
+        // the bar, and pointer events pass through the bare Box (it registers
+        // no hit region) to the nav/actions row beneath.
         ZStack(root_m.then(config.modifier)).child((
             Row(Modifier::new()
-                .fill_max_width()
+                .fill_max_size()
                 .align_items(AlignItems::CENTER)
                 .padding_values(content_padding))
             .child((nav, Box(Modifier::new().flex_grow(1.0)), actions_row)),
             Box(Modifier::new()
                 .absolute()
-                .offset(Some(Dp(0.0)), Some(Dp(0.0)), Some(Dp(0.0)), None)
+                .offset(Some(Dp(0.0)), Some(Dp(0.0)), Some(Dp(0.0)), Some(Dp(0.0)))
                 .fill_max_width()
                 .justify_content(JustifyContent::CENTER)
-                .align_items(AlignItems::CENTER))
+                .align_items(AlignItems::CENTER)
+                .hit_passthrough())
             .child(title_column),
         ))
     } else {
