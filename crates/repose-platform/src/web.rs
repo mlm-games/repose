@@ -732,7 +732,7 @@ impl ApplicationHandler<()> for App {
 
             WindowEvent::CursorLeft { .. } => {
                 self.rt.pointer_inside = false;
-                self.rt.clear_hover();
+                self.rt.handle_pointer_cancel();
                 self.request_redraw();
             }
 

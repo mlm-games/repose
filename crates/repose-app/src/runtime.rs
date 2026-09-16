@@ -421,7 +421,11 @@ impl ReposeRuntime {
             };
 
         let platform = PlatformOutput {
-            cursor: self.sched.cursor_override.take().or_else(|| self.take_cursor_suggestion()),
+            cursor: self
+                .sched
+                .cursor_override
+                .take()
+                .or_else(|| self.take_cursor_suggestion()),
             ime_allowed,
             ime_cursor_area,
             clipboard_text,
@@ -660,8 +664,20 @@ impl ReposeRuntime {
         }
 
         if let Some(path) = &self.hit_path {
-            self.dispatch_pointer_to_path(PointerEventKind::Move, pos, path);
-        } else if let Some(h) = top
+            let live: Vec<u64> = path
+                .iter()
+                .copied()
+                .filter(|id| f.hit_regions.iter().any(|h| h.id == *id))
+                .collect();
+            if live.is_empty() {
+                self.hit_path = None;
+                self.capture_id = None;
+            } else {
+                self.dispatch_pointer_to_path(PointerEventKind::Move, pos, &live);
+            }
+        }
+        if self.hit_path.is_none()
+            && let Some(h) = top
             && let Some(cb) = &h.on_pointer_move
         {
             let mut pe = PointerEvent::new(

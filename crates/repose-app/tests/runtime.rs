@@ -182,6 +182,61 @@ fn button_frame(
 }
 
 #[test]
+fn stale_capture_path_falls_back_to_top_hit_moves() {
+    use repose_core::input::{PointerEvent, PointerEventKind};
+    let mut rt = ReposeRuntime::new();
+    let moves = Rc::new(RefCell::new(0u32));
+    let m = moves.clone();
+    let mut hr = HitRegion {
+        id: BTN_ID,
+        rect: Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 100.0,
+            h: 50.0,
+        },
+        ..Default::default()
+    };
+    hr.on_pointer_move = Some(Rc::new(move |_: PointerEvent| {
+        *m.borrow_mut() += 1;
+    }));
+    rt.cache_frame(Frame {
+        scene: Scene::default(),
+        hit_regions: vec![hr],
+        semantics_nodes: Vec::new(),
+        focus_chain: Vec::new(),
+    });
+    rt.hit_path = Some(vec![4242, 7777]);
+    rt.capture_id = Some(4242);
+    let _ = rt.handle_pointer_move(Vec2 { x: 10.0, y: 10.0 });
+    assert_eq!(
+        *moves.borrow(),
+        1,
+        "moves must reach the live top hit even with a dead capture path"
+    );
+    assert!(
+        rt.hit_path.is_none() && rt.capture_id.is_none(),
+        "dead capture must clear so later releases can't misclick"
+    );
+    let pos = Vec2 { x: 10.0, y: 10.0 };
+    let _ = rt.handle_pointer_press(pos, PointerButton::Primary);
+    let _ = rt.handle_pointer_move(pos);
+    assert_eq!(*moves.borrow(), 1, "captured moves route to the path");
+    let _ = rt.handle_pointer_release(pos, PointerButton::Primary);
+}
+
+#[test]
+fn pointer_cancel_clears_capture_for_reentry() {
+    let mut rt = ReposeRuntime::new();
+    rt.cache_frame(button_frame(BTN_ID, None, None, None));
+    let pos = Vec2 { x: 10.0, y: 10.0 };
+    let _ = rt.handle_pointer_press(pos, PointerButton::Primary);
+    assert!(rt.hit_path.is_some());
+    rt.handle_pointer_cancel();
+    assert!(rt.hit_path.is_none() && rt.capture_id.is_none());
+}
+
+#[test]
 fn combined_clickable_delays_single_click_when_double_configured() {
     let mut rt = ReposeRuntime::new();
     let clicks = Rc::new(RefCell::new(0u32));

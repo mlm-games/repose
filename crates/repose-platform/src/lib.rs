@@ -502,7 +502,7 @@ pub fn run_desktop_app_with_config(
 
                 WindowEvent::CursorLeft { .. } => {
                     self.rt.pointer_inside = false;
-                    self.rt.clear_hover();
+                    self.rt.handle_pointer_cancel();
                     self.external_file_drag = false;
                     self.hovered_files.clear();
                     self.request_redraw();
