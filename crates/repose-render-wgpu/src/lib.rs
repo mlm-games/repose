@@ -460,27 +460,37 @@ impl Pipelines {
             },
             wgpu::VertexAttribute {
                 shader_location: 3,
+                offset: 36,
+                format: wgpu::VertexFormat::Uint32,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 4,
                 offset: 48,
                 format: wgpu::VertexFormat::Float32x4,
             },
             wgpu::VertexAttribute {
-                shader_location: 4,
+                shader_location: 5,
                 offset: 64,
                 format: wgpu::VertexFormat::Float32x4,
             },
             wgpu::VertexAttribute {
-                shader_location: 5,
+                shader_location: 6,
                 offset: 80,
                 format: wgpu::VertexFormat::Float32x2,
             },
             wgpu::VertexAttribute {
-                shader_location: 6,
+                shader_location: 7,
                 offset: 88,
                 format: wgpu::VertexFormat::Float32x2,
             },
             wgpu::VertexAttribute {
-                shader_location: 7,
+                shader_location: 8,
                 offset: 96,
+                format: wgpu::VertexFormat::Uint32,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 9,
+                offset: 112,
                 format: wgpu::VertexFormat::Float32x4,
             },
         ];
@@ -554,31 +564,36 @@ impl Pipelines {
             },
             wgpu::VertexAttribute {
                 shader_location: 2,
+                offset: 20,
+                format: wgpu::VertexFormat::Uint32,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 3,
                 offset: 32,
                 format: wgpu::VertexFormat::Float32x4,
             },
             wgpu::VertexAttribute {
-                shader_location: 3,
+                shader_location: 4,
                 offset: 48,
                 format: wgpu::VertexFormat::Float32x4,
             },
             wgpu::VertexAttribute {
-                shader_location: 4,
+                shader_location: 5,
                 offset: 64,
                 format: wgpu::VertexFormat::Float32x2,
             },
             wgpu::VertexAttribute {
-                shader_location: 5,
+                shader_location: 6,
                 offset: 72,
                 format: wgpu::VertexFormat::Float32x2,
             },
             wgpu::VertexAttribute {
-                shader_location: 6,
+                shader_location: 7,
                 offset: 80,
                 format: wgpu::VertexFormat::Uint32,
             },
             wgpu::VertexAttribute {
-                shader_location: 7,
+                shader_location: 8,
                 offset: 96,
                 format: wgpu::VertexFormat::Float32x4,
             },
@@ -1578,11 +1593,14 @@ struct RectInstance {
     xywh: [f32; 4],
     radii: [f32; 4],
     brush_type: u32,
-    _pad: [f32; 3],
+    grad_kind: u32,
+    _pad: [f32; 2],
     color0: [f32; 4],
     color1: [f32; 4],
-    grad_start: [f32; 2],
-    grad_end: [f32; 2],
+    grad_p0: [f32; 2],
+    grad_p1: [f32; 2],
+    tile_mode: u32,
+    _pad2: [f32; 3],
     fwd_mat: [f32; 4],
 }
 
@@ -1609,7 +1627,8 @@ struct BorderInstance {
 struct EllipseInstance {
     xywh: [f32; 4],
     brush_type: u32,
-    _pad: [f32; 3],
+    grad_kind: u32,
+    _pad: [f32; 2],
     color0: [f32; 4],
     color1: [f32; 4],
     grad_p0: [f32; 2],
@@ -5352,17 +5371,20 @@ impl WgpuSceneRenderer {
                         current_target_size.0,
                         current_target_size.1,
                     );
-                    let (brush_type, color0, color1, grad_start, grad_end) =
-                        brush_to_instance_fields(brush);
+                    let (brush_type, grad_kind, color0, color1, grad_p0, grad_p1, tile_mode) =
+                        brush_to_shape_fields(brush, rect, current_transform);
                     batch.rects.push(RectInstance {
                         xywh: ndc,
                         radii: radius.map(|r| r.0),
                         brush_type,
-                        _pad: [0.0; 3],
+                        grad_kind,
+                        _pad: [0.0; 2],
                         color0,
                         color1,
-                        grad_start,
-                        grad_end,
+                        grad_p0,
+                        grad_p1,
+                        tile_mode,
+                        _pad2: [0.0; 3],
                         fwd_mat,
                     });
                 }
@@ -5405,12 +5427,13 @@ impl WgpuSceneRenderer {
                         current_target_size.0,
                         current_target_size.1,
                     );
-                    let (brush_type, _grad_kind, color0, color1, grad_p0, grad_p1, tile_mode) =
+                    let (brush_type, grad_kind, color0, color1, grad_p0, grad_p1, tile_mode) =
                         brush_to_shape_fields(brush, rect, current_transform);
                     batch.ellipses.push(EllipseInstance {
                         xywh: ndc,
                         brush_type,
-                        _pad: [0.0; 3],
+                        grad_kind,
+                        _pad: [0.0; 2],
                         color0,
                         color1,
                         grad_p0,
@@ -5801,11 +5824,14 @@ impl WgpuSceneRenderer {
                                 xywh: ndc,
                                 radii: [0.0; 4],
                                 brush_type: 0,
-                                _pad: [0.0; 3],
+                                grad_kind: 0,
+                                _pad: [0.0; 2],
                                 color0: deco_color.to_linear(),
                                 color1: [0.0; 4],
-                                grad_start: [0.0; 2],
-                                grad_end: [0.0; 2],
+                                grad_p0: [0.0; 2],
+                                grad_p1: [0.0; 2],
+                                tile_mode: 0,
+                                _pad2: [0.0; 3],
                                 fwd_mat,
                             });
                         }
@@ -5826,11 +5852,14 @@ impl WgpuSceneRenderer {
                                 xywh: ndc,
                                 radii: [0.0; 4],
                                 brush_type: 0,
-                                _pad: [0.0; 3],
+                                grad_kind: 0,
+                                _pad: [0.0; 2],
                                 color0: deco_color.to_linear(),
                                 color1: [0.0; 4],
-                                grad_start: [0.0; 2],
-                                grad_end: [0.0; 2],
+                                grad_p0: [0.0; 2],
+                                grad_p1: [0.0; 2],
+                                tile_mode: 0,
+                                _pad2: [0.0; 3],
                                 fwd_mat,
                             });
                         }
@@ -6136,17 +6165,20 @@ impl WgpuSceneRenderer {
                         current_target_size.0,
                         current_target_size.1,
                     );
-                    let (brush_type, color0, _color1, _grad_start, _grad_end) =
+                    let (brush_type, color0, _color1, _grad_p0, _grad_p1) =
                         brush_to_instance_fields(&Brush::Solid(*color));
                     batch.rects.push(RectInstance {
                         xywh: ndc,
                         radii: radius.map(|r| r.0),
                         brush_type,
-                        _pad: [0.0; 3],
+                        grad_kind: 0,
+                        _pad: [0.0; 2],
                         color0,
                         color1: [0.0; 4],
-                        grad_start: [0.0; 2],
-                        grad_end: [0.0; 2],
+                        grad_p0: [0.0; 2],
+                        grad_p1: [0.0; 2],
+                        tile_mode: 0,
+                        _pad2: [0.0; 3],
                         fwd_mat,
                     });
                 }

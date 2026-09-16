@@ -251,6 +251,33 @@ impl App {
         window.scale_factor() as f32
     }
 
+    /// Mirror the desktop runner's cursor handling onto the web canvas:
+    /// `Some` applies the matching CSS keyword (`Hidden` -> `none`), `None`
+    /// restores the default arrow. Cached per value so the DOM style is only
+    /// touched on change.
+    fn apply_frame_cursor(&self, window: &Window, cursor: &Option<repose_core::CursorIcon>) {
+        use std::cell::RefCell;
+        thread_local! {
+            static LAST_CURSOR: RefCell<Option<&'static str>> = const { RefCell::new(None) };
+        }
+        let next = cursor.map(rc::cursor_css).unwrap_or("default");
+        let changed = LAST_CURSOR.with(|last| {
+            if *last.borrow() != Some(next) {
+                *last.borrow_mut() = Some(next);
+                true
+            } else {
+                false
+            }
+        });
+        if !changed {
+            return;
+        }
+        let Some(canvas) = window.canvas() else {
+            return;
+        };
+        let _ = canvas.style().set_property("cursor", next);
+    }
+
     fn is_textfield(&self, id: u64) -> bool {
         rc::is_textfield_in_frame(&self.rt.frame_cache, id)
     }
@@ -972,6 +999,8 @@ impl ApplicationHandler<()> for App {
                     rc::set_ime_for_textfield(&window, false);
                     self.rt.ime_preedit = false;
                 }
+
+                self.apply_frame_cursor(&window, &output.platform.cursor);
 
                 let frame = output.into_frame();
 

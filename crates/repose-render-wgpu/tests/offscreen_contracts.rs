@@ -152,7 +152,11 @@ fn brush_border_matches_solid_border() {
     let at = |x: usize, y: usize| (y * 16 + x) * 4;
     // Top edge of the ring is red (AA may soften the outermost row).
     let i = at(8, 3);
-    assert!(px[i] > 200 && px[i + 3] > 200, "top edge should be red, got {:?}", &px[i..i + 4]);
+    assert!(
+        px[i] > 200 && px[i + 3] > 200,
+        "top edge should be red, got {:?}",
+        &px[i..i + 4]
+    );
     assert_eq!(px[i + 1], 0);
     assert_eq!(px[i + 2], 0);
     // Interior of the ring is untouched.
@@ -191,9 +195,17 @@ fn linear_border_blends_endpoint_colors() {
     // Left edge leans red, right edge leans blue.
     let l = at(2, 8);
     let r = at(13, 8);
-    assert!(px[l] > 128, "left edge should be red, got {:?}", &px[l..l + 4]);
+    assert!(
+        px[l] > 128,
+        "left edge should be red, got {:?}",
+        &px[l..l + 4]
+    );
     assert!(px[l + 2] < 128);
-    assert!(px[r + 2] > 128, "right edge should be blue, got {:?}", &px[r..r + 4]);
+    assert!(
+        px[r + 2] > 128,
+        "right edge should be blue, got {:?}",
+        &px[r..r + 4]
+    );
     assert!(px[r] < 128);
 }
 
@@ -267,4 +279,106 @@ fn sweep_arc_renders_without_panic() {
     };
     let px = off.render_rgba(&scene, None).expect("render");
     assert!(px.iter().any(|&b| b != 0), "sweep arc should paint pixels");
+}
+
+#[test]
+fn radial_rect_fill_center_matches_start_color() {
+    use repose_core::Vec2;
+    let Some(mut off) = try_offscreen(16, 16) else {
+        return;
+    };
+    let scene = Scene {
+        clear_color: Color::from_rgba(0, 0, 0, 0),
+        nodes: vec![SceneNode::Rect {
+            rect: Rect {
+                x: 2.0,
+                y: 2.0,
+                w: 12.0,
+                h: 12.0,
+            },
+            brush: Brush::Radial {
+                center: Vec2 { x: 6.0, y: 6.0 },
+                radius: 24.0,
+                start_color: Color::from_rgba(255, 0, 0, 255),
+                end_color: Color::from_rgba(0, 0, 255, 255),
+            },
+            radius: [Px::ZERO; 4],
+        }],
+    };
+    let px = off.render_rgba(&scene, None).expect("render");
+    let i = (8 * 16 + 8) * 4;
+    assert!(
+        px[i + 3] > 200,
+        "center should be opaque, got {:?}",
+        &px[i..i + 4]
+    );
+    assert!(
+        px[i] > px[i + 2],
+        "center should be red-dominant, got {:?}",
+        &px[i..i + 4]
+    );
+}
+
+#[test]
+fn sweep_rect_fill_paints_pixels() {
+    use repose_core::Vec2;
+    let Some(mut off) = try_offscreen(16, 16) else {
+        return;
+    };
+    let scene = Scene {
+        clear_color: Color::from_rgba(0, 0, 0, 0),
+        nodes: vec![SceneNode::Rect {
+            rect: Rect {
+                x: 2.0,
+                y: 2.0,
+                w: 12.0,
+                h: 12.0,
+            },
+            brush: Brush::Sweep {
+                center: Vec2 { x: 6.0, y: 6.0 },
+                start_color: Color::from_rgba(255, 0, 0, 255),
+                end_color: Color::from_rgba(0, 0, 255, 255),
+            },
+            radius: [Px::ZERO; 4],
+        }],
+    };
+    let px = off.render_rgba(&scene, None).expect("render");
+    assert!(px.iter().any(|&b| b != 0), "sweep rect should paint pixels");
+}
+
+#[test]
+fn radial_ellipse_fill_center_matches_start_color() {
+    use repose_core::Vec2;
+    let Some(mut off) = try_offscreen(16, 16) else {
+        return;
+    };
+    let scene = Scene {
+        clear_color: Color::from_rgba(0, 0, 0, 0),
+        nodes: vec![SceneNode::Ellipse {
+            rect: Rect {
+                x: 2.0,
+                y: 2.0,
+                w: 12.0,
+                h: 12.0,
+            },
+            brush: Brush::Radial {
+                center: Vec2 { x: 6.0, y: 6.0 },
+                radius: 24.0,
+                start_color: Color::from_rgba(255, 0, 0, 255),
+                end_color: Color::from_rgba(0, 0, 255, 255),
+            },
+        }],
+    };
+    let px = off.render_rgba(&scene, None).expect("render");
+    let i = (8 * 16 + 8) * 4;
+    assert!(
+        px[i + 3] > 200,
+        "center should be opaque, got {:?}",
+        &px[i..i + 4]
+    );
+    assert!(
+        px[i] > px[i + 2],
+        "center should be red-dominant, got {:?}",
+        &px[i..i + 4]
+    );
 }

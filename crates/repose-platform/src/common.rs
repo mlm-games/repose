@@ -210,6 +210,23 @@ pub(crate) fn cursor_is_hidden(c: repose_core::CursorIcon) -> bool {
     matches!(c, repose_core::CursorIcon::Hidden)
 }
 
+/// CSS cursor keyword for a [`CursorIcon`](repose_core::CursorIcon),
+/// applied to the web canvas `style.cursor`. `Hidden` maps to `none`.
+pub(crate) fn cursor_css(c: repose_core::CursorIcon) -> &'static str {
+    match c {
+        repose_core::CursorIcon::Hidden => "none",
+        repose_core::CursorIcon::Default => "default",
+        repose_core::CursorIcon::Pointer => "pointer",
+        repose_core::CursorIcon::Text => "text",
+        repose_core::CursorIcon::EwResize => "ew-resize",
+        repose_core::CursorIcon::NsResize => "ns-resize",
+        repose_core::CursorIcon::NwseResize => "nwse-resize",
+        repose_core::CursorIcon::NeswResize => "nesw-resize",
+        repose_core::CursorIcon::Grab => "grab",
+        repose_core::CursorIcon::Grabbing => "grabbing",
+    }
+}
+
 // IME helpers.
 pub fn map_ime_purpose(hint: repose_core::ImePurposeHint) -> winit::window::ImePurpose {
     match hint {

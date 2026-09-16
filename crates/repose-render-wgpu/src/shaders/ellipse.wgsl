@@ -7,26 +7,28 @@ struct Globals {
 struct VSOut {
     @builtin(position) pos: vec4<f32>,
     @location(0) @interpolate(flat) brush_type: u32,
-    @location(1) color0: vec4<f32>,
-    @location(2) color1: vec4<f32>,
-    @location(3) grad_p0: vec2<f32>,
-    @location(4) grad_p1: vec2<f32>,
-    @location(5) @interpolate(flat) tile_mode: u32,
-    @location(6) xywh: vec4<f32>,
-    @location(7) pos_ndc: vec2<f32>,
-    @location(8) fwd_mat: vec4<f32>,
+    @location(1) @interpolate(flat) grad_kind: u32,
+    @location(2) color0: vec4<f32>,
+    @location(3) color1: vec4<f32>,
+    @location(4) grad_p0: vec2<f32>,
+    @location(5) grad_p1: vec2<f32>,
+    @location(6) @interpolate(flat) tile_mode: u32,
+    @location(7) xywh: vec4<f32>,
+    @location(8) pos_ndc: vec2<f32>,
+    @location(9) fwd_mat: vec4<f32>,
 };
 
 @vertex
 fn vs_main(
     @location(0) xywh: vec4<f32>,
     @location(1) @interpolate(flat) brush_type: u32,
-    @location(2) color0: vec4<f32>,
-    @location(3) color1: vec4<f32>,
-    @location(4) grad_p0: vec2<f32>,
-    @location(5) grad_p1: vec2<f32>,
-    @location(6) @interpolate(flat) tile_mode: u32,
-    @location(7) fwd_mat: vec4<f32>,
+    @location(2) @interpolate(flat) grad_kind: u32,
+    @location(3) color0: vec4<f32>,
+    @location(4) color1: vec4<f32>,
+    @location(5) grad_p0: vec2<f32>,
+    @location(6) grad_p1: vec2<f32>,
+    @location(7) @interpolate(flat) tile_mode: u32,
+    @location(8) fwd_mat: vec4<f32>,
     @builtin(vertex_index) v: u32
 ) -> VSOut {
     var positions = array<vec2<f32>, 6>(
@@ -45,6 +47,7 @@ fn vs_main(
     var out: VSOut;
     out.pos = vec4(pos_ndc, 0.0, 1.0);
     out.brush_type = brush_type;
+    out.grad_kind = grad_kind;
     out.color0 = color0;
     out.color1 = color1;
     out.grad_p0 = grad_p0;
@@ -80,11 +83,24 @@ fn apply_tile(t: f32, tile_mode: u32) -> f32 {
     return clamp(t, 0.0, 1.0);
 }
 
-// Ellipse fill supports linear gradients only (matches the CPU baker:
-// radial/sweep fall back to their start color).
+// Ellipse fill supports linear, radial and sweep gradients (same
+// `grad_kind` encoding as the border shader).
 fn eval_ellipse_brush(in: VSOut, local_px: vec2<f32>) -> vec4<f32> {
     if in.brush_type == 0u {
         return in.color0;
+    }
+    if in.grad_kind == 1u {
+        let d = distance(local_px, in.grad_p0);
+        let radius = max(in.grad_p1.x, 1e-3);
+        return mix(in.color0, in.color1, apply_tile(d / radius, in.tile_mode));
+    }
+    if in.grad_kind == 2u {
+        let rel = local_px - in.grad_p0;
+        var frac = atan2(rel.y, rel.x) / 6.2831853;
+        if frac < 0.0 {
+            frac += 1.0;
+        }
+        return mix(in.color0, in.color1, apply_tile(frac, in.tile_mode));
     }
     let dir = in.grad_p1 - in.grad_p0;
     let len2 = max(dot(dir, dir), 1e-6);
