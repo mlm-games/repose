@@ -112,7 +112,10 @@ pub fn TooltipBox(
     let tooltip_visible = state.is_visible() || alpha > 0.01;
     let scale = 0.92 + 0.08 * alpha;
 
-    let mut host = modifier.align_self(AlignSelf::FLEX_START).flex_shrink(0.0);
+    let mut host = modifier.flex_shrink(0.0);
+    if host.align_self.is_none() {
+        host = host.align_self(AlignSelf::FLEX_START);
+    }
 
     if config.enable_user_input {
         let enter = state.clone();

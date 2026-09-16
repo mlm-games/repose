@@ -717,6 +717,22 @@ pub enum DrawStyle {
         /// Optional path effect (dash, corner rounding, etc.).
         path_effect: Option<PathEffect>,
     },
+    /// Fill plus an outline in the same color. Renders the fill first,
+    /// then the stroke on top (same layout; stroke width in em-units).
+    /// Faux-bold for fonts without a bold face: single layout pass,
+    /// no extra view needed.
+    FillAndStroke {
+        /// Stroke width in em-units (fraction of font size). 0.05 = 5% of em.
+        width: f32,
+        /// Line cap style for stroke endpoints.
+        cap: crate::StrokeCap,
+        /// Line join style for stroke segment joins.
+        join: crate::StrokeJoin,
+        /// Miter limit for miter joins.
+        miter: f32,
+        /// Optional path effect (dash, corner rounding, etc.).
+        path_effect: Option<PathEffect>,
+    },
 }
 
 impl DrawStyle {
@@ -729,6 +745,52 @@ impl DrawStyle {
             miter: 4.0,
             path_effect: None,
         }
+    }
+
+    /// Create a `FillAndStroke` variant with default cap, join, miter,
+    /// and no path effect.
+    pub const fn fill_and_stroke(width: f32) -> Self {
+        Self::FillAndStroke {
+            width,
+            cap: crate::StrokeCap::Butt,
+            join: crate::StrokeJoin::Miter,
+            miter: 4.0,
+            path_effect: None,
+        }
+    }
+
+    /// Outline parameters when this style draws a stroke, else `None`.
+    pub const fn stroke_params(
+        &self,
+    ) -> Option<(
+        f32,
+        crate::StrokeCap,
+        crate::StrokeJoin,
+        f32,
+        &Option<PathEffect>,
+    )> {
+        match self {
+            Self::Stroke {
+                width,
+                cap,
+                join,
+                miter,
+                path_effect,
+            }
+            | Self::FillAndStroke {
+                width,
+                cap,
+                join,
+                miter,
+                path_effect,
+            } => Some((*width, *cap, *join, *miter, path_effect)),
+            Self::Fill => None,
+        }
+    }
+
+    /// Whether this style draws the glyph fill.
+    pub const fn draws_fill(&self) -> bool {
+        !matches!(self, Self::Stroke { .. })
     }
 }
 

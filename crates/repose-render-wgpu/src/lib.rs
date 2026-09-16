@@ -5276,6 +5276,7 @@ impl WgpuSceneRenderer {
                     let baseline_shift_y: f32 = px * extra_style.baseline_shift.0;
 
                     let (
+                        draws_fill,
                         is_stroke,
                         stroke_width,
                         stroke_cap,
@@ -5289,8 +5290,24 @@ impl WgpuSceneRenderer {
                             join,
                             miter,
                             path_effect,
-                        } => (true, *width, *cap, *join, *miter, path_effect.clone()),
+                        } => (
+                            false,
+                            true,
+                            *width,
+                            *cap,
+                            *join,
+                            *miter,
+                            path_effect.clone(),
+                        ),
+                        repose_core::DrawStyle::FillAndStroke {
+                            width,
+                            cap,
+                            join,
+                            miter,
+                            path_effect,
+                        } => (true, true, *width, *cap, *join, *miter, path_effect.clone()),
                         _ => (
+                            true,
                             false,
                             0.0,
                             repose_core::StrokeCap::Butt,
@@ -5321,18 +5338,24 @@ impl WgpuSceneRenderer {
                             if let Some(ref ck) = ck {
                                 // Check if cached.
                                 let need_tessellate = self.slug_cache.get(ck).is_none_or(|g| {
-                                    if is_stroke {
-                                        let key = stroke_tess_key.as_ref().unwrap();
-                                        !g.stroke_variants.contains_key(key)
-                                    } else {
-                                        g.fill_vertices.is_none()
-                                    }
+                                    (draws_fill && g.fill_vertices.is_none())
+                                        || (is_stroke
+                                            && !g
+                                                .stroke_variants
+                                                .contains_key(stroke_tess_key.as_ref().unwrap()))
                                 });
                                 if need_tessellate {
                                     if let Some((ck2, commands)) =
                                         repose_text::lookup_and_extract_outline(sg.key, sg.px)
                                     {
                                         let font_size_px = f32::from_bits(ck2.font_size_bits);
+                                        if draws_fill {
+                                            self.slug_cache.get_or_insert(
+                                                ck2,
+                                                font_size_px,
+                                                &commands,
+                                            );
+                                        }
                                         if is_stroke {
                                             self.slug_cache.get_or_insert_stroke(
                                                 ck2,
@@ -5343,12 +5366,6 @@ impl WgpuSceneRenderer {
                                                 stroke_join,
                                                 stroke_miter,
                                                 &stroke_path_effect,
-                                            );
-                                        } else {
-                                            self.slug_cache.get_or_insert(
-                                                ck2,
-                                                font_size_px,
-                                                &commands,
                                             );
                                         }
                                     }
@@ -5379,28 +5396,32 @@ impl WgpuSceneRenderer {
                                 let tw = current_target_size.0;
                                 let th = current_target_size.1;
 
-                                let verts = if is_stroke {
-                                    let key = stroke_tess_key.as_ref().unwrap();
-                                    entry
-                                        .stroke_variants
-                                        .get(key)
-                                        .map(|v| v.as_slice())
-                                        .unwrap_or(&[])
-                                } else {
-                                    entry.fill_vertices.as_deref().unwrap_or(&[])
+                                let mut emit = |verts: &[[f32; 2]]| {
+                                    for &v in verts {
+                                        let (sx, sy) = tf(ox + v[0] * px, oy - v[1] * px);
+                                        let ndc_x = sx / tw * 2.0 - 1.0;
+                                        let ndc_y = -(sy / th) * 2.0 + 1.0;
+                                        slug_verts_local.push(slug::TessVertex {
+                                            ndc_pos: [ndc_x, ndc_y],
+                                            color: color.to_linear(),
+                                        });
+                                    }
                                 };
-
-                                for &v in verts {
-                                    let (sx, sy) = tf(ox + v[0] * px, oy - v[1] * px);
-                                    let ndc_x = sx / tw * 2.0 - 1.0;
-                                    let ndc_y = -(sy / th) * 2.0 + 1.0;
-                                    slug_verts_local.push(slug::TessVertex {
-                                        ndc_pos: [ndc_x, ndc_y],
-                                        color: color.to_linear(),
-                                    });
+                                if draws_fill {
+                                    emit(entry.fill_vertices.as_deref().unwrap_or(&[]));
+                                }
+                                if is_stroke {
+                                    let key = stroke_tess_key.as_ref().unwrap();
+                                    emit(
+                                        entry
+                                            .stroke_variants
+                                            .get(key)
+                                            .map(|v| v.as_slice())
+                                            .unwrap_or(&[]),
+                                    );
                                 }
 
-                                if is_stroke {
+                                if !draws_fill {
                                     // Stroke glyphs cannot use atlas fallback...
                                     continue;
                                 }
@@ -5408,8 +5429,8 @@ impl WgpuSceneRenderer {
                             }
                         }
 
-                        // Don't use atlas fallback for strokes too
-                        if is_stroke {
+                        if !draws_fill {
+                            // Don't use atlas fallback for strokes too
                             continue;
                         }
 

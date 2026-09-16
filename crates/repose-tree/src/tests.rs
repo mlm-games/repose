@@ -4,8 +4,8 @@
 mod tests {
     use crate::ViewTree;
     use repose_core::{
-        Color, FontStyle, FontWeight, Modifier, Sp, TextAlign, TextDecoration, TextOverflow,
-        UnitExt, View, ViewKind,
+        Color, DrawStyle, FontStyle, FontWeight, Modifier, Sp, TextAlign, TextDecoration,
+        TextOverflow, UnitExt, View, ViewKind,
     };
 
     fn make_text(s: &str) -> View {
@@ -28,6 +28,7 @@ mod tests {
                 line_height: Sp::ZERO,
                 url: None,
                 font_variation_settings: None,
+                draw_style: DrawStyle::Fill,
             },
         )
     }

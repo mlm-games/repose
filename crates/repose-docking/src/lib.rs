@@ -14,6 +14,10 @@ pub type PanelId = u64;
 pub struct DockPanel {
     pub id: PanelId,
     pub title: String,
+    /// Material Symbol codepoint rendered in the tab strip instead of the
+    /// text title (icon + tooltip model; `title` stays the tooltip +
+    /// palette label).
+    pub icon: Option<char>,
     pub content: Rc<dyn Fn() -> View>,
 }
 
@@ -639,6 +643,7 @@ fn render_tabs(
 
                 let state_set = dock.state.clone();
                 let title = panel.title.clone();
+                let icon = panel.icon;
                 let drag_pid = pid;
 
                 let cb_close = dock.callbacks.on_close.clone();
@@ -692,7 +697,7 @@ fn render_tabs(
                     Row(Modifier::new()
                         .key(pid)
                         .height(TAB_H)
-                        .min_width(Dp(108.0))
+                        .min_width(Dp(44.0))
                         .max_width(Dp(240.0))
                         .clip_rounded(TAB_RADIUS)
                         .background(tab_bg)
@@ -726,13 +731,18 @@ fn render_tabs(
                                 bottom: Dp(0.0),
                             })
                             .content_alignment(Alignment::Center))
-                        .child(
+                        .child(if let Some(glyph) = icon {
+                            Text(glyph.to_string())
+                                .size(Sp(18.0))
+                                .font_family("Material Symbols Outlined")
+                                .color(tab_fg)
+                        } else {
                             Text(title)
                                 .size(th.typography.label_large)
                                 .single_line()
                                 .overflow_ellipsize()
-                                .color(tab_fg),
-                        ),
+                                .color(tab_fg)
+                        }),
                         pop_view,
                         close_view,
                     )),

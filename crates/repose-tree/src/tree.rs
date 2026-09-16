@@ -911,8 +911,8 @@ fn intersect_scope_with_modifier(scope: SubcomposeScope, modifier: &Modifier) ->
 mod tests {
     use super::*;
     use repose_core::{
-        Color, Dp, FontStyle, FontWeight, Modifier, Sp, SubcomposeScope, TextAlign, TextDecoration,
-        UnitExt, View, ViewKind,
+        Color, Dp, DrawStyle, FontStyle, FontWeight, Modifier, Sp, SubcomposeScope, TextAlign,
+        TextDecoration, UnitExt, View, ViewKind,
     };
     use std::sync::Arc;
 
@@ -936,6 +936,7 @@ mod tests {
                 line_height: Sp::ZERO,
                 url: None,
                 font_variation_settings: None,
+                draw_style: DrawStyle::Fill,
             },
         )
     }

@@ -2214,7 +2214,7 @@ where
     let current_focused = sched.focused;
 
     let frame = sched.repose(
-        { move |s: &mut Scheduler| with_density(Density { scale }, || (root_fn)(s)) },
+        move |s: &mut Scheduler| with_density(Density { scale }, || (root_fn)(s)),
         {
             let hover_ancestors = hover_ancestors.clone();
             let pressed_ids = pressed_ids.clone();

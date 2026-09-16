@@ -160,8 +160,8 @@ mod tests {
 
     fn text_view(text: &str) -> View {
         use repose_core::{
-            Color, FontStyle, FontWeight, Sp, TextAlign, TextDecoration, TextOverflow, UnitExt,
-            ViewKind,
+            Color, DrawStyle, FontStyle, FontWeight, Sp, TextAlign, TextDecoration, TextOverflow,
+            UnitExt, ViewKind,
         };
         View {
             id: 0,
@@ -182,6 +182,7 @@ mod tests {
                 line_height: Sp::ZERO,
                 url: None,
                 font_variation_settings: None,
+                draw_style: DrawStyle::Fill,
             },
             modifier: Modifier::default(),
             children: vec![],

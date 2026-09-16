@@ -190,6 +190,7 @@ fn panel(id: u64, title: &str, body: Rc<dyn Fn() -> View>) -> DockPanel {
     DockPanel {
         id,
         title: title.to_string(),
+        icon: None,
         content: body,
     }
 }

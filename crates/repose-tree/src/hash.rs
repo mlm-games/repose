@@ -74,6 +74,7 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
             line_height,
             url,
             font_variation_settings,
+            draw_style,
         } => {
             font_family.hash(hasher);
             text.hash(hasher);
@@ -94,6 +95,14 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
             hash_sp(*line_height, hasher);
             url.hash(hasher);
             font_variation_settings.hash(hasher);
+            match draw_style {
+                repose_core::DrawStyle::Fill => 0u8.hash(hasher),
+                repose_core::DrawStyle::Stroke { width, .. }
+                | repose_core::DrawStyle::FillAndStroke { width, .. } => {
+                    1u8.hash(hasher);
+                    hash_f32(*width, hasher);
+                }
+            }
             if let Some(annos) = annotations {
                 annos.len().hash(hasher);
                 for span in annos.iter() {
@@ -131,6 +140,39 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
                         hash_f32(bs.0, hasher);
                     }
                     if let Some(ds) = &span.style.draw_style {
+                        fn hash_stroke_params(
+                            hasher: &mut impl Hasher,
+                            tag: u8,
+                            width: &f32,
+                            cap: &repose_core::StrokeCap,
+                            join: &repose_core::StrokeJoin,
+                            miter: &f32,
+                            path_effect: &Option<repose_core::PathEffect>,
+                        ) {
+                            tag.hash(hasher);
+                            hash_f32(*width, hasher);
+                            (*cap as u8).hash(hasher);
+                            (*join as u8).hash(hasher);
+                            hash_f32(*miter, hasher);
+                            if let Some(pe) = path_effect {
+                                match pe {
+                                    repose_core::PathEffect::Corner { radius } => {
+                                        0u8.hash(hasher);
+                                        hash_f32(*radius, hasher);
+                                    }
+                                    repose_core::PathEffect::Dash { intervals, phase } => {
+                                        1u8.hash(hasher);
+                                        intervals.len().hash(hasher);
+                                        for v in intervals {
+                                            hash_f32(*v, hasher);
+                                        }
+                                        hash_f32(*phase, hasher);
+                                    }
+                                }
+                            } else {
+                                2u8.hash(hasher);
+                            }
+                        }
                         match ds {
                             repose_core::DrawStyle::Fill => 0u8.hash(hasher),
                             repose_core::DrawStyle::Stroke {
@@ -139,31 +181,30 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
                                 join,
                                 miter,
                                 path_effect,
-                            } => {
-                                1u8.hash(hasher);
-                                hash_f32(*width, hasher);
-                                (*cap as u8).hash(hasher);
-                                (*join as u8).hash(hasher);
-                                hash_f32(*miter, hasher);
-                                if let Some(pe) = path_effect {
-                                    match pe {
-                                        repose_core::PathEffect::Corner { radius } => {
-                                            0u8.hash(hasher);
-                                            hash_f32(*radius, hasher);
-                                        }
-                                        repose_core::PathEffect::Dash { intervals, phase } => {
-                                            1u8.hash(hasher);
-                                            intervals.len().hash(hasher);
-                                            for v in intervals {
-                                                hash_f32(*v, hasher);
-                                            }
-                                            hash_f32(*phase, hasher);
-                                        }
-                                    }
-                                } else {
-                                    2u8.hash(hasher);
-                                }
-                            }
+                            } => hash_stroke_params(
+                                hasher,
+                                1,
+                                width,
+                                cap,
+                                join,
+                                miter,
+                                path_effect,
+                            ),
+                            repose_core::DrawStyle::FillAndStroke {
+                                width,
+                                cap,
+                                join,
+                                miter,
+                                path_effect,
+                            } => hash_stroke_params(
+                                hasher,
+                                2,
+                                width,
+                                cap,
+                                join,
+                                miter,
+                                path_effect,
+                            ),
                         }
                     }
                     hash_f32(span.style.alpha, hasher);
@@ -643,7 +684,8 @@ fn hash_text_overflow(o: &TextOverflow, hasher: &mut impl Hasher) {
 mod tests {
     use super::*;
     use repose_core::{
-        FontStyle, FontWeight, Modifier, TextAlign, TextDecoration, UnitExt, View, ViewKind,
+        DrawStyle, FontStyle, FontWeight, Modifier, TextAlign, TextDecoration, UnitExt, View,
+        ViewKind,
     };
 
     #[test]
@@ -698,6 +740,7 @@ mod tests {
                 line_height: Sp::ZERO,
                 url: None,
                 font_variation_settings: None,
+                draw_style: DrawStyle::Fill,
             },
         );
         let v2 = View::new(
@@ -719,6 +762,7 @@ mod tests {
                 line_height: Sp::ZERO,
                 url: None,
                 font_variation_settings: None,
+                draw_style: DrawStyle::Fill,
             },
         );
         let v3 = View::new(
@@ -740,6 +784,7 @@ mod tests {
                 line_height: Sp::ZERO,
                 url: None,
                 font_variation_settings: None,
+                draw_style: DrawStyle::Fill,
             },
         );
 
@@ -767,6 +812,7 @@ mod tests {
                 line_height: Sp::ZERO,
                 url: url.map(|u| std::sync::Arc::from(u)),
                 font_variation_settings: None,
+                draw_style: DrawStyle::Fill,
             },
         )
     }

@@ -312,6 +312,7 @@ pub fn Text(text: impl Into<String>) -> View {
             line_height: Sp::ZERO,
             url: None,
             font_variation_settings: None,
+            draw_style: DrawStyle::Fill,
         },
     )
 }
@@ -344,6 +345,7 @@ pub fn AnnotatedText(annotated: AnnotatedString) -> View {
             line_height: Sp::ZERO,
             url: None,
             font_variation_settings: None,
+            draw_style: DrawStyle::Fill,
         },
     )
 }
@@ -599,6 +601,10 @@ pub trait TextStyle {
     fn line_height(self, height: Sp) -> View;
     fn url(self, url: impl Into<std::sync::Arc<str>>) -> View;
     fn font_variation_settings(self, settings: &str) -> View;
+    fn draw_style(self, style: DrawStyle) -> View;
+    /// Faux-bold: fill plus a same-color outline (`width` in em-units,
+    /// 0.04 is a good start). For fonts without a bold face.
+    fn fill_and_stroke(self, width: f32) -> View;
 }
 impl TextStyle for View {
     fn color(mut self, c: Color) -> View {
@@ -731,6 +737,18 @@ impl TextStyle for View {
         } = &mut self.kind
         {
             *font_variation_settings = Some(settings.into());
+        }
+        self
+    }
+    fn draw_style(mut self, style: DrawStyle) -> View {
+        if let ViewKind::Text { draw_style, .. } = &mut self.kind {
+            *draw_style = style;
+        }
+        self
+    }
+    fn fill_and_stroke(mut self, width: f32) -> View {
+        if let ViewKind::Text { draw_style, .. } = &mut self.kind {
+            *draw_style = DrawStyle::fill_and_stroke(width);
         }
         self
     }

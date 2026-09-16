@@ -3,7 +3,7 @@ use crate::{
     BaselineShift, Brush, ClipOp, Color, DrawStyle, FontStyle, FontSynthesis, FontWeight, Modifier,
     Rect, TextAlign, TextDecoration, TextDirection, TextSpan, Transform, Vec2,
 };
-use std::{fmt::Formatter, rc::Rc, sync::Arc};
+use std::{fmt::Formatter, sync::Arc};
 
 /// The constraints that will be passed to a subcomposed child. Values are in
 /// [`Dp`], matching the units used by `Modifier`.
@@ -113,6 +113,8 @@ pub enum ViewKind {
         url: Option<Arc<str>>,
         /// OpenType font variation settings (e.g. "wght 700, opsz 24").
         font_variation_settings: Option<Arc<str>>,
+        /// Fill, outline, or both (faux-bold). Default `Fill`.
+        draw_style: DrawStyle,
     },
 
     Image {

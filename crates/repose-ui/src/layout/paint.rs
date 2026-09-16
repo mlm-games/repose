@@ -936,6 +936,7 @@ impl LayoutEngine {
                 line_height,
                 url,
                 font_variation_settings,
+                draw_style,
                 ..
             } => {
                 let tl = self.text_cache.get(&node_id).or_else(|| {
@@ -1061,6 +1062,7 @@ impl LayoutEngine {
                             .filter(|s| s.start < line_end && s.end > line_start)
                             .collect();
                         relevant.sort_by_key(|s| s.start);
+                        let view_draw_style = draw_style;
 
                         for span in &relevant {
                             let seg_start = span.start.max(line_start);
@@ -1085,7 +1087,7 @@ impl LayoutEngine {
                                     text_direction: text_direction(),
                                     font_synthesis: FontSynthesis::Unspecified,
                                     baseline_shift: BaselineShift::Unspecified,
-                                    draw_style: DrawStyle::Fill,
+                                    draw_style: view_draw_style.clone(),
                                     w: 0.0,
                                     px: 0.0,
                                     font_variation_settings: None,
@@ -1113,7 +1115,11 @@ impl LayoutEngine {
                                 .style
                                 .baseline_shift
                                 .unwrap_or(BaselineShift::Unspecified);
-                            let span_ds = span.style.draw_style.clone().unwrap_or(DrawStyle::Fill);
+                            let span_ds = span
+                                .style
+                                .draw_style
+                                .clone()
+                                .unwrap_or_else(|| view_draw_style.clone());
                             let span_url = span.url.clone();
                             let span_fvs =
                                 span.style.font_variation_settings.clone().map(Arc::from);
@@ -1160,7 +1166,7 @@ impl LayoutEngine {
                                 text_direction: text_direction(),
                                 font_synthesis: FontSynthesis::Unspecified,
                                 baseline_shift: BaselineShift::Unspecified,
-                                draw_style: DrawStyle::Fill,
+                                draw_style: view_draw_style.clone(),
                                 w: 0.0,
                                 px: 0.0,
                                 font_variation_settings: None,
@@ -1336,7 +1342,10 @@ impl LayoutEngine {
                             text_decoration: *text_decoration,
                             letter_spacing: Px(font_px(*letter_spacing)),
                             line_height: Px(font_px(*line_height)),
-                            extra_style: Default::default(),
+                            extra_style: TextExtraStyle {
+                                draw_style: draw_style.clone(),
+                                ..Default::default()
+                            },
                             url: url.clone(),
                             font_variation_settings: font_variation_settings.clone(),
                         });
