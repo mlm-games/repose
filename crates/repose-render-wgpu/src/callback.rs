@@ -40,34 +40,52 @@ use repose_core::{PaintCallbackInfo, PaintCallbackPayload, Rect};
 /// Type-map for callback-shared wgpu resources (pipelines, buffers, etc.).
 #[cfg(not(all(
     target_arch = "wasm32",
-    not(feature = "fragile-send-sync-non-atomic-wasm")
+    any(
+        not(feature = "fragile-send-sync-non-atomic-wasm"),
+        target_feature = "atomics"
+    )
 )))]
 type AnyBox = Box<dyn std::any::Any + Send + Sync>;
 #[cfg(all(
     target_arch = "wasm32",
-    not(feature = "fragile-send-sync-non-atomic-wasm")
+    any(
+        not(feature = "fragile-send-sync-non-atomic-wasm"),
+        target_feature = "atomics"
+    )
 ))]
 type AnyBox = Box<dyn std::any::Any>;
 
 #[cfg(not(all(
     target_arch = "wasm32",
-    not(feature = "fragile-send-sync-non-atomic-wasm")
+    any(
+        not(feature = "fragile-send-sync-non-atomic-wasm"),
+        target_feature = "atomics"
+    )
 )))]
 pub trait MaybeSendSync: Send + Sync + 'static {}
 #[cfg(not(all(
     target_arch = "wasm32",
-    not(feature = "fragile-send-sync-non-atomic-wasm")
+    any(
+        not(feature = "fragile-send-sync-non-atomic-wasm"),
+        target_feature = "atomics"
+    )
 )))]
 impl<T: Send + Sync + 'static> MaybeSendSync for T {}
 
 #[cfg(all(
     target_arch = "wasm32",
-    not(feature = "fragile-send-sync-non-atomic-wasm")
+    any(
+        not(feature = "fragile-send-sync-non-atomic-wasm"),
+        target_feature = "atomics"
+    )
 ))]
 pub trait MaybeSendSync: 'static {}
 #[cfg(all(
     target_arch = "wasm32",
-    not(feature = "fragile-send-sync-non-atomic-wasm")
+    any(
+        not(feature = "fragile-send-sync-non-atomic-wasm"),
+        target_feature = "atomics"
+    )
 ))]
 impl<T: 'static> MaybeSendSync for T {}
 
