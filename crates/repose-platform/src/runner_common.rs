@@ -198,12 +198,34 @@ pub fn on_touch_with_ime(
 }
 
 /// Shared inspector toggle + runtime dispatch.
+/// Reports the raw physical transition to the polled `held_keys` set
+/// first (games read held keys GML-style without depending on focus),
+/// then dispatches the focus-routed key event as before.
 /// Returns true if event consumed / needs redraw.
 pub fn on_keyboard_input(
     rt: &mut ReposeRuntime,
     key_event: &winit::event::KeyEvent,
     inspector: &mut Option<repose_devtools::Inspector>,
 ) -> bool {
+    rt.set_physical_key(
+        &physical_key_name(key_event.physical_key),
+        key_event.state == ElementState::Pressed,
+    );
+    // Mirror into the scheduler's polled snapshot too: games read
+    // `sched.held_keys` + mouse levels directly (no runtime handle),
+    // so the platform publishes hardware levels where composition can
+    // see them. Focus dispatch below is unchanged.
+    {
+        let name = physical_key_name(key_event.physical_key);
+        let sched = &mut rt.sched;
+        if key_event.state == ElementState::Pressed {
+            if !sched.held_keys.contains(&name) {
+                sched.held_keys.push(name);
+            }
+        } else {
+            sched.held_keys.retain(|k| k != &name);
+        }
+    }
     if key_event.state == ElementState::Pressed
         && !key_event.repeat
         && rt.modifiers.ctrl
@@ -217,6 +239,17 @@ pub fn on_keyboard_input(
     let mapped = map_key(key_event.physical_key, &rt.modifiers);
     let ke = winit_key_to_repose(key_event, &mapped, &rt.modifiers);
     rt.handle_key_with_text(&ke, key_event.text.as_deref())
+}
+
+/// Stable debug name for a physical key (`KeyW`, `Digit1`, `Space`,
+/// ...), matching `KeyCode`'s variant names. Layout-independent:
+/// AZERTY/QWERTZ report the same physical names, so games bind by
+/// position the way GML's `ord("W")` binds the US position.
+pub fn physical_key_name(key: PhysicalKey) -> String {
+    match key {
+        PhysicalKey::Code(code) => format!("{code:?}"),
+        PhysicalKey::Unidentified(native) => format!("Unidentified({native:?})"),
+    }
 }
 
 /// Ime dispatch helper.

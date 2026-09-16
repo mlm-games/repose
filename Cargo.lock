@@ -2969,6 +2969,8 @@ dependencies = [
 name = "repose-canvas"
 version = "0.30.9"
 dependencies = [
+ "lyon_path",
+ "lyon_tessellation",
  "repose-core",
  "repose-ui",
 ]

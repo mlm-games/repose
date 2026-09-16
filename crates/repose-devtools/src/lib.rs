@@ -283,7 +283,7 @@ impl Hud {
         if let Some(r) = self.hovered {
             scene.nodes.push(SceneNode::Border {
                 rect: r,
-                color: Color::from_hex("#44AAFF"),
+                brush: Brush::Solid(Color::from_hex("#44AAFF")),
                 width: Px(2.0),
                 radius: [Px(2.0); 4],
             });
@@ -292,7 +292,7 @@ impl Hud {
         if let Some(sel) = &self.selected_widget {
             scene.nodes.push(SceneNode::Border {
                 rect: sel.bounds,
-                color: Color::from_hex("#FFAA00"),
+                brush: Brush::Solid(Color::from_hex("#FFAA00")),
                 width: Px(2.0),
                 radius: [Px(2.0); 4],
             });

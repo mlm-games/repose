@@ -183,23 +183,31 @@ pub(crate) fn winit_key_to_repose(
             repose_core::input::KeyEventType::Up
         },
         utf16_code_point: utf16,
+        physical: Some(crate::runner_common::physical_key_name(ev.physical_key)),
     }
 }
 
 #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
-pub(crate) fn map_cursor(c: repose_core::CursorIcon) -> winit::window::CursorIcon {
-    use winit::window::CursorIcon as W;
+pub(crate) fn map_cursor(c: repose_core::CursorIcon) -> winit::window::Cursor {
+    use winit::window::{Cursor, CursorIcon as W};
     match c {
-        repose_core::CursorIcon::Default => W::Default,
-        repose_core::CursorIcon::Pointer => W::Pointer,
-        repose_core::CursorIcon::Text => W::Text,
-        repose_core::CursorIcon::EwResize => W::EwResize,
-        repose_core::CursorIcon::NsResize => W::NsResize,
-        repose_core::CursorIcon::NwseResize => W::NwseResize,
-        repose_core::CursorIcon::NeswResize => W::NeswResize,
-        repose_core::CursorIcon::Grab => W::Grab,
-        repose_core::CursorIcon::Grabbing => W::Grabbing,
+        repose_core::CursorIcon::Hidden => Cursor::Icon(W::Default),
+        repose_core::CursorIcon::Default => Cursor::Icon(W::Default),
+        repose_core::CursorIcon::Pointer => Cursor::Icon(W::Pointer),
+        repose_core::CursorIcon::Text => Cursor::Icon(W::Text),
+        repose_core::CursorIcon::EwResize => Cursor::Icon(W::EwResize),
+        repose_core::CursorIcon::NsResize => Cursor::Icon(W::NsResize),
+        repose_core::CursorIcon::NwseResize => Cursor::Icon(W::NwseResize),
+        repose_core::CursorIcon::NeswResize => Cursor::Icon(W::NeswResize),
+        repose_core::CursorIcon::Grab => Cursor::Icon(W::Grab),
+        repose_core::CursorIcon::Grabbing => Cursor::Icon(W::Grabbing),
     }
+}
+
+/// Whether the cursor suggestion hides the OS pointer (`Hidden`
+/// carries no winit icon; the host must toggle visibility itself).
+pub(crate) fn cursor_is_hidden(c: repose_core::CursorIcon) -> bool {
+    matches!(c, repose_core::CursorIcon::Hidden)
 }
 
 // IME helpers.

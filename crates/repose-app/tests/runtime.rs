@@ -60,6 +60,7 @@ fn key_down(key: Key, modifiers: Modifiers, repeat: bool) -> KeyEvent {
         is_repeat: repeat,
         event_type: KeyEventType::Down,
         utf16_code_point: 0,
+        physical: None,
     }
 }
 
@@ -369,6 +370,7 @@ fn keyboard_hold_long_press_fires_and_suppresses_click() {
         is_repeat: false,
         event_type: KeyEventType::Down,
         utf16_code_point: 0,
+        physical: Some("Space".to_string()),
     };
     let up = KeyEvent {
         key: Key::Space,
@@ -376,6 +378,7 @@ fn keyboard_hold_long_press_fires_and_suppresses_click() {
         is_repeat: false,
         event_type: KeyEventType::Up,
         utf16_code_point: 0,
+        physical: Some("Space".to_string()),
     };
 
     assert!(rt.handle_key(&down));
@@ -496,4 +499,50 @@ fn after_compose_lazy_inits_focused_textfield() {
         rt.textfield_states.contains_key(&TF_ID),
         "after_compose should lazy-init the focused text field"
     );
+}
+
+#[test]
+fn physical_keys_track_without_focus() {
+    let mut rt = ReposeRuntime::new();
+    rt.cache_frame(textfield_frame(TF_ID));
+    rt.sched.focused = None;
+
+    rt.set_physical_key("KeyW", true);
+    assert!(rt.physical_key_held("KeyW"));
+    assert_eq!(rt.held_physical_keys(), vec!["KeyW".to_string()]);
+
+    // A stuck down survives redundant presses; a release clears it.
+    rt.set_physical_key("KeyW", true);
+    assert!(rt.physical_key_held("KeyW"));
+    rt.set_physical_key("KeyW", false);
+    assert!(!rt.physical_key_held("KeyW"));
+}
+
+#[test]
+fn focus_loss_clears_polled_levels() {
+    let mut rt = ReposeRuntime::new();
+    rt.set_physical_key("KeyW", true);
+    let pos = Vec2 { x: 10.0, y: 10.0 };
+    rt.cache_frame(textfield_frame(TF_ID));
+    let _ = rt.handle_pointer_press(pos, PointerButton::Primary);
+    assert!(rt.mouse_button_held(PointerButton::Primary));
+
+    rt.handle_focus_lost();
+    assert!(
+        rt.held_physical_keys().is_empty(),
+        "alt-tab must not leave a stuck key"
+    );
+    assert!(!rt.mouse_button_held(PointerButton::Primary));
+}
+
+#[test]
+fn mouse_buttons_track_press_release() {
+    let mut rt = ReposeRuntime::new();
+    rt.cache_frame(textfield_frame(TF_ID));
+    let pos = Vec2 { x: 10.0, y: 10.0 };
+    assert!(!rt.mouse_button_held(PointerButton::Secondary));
+    let _ = rt.handle_pointer_press(pos, PointerButton::Secondary);
+    assert!(rt.mouse_button_held(PointerButton::Secondary));
+    let _ = rt.handle_pointer_release(pos, PointerButton::Secondary);
+    assert!(!rt.mouse_button_held(PointerButton::Secondary));
 }

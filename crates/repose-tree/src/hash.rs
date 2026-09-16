@@ -324,7 +324,7 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
     // Border
     if let Some(b) = &m.border {
         hash_dp(b.width, hasher);
-        hash_color(&b.color, hasher);
+        hash_brush(&b.brush, hasher);
         for &r in &b.radius {
             hash_dp(r, hasher);
         }
@@ -669,6 +669,28 @@ fn hash_brush(b: &Brush, hasher: &mut impl Hasher) {
             hash_f32(start.y, hasher);
             hash_f32(end.x, hasher);
             hash_f32(end.y, hasher);
+            hash_color(start_color, hasher);
+            hash_color(end_color, hasher);
+        }
+        Brush::Radial {
+            center,
+            radius,
+            start_color,
+            end_color,
+        } => {
+            hash_f32(center.x, hasher);
+            hash_f32(center.y, hasher);
+            hash_f32(*radius, hasher);
+            hash_color(start_color, hasher);
+            hash_color(end_color, hasher);
+        }
+        Brush::Sweep {
+            center,
+            start_color,
+            end_color,
+        } => {
+            hash_f32(center.x, hasher);
+            hash_f32(center.y, hasher);
             hash_color(start_color, hasher);
             hash_color(end_color, hasher);
         }

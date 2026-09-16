@@ -170,6 +170,19 @@ pub struct ReposeRuntime {
     pub ime_preedit: bool,
     pub key_pressed_active: Option<u64>,
     pub last_focus: Option<u64>,
+    /// Polled physical-key state, keyed by debug name (`KeyCode::KeyW`,
+    /// `Digit1`, ...). Platform runners report every `KeyboardInput`
+    /// press/release here so games can poll held keys GML-style
+    /// (`keyboard_check`) instead of reconstructing them from
+    /// focus-routed key events, which miss keys when focus moves or
+    /// a key-up is swallowed (alt-tab, overlay, layout).
+    /// Cleared on window focus loss.
+    pub held_keys: HashSet<String>,
+    /// Polled mouse-button state. `handle_pointer_press/release`
+    /// maintain this for Primary/Secondary/Tertiary so games can read
+    /// held buttons (`mouse_check_button`) without tracking
+    /// press/release edges themselves.
+    pub held_mouse: HashSet<PointerButton>,
 
     last_up: Option<(u64, web_time::Instant, f32, f32)>,
     /// Position/time of the most recent pointer-down, used to time the second
@@ -236,6 +249,8 @@ impl ReposeRuntime {
             ime_preedit: false,
             key_pressed_active: None,
             last_focus: None,
+            held_keys: HashSet::new(),
+            held_mouse: HashSet::new(),
             last_up: None,
             last_down: None,
             double_candidate: None,
@@ -406,7 +421,7 @@ impl ReposeRuntime {
             };
 
         let platform = PlatformOutput {
-            cursor: self.take_cursor_suggestion(),
+            cursor: self.sched.cursor_override.take().or_else(|| self.take_cursor_suggestion()),
             ime_allowed,
             ime_cursor_area,
             clipboard_text,
@@ -678,6 +693,7 @@ impl ReposeRuntime {
         button: PointerButton,
     ) -> PointerButtonResult {
         self.mouse_pos_px = (pos.x, pos.y);
+        self.held_mouse.insert(button);
         let _ = repose_core::request_input_mode(repose_core::InputMode::Touch);
 
         let Some(f) = &self.frame_cache else {
@@ -843,6 +859,7 @@ impl ReposeRuntime {
         button: PointerButton,
     ) -> PointerButtonResult {
         self.mouse_pos_px = (pos.x, pos.y);
+        self.held_mouse.remove(&button);
         let mut result = PointerButtonResult {
             focused: self.sched.focused,
             capture_id: self.capture_id,
@@ -1781,11 +1798,45 @@ impl ReposeRuntime {
         request_frame();
     }
 
-    /// Handle focus lost (window unfocused, etc.).
+    /// Handle focus lost (window unfocused, etc.). Physical-key and
+    /// mouse-button levels clear too: winit does not deliver key-ups
+    /// for keys still down across an alt-tab, so without this the
+    /// polled `held_keys` set sticks until the next press of that key.
     pub fn handle_focus_lost(&mut self) {
         dnd::handle_drag_action(&DragAction::Cancel);
         self.handle_pointer_cancel();
+        self.held_keys.clear();
+        self.held_mouse.clear();
         self.ime_preedit = false;
+    }
+
+    /// Report one physical key transition (`true` = down). Platform
+    /// runners call this from the raw `KeyboardInput` event alongside
+    /// the focus-routed `handle_key_with_text`, so `held` reflects
+    /// hardware even when no widget has focus.
+    pub fn set_physical_key(&mut self, name: &str, down: bool) {
+        if down {
+            self.held_keys.insert(name.to_string());
+        } else {
+            self.held_keys.remove(name);
+        }
+    }
+
+    /// Snapshot of currently held physical keys (debug names).
+    pub fn held_physical_keys(&self) -> Vec<String> {
+        let mut out: Vec<String> = self.held_keys.iter().cloned().collect();
+        out.sort();
+        out
+    }
+
+    /// True while the named physical key is down (`KeyCode::KeyW`, ...).
+    pub fn physical_key_held(&self, name: &str) -> bool {
+        self.held_keys.contains(name)
+    }
+
+    /// True while the mouse button is down.
+    pub fn mouse_button_held(&self, button: PointerButton) -> bool {
+        self.held_mouse.contains(&button)
     }
 
     /// Get or create a text field state by its key.
@@ -2006,6 +2057,7 @@ impl ReposeRuntime {
                         KeyEventType::Up
                     },
                     utf16_code_point: 0,
+                    physical: None,
                 };
                 return self.handle_key(&synthetic);
             }

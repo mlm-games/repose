@@ -18,11 +18,12 @@ struct MeshUniform {
 struct VSOut {
     @builtin(position) pos: vec4f,
     @location(0) @interpolate(flat) paint_type: u32,
-    @location(1) color: vec4f,
-    @location(2) local: vec2f,
-    @location(3) color0: vec4f,
-    @location(4) color1: vec4f,
-    @location(5) grad: vec4f,
+    @location(1) @interpolate(flat) paint_kind: u32,
+    @location(2) color: vec4f,
+    @location(3) local: vec2f,
+    @location(4) color0: vec4f,
+    @location(5) color1: vec4f,
+    @location(6) grad: vec4f,
 };
 
 @vertex
@@ -44,6 +45,7 @@ fn vs_main(
         1.0,
     );
     out.paint_type = U.paint.x;
+    out.paint_kind = U.paint.y;
     out.color = color;
     out.local = pos;
     out.color0 = U.color0;
@@ -55,6 +57,21 @@ fn vs_main(
 fn eval_paint(in: VSOut) -> vec4f {
     if (in.paint_type == 0u) {
         return vec4f(in.color.rgb * in.color.a, in.color.a);
+    }
+    if (in.paint_kind == 1u) {
+        let d = distance(in.local, in.grad.xy);
+        let radius = max(in.grad.z, 1e-3);
+        let c = mix(in.color0, in.color1, clamp(d / radius, 0.0, 1.0));
+        return vec4f(c.rgb * c.a, c.a);
+    }
+    if (in.paint_kind == 2u) {
+        let rel = in.local - in.grad.xy;
+        var frac = atan2(rel.y, rel.x) / 6.2831853;
+        if (frac < 0.0) {
+            frac += 1.0;
+        }
+        let c = mix(in.color0, in.color1, clamp(frac, 0.0, 1.0));
+        return vec4f(c.rgb * c.a, c.a);
     }
     let dir = in.grad.zw - in.grad.xy;
     let len2 = max(dot(dir, dir), 1e-6);

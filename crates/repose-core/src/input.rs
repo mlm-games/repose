@@ -12,7 +12,7 @@ pub enum PointerKind {
     Pen,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PointerButton {
     Primary,   // Left mouse, touch
     Secondary, // Right mouse
@@ -149,6 +149,13 @@ pub struct KeyEvent {
     /// UTF-16 code point for character keys, or 0 for non-characters.
     /// Matches Compose's `utf16CodePoint`.
     pub utf16_code_point: u16,
+    /// Physical key position (`KeyW`, `Digit1`, `Space`, ... — winit
+    /// `KeyCode` debug names, layout-independent). `None` for
+    /// synthetic events (gamepad-emulated keys, tests). Games bind by
+    /// position the way GML's `ord("W")` binds the US position, so
+    /// non-US layouts move the same; the `key` glyph stays the
+    /// text-entry/shortcut path.
+    pub physical: Option<String>,
 }
 
 #[derive(Clone, Debug)]

@@ -141,7 +141,7 @@ pub fn CircularProgressIndicator(
                             start_angle,
                             sweep_angle: sweep_rad,
                             stroke_width: Px(stroke_px),
-                            color: mul_c(config.color),
+                            brush: Brush::Solid(mul_c(config.color)),
                             cap: config.stroke_cap,
                         });
                     }
@@ -155,7 +155,7 @@ pub fn CircularProgressIndicator(
                             start_angle: track_start,
                             sweep_angle: track_sweep,
                             stroke_width: Px(stroke_px),
-                            color: mul_c(config.track_color),
+                            brush: Brush::Solid(mul_c(config.track_color)),
                             cap: config.stroke_cap,
                         });
                     }
@@ -173,7 +173,7 @@ pub fn CircularProgressIndicator(
                         start_angle,
                         sweep_angle: sweep_rad,
                         stroke_width: Px(stroke_px),
-                        color: mul_c(config.color),
+                        brush: Brush::Solid(mul_c(config.color)),
                         cap: config.stroke_cap,
                     });
 
@@ -186,7 +186,7 @@ pub fn CircularProgressIndicator(
                             start_angle: track_start,
                             sweep_angle: track_sweep,
                             stroke_width: Px(stroke_px),
-                            color: mul_c(config.track_color),
+                            brush: Brush::Solid(mul_c(config.track_color)),
                             cap: config.stroke_cap,
                         });
                     }

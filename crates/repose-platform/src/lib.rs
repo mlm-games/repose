@@ -140,7 +140,7 @@ pub fn set_close_to_tray(enabled: bool) {
 pub use repose_ui::textfield::tf_ensure_visible_in_rect;
 
 #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
-use common::map_cursor;
+use common::{cursor_is_hidden, map_cursor};
 
 pub use repose_app::{AndroidOptions, AppConfig, ReposeOptions};
 
@@ -481,19 +481,23 @@ pub fn run_desktop_app_with_config(
                     }
                 }
 
-                WindowEvent::Focused(false) => {
-                    // Delegate all common focus-lost cleanup to the runtime
-                    self.rt.handle_focus_lost();
+                WindowEvent::Focused(focused) => {
+                    self.rt.sched.window_focused = focused;
+                    if !focused {
+                        self.rt.handle_focus_lost();
+                        self.rt.sched.held_keys.clear();
+                        self.rt.sched.mouse_primary = false;
+                        self.rt.sched.mouse_secondary = false;
+                        self.rt.sched.mouse_middle = false;
+                        self.external_file_drag = false;
+                        self.hovered_files.clear();
 
-                    // Platform-specific cleanup
-                    self.external_file_drag = false;
-                    self.hovered_files.clear();
+                        if let Some(w) = &self.window {
+                            rc::set_ime_for_textfield(w, false);
+                        }
 
-                    if let Some(w) = &self.window {
-                        rc::set_ime_for_textfield(w, false);
+                        self.request_redraw();
                     }
-
-                    self.request_redraw();
                 }
 
                 WindowEvent::CursorLeft { .. } => {
@@ -596,11 +600,11 @@ pub fn run_desktop_app_with_config(
                         inspector.hud.set_hovered(hover_rect, hover_info);
                     }
 
-                    // Cursor icon via winit window
                     if let Some(win) = &self.window
                         && let Some(c) = result.cursor
                     {
-                        win.set_cursor(winit::window::Cursor::Icon(map_cursor(c)));
+                        win.set_cursor_visible(!cursor_is_hidden(c));
+                        win.set_cursor(map_cursor(c));
                     }
 
                     self.request_redraw();
@@ -630,6 +634,26 @@ pub fn run_desktop_app_with_config(
                         // Forward/Back/other buttons are not dispatched by the runtime.
                         _ => return,
                     };
+                    match (mapped, state) {
+                        (PointerButton::Primary, ElementState::Pressed) => {
+                            self.rt.sched.mouse_primary = true;
+                        }
+                        (PointerButton::Primary, ElementState::Released) => {
+                            self.rt.sched.mouse_primary = false;
+                        }
+                        (PointerButton::Secondary, ElementState::Pressed) => {
+                            self.rt.sched.mouse_secondary = true;
+                        }
+                        (PointerButton::Secondary, ElementState::Released) => {
+                            self.rt.sched.mouse_secondary = false;
+                        }
+                        (PointerButton::Tertiary, ElementState::Pressed) => {
+                            self.rt.sched.mouse_middle = true;
+                        }
+                        (PointerButton::Tertiary, ElementState::Released) => {
+                            self.rt.sched.mouse_middle = false;
+                        }
+                    }
 
                     match state {
                         ElementState::Pressed => {
@@ -903,10 +927,10 @@ pub fn run_desktop_app_with_config(
                     let output = self.rt.frame(&mut self.root, &self.render);
 
                     if let Some(cursor) = &output.platform.cursor {
-                        win.set_cursor(winit::window::Cursor::Icon(map_cursor(*cursor)));
+                        win.set_cursor_visible(!cursor_is_hidden(*cursor));
+                        win.set_cursor(map_cursor(*cursor));
                     }
 
-                    // Sync OS window chrome (titlebar) to the app theme, deduped.
                     if let Some(dark) = output.platform.window_theme_dark
                         && self.last_window_theme != Some(dark)
                     {

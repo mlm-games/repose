@@ -308,23 +308,53 @@ impl Color {
 /// This can be a solid color or a gradient. Higher‑level APIs (Modifier,
 /// widgets) should talk in terms of `Brush` rather than raw `Color` so that
 /// gradients and future brush types (radial, image) can share the same path.
-#[derive(Clone, Copy, Debug)]
+/// Mirrors Compose's `Brush` sealed class.
+#[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]
 pub enum Brush {
     /// Solid color fill
     Solid(Color),
 
-    /// Linear gradient from `start` to `end` in local coordinates.
+    /// Linear gradient between two points in local coordinates.
     ///
-    /// The gradient is defined in the local space of the node being drawn
-    /// (e.g. Rect's top‑left is (0,0), bottom‑right is (w,h)).
+    /// The gradient is defined in the local space of the node being drawn:
+    /// `(0,0)` is the shape's top-left and endpoints are px offsets from
+    /// there (e.g. a rect's bottom-right is `(w,h)`). `LinearGradient::vertical`
+    /// spans exactly the shape height.
     Linear {
         start: Vec2,
         end: Vec2,
         start_color: Color,
         end_color: Color,
     },
-    // Later can add Radial, Image, etc...
+
+    /// Radial gradient centered at `center` with the given `radius`.
+    ///
+    /// Like [`Brush::Linear`], coordinates are shape-local px from the
+    /// shape's top-left. Pixels beyond `radius` clamp to `end_color`, matching
+    /// Compose's [`TileMode::Clamp`](crate::TileMode) default.
+    Radial {
+        center: Vec2,
+        radius: f32,
+        start_color: Color,
+        end_color: Color,
+    },
+
+    /// Angular sweep gradient rotating clockwise around `center` from 3 o'clock.
+    /// `center` is shape-local px from the shape's top-left.
+    Sweep { center: Vec2, start_color: Color, end_color: Color },
+}
+
+/// Out-of-bounds behavior for gradient brushes, mirroring Compose `TileMode`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TileMode {
+    /// Repeat the edge color (Compose default).
+    #[default]
+    Clamp,
+    /// Tile the gradient (`x - floor(x)`).
+    Repeated,
+    /// Mirror the gradient every other tile.
+    Mirror,
 }
 
 impl From<Color> for Brush {
@@ -341,6 +371,9 @@ pub struct LinearGradient {
 }
 
 impl LinearGradient {
+    /// Vertical gradient spanning the shape's full height. Endpoints are
+    /// shape-local px `(0,0)` → `(0,h)` only when the shape is `h` px tall;
+    /// prefer explicit px endpoints for canvas shapes.
     pub fn vertical(top: Color, bottom: Color) -> Brush {
         Brush::Linear {
             start: Vec2 { x: 0.0, y: 0.0 },
@@ -350,6 +383,8 @@ impl LinearGradient {
         }
     }
 
+    /// Horizontal gradient spanning the shape's full width. Same
+    /// shape-local caveat as [`vertical`](Self::vertical).
     pub fn horizontal(left: Color, right: Color) -> Brush {
         Brush::Linear {
             start: Vec2 { x: 0.0, y: 0.0 },

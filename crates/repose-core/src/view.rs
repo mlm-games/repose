@@ -253,7 +253,7 @@ pub enum SceneNode {
     },
     Border {
         rect: Rect,
-        color: Color,
+        brush: Brush,
         width: Px,
         radius: [Px; 4],
     },
@@ -282,7 +282,7 @@ pub enum SceneNode {
     },
     EllipseBorder {
         rect: Rect,
-        color: Color,
+        brush: Brush,
         width: Px,
     },
     PushClip {
@@ -354,7 +354,7 @@ pub enum SceneNode {
         start_angle: f32,
         sweep_angle: f32,
         stroke_width: Px,
-        color: Color,
+        brush: Brush,
         cap: StrokeCap,
     },
     /// Pre-tessellated vector mesh (fill or stroke geometry produced by the
@@ -418,7 +418,8 @@ pub struct VectorVertex {
     pub uv: [f32; 2],
 }
 
-/// How a `VectorMesh` is painted.
+/// How a `VectorMesh` is painted. Mirrors the [`Brush`] variants;
+/// gradient endpoints live in the mesh's local space.
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]
 pub enum PaintDesc {
@@ -428,6 +429,19 @@ pub enum PaintDesc {
     Linear {
         start: Vec2,
         end: Vec2,
+        start_color: Color,
+        end_color: Color,
+    },
+    /// Radial gradient centered at `center` (mesh-local) with `radius`.
+    Radial {
+        center: Vec2,
+        radius: f32,
+        start_color: Color,
+        end_color: Color,
+    },
+    /// Angular sweep around `center` (mesh-local), clockwise from 3 o'clock.
+    Sweep {
+        center: Vec2,
         start_color: Color,
         end_color: Color,
     },

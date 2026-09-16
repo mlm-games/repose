@@ -9,22 +9,69 @@ pub struct DrawScope {
     pub size: Size,
 }
 
+/// Fill-or-stroke style for canvas shapes, mirroring Compose's `DrawStyle`.
+/// `width` carries px magnitudes; dash intervals/phase are px as well.
+#[derive(Clone, Debug)]
+pub enum ShapeStyle {
+    Fill,
+    Stroke {
+        width: Px,
+        cap: StrokeCap,
+        join: StrokeJoin,
+        miter: f32,
+        path_effect: Option<PathEffect>,
+    },
+}
+
+impl ShapeStyle {
+    pub fn stroke(width: Px) -> Self {
+        Self::Stroke {
+            width,
+            cap: StrokeCap::Butt,
+            join: StrokeJoin::Miter,
+            miter: 4.0,
+            path_effect: None,
+        }
+    }
+}
+
 /// Paint-space draw commands. `Rect`/`Vec2` compounds carry px magnitudes
 /// (like Compose `Offset`/`Size`/`Rect`); scalar lengths use [`Px`].
 #[derive(Clone)]
 pub enum DrawCommand {
     Rect {
         rect: Rect,
-        color: Color,
+        fill: Brush,
         radius: Px,
-        stroke: Option<(Px, Color)>,
+        style: ShapeStyle,
     },
     Ellipse {
         center: Vec2,
         rx: f32,
         ry: f32,
-        color: Color,
-        stroke: Option<(Px, Color)>,
+        fill: Brush,
+        style: ShapeStyle,
+    },
+    /// Stroked polyline through `points` (px, canvas-local).
+    LinePath {
+        points: Vec<Vec2>,
+        brush: Brush,
+        width: Px,
+        cap: StrokeCap,
+        join: StrokeJoin,
+        miter: f32,
+        path_effect: Option<PathEffect>,
+    },
+    /// Stroked arc inscribed in `rect`. Angles are radians, clockwise
+    /// positive (y-down), starting at 3 o'clock like the `Arc` scene node.
+    Arc {
+        rect: Rect,
+        start_angle: f32,
+        sweep_angle: f32,
+        use_center: bool,
+        brush: Brush,
+        width: Px,
+        cap: StrokeCap,
     },
     Text {
         text: String,
@@ -74,17 +121,48 @@ impl DrawScope {
     pub fn draw_rect(&mut self, rect: Rect, color: Color, radius: Px) {
         self.commands.push(DrawCommand::Rect {
             rect,
-            color,
+            fill: Brush::Solid(color),
             radius,
-            stroke: None,
+            style: ShapeStyle::Fill,
+        });
+    }
+    /// Brush-filled rect (solid, linear, radial, sweep). Mirrors Compose
+    /// `DrawScope.drawRect(brush, ...)`. Gradient endpoints are expressed in
+    /// the rect's local space: `(0,0)` is the rect top-left, so
+    /// `LinearGradient::vertical` spans the rect height.
+    pub fn draw_rect_brush(&mut self, rect: Rect, brush: Brush, radius: Px) {
+        self.commands.push(DrawCommand::Rect {
+            rect,
+            fill: brush,
+            radius,
+            style: ShapeStyle::Fill,
         });
     }
     pub fn draw_rect_stroke(&mut self, rect: Rect, color: Color, radius: Px, width: Px) {
         self.commands.push(DrawCommand::Rect {
             rect,
-            color,
+            fill: Brush::Solid(color),
             radius,
-            stroke: Some((width, color)),
+            style: ShapeStyle::stroke(width),
+        });
+    }
+    /// Brush outline. Cap/join/miter/path_effect ride `style`. Gradient
+    /// endpoints use the same rect-local space as [`draw_rect_brush`](Self::draw_rect_brush).
+    pub fn draw_rect_stroke_brush(&mut self, rect: Rect, brush: Brush, radius: Px, width: Px) {
+        self.commands.push(DrawCommand::Rect {
+            rect,
+            fill: brush,
+            radius,
+            style: ShapeStyle::stroke(width),
+        });
+    }
+    /// Full-style rect (Compose `style: DrawStyle = Fill` equivalent).
+    pub fn draw_rect_style(&mut self, rect: Rect, brush: Brush, radius: Px, style: ShapeStyle) {
+        self.commands.push(DrawCommand::Rect {
+            rect,
+            fill: brush,
+            radius,
+            style,
         });
     }
     pub fn draw_ellipse(&mut self, center: Vec2, rx: f32, ry: f32, color: Color) {
@@ -92,8 +170,20 @@ impl DrawScope {
             center,
             rx: rx.max(0.0),
             ry: ry.max(0.0),
-            color,
-            stroke: None,
+            fill: Brush::Solid(color),
+            style: ShapeStyle::Fill,
+        });
+    }
+    /// Brush-filled ellipse (Compose `drawOval/drawCircle(brush, ...)`).
+    /// Gradient endpoints are ellipse-local: `(0,0)` is the bounding-box
+    /// top-left.
+    pub fn draw_ellipse_brush(&mut self, center: Vec2, rx: f32, ry: f32, brush: Brush) {
+        self.commands.push(DrawCommand::Ellipse {
+            center,
+            rx: rx.max(0.0),
+            ry: ry.max(0.0),
+            fill: brush,
+            style: ShapeStyle::Fill,
         });
     }
     pub fn draw_ellipse_stroke(&mut self, center: Vec2, rx: f32, ry: f32, color: Color, width: Px) {
@@ -101,8 +191,25 @@ impl DrawScope {
             center,
             rx: rx.max(0.0),
             ry: ry.max(0.0),
-            color,
-            stroke: Some((width, color)),
+            fill: Brush::Solid(color),
+            style: ShapeStyle::stroke(width),
+        });
+    }
+    /// Brush ellipse outline.
+    pub fn draw_ellipse_stroke_brush(
+        &mut self,
+        center: Vec2,
+        rx: f32,
+        ry: f32,
+        brush: Brush,
+        width: Px,
+    ) {
+        self.commands.push(DrawCommand::Ellipse {
+            center,
+            rx: rx.max(0.0),
+            ry: ry.max(0.0),
+            fill: brush,
+            style: ShapeStyle::stroke(width),
         });
     }
     pub fn draw_circle(&mut self, center: Vec2, radius: f32, color: Color) {
@@ -110,6 +217,87 @@ impl DrawScope {
     }
     pub fn draw_circle_stroke(&mut self, center: Vec2, radius: f32, color: Color, width: Px) {
         self.draw_ellipse_stroke(center, radius, radius, color, width);
+    }
+    /// Brush-filled circle.
+    pub fn draw_circle_brush(&mut self, center: Vec2, radius: f32, brush: Brush) {
+        self.draw_ellipse_brush(center, radius, radius, brush);
+    }
+    /// Stroked polyline (Compose `drawLine` for >2 points / `drawPath` stroke).
+    /// Needs 2+ points. Cap/join/miter mirror `Stroke` defaults. Gradient
+    /// endpoints are canvas-local, matching the `points` space.
+    pub fn draw_line_path(
+        &mut self,
+        points: impl Into<Vec<Vec2>>,
+        brush: Brush,
+        width: Px,
+        cap: StrokeCap,
+        join: StrokeJoin,
+    ) {
+        self.commands.push(DrawCommand::LinePath {
+            points: points.into(),
+            brush,
+            width,
+            cap,
+            join,
+            miter: 4.0,
+            path_effect: None,
+        });
+    }
+    /// Single segment. Mirrors Compose `drawLine(brush, start, end, ...)`.
+    pub fn draw_line(&mut self, start: Vec2, end: Vec2, color: Color, width: Px, cap: StrokeCap) {
+        self.commands.push(DrawCommand::LinePath {
+            points: vec![start, end],
+            brush: Brush::Solid(color),
+            width,
+            cap,
+            join: StrokeJoin::Miter,
+            miter: 4.0,
+            path_effect: None,
+        });
+    }
+    /// Brush line with explicit joins (multi-segment).
+    pub fn draw_line_brush(
+        &mut self,
+        start: Vec2,
+        end: Vec2,
+        brush: Brush,
+        width: Px,
+        cap: StrokeCap,
+    ) {
+        self.commands.push(DrawCommand::LinePath {
+            points: vec![start, end],
+            brush,
+            width,
+            cap,
+            join: StrokeJoin::Miter,
+            miter: 4.0,
+            path_effect: None,
+        });
+    }
+    /// Stroked arc (Compose `drawArc(brush, startAngle, sweepAngle, ...)`).
+    /// Angles are radians, clockwise positive, from 3 o'clock.
+    /// `use_center = true` emits a pie wedge; false emits the open arc.
+    /// Gradient endpoints are arc-local: `(0,0)` is the bounding-`rect`
+    /// top-left.
+    pub fn draw_arc(
+        &mut self,
+        rect: Rect,
+        start_angle: f32,
+        sweep_angle: f32,
+        use_center: bool,
+        brush: Brush,
+        width: Px,
+        cap: StrokeCap,
+    ) {
+        self.commands.push(DrawCommand::Arc {
+            rect,
+            start_angle,
+            sweep_angle,
+            use_center,
+            brush,
+            width,
+            cap,
+        });
     }
     pub fn draw_text(&mut self, text: impl Into<String>, pos: Vec2, color: Color, size: Px) {
         self.commands.push(DrawCommand::Text {
@@ -243,7 +431,427 @@ fn translate_mesh_data(m: &VectorMeshData, dx: f32, dy: f32) -> VectorMeshData {
     }
 }
 
+fn brush_to_paint(brush: &Brush) -> PaintDesc {
+    match brush {
+        Brush::Solid(_) => PaintDesc::Solid,
+        Brush::Linear {
+            start,
+            end,
+            start_color,
+            end_color,
+        } => PaintDesc::Linear {
+            start: *start,
+            end: *end,
+            start_color: *start_color,
+            end_color: *end_color,
+        },
+        Brush::Radial {
+            center,
+            radius,
+            start_color,
+            end_color,
+        } => PaintDesc::Radial {
+            center: *center,
+            radius: *radius,
+            start_color: *start_color,
+            end_color: *end_color,
+        },
+        Brush::Sweep {
+            center,
+            start_color,
+            end_color,
+        } => PaintDesc::Sweep {
+            center: *center,
+            start_color: *start_color,
+            end_color: *end_color,
+        },
+        _ => PaintDesc::Solid,
+    }
+}
+
+fn tessellate_polyline(
+    points: &[Vec2],
+    canvas_rect: Rect,
+    width: Px,
+    cap: StrokeCap,
+    join: StrokeJoin,
+    miter: f32,
+    path_effect: Option<&PathEffect>,
+) -> Option<VectorMeshData> {
+    use lyon_path::Path;
+    use lyon_path::math::Point;
+    use lyon_tessellation::{
+        LineCap, LineJoin, StrokeOptions, StrokeTessellator, VertexBuffers,
+        geometry_builder::simple_builder,
+    };
+
+    let mut builder = Path::builder();
+    let pt = |p: &Vec2| Point::new(canvas_rect.x + p.x, canvas_rect.y + p.y);
+    builder.begin(pt(&points[0]));
+    for p in &points[1..] {
+        builder.line_to(pt(p));
+    }
+    builder.end(false);
+    let mut path = builder.build();
+    if let Some(effect) = path_effect {
+        path = apply_canvas_path_effect(&path, effect);
+    }
+
+    let lyon_cap = match cap {
+        StrokeCap::Butt => LineCap::Butt,
+        StrokeCap::Round => LineCap::Round,
+        StrokeCap::Square => LineCap::Square,
+    };
+    let lyon_join = match join {
+        StrokeJoin::Miter => LineJoin::Miter,
+        StrokeJoin::Round => LineJoin::Round,
+        StrokeJoin::Bevel => LineJoin::Bevel,
+    };
+    let mut tess = StrokeTessellator::new();
+    let mut buffers: VertexBuffers<Point, u16> = VertexBuffers::new();
+    tess.tessellate_path(
+        &path,
+        &StrokeOptions::default()
+            .with_tolerance(0.25)
+            .with_line_width(width.0.max(0.0))
+            .with_line_cap(lyon_cap)
+            .with_line_join(lyon_join)
+            .with_miter_limit(miter),
+        &mut simple_builder(&mut buffers),
+    )
+    .ok()?;
+    if buffers.indices.is_empty() {
+        return None;
+    }
+    let vertices: Arc<[VectorVertex]> = buffers
+        .indices
+        .iter()
+        .map(|&i| {
+            let v = &buffers.vertices[i as usize];
+            VectorVertex {
+                pos: [v.x, v.y],
+                color: [1.0, 1.0, 1.0, 1.0],
+                uv: [0.0, 0.0],
+            }
+        })
+        .collect();
+    let indices: Arc<[u32]> = (0..vertices.len() as u32).collect();
+    Some(VectorMeshData { vertices, indices })
+}
+
+fn apply_canvas_path_effect(path: &lyon_path::Path, effect: &PathEffect) -> lyon_path::Path {
+    use lyon_path::PathEvent;
+    use lyon_path::iterator::PathIterator;
+    match effect {
+        PathEffect::Corner { .. } => path.clone(),
+        PathEffect::Dash { intervals, phase } => {
+            if intervals.len() < 2 || intervals.len() % 2 != 0 {
+                return path.clone();
+            }
+            if intervals.iter().sum::<f32>() <= 0.0 {
+                return path.clone();
+            }
+            let events: Vec<PathEvent> = path.iter().flattened(0.25).collect();
+            let dash_len: f32 = intervals.iter().sum();
+            let mut phase = phase % dash_len;
+            if phase < 0.0 {
+                phase += dash_len;
+            }
+            let mut idx = 0usize;
+            let mut acc = 0.0f32;
+            let mut dash_dist = 0.0f32;
+            let mut emitting = true;
+            for (i, &len) in intervals.iter().enumerate() {
+                if phase < acc + len {
+                    idx = i;
+                    dash_dist = phase - acc;
+                    emitting = i % 2 == 0;
+                    break;
+                }
+                acc += len;
+            }
+            let mut builder = lyon_path::Path::builder();
+            let mut in_subpath = false;
+            for ev in events {
+                match ev {
+                    PathEvent::Begin { .. } => {}
+                    PathEvent::Line { from, to } => {
+                        let seg = to - from;
+                        let seg_len = seg.length();
+                        if seg_len < 0.0001 {
+                            continue;
+                        }
+                        let dir = seg / seg_len;
+                        let mut remaining = seg_len;
+                        let mut cur = from;
+                        while remaining > 0.0 {
+                            if intervals[idx] <= 0.0 {
+                                idx = (idx + 1) % intervals.len();
+                                emitting = !emitting;
+                                dash_dist = 0.0;
+                                continue;
+                            }
+                            let avail = intervals[idx] - dash_dist;
+                            let take = avail.min(remaining);
+                            if take > 0.0 {
+                                let next = lyon_path::math::Point::new(
+                                    cur.x + dir.x * take,
+                                    cur.y + dir.y * take,
+                                );
+                                if emitting {
+                                    if !in_subpath {
+                                        builder.begin(cur);
+                                        in_subpath = true;
+                                    }
+                                    builder.line_to(next);
+                                } else if in_subpath {
+                                    builder.end(false);
+                                    in_subpath = false;
+                                }
+                                cur = next;
+                            }
+                            remaining -= take;
+                            dash_dist += take;
+                            if dash_dist >= intervals[idx] {
+                                dash_dist = 0.0;
+                                idx = (idx + 1) % intervals.len();
+                                emitting = !emitting;
+                            }
+                        }
+                    }
+                    PathEvent::End { close, .. } if in_subpath => {
+                        if close {
+                            builder.close();
+                        } else {
+                            builder.end(false);
+                        }
+                        in_subpath = false;
+                    }
+                    _ => {}
+                }
+            }
+            if in_subpath {
+                builder.end(false);
+            }
+            builder.build()
+        }
+    }
+}
+
 pub use repose_core::{PaintCallbackInfo, PaintCallbackPayload};
+
+/// Stroked rounded-rect ring for styles the `Border` scene node cannot
+/// express: non-butt caps are meaningless on closed rings, so this covers
+/// round/bevel joins, custom miters, and dash path effects. Butt joins with
+/// no path effect return `None` so the caller keeps the cheap SDF border.
+fn tessellate_rounded_rect_stroke(
+    rect: Rect,
+    radius: Px,
+    canvas_rect: Rect,
+    width: Px,
+    _cap: StrokeCap,
+    join: StrokeJoin,
+    miter: f32,
+    path_effect: Option<&PathEffect>,
+) -> Option<VectorMeshData> {
+    let needs_mesh = !matches!(join, StrokeJoin::Miter) || miter != 4.0 || path_effect.is_some();
+    if !needs_mesh {
+        return None;
+    }
+    use lyon_path::math::Box2D;
+    use lyon_path::math::Point;
+    use lyon_tessellation::{
+        LineCap, LineJoin, StrokeOptions, StrokeTessellator, VertexBuffers,
+        geometry_builder::simple_builder,
+    };
+    let x0 = canvas_rect.x + rect.x;
+    let y0 = canvas_rect.y + rect.y;
+    let x1 = x0 + rect.w.max(0.0);
+    let y1 = y0 + rect.h.max(0.0);
+    let r = radius.0.clamp(0.0, (rect.w.min(rect.h) * 0.5).max(0.0));
+    let mut builder = lyon_path::Path::builder();
+    builder.add_rounded_rectangle(
+        &Box2D {
+            min: Point::new(x0, y0),
+            max: Point::new(x1, y1),
+        },
+        &lyon_path::builder::BorderRadii {
+            top_left: r,
+            top_right: r,
+            bottom_left: r,
+            bottom_right: r,
+        },
+        lyon_path::Winding::Positive,
+    );
+    let mut path = builder.build();
+    if let Some(effect) = path_effect {
+        path = apply_canvas_path_effect(&path, effect);
+    }
+    let lyon_join = match join {
+        StrokeJoin::Miter => LineJoin::Miter,
+        StrokeJoin::Round => LineJoin::Round,
+        StrokeJoin::Bevel => LineJoin::Bevel,
+    };
+    let mut tess = StrokeTessellator::new();
+    let mut buffers: VertexBuffers<Point, u16> = VertexBuffers::new();
+    tess.tessellate_path(
+        &path,
+        &StrokeOptions::default()
+            .with_tolerance(0.25)
+            .with_line_width(width.0.max(0.0))
+            .with_line_cap(LineCap::Butt)
+            .with_line_join(lyon_join)
+            .with_miter_limit(miter),
+        &mut simple_builder(&mut buffers),
+    )
+    .ok()?;
+    if buffers.indices.is_empty() {
+        return None;
+    }
+    let vertices: Arc<[VectorVertex]> = buffers
+        .indices
+        .iter()
+        .map(|&i| {
+            let v = &buffers.vertices[i as usize];
+            VectorVertex {
+                pos: [v.x, v.y],
+                color: [1.0, 1.0, 1.0, 1.0],
+                uv: [0.0, 0.0],
+            }
+        })
+        .collect();
+    let indices: Arc<[u32]> = (0..vertices.len() as u32).collect();
+    Some(VectorMeshData { vertices, indices })
+}
+
+/// Stroked ellipse ring for styles `EllipseBorder` cannot express (same
+/// rule as [`tessellate_rounded_rect_stroke`]: butt/miter/default stays SDF).
+fn tessellate_ellipse_stroke(
+    rect: Rect,
+    canvas_rect: Rect,
+    width: Px,
+    _cap: StrokeCap,
+    join: StrokeJoin,
+    miter: f32,
+    path_effect: Option<&PathEffect>,
+) -> Option<VectorMeshData> {
+    let needs_mesh = !matches!(join, StrokeJoin::Miter) || miter != 4.0 || path_effect.is_some();
+    if !needs_mesh {
+        return None;
+    }
+    use lyon_path::math::{Angle, Point, Vector};
+    use lyon_tessellation::{
+        LineCap, LineJoin, StrokeOptions, StrokeTessellator, VertexBuffers,
+        geometry_builder::simple_builder,
+    };
+    let cx = canvas_rect.x + rect.x + rect.w * 0.5;
+    let cy = canvas_rect.y + rect.y + rect.h * 0.5;
+    let rx = (rect.w * 0.5).max(0.0);
+    let ry = (rect.h * 0.5).max(0.0);
+    if rx <= 0.0 || ry <= 0.0 {
+        return None;
+    }
+    let mut builder = lyon_path::Path::builder();
+    builder.add_ellipse(
+        Point::new(cx, cy),
+        Vector::new(rx, ry),
+        Angle::radians(0.0),
+        lyon_path::Winding::Positive,
+    );
+    builder.close();
+    let mut path = builder.build();
+    if let Some(effect) = path_effect {
+        path = apply_canvas_path_effect(&path, effect);
+    }
+    let lyon_join = match join {
+        StrokeJoin::Miter => LineJoin::Miter,
+        StrokeJoin::Round => LineJoin::Round,
+        StrokeJoin::Bevel => LineJoin::Bevel,
+    };
+    let mut tess = StrokeTessellator::new();
+    let mut buffers: VertexBuffers<Point, u16> = VertexBuffers::new();
+    tess.tessellate_path(
+        &path,
+        &StrokeOptions::default()
+            .with_tolerance(0.25)
+            .with_line_width(width.0.max(0.0))
+            .with_line_cap(LineCap::Butt)
+            .with_line_join(lyon_join)
+            .with_miter_limit(miter),
+        &mut simple_builder(&mut buffers),
+    )
+    .ok()?;
+    if buffers.indices.is_empty() {
+        return None;
+    }
+    let vertices: Arc<[VectorVertex]> = buffers
+        .indices
+        .iter()
+        .map(|&i| {
+            let v = &buffers.vertices[i as usize];
+            VectorVertex {
+                pos: [v.x, v.y],
+                color: [1.0, 1.0, 1.0, 1.0],
+                uv: [0.0, 0.0],
+            }
+        })
+        .collect();
+    let indices: Arc<[u32]> = (0..vertices.len() as u32).collect();
+    Some(VectorMeshData { vertices, indices })
+}
+
+fn tessellate_arc_wedge(
+    rect: Rect,
+    canvas_rect: Rect,
+    start: f32,
+    sweep: f32,
+) -> Option<VectorMeshData> {
+    use lyon_path::math::Point;
+    use lyon_tessellation::{
+        FillOptions, FillTessellator, VertexBuffers, geometry_builder::simple_builder,
+    };
+    let cx = canvas_rect.x + rect.x + rect.w * 0.5;
+    let cy = canvas_rect.y + rect.y + rect.h * 0.5;
+    let rx = (rect.w * 0.5).max(0.0);
+    let ry = (rect.h * 0.5).max(0.0);
+    if !sweep.is_finite() || sweep.abs() < 1e-6 || rx <= 0.0 || ry <= 0.0 {
+        return None;
+    }
+    let segs = ((sweep.abs() / std::f32::consts::TAU * 96.0).ceil() as usize).clamp(2, 128);
+    let mut builder = lyon_path::Path::builder();
+    builder.begin(Point::new(cx, cy));
+    for i in 0..=segs {
+        let a = start + sweep * (i as f32 / segs as f32);
+        builder.line_to(Point::new(cx + rx * a.cos(), cy + ry * a.sin()));
+    }
+    builder.close();
+    let path = builder.build();
+    let mut tess = FillTessellator::new();
+    let mut buffers: VertexBuffers<Point, u16> = VertexBuffers::new();
+    tess.tessellate_path(
+        &path,
+        &FillOptions::default().with_tolerance(0.25),
+        &mut simple_builder(&mut buffers),
+    )
+    .ok()?;
+    if buffers.indices.is_empty() {
+        return None;
+    }
+    let vertices: Arc<[VectorVertex]> = buffers
+        .indices
+        .iter()
+        .map(|&i| {
+            let v = &buffers.vertices[i as usize];
+            VectorVertex {
+                pos: [v.x, v.y],
+                color: [1.0, 1.0, 1.0, 1.0],
+                uv: [0.0, 0.0],
+            }
+        })
+        .collect();
+    let indices: Arc<[u32]> = (0..vertices.len() as u32).collect();
+    Some(VectorMeshData { vertices, indices })
+}
 
 pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) -> View {
     let painter = move |scene: &mut Scene, rect: Rect, _alpha: f32| {
@@ -267,30 +875,60 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
             match cmd {
                 DrawCommand::Rect {
                     rect: r,
-                    color,
+                    fill,
                     radius,
-                    stroke,
+                    style,
                 } => {
-                    scene.nodes.push(SceneNode::Rect {
-                        rect: to_global(*r),
-                        brush: Brush::Solid(*color),
-                        radius: [*radius; 4],
-                    });
-                    if let Some((w, c)) = stroke {
-                        scene.nodes.push(SceneNode::Border {
-                            rect: to_global(*r),
-                            color: *c,
-                            width: *w,
-                            radius: [*radius; 4],
-                        });
+                    let r = to_global(*r);
+                    match style {
+                        ShapeStyle::Fill => {
+                            scene.nodes.push(SceneNode::Rect {
+                                rect: r,
+                                brush: *fill,
+                                radius: [*radius; 4],
+                            });
+                        }
+                        ShapeStyle::Stroke {
+                            width,
+                            cap,
+                            join,
+                            miter,
+                            path_effect,
+                        } => {
+                            if let Some(mesh) = tessellate_rounded_rect_stroke(
+                                r,
+                                *radius,
+                                rect,
+                                *width,
+                                *cap,
+                                *join,
+                                *miter,
+                                path_effect.as_ref(),
+                            ) {
+                                scene.nodes.push(SceneNode::VectorMesh {
+                                    mesh: Arc::new(mesh),
+                                    transform: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+                                    paint: brush_to_paint(fill),
+                                    clip: None,
+                                    blend: BlendMode::Alpha,
+                                });
+                            } else {
+                                scene.nodes.push(SceneNode::Border {
+                                    rect: r,
+                                    brush: *fill,
+                                    width: *width,
+                                    radius: [*radius; 4],
+                                });
+                            }
+                        }
                     }
                 }
                 DrawCommand::Ellipse {
                     center,
                     rx,
                     ry,
-                    color,
-                    stroke,
+                    fill,
+                    style,
                 } => {
                     let r = Rect {
                         x: center.x - *rx,
@@ -298,15 +936,104 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                         w: 2.0 * *rx,
                         h: 2.0 * *ry,
                     };
-                    scene.nodes.push(SceneNode::Ellipse {
-                        rect: to_global(r),
-                        brush: Brush::Solid(*color),
+                    let r = to_global(r);
+                    match style {
+                        ShapeStyle::Fill => {
+                            scene.nodes.push(SceneNode::Ellipse {
+                                rect: r,
+                                brush: *fill,
+                            });
+                        }
+                        ShapeStyle::Stroke {
+                            width,
+                            cap,
+                            join,
+                            miter,
+                            path_effect,
+                        } => {
+                            if let Some(mesh) = tessellate_ellipse_stroke(
+                                r,
+                                rect,
+                                *width,
+                                *cap,
+                                *join,
+                                *miter,
+                                path_effect.as_ref(),
+                            ) {
+                                scene.nodes.push(SceneNode::VectorMesh {
+                                    mesh: Arc::new(mesh),
+                                    transform: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+                                    paint: brush_to_paint(fill),
+                                    clip: None,
+                                    blend: BlendMode::Alpha,
+                                });
+                            } else {
+                                scene.nodes.push(SceneNode::EllipseBorder {
+                                    rect: r,
+                                    brush: *fill,
+                                    width: *width,
+                                });
+                            }
+                        }
+                    }
+                }
+                DrawCommand::LinePath {
+                    points,
+                    brush,
+                    width,
+                    cap,
+                    join,
+                    miter,
+                    path_effect,
+                } => {
+                    if points.len() < 2 {
+                        continue;
+                    }
+                    let mesh = tessellate_polyline(
+                        points,
+                        rect,
+                        *width,
+                        *cap,
+                        *join,
+                        *miter,
+                        path_effect.as_ref(),
+                    );
+                    let Some(mesh) = mesh else { continue };
+                    scene.nodes.push(SceneNode::VectorMesh {
+                        mesh: Arc::new(mesh),
+                        transform: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+                        paint: brush_to_paint(brush),
+                        clip: None,
+                        blend: BlendMode::Alpha,
                     });
-                    if let Some((w, c)) = stroke {
-                        scene.nodes.push(SceneNode::EllipseBorder {
-                            rect: to_global(r),
-                            color: *c,
-                            width: *w,
+                }
+                DrawCommand::Arc {
+                    rect: r,
+                    start_angle,
+                    sweep_angle,
+                    use_center,
+                    brush,
+                    width,
+                    cap,
+                } => {
+                    if *use_center {
+                        let mesh = tessellate_arc_wedge(*r, rect, *start_angle, *sweep_angle);
+                        let Some(mesh) = mesh else { continue };
+                        scene.nodes.push(SceneNode::VectorMesh {
+                            mesh: Arc::new(mesh),
+                            transform: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+                            paint: brush_to_paint(brush),
+                            clip: None,
+                            blend: BlendMode::Alpha,
+                        });
+                    } else {
+                        scene.nodes.push(SceneNode::Arc {
+                            rect: to_global(*r),
+                            start_angle: *start_angle,
+                            sweep_angle: *sweep_angle,
+                            stroke_width: *width,
+                            brush: *brush,
+                            cap: *cap,
                         });
                     }
                 }

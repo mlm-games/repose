@@ -1,16 +1,32 @@
+struct Globals {
+    ndc_to_px: vec2<f32>,
+    _pad: vec2<f32>,
+};
+@group(0) @binding(0) var<uniform> G: Globals;
+
 struct VSOut {
     @builtin(position) pos: vec4<f32>,
-    @location(0) color: vec4<f32>,
-    @location(1) xywh: vec4<f32>,
-    @location(2) pos_ndc: vec2<f32>,
-    @location(3) fwd_mat: vec4<f32>,
+    @location(0) @interpolate(flat) brush_type: u32,
+    @location(1) color0: vec4<f32>,
+    @location(2) color1: vec4<f32>,
+    @location(3) grad_p0: vec2<f32>,
+    @location(4) grad_p1: vec2<f32>,
+    @location(5) @interpolate(flat) tile_mode: u32,
+    @location(6) xywh: vec4<f32>,
+    @location(7) pos_ndc: vec2<f32>,
+    @location(8) fwd_mat: vec4<f32>,
 };
 
 @vertex
 fn vs_main(
     @location(0) xywh: vec4<f32>,
-    @location(1) color: vec4<f32>,
-    @location(2) fwd_mat: vec4<f32>,
+    @location(1) @interpolate(flat) brush_type: u32,
+    @location(2) color0: vec4<f32>,
+    @location(3) color1: vec4<f32>,
+    @location(4) grad_p0: vec2<f32>,
+    @location(5) grad_p1: vec2<f32>,
+    @location(6) @interpolate(flat) tile_mode: u32,
+    @location(7) fwd_mat: vec4<f32>,
     @builtin(vertex_index) v: u32
 ) -> VSOut {
     var positions = array<vec2<f32>, 6>(
@@ -28,8 +44,13 @@ fn vs_main(
 
     var out: VSOut;
     out.pos = vec4(pos_ndc, 0.0, 1.0);
+    out.brush_type = brush_type;
+    out.color0 = color0;
+    out.color1 = color1;
+    out.grad_p0 = grad_p0;
+    out.grad_p1 = grad_p1;
+    out.tile_mode = tile_mode;
     out.xywh = xywh;
-    out.color = color;
     out.pos_ndc = pos_ndc;
     out.fwd_mat = fwd_mat;
     return out;
@@ -48,12 +69,52 @@ fn sdf_ellipse(pos_ndc: vec2<f32>, xywh: vec4<f32>, fwd_mat: vec4<f32>) -> f32 {
     return length(p) - 1.0;
 }
 
+fn apply_tile(t: f32, tile_mode: u32) -> f32 {
+    if tile_mode == 1u {
+        return t - floor(t);
+    }
+    if tile_mode == 2u {
+        let m = t - floor(t * 0.5) * 2.0;
+        return select(m, 2.0 - m, m > 1.0);
+    }
+    return clamp(t, 0.0, 1.0);
+}
+
+// Ellipse fill supports linear gradients only (matches the CPU baker:
+// radial/sweep fall back to their start color).
+fn eval_ellipse_brush(in: VSOut, local_px: vec2<f32>) -> vec4<f32> {
+    if in.brush_type == 0u {
+        return in.color0;
+    }
+    let dir = in.grad_p1 - in.grad_p0;
+    let len2 = max(dot(dir, dir), 1e-6);
+    return mix(in.color0, in.color1, apply_tile(dot(local_px - in.grad_p0, dir) / len2, in.tile_mode));
+}
+
+// Shape-local px with (0,0) at the shape top-left. `xywh.zw` is the shape
+// size in px (rect_to_instance_ndc scales, never rotates, so the NDC span
+// converts back with ndc_to_px); no extra normalization needed. Scaled by
+// the caller's `G.ndc_to_px`, matching the px space of `half_px`/`stroke_px`.
+fn ellipse_local_px(pos_ndc: vec2<f32>, xywh: vec4<f32>, fwd_mat: vec4<f32>) -> vec2<f32> {
+    let center = xywh.xy;
+    let rel = pos_ndc - center;
+    let det = max(fwd_mat.x * fwd_mat.w - fwd_mat.y * fwd_mat.z, 1e-6);
+    let unrotated_ndc = center + vec2(
+        (fwd_mat.w * rel.x - fwd_mat.y * rel.y) / det,
+        (-fwd_mat.z * rel.x + fwd_mat.x * rel.y) / det,
+    );
+    return (unrotated_ndc - center) * G.ndc_to_px + 0.5 * xywh.zw * G.ndc_to_px;
+}
+
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
     let d = sdf_ellipse(in.pos_ndc, in.xywh, in.fwd_mat);
     let w = max(fwidth(d), 1e-5);
     let alpha_cov = 1.0 - smoothstep(-w, w, d);
 
-    let a = in.color.a * alpha_cov;
-    return vec4(in.color.rgb * a, a);
+    let local_px = ellipse_local_px(in.pos_ndc, in.xywh, in.fwd_mat);
+    let base = eval_ellipse_brush(in, local_px);
+
+    let a = base.a * alpha_cov;
+    return vec4(base.rgb * a, a);
 }

@@ -35,7 +35,7 @@ pub(crate) fn push_focus_ring(scene: &mut Scene, rect: repose_core::Rect, radius
     );
     scene.nodes.push(SceneNode::Border {
         rect: inflated,
-        color: locals::theme().focus,
+        brush: Brush::Solid(locals::theme().focus),
         width,
         radius,
     });
@@ -127,6 +127,26 @@ pub(crate) fn mul_alpha_brush(b: Brush, a: f32) -> Brush {
         } => Brush::Linear {
             start,
             end,
+            start_color: mul_alpha_color(start_color, a),
+            end_color: mul_alpha_color(end_color, a),
+        },
+        Brush::Radial {
+            center,
+            radius,
+            start_color,
+            end_color,
+        } => Brush::Radial {
+            center,
+            radius,
+            start_color: mul_alpha_color(start_color, a),
+            end_color: mul_alpha_color(end_color, a),
+        },
+        Brush::Sweep {
+            center,
+            start_color,
+            end_color,
+        } => Brush::Sweep {
+            center,
             start_color: mul_alpha_color(start_color, a),
             end_color: mul_alpha_color(end_color, a),
         },

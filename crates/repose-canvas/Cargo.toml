@@ -7,3 +7,5 @@ description = "Immediate-mode canvas utilities for Repose"
 [dependencies]
 repose-core.workspace = true
 repose-ui.workspace = true
+lyon_tessellation.workspace = true
+lyon_path.workspace = true

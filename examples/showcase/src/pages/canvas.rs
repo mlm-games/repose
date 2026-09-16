@@ -1,5 +1,5 @@
-use repose_canvas::Canvas;
-use repose_core::prelude::*;
+use repose_canvas::{Canvas, ShapeStyle};
+use repose_core::{StrokeCap, prelude::*};
 use repose_ui::anim::animate_f32_from;
 use repose_ui::*;
 use web_time::Duration;
@@ -54,6 +54,78 @@ pub fn screen() -> View {
                             Vec2 { x: 22.0, y: 160.0 },
                             theme().on_surface,
                             Px(18.0),
+                        );
+                    },
+                ),
+            )),
+        ),
+        Section(
+            "Brushes & strokes",
+            Column(Modifier::new().padding(sp::MD).gap(sp::MD)).child((
+                Hint("Gradient fills, brush borders, lines, and arcs share the Compose DrawScope model."),
+                Canvas(
+                    Modifier::new()
+                        .size(Dp(560.0), Dp(200.0))
+                        .background(theme().surface)
+                        .border(Dp(1.0), theme().outline, Dp(16.0))
+                        .clip_rounded(Dp(16.0)),
+                    |ds| {
+                        let th = theme();
+                        ds.draw_rect_brush(
+                            Rect {
+                                x: 20.0,
+                                y: 24.0,
+                                w: 150.0,
+                                h: 96.0,
+                            },
+                            Brush::Linear {
+                                start: Vec2 { x: 0.0, y: 0.0 },
+                                end: Vec2 { x: 150.0, y: 96.0 },
+                                start_color: th.primary,
+                                end_color: th.tertiary,
+                            },
+                            Px(16.0),
+                        );
+                        ds.draw_rect_style(
+                            Rect {
+                                x: 200.0,
+                                y: 24.0,
+                                w: 130.0,
+                                h: 130.0,
+                            },
+                            Brush::Radial {
+                                center: Vec2 { x: 65.0, y: 65.0 },
+                                radius: 90.0,
+                                start_color: th.secondary,
+                                end_color: th.primary,
+                            },
+                            Px(18.0),
+                            ShapeStyle::stroke(Px(6.0)),
+                        );
+                        ds.draw_line(
+                            Vec2 { x: 360.0, y: 40.0 },
+                            Vec2 { x: 520.0, y: 120.0 },
+                            th.error,
+                            Px(4.0),
+                            StrokeCap::Round,
+                        );
+                        ds.draw_arc(
+                            Rect {
+                                x: 380.0,
+                                y: 60.0,
+                                w: 120.0,
+                                h: 120.0,
+                            },
+                            0.0,
+                            std::f32::consts::TAU * 0.75,
+                            false,
+                            Brush::Sweep {
+                                center: Vec2 { x: 60.0, y: 60.0 },
+                                start_color: th.primary,
+                                end_color: th.tertiary,
+                            },
+                            Px(8.0),
+                            StrokeCap::Round,
                         );
                     },
                 ),

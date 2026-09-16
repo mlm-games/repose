@@ -127,3 +127,144 @@ fn translucent_content_is_premultiplied() {
         px[0]
     );
 }
+
+#[test]
+fn brush_border_matches_solid_border() {
+    let Some(mut off) = try_offscreen(16, 16) else {
+        return;
+    };
+    let rect = Rect {
+        x: 2.0,
+        y: 2.0,
+        w: 12.0,
+        h: 12.0,
+    };
+    let scene = Scene {
+        clear_color: Color::from_rgba(0, 0, 0, 0),
+        nodes: vec![SceneNode::Border {
+            rect,
+            brush: Brush::Solid(Color::from_rgba(255, 0, 0, 255)),
+            width: Px(2.0),
+            radius: [Px::ZERO; 4],
+        }],
+    };
+    let px = off.render_rgba(&scene, None).expect("render");
+    let at = |x: usize, y: usize| (y * 16 + x) * 4;
+    // Top edge of the ring is red (AA may soften the outermost row).
+    let i = at(8, 3);
+    assert!(px[i] > 200 && px[i + 3] > 200, "top edge should be red, got {:?}", &px[i..i + 4]);
+    assert_eq!(px[i + 1], 0);
+    assert_eq!(px[i + 2], 0);
+    // Interior of the ring is untouched.
+    let i = at(8, 8);
+    assert_eq!(&px[i..i + 4], &[0, 0, 0, 0]);
+}
+
+#[test]
+fn linear_border_blends_endpoint_colors() {
+    use repose_core::Vec2;
+    let Some(mut off) = try_offscreen(16, 16) else {
+        return;
+    };
+    let rect = Rect {
+        x: 2.0,
+        y: 2.0,
+        w: 12.0,
+        h: 12.0,
+    };
+    let scene = Scene {
+        clear_color: Color::from_rgba(0, 0, 0, 0),
+        nodes: vec![SceneNode::Border {
+            rect,
+            brush: Brush::Linear {
+                start: Vec2 { x: 0.0, y: 0.0 },
+                end: Vec2 { x: 12.0, y: 0.0 },
+                start_color: Color::from_rgba(255, 0, 0, 255),
+                end_color: Color::from_rgba(0, 0, 255, 255),
+            },
+            width: Px(2.0),
+            radius: [Px::ZERO; 4],
+        }],
+    };
+    let px = off.render_rgba(&scene, None).expect("render");
+    let at = |x: usize, y: usize| (y * 16 + x) * 4;
+    // Left edge leans red, right edge leans blue.
+    let l = at(2, 8);
+    let r = at(13, 8);
+    assert!(px[l] > 128, "left edge should be red, got {:?}", &px[l..l + 4]);
+    assert!(px[l + 2] < 128);
+    assert!(px[r + 2] > 128, "right edge should be blue, got {:?}", &px[r..r + 4]);
+    assert!(px[r] < 128);
+}
+
+#[test]
+fn radial_border_center_matches_start_color() {
+    use repose_core::Vec2;
+    let Some(mut off) = try_offscreen(16, 16) else {
+        return;
+    };
+    let scene = Scene {
+        clear_color: Color::from_rgba(0, 0, 0, 0),
+        nodes: vec![SceneNode::EllipseBorder {
+            rect: Rect {
+                x: 2.0,
+                y: 2.0,
+                w: 12.0,
+                h: 12.0,
+            },
+            brush: Brush::Radial {
+                center: Vec2 { x: 6.0, y: 6.0 },
+                radius: 24.0,
+                start_color: Color::from_rgba(255, 0, 0, 255),
+                end_color: Color::from_rgba(0, 0, 255, 255),
+            },
+            width: Px(2.0),
+        }],
+    };
+    let px = off.render_rgba(&scene, None).expect("render");
+    // Any strongly-painted ring pixel near the center-x column should read
+    // red-dominant: with radius 24 the whole 12px shape sits at t < 0.35.
+    let mut found = false;
+    for y in 2..14 {
+        let i = (y * 16 + 8) * 4;
+        if px[i + 3] > 200 {
+            assert!(
+                px[i] > px[i + 2],
+                "expected red-dominant at y={y}, got {:?}",
+                &px[i..i + 4]
+            );
+            found = true;
+        }
+    }
+    assert!(found, "expected opaque ring pixels in the center column");
+}
+
+#[test]
+fn sweep_arc_renders_without_panic() {
+    use repose_core::{StrokeCap, Vec2};
+    let Some(mut off) = try_offscreen(16, 16) else {
+        return;
+    };
+    let scene = Scene {
+        clear_color: Color::from_rgba(0, 0, 0, 0),
+        nodes: vec![SceneNode::Arc {
+            rect: Rect {
+                x: 2.0,
+                y: 2.0,
+                w: 12.0,
+                h: 12.0,
+            },
+            start_angle: 0.0,
+            sweep_angle: std::f32::consts::TAU,
+            stroke_width: Px(2.0),
+            brush: Brush::Sweep {
+                center: Vec2 { x: 6.0, y: 6.0 },
+                start_color: Color::from_rgba(255, 0, 0, 255),
+                end_color: Color::from_rgba(0, 0, 255, 255),
+            },
+            cap: StrokeCap::Butt,
+        }],
+    };
+    let px = off.render_rgba(&scene, None).expect("render");
+    assert!(px.iter().any(|&b| b != 0), "sweep arc should paint pixels");
+}

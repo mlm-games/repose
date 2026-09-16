@@ -3,7 +3,7 @@ pub use crate::animation::{
     KeyframesSpec, MonoSpline, RepeatableSpec, SplineKeyframes, SpringSpec, SystemClock, TestClock,
     ensure_system_clock, set_clock,
 };
-pub use crate::color::Color;
+pub use crate::color::{Brush, Color, LinearGradient, TileMode};
 pub use crate::dnd::*;
 pub use crate::effects::{Dispose, effect, on_unmount};
 pub use crate::error::*;
@@ -25,8 +25,8 @@ pub use crate::locals::{
     with_window_size_class,
 };
 pub use crate::modifier::{
-    Interaction, InteractionSource, Modifier, MutableInteractionSource, PressId, StateColors,
-    StateElevation,
+    Border, Interaction, InteractionSource, Modifier, MutableInteractionSource, PressId,
+    StateColors, StateElevation,
 };
 pub use crate::nested_scroll::{NestedScrollConnection, NestedScrollSource};
 pub use crate::render_api::{GlyphRasterConfig, RenderBackend};

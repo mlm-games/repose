@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use rustc_hash::FxHashMap;
 
 use crate::scope::Scope;
-use crate::{Rect, Scene, View, semantics::Role};
+use crate::{CursorIcon, Rect, Scene, View, semantics::Role};
 
 thread_local! {
     pub static COMPOSER: RefCell<Composer> = RefCell::new(Composer::default());
@@ -670,6 +670,31 @@ pub struct Scheduler {
     scope_local_counters: FxHashMap<String, u32>,
     pub focused: Option<u64>,
     pub size: (u32, u32),
+    /// Polled physical-key names currently down (`KeyW`, `Digit1`,
+    /// `Space`, ... — winit `KeyCode` debug names, layout-independent
+    /// positions, not glyphs). The platform runner maintains this from
+    /// raw `KeyboardInput` events without passing through focus
+    /// dispatch; games reconcile their event-staged held sets against
+    /// it every frame (GML `keyboard_check` parity). Cleared on window
+    /// focus loss (no key-ups arrive across an alt-tab).
+    pub held_keys: Vec<String>,
+    /// Window focus as of the last platform event. `false` drops every
+    /// held key on the game side.
+    pub window_focused: bool,
+    /// Polled mouse-button levels, same source as `held_keys`
+    /// (GML `mouse_check_button` parity; repairs a missed button-up
+    /// when the release lands outside the window).
+    pub mouse_primary: bool,
+    pub mouse_secondary: bool,
+    pub mouse_middle: bool,
+    /// App-requested cursor override. When `Some`, the platform
+    /// applies it instead of the hover-derived icon: games hide the
+    /// OS pointer here (`CursorIcon::Hidden`) while drawing their own
+    /// crosshair, GML `window_set_cursor(cr_none)` parity. `None`
+    /// restores hover behavior. Set during composition (any view can
+    /// write it; last write per frame wins), consumed by the runner
+    /// after `frame()`.
+    pub cursor_override: Option<CursorIcon>,
 }
 
 impl Default for Scheduler {
@@ -688,6 +713,12 @@ impl Scheduler {
             scope_local_counters: FxHashMap::default(),
             focused: None,
             size: (1280, 800),
+            held_keys: Vec::new(),
+            window_focused: true,
+            mouse_primary: false,
+            mouse_secondary: false,
+            mouse_middle: false,
+            cursor_override: None,
         }
     }
 

@@ -751,6 +751,26 @@ impl ApplicationHandler<()> for App {
                     // Forward/Back/other buttons are not dispatched by the runtime.
                     _ => return,
                 };
+                match (mapped, state) {
+                    (PointerButton::Primary, ElementState::Pressed) => {
+                        self.rt.sched.mouse_primary = true;
+                    }
+                    (PointerButton::Primary, ElementState::Released) => {
+                        self.rt.sched.mouse_primary = false;
+                    }
+                    (PointerButton::Secondary, ElementState::Pressed) => {
+                        self.rt.sched.mouse_secondary = true;
+                    }
+                    (PointerButton::Secondary, ElementState::Released) => {
+                        self.rt.sched.mouse_secondary = false;
+                    }
+                    (PointerButton::Tertiary, ElementState::Pressed) => {
+                        self.rt.sched.mouse_middle = true;
+                    }
+                    (PointerButton::Tertiary, ElementState::Released) => {
+                        self.rt.sched.mouse_middle = false;
+                    }
+                }
 
                 let pos = Vec2 {
                     x: self.rt.mouse_pos_px.0,

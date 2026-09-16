@@ -187,7 +187,8 @@ pub struct ClipRect {
 #[derive(Clone, Debug)]
 pub struct Border {
     pub width: Dp,
-    pub color: Color,
+    /// Fill of the border ring. Mirrors Compose `BorderStroke(width, brush)`.
+    pub brush: Brush,
     pub radius: [Dp; 4],
 }
 
@@ -1223,7 +1224,17 @@ impl Modifier {
     pub fn border(mut self, width: Dp, color: Color, radius: Dp) -> Self {
         self.border = Some(Border {
             width,
-            color,
+            brush: Brush::Solid(color),
+            radius: [radius; 4],
+        });
+        self
+    }
+    /// Brush border (gradient, etc.). Mirrors Compose
+    /// `Modifier.border(width: Dp, brush: Brush, shape: Shape)`.
+    pub fn border_brush(mut self, width: Dp, brush: Brush, radius: Dp) -> Self {
+        self.border = Some(Border {
+            width,
+            brush,
             radius: [radius; 4],
         });
         self
@@ -1231,7 +1242,16 @@ impl Modifier {
     pub fn border_radii(mut self, width: Dp, color: Color, radii: [Dp; 4]) -> Self {
         self.border = Some(Border {
             width,
-            color,
+            brush: Brush::Solid(color),
+            radius: radii,
+        });
+        self
+    }
+    /// Brush border with per-corner radii.
+    pub fn border_brush_radii(mut self, width: Dp, brush: Brush, radii: [Dp; 4]) -> Self {
+        self.border = Some(Border {
+            width,
+            brush,
             radius: radii,
         });
         self

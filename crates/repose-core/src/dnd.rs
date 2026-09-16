@@ -329,7 +329,7 @@ fn draw_label_chip(scene: &mut Scene, pointer: Vec2, label: &str, accent: Color,
     });
     scene.nodes.push(SceneNode::Border {
         rect,
-        color: accent.with_alpha(0xFF),
+        brush: Brush::Solid(accent.with_alpha(0xFF)),
         width: 1.0.dp().to_px(),
         radius: [r; 4],
     });
@@ -375,7 +375,7 @@ fn draw_default_source_ghost(scene: &mut Scene, ctx: &DragPreviewCtx, accent: Co
     });
     scene.nodes.push(SceneNode::Border {
         rect,
-        color: accent.with_alpha(0xCC),
+        brush: Brush::Solid(accent.with_alpha(0xCC)),
         width: 1.5.dp().to_px(),
         radius: [r; 4],
     });
@@ -840,7 +840,7 @@ pub fn overlay_drag_indicator(
         let r = 8.0.dp().to_px();
         scene.nodes.push(SceneNode::Border {
             rect: hit.rect,
-            color: accent,
+            brush: Brush::Solid(accent),
             width: 2.0.dp().to_px(),
             radius: [r; 4],
         });

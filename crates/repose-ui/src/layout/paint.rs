@@ -697,7 +697,7 @@ impl LayoutEngine {
         if let Some(b) = &modifier.border {
             scene.nodes.push(SceneNode::Border {
                 rect,
-                color: mul_alpha_color(b.color, alpha_accum),
+                brush: mul_alpha_brush(b.brush, alpha_accum),
                 width: b.width.to_px(),
                 radius: clamp_radii_px(
                     max_radii_px(

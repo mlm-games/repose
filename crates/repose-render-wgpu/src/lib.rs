@@ -9,7 +9,7 @@ use repose_core::color::{ChromaSiting, ColorInfo, PixelFormat};
 use repose_core::request_frame;
 use repose_core::{
     Brush, FontStyle, GlyphRasterConfig, PresentModePref, RenderBackend, Scene, SceneNode,
-    StrokeCap, Transform,
+    StrokeCap, Transform, Vec2,
 };
 use wgpu::Instance;
 
@@ -503,11 +503,41 @@ impl Pipelines {
             wgpu::VertexAttribute {
                 shader_location: 3,
                 offset: 36,
-                format: wgpu::VertexFormat::Float32x4,
+                format: wgpu::VertexFormat::Uint32,
             },
             wgpu::VertexAttribute {
                 shader_location: 4,
+                offset: 48,
+                format: wgpu::VertexFormat::Uint32,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 5,
                 offset: 52,
+                format: wgpu::VertexFormat::Float32x4,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 6,
+                offset: 68,
+                format: wgpu::VertexFormat::Float32x4,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 7,
+                offset: 84,
+                format: wgpu::VertexFormat::Float32x2,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 8,
+                offset: 92,
+                format: wgpu::VertexFormat::Float32x2,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 9,
+                offset: 100,
+                format: wgpu::VertexFormat::Uint32,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 10,
+                offset: 116,
                 format: wgpu::VertexFormat::Float32x4,
             },
         ];
@@ -520,11 +550,36 @@ impl Pipelines {
             wgpu::VertexAttribute {
                 shader_location: 1,
                 offset: 16,
-                format: wgpu::VertexFormat::Float32x4,
+                format: wgpu::VertexFormat::Uint32,
             },
             wgpu::VertexAttribute {
                 shader_location: 2,
                 offset: 32,
+                format: wgpu::VertexFormat::Float32x4,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 3,
+                offset: 48,
+                format: wgpu::VertexFormat::Float32x4,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 4,
+                offset: 64,
+                format: wgpu::VertexFormat::Float32x2,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 5,
+                offset: 72,
+                format: wgpu::VertexFormat::Float32x2,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 6,
+                offset: 80,
+                format: wgpu::VertexFormat::Uint32,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 7,
+                offset: 96,
                 format: wgpu::VertexFormat::Float32x4,
             },
         ];
@@ -547,11 +602,41 @@ impl Pipelines {
             wgpu::VertexAttribute {
                 shader_location: 3,
                 offset: 24,
-                format: wgpu::VertexFormat::Float32x4,
+                format: wgpu::VertexFormat::Uint32,
             },
             wgpu::VertexAttribute {
                 shader_location: 4,
-                offset: 40,
+                offset: 28,
+                format: wgpu::VertexFormat::Uint32,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 5,
+                offset: 32,
+                format: wgpu::VertexFormat::Float32x4,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 6,
+                offset: 48,
+                format: wgpu::VertexFormat::Float32x4,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 7,
+                offset: 64,
+                format: wgpu::VertexFormat::Float32x2,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 8,
+                offset: 72,
+                format: wgpu::VertexFormat::Float32x2,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 9,
+                offset: 80,
+                format: wgpu::VertexFormat::Uint32,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 10,
+                offset: 96,
                 format: wgpu::VertexFormat::Float32x4,
             },
         ];
@@ -595,17 +680,47 @@ impl Pipelines {
             wgpu::VertexAttribute {
                 shader_location: 5,
                 offset: 32,
-                format: wgpu::VertexFormat::Float32x4,
+                format: wgpu::VertexFormat::Uint32,
             },
             wgpu::VertexAttribute {
                 shader_location: 6,
+                offset: 36,
+                format: wgpu::VertexFormat::Uint32,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 7,
                 offset: 48,
                 format: wgpu::VertexFormat::Float32x4,
             },
             wgpu::VertexAttribute {
-                shader_location: 7,
+                shader_location: 8,
                 offset: 64,
+                format: wgpu::VertexFormat::Float32x4,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 9,
+                offset: 80,
+                format: wgpu::VertexFormat::Float32x2,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 10,
+                offset: 88,
+                format: wgpu::VertexFormat::Float32x2,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 11,
+                offset: 96,
+                format: wgpu::VertexFormat::Uint32,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 12,
+                offset: 100,
                 format: wgpu::VertexFormat::Float32,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 13,
+                offset: 112,
+                format: wgpu::VertexFormat::Float32x4,
             },
         ];
 
@@ -1477,7 +1592,15 @@ struct BorderInstance {
     xywh: [f32; 4],
     radii: [f32; 4],
     stroke: f32,
-    color: [f32; 4],
+    brush_type: u32,
+    _pad: [f32; 2],
+    grad_kind: u32,
+    color0: [f32; 4],
+    color1: [f32; 4],
+    grad_p0: [f32; 2],
+    grad_p1: [f32; 2],
+    tile_mode: u32,
+    _pad2: [f32; 3],
     fwd_mat: [f32; 4],
 }
 
@@ -1485,7 +1608,14 @@ struct BorderInstance {
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct EllipseInstance {
     xywh: [f32; 4],
-    color: [f32; 4],
+    brush_type: u32,
+    _pad: [f32; 3],
+    color0: [f32; 4],
+    color1: [f32; 4],
+    grad_p0: [f32; 2],
+    grad_p1: [f32; 2],
+    tile_mode: u32,
+    _pad2: [f32; 3],
     fwd_mat: [f32; 4],
 }
 
@@ -1495,7 +1625,14 @@ struct EllipseBorderInstance {
     xywh: [f32; 4],
     stroke: f32,
     pad: f32,
-    color: [f32; 4],
+    brush_type: u32,
+    grad_kind: u32,
+    color0: [f32; 4],
+    color1: [f32; 4],
+    grad_p0: [f32; 2],
+    grad_p1: [f32; 2],
+    tile_mode: u32,
+    _pad2: [f32; 3],
     fwd_mat: [f32; 4],
 }
 
@@ -1507,9 +1644,17 @@ struct ArcInstance {
     sweep_angle: f32,
     stroke: f32,
     pad: f32,
-    color: [f32; 4],
-    fwd_mat: [f32; 4],
+    brush_type: u32,
+    grad_kind: u32,
+    _pad0: [f32; 2],
+    color0: [f32; 4],
+    color1: [f32; 4],
+    grad_p0: [f32; 2],
+    grad_p1: [f32; 2],
+    tile_mode: u32,
     cap: f32, // 0=Butt, 1=Round, 2=Square
+    _pad1: [f32; 2],
+    fwd_mat: [f32; 4],
 }
 
 #[repr(C)]
@@ -1622,8 +1767,8 @@ impl MeshUniform {
 }
 
 fn mesh_uniform_from_paint(affine: [f32; 6], paint: &repose_core::PaintDesc) -> MeshUniform {
-    let (paint_type, color0, color1, grad_start, grad_end) = match paint {
-        repose_core::PaintDesc::Solid => (0u32, [0.0; 4], [0.0; 4], [0.0; 2], [0.0; 2]),
+    let (paint_type, paint_kind, color0, color1, grad_start, grad_end) = match paint {
+        repose_core::PaintDesc::Solid => (0u32, 0u32, [0.0; 4], [0.0; 4], [0.0; 2], [0.0; 2]),
         repose_core::PaintDesc::Linear {
             start,
             end,
@@ -1631,18 +1776,43 @@ fn mesh_uniform_from_paint(affine: [f32; 6], paint: &repose_core::PaintDesc) -> 
             end_color,
         } => (
             1u32,
+            0u32,
             start_color.to_linear(),
             end_color.to_linear(),
             [start.x, start.y],
             [end.x, end.y],
         ),
-        // PaintDesc is #[non_exhaustive]; treat unknown paints as solid.
-        _ => (0u32, [0.0; 4], [0.0; 4], [0.0; 2], [0.0; 2]),
+        repose_core::PaintDesc::Radial {
+            center,
+            radius,
+            start_color,
+            end_color,
+        } => (
+            1u32,
+            1u32,
+            start_color.to_linear(),
+            end_color.to_linear(),
+            [center.x, center.y],
+            [radius.max(0.0), 0.0],
+        ),
+        repose_core::PaintDesc::Sweep {
+            center,
+            start_color,
+            end_color,
+        } => (
+            1u32,
+            2u32,
+            start_color.to_linear(),
+            end_color.to_linear(),
+            [center.x, center.y],
+            [0.0, 0.0],
+        ),
+        _ => (0u32, 0u32, [0.0; 4], [0.0; 4], [0.0; 2], [0.0; 2]),
     };
     MeshUniform {
         m0: [affine[0], affine[1], affine[2], 0.0],
         m1: [affine[3], affine[4], affine[5], 0.0],
-        paint: [paint_type, 0, 0, 0],
+        paint: [paint_type, paint_kind, 0, 0],
         color0,
         color1,
         grad_start,
@@ -4253,6 +4423,90 @@ impl WgpuSceneRenderer {
     }
 }
 
+/// Packed brush fields shared by the shape instances (border, ellipse,
+/// ellipse border, arc). Gradient endpoints are shape-local px; the shaders
+/// recenter `(0,0)` at the shape top-left. Radial packs `center` into
+/// `grad_p0` and `radius` into `grad_p1.x`; sweep packs `center` into
+/// `grad_p0`.
+///
+/// `rect` is the shape's scene-space bounds (only used for the solid
+/// fallback path) and `transform` the accumulated scene transform.
+/// Endpoints are converted from shape-local px through the inverse linear
+/// part so rotation and uniform scale cancel against the shader's
+/// un-rotation. Non-uniform scale and shear distort the gradient the same
+/// way they distort the shape (the shader un-rotates but cannot un-scale
+/// pixels).
+fn brush_to_shape_fields(
+    brush: &Brush,
+    _rect: &repose_core::Rect,
+    transform: &Transform,
+) -> (u32, u32, [f32; 4], [f32; 4], [f32; 2], [f32; 2], u32) {
+    let to_local = |p: Vec2| {
+        let m = transform.linear();
+        let det = m[0] * m[3] - m[1] * m[2];
+        if det.abs() < 1e-12 {
+            return [p.x, p.y];
+        }
+        [
+            (m[3] * p.x - m[1] * p.y) / det,
+            (-m[2] * p.x + m[0] * p.y) / det,
+        ]
+    };
+    match brush {
+        Brush::Solid(c) => (
+            0u32,
+            0u32,
+            c.to_linear(),
+            [0.0; 4],
+            [0.0; 2],
+            [0.0; 2],
+            0u32,
+        ),
+        Brush::Linear {
+            start,
+            end,
+            start_color,
+            end_color,
+        } => (
+            1u32,
+            0u32,
+            start_color.to_linear(),
+            end_color.to_linear(),
+            to_local(*start),
+            to_local(*end),
+            0u32,
+        ),
+        Brush::Radial {
+            center,
+            radius,
+            start_color,
+            end_color,
+        } => (
+            1u32,
+            1u32,
+            start_color.to_linear(),
+            end_color.to_linear(),
+            to_local(*center),
+            [radius.max(0.0), 0.0],
+            0u32,
+        ),
+        Brush::Sweep {
+            center,
+            start_color,
+            end_color,
+        } => (
+            1u32,
+            2u32,
+            start_color.to_linear(),
+            end_color.to_linear(),
+            to_local(*center),
+            [0.0, 0.0],
+            0u32,
+        ),
+        _ => (0u32, 0u32, [0.0; 4], [0.0; 4], [0.0; 2], [0.0; 2], 0u32),
+    }
+}
+
 fn brush_to_instance_fields(brush: &Brush) -> (u32, [f32; 4], [f32; 4], [f32; 2], [f32; 2]) {
     match brush {
         Brush::Solid(c) => (
@@ -4274,14 +4528,33 @@ fn brush_to_instance_fields(brush: &Brush) -> (u32, [f32; 4], [f32; 4], [f32; 2]
             [start.x, start.y],
             [end.x, end.y],
         ),
+        Brush::Radial { start_color, .. } => (
+            0u32,
+            start_color.to_linear(),
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0],
+            [0.0, 1.0],
+        ),
+        Brush::Sweep { start_color, .. } => (
+            0u32,
+            start_color.to_linear(),
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0],
+            [0.0, 1.0],
+        ),
         _ => (0u32, [0.0; 4], [0.0; 4], [0.0; 2], [0.0; 2]),
     }
 }
 
+/// Fallback color when a [`Brush`] reaches a solid-only path (glyph atlas
+/// uploads for gradient text). Uses the gradient's start color.
+#[allow(dead_code)]
 fn brush_to_solid_color(brush: &Brush) -> [f32; 4] {
     match brush {
         Brush::Solid(c) => c.to_linear(),
         Brush::Linear { start_color, .. } => start_color.to_linear(),
+        Brush::Radial { start_color, .. } => start_color.to_linear(),
+        Brush::Sweep { start_color, .. } => start_color.to_linear(),
         _ => [0.0; 4],
     }
 }
@@ -5095,7 +5368,7 @@ impl WgpuSceneRenderer {
                 }
                 SceneNode::Border {
                     rect,
-                    color,
+                    brush,
                     width,
                     radius,
                 } => {
@@ -5106,11 +5379,21 @@ impl WgpuSceneRenderer {
                         current_target_size.0,
                         current_target_size.1,
                     );
+                    let (brush_type, grad_kind, color0, color1, grad_p0, grad_p1, tile_mode) =
+                        brush_to_shape_fields(brush, rect, current_transform);
                     batch.borders.push(BorderInstance {
                         xywh: ndc,
                         radii: radius.map(|r| r.0),
                         stroke: width.0,
-                        color: color.to_linear(),
+                        brush_type,
+                        _pad: [0.0; 2],
+                        grad_kind,
+                        color0,
+                        color1,
+                        grad_p0,
+                        grad_p1,
+                        tile_mode,
+                        _pad2: [0.0; 3],
                         fwd_mat,
                     });
                 }
@@ -5122,14 +5405,22 @@ impl WgpuSceneRenderer {
                         current_target_size.0,
                         current_target_size.1,
                     );
-                    let color = brush_to_solid_color(brush);
+                    let (brush_type, _grad_kind, color0, color1, grad_p0, grad_p1, tile_mode) =
+                        brush_to_shape_fields(brush, rect, current_transform);
                     batch.ellipses.push(EllipseInstance {
                         xywh: ndc,
-                        color,
+                        brush_type,
+                        _pad: [0.0; 3],
+                        color0,
+                        color1,
+                        grad_p0,
+                        grad_p1,
+                        tile_mode,
+                        _pad2: [0.0; 3],
                         fwd_mat,
                     });
                 }
-                SceneNode::EllipseBorder { rect, color, width } => {
+                SceneNode::EllipseBorder { rect, brush, width } => {
                     flush_if_prim_changed!("ellipse_border", &self.ellipse_borders);
                     let (ndc, fwd_mat) = rect_to_instance_ndc(
                         *rect,
@@ -5139,11 +5430,20 @@ impl WgpuSceneRenderer {
                     );
                     let pad_px = width.0 * 0.5 + 2.0;
                     let pad = (pad_px / current_target_size.0) * 2.0;
+                    let (brush_type, grad_kind, color0, color1, grad_p0, grad_p1, tile_mode) =
+                        brush_to_shape_fields(brush, rect, current_transform);
                     batch.e_borders.push(EllipseBorderInstance {
                         xywh: ndc,
                         stroke: width.0,
                         pad,
-                        color: color.to_linear(),
+                        brush_type,
+                        grad_kind,
+                        color0,
+                        color1,
+                        grad_p0,
+                        grad_p1,
+                        tile_mode,
+                        _pad2: [0.0; 3],
                         fwd_mat,
                     });
                 }
@@ -5152,7 +5452,7 @@ impl WgpuSceneRenderer {
                     start_angle,
                     sweep_angle,
                     stroke_width,
-                    color,
+                    brush,
                     cap,
                 } => {
                     flush_if_prim_changed!("arc", &self.arcs);
@@ -5169,15 +5469,25 @@ impl WgpuSceneRenderer {
                         StrokeCap::Round => 1.0,
                         StrokeCap::Square => 2.0,
                     };
+                    let (brush_type, grad_kind, color0, color1, grad_p0, grad_p1, tile_mode) =
+                        brush_to_shape_fields(brush, rect, current_transform);
                     batch.arcs.push(ArcInstance {
                         xywh: ndc,
                         start_angle: *start_angle,
                         sweep_angle: *sweep_angle,
                         stroke: stroke_width.0,
                         pad,
-                        color: color.to_linear(),
-                        fwd_mat,
+                        brush_type,
+                        grad_kind,
+                        _pad0: [0.0; 2],
+                        color0,
+                        color1,
+                        grad_p0,
+                        grad_p1,
+                        tile_mode,
                         cap: cap_val,
+                        _pad1: [0.0; 2],
+                        fwd_mat,
                     });
                 }
                 SceneNode::Text {
