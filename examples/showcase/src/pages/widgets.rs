@@ -313,9 +313,12 @@ pub fn screen(overlay: OverlayHandle) -> View {
                             Text("Hover me").size(Sp(14.0)).color(th.on_surface),
                         )),
                     ),
-                    TooltipConfig::default(),
+                    TooltipConfig {
+                        caret: true,
+                        ..TooltipConfig::default()
+                    },
                 ),
-                Hint("Tooltips appear above the element on hover."),
+                Hint("Tooltips appear above the element on hover (or long-press on touch)."),
             )),
         ),
         Section(

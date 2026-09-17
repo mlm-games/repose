@@ -3019,6 +3019,7 @@ dependencies = [
 name = "repose-material"
 version = "0.30.11"
 dependencies = [
+ "repose-canvas",
  "repose-core",
  "repose-text",
  "repose-tree",

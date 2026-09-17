@@ -1123,6 +1123,11 @@ impl TooltipDefaults {
     pub const RICH_SHADOW_ELEVATION: Dp = Dp(3.0);
     pub const MIN_WIDTH: Dp = Dp(40.0);
     pub const MIN_HEIGHT: Dp = Dp(24.0);
+    pub const CARET_SIZE: DpSize = DpSize {
+        width: Dp(16.0),
+        height: Dp(8.0),
+    };
+    pub const AUTO_DISMISS_TIMEOUT_MS: u64 = 1500;
     pub fn container_color() -> Color {
         theme().inverse_surface
     }
