@@ -1109,15 +1109,37 @@ impl DropdownMenuDefaults {
 pub struct TooltipDefaults;
 
 impl TooltipDefaults {
-    pub const OFFSET_Y: Dp = Dp(-28.0);
-    pub const HORIZONTAL_PADDING: Dp = Dp(8.0);
-    pub const VERTICAL_PADDING: Dp = Dp(4.0);
-    pub const MAX_WIDTH: Dp = Dp(200.0);
+    pub const SPACING: Dp = Dp(4.0);
+    pub const PLAIN_HORIZONTAL_PADDING: Dp = Dp(8.0);
+    pub const PLAIN_VERTICAL_PADDING: Dp = Dp(4.0);
+    pub const PLAIN_MAX_WIDTH: Dp = Dp(200.0);
+    pub const RICH_MAX_WIDTH: Dp = Dp(320.0);
+    pub const RICH_HORIZONTAL_PADDING: Dp = Dp(16.0);
+    pub const RICH_TITLE_TOP: Dp = Dp(8.0);
+    pub const RICH_TEXT_TOP: Dp = Dp(4.0);
+    pub const RICH_TEXT_BOTTOM: Dp = Dp(12.0);
+    pub const RICH_ACTION_MIN_HEIGHT: Dp = Dp(36.0);
+    pub const RICH_ACTION_BOTTOM: Dp = Dp(8.0);
+    pub const RICH_SHADOW_ELEVATION: Dp = Dp(3.0);
+    pub const MIN_WIDTH: Dp = Dp(40.0);
+    pub const MIN_HEIGHT: Dp = Dp(24.0);
     pub fn container_color() -> Color {
         theme().inverse_surface
     }
     pub fn content_color() -> Color {
         theme().inverse_on_surface
+    }
+    pub fn rich_container_color() -> Color {
+        theme().surface_container
+    }
+    pub fn rich_content_color() -> Color {
+        theme().on_surface_variant
+    }
+    pub fn rich_title_color() -> Color {
+        theme().on_surface_variant
+    }
+    pub fn rich_action_color() -> Color {
+        theme().primary
     }
 }
 

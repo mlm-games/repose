@@ -41,7 +41,7 @@ pub fn render(ctx: &PageCtx, route: Route) -> View {
     match route {
         Route::Home => home::screen(ctx.nav.clone()),
         Route::Layout => layout::screen(),
-        Route::Widgets => widgets::screen(),
+        Route::Widgets => widgets::screen(ctx.overlay.clone()),
         Route::Text => text::screen(),
         Route::Scroll => scroll::screen(),
         Route::ScrollFeatures => scroll_features::screen(),
