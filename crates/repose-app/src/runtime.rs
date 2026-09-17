@@ -1250,8 +1250,8 @@ impl ReposeRuntime {
         let f = &frame;
 
         // Escape / BrowserBack: cancel DnD first, then try focus key dispatch.
-        // If nothing consumed it, do NOT consume: let the host handle back /
-        // exit / window-chrome actions.
+        // If nothing consumed it, route to the root `on_key_event` as a
+        // last resort.
         if event.event_type == KeyEventType::Down && !event.is_repeat && event.key == Key::Escape {
             if dnd::handle_drag_action(&DragAction::Cancel) {
                 request_frame();
@@ -1259,6 +1259,10 @@ impl ReposeRuntime {
             }
             // Try dispatch through focus chain
             if self.dispatch_focus_key_event(f, event) {
+                request_frame();
+                return true;
+            }
+            if self.dispatch_root_key_event(f, event) {
                 request_frame();
                 return true;
             }
@@ -1567,6 +1571,25 @@ impl ReposeRuntime {
     }
 
     /// Dispatch a key event through the focus ancestor chain.
+    /// HACK (for pause menu in games): Root fallback for global keys (Escape today): invoke the root
+    /// region's `on_key_event` when focus dispatch found no taker.
+    fn dispatch_root_key_event(&self, f: &Frame, event: &KeyEvent) -> bool {
+        let ids: std::collections::HashSet<u64> = f.hit_regions.iter().map(|h| h.id).collect();
+        let root = f
+            .hit_regions
+            .iter()
+            .filter(|h| !h.disabled)
+            .find(|h| h.parent.is_none_or(|p| !ids.contains(&p)))
+            .or_else(|| f.hit_regions.iter().find(|h| !h.disabled));
+        let Some(root) = root else {
+            return false;
+        };
+        if let Some(cb) = &root.on_key_event {
+            return cb(event.clone());
+        }
+        false
+    }
+
     fn dispatch_focus_key_event(&self, f: &Frame, event: &KeyEvent) -> bool {
         let Some(focused) = self.sched.focused else {
             return false;

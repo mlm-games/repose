@@ -72,7 +72,8 @@ fn escape_not_consumed_when_idle() {
     let ev = key_down(Key::Escape, Modifiers::default(), false);
     assert!(!rt.handle_key(&ev));
 
-    // With a cached frame but no focus, Escape still isn't consumed.
+    // With a cached frame but no focus and no root key handler, Escape
+    // still isn't consumed.
     rt.cache_frame(textfield_frame(TF_ID));
     rt.sched.focused = None;
     assert!(!rt.handle_key(&ev));
