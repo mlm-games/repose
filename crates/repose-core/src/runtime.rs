@@ -1,5 +1,6 @@
 use std::any::Any;
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::panic::Location;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -677,7 +678,7 @@ pub struct Scheduler {
     /// dispatch; games reconcile their event-staged held sets against
     /// it every frame (GML `keyboard_check` parity). Cleared on window
     /// focus loss (no key-ups arrive across an alt-tab).
-    pub held_keys: Vec<String>,
+    pub held_keys: HashSet<String>,
     /// Window focus as of the last platform event. `false` drops every
     /// held key on the game side.
     pub window_focused: bool,
@@ -713,7 +714,7 @@ impl Scheduler {
             scope_local_counters: FxHashMap::default(),
             focused: None,
             size: (1280, 800),
-            held_keys: Vec::new(),
+            held_keys: HashSet::new(),
             window_focused: true,
             mouse_primary: false,
             mouse_secondary: false,
@@ -784,6 +785,12 @@ impl Scheduler {
 
     pub fn id_count(&self) -> u64 {
         self.next_id - 1
+    }
+
+    /// True while the named physical key is in the polled snapshot
+    /// (`KeyW`, `Digit1`, `Space`, ... — winit `KeyCode` debug names).
+    pub fn is_held(&self, name: &str) -> bool {
+        self.held_keys.contains(name)
     }
 
     /// Snapshot the current ID counter (before executing a scope body) so the

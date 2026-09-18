@@ -489,3 +489,219 @@ fn flatten_with_ass_frx45_map() {
         Some((204, 155, 434, 208))
     );
 }
+
+fn center_px(nodes: Vec<SceneNode>) -> Option<[u8; 4]> {
+    let px = covered_of(nodes)?;
+    let c = (32 * 64 + 32) * 4;
+    Some([px[c], px[c + 1], px[c + 2], px[c + 3]])
+}
+
+// Blending happens in linear space and reads back through sRGB, so
+// expectations are the sRGB re-encoding of the linear math. Mesh vertex
+// colors skip the sRGB decode, so source grey is linear 0.5 ~= sRGB 188.
+fn blend_quad(blend: BlendMode) -> Vec<SceneNode> {
+    vec![
+        // Opaque red backdrop over the whole probe.
+        SceneNode::Rect {
+            rect: Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 64.0,
+                h: 64.0,
+            },
+            brush: Brush::Solid(Color::from_rgba(255, 0, 0, 255)),
+            radius: [Px::ZERO; 4],
+        },
+        SceneNode::VectorMesh {
+            // Opaque 50% grey source quad in the centre. Mesh vertex
+            // colors are shader-linear (no sRGB decode), so 0.5 here is
+            // linear 0.5 ~= sRGB 188.
+            mesh: quad(16.0, 16.0, 48.0, 48.0, [0.5, 0.5, 0.5, 1.0]),
+            transform: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+            paint: PaintDesc::Solid,
+            clip: None,
+            blend,
+        },
+    ]
+}
+
+#[test]
+fn blend_multiply_darkens_backdrop() {
+    // red * grey(0.5) = (0.5, 0, 0) ~= sRGB (188, 0, 0).
+    let Some(c) = center_px(blend_quad(BlendMode::Multiply)) else {
+        return;
+    };
+    assert!(
+        (175..=200).contains(&c[0]) && c[1] < 30 && c[2] < 30,
+        "multiply of red over grey wrong: {c:?}"
+    );
+}
+
+#[test]
+fn blend_screen_lightens_backdrop() {
+    // screen(red, grey) = (1, 0.5, 0.5) ~= sRGB (255, 188, 188).
+    let Some(c) = center_px(blend_quad(BlendMode::Screen)) else {
+        return;
+    };
+    assert!(
+        c[0] > 200 && (175..=200).contains(&c[1]) && (175..=200).contains(&c[2]),
+        "screen of red over grey wrong: {c:?}"
+    );
+}
+
+#[test]
+fn blend_darken_takes_minimum() {
+    // min(red, grey) = (0.5, 0, 0) ~= sRGB (188, 0, 0).
+    let Some(c) = center_px(blend_quad(BlendMode::Darken)) else {
+        return;
+    };
+    assert!(
+        (175..=200).contains(&c[0]) && c[1] < 30 && c[2] < 30,
+        "darken of red over grey wrong: {c:?}"
+    );
+}
+
+#[test]
+fn blend_lighten_takes_maximum() {
+    // max(red, grey) = (1, 0.5, 0.5) ~= sRGB (255, 188, 188).
+    let Some(c) = center_px(blend_quad(BlendMode::Lighten)) else {
+        return;
+    };
+    assert!(
+        c[0] > 200 && (175..=200).contains(&c[1]) && (175..=200).contains(&c[2]),
+        "lighten of red over grey wrong: {c:?}"
+    );
+}
+
+#[test]
+fn blend_overlay_matches_screen_on_red() {
+    // Backdrop red is light in R (1.0) and dark in G/B (0.0): overlay ==
+    // screen on R, multiply on G/B. Source grey is linear 0.5, so expect
+    // R = screen(0.5, 1.0) = 1.0 and G/B = 2*0.5*0 = 0: (255, 0, 0).
+    let Some(c) = center_px(blend_quad(BlendMode::Overlay)) else {
+        return;
+    };
+    assert!(
+        c[0] > 200 && c[1] < 40 && c[2] < 40,
+        "overlay of red over grey wrong: {c:?}"
+    );
+}
+
+#[test]
+fn blend_difference_subtracts_backdrop() {
+    // |red - grey| = (0.5, 0.5, 0.5) ~= sRGB (188, 188, 188).
+    let Some(c) = center_px(blend_quad(BlendMode::Difference)) else {
+        return;
+    };
+    assert!(
+        (175..=200).contains(&c[0])
+            && (175..=200).contains(&c[1])
+            && (175..=200).contains(&c[2]),
+        "difference of red over grey wrong: {c:?}"
+    );
+}
+
+#[test]
+fn blend_overlay_inside_layer_composites() {
+    // Isolated blend with a layer parent at the surface origin: the mesh
+    // bbox maps 1:1, so overlay must match the surface-parent result
+    // (255, 0, 0).
+    let nodes = vec![
+        SceneNode::BeginLayer {
+            rect: Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 64.0,
+                h: 64.0,
+            },
+            layer_id: 21,
+            alpha: 1.0,
+            blur_radius_x: Px(0.0),
+            blur_radius_y: Px(0.0),
+            rectangle_edge: true,
+        },
+        SceneNode::Rect {
+            rect: Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 64.0,
+                h: 64.0,
+            },
+            brush: Brush::Solid(Color::from_rgba(255, 0, 0, 255)),
+            radius: [Px::ZERO; 4],
+        },
+        SceneNode::VectorMesh {
+            mesh: quad(16.0, 16.0, 48.0, 48.0, [0.5, 0.5, 0.5, 1.0]),
+            transform: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+            paint: PaintDesc::Solid,
+            clip: None,
+            blend: BlendMode::Overlay,
+        },
+        SceneNode::EndLayer { layer_id: 21 },
+    ];
+    let Some(px) = covered_of(nodes) else {
+        return;
+    };
+    let c = (32 * 64 + 32) * 4;
+    let (r, g, b) = (px[c], px[c + 1], px[c + 2]);
+    assert!(
+        r > 200 && g < 40 && b < 40,
+        "overlay inside origin layer wrong: [{r}, {g}, {b}, {}]",
+        px[c + 3]
+    );
+}
+
+#[test]
+fn blend_overlay_inside_offset_layer_composites() {
+    // Layer parent at a non-zero surface origin: the mesh bbox maps into
+    // layer pixels, so overlay must still match (255, 0, 0).
+    let nodes = vec![
+        SceneNode::BeginLayer {
+            rect: Rect {
+                x: 10.0,
+                y: 8.0,
+                w: 64.0,
+                h: 64.0,
+            },
+            layer_id: 22,
+            alpha: 1.0,
+            blur_radius_x: Px(0.0),
+            blur_radius_y: Px(0.0),
+            rectangle_edge: true,
+        },
+        SceneNode::Rect {
+            rect: Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 64.0,
+                h: 64.0,
+            },
+            brush: Brush::Solid(Color::from_rgba(255, 0, 0, 255)),
+            radius: [Px::ZERO; 4],
+        },
+        SceneNode::VectorMesh {
+            mesh: quad(16.0, 16.0, 48.0, 48.0, [0.5, 0.5, 0.5, 1.0]),
+            transform: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+            paint: PaintDesc::Solid,
+            clip: None,
+            blend: BlendMode::Overlay,
+        },
+        SceneNode::EndLayer { layer_id: 22 },
+    ];
+    let Some(mut off) = try_offscreen(96, 96) else {
+        return;
+    };
+    let scene = Scene {
+        clear_color: Color::from_rgba(0, 0, 0, 0),
+        nodes,
+    };
+    let px = off.render_rgba(&scene, None).expect("render");
+    // Mesh centre in surface pixels: layer origin + (32, 32).
+    let c = ((8 + 32) * 96 + (10 + 32)) * 4;
+    let (r, g, b) = (px[c], px[c + 1], px[c + 2]);
+    assert!(
+        r > 200 && g < 40 && b < 40,
+        "overlay inside offset layer wrong: [{r}, {g}, {b}, {}]",
+        px[c + 3]
+    );
+}

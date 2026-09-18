@@ -219,11 +219,9 @@ pub fn on_keyboard_input(
         let name = physical_key_name(key_event.physical_key);
         let sched = &mut rt.sched;
         if key_event.state == ElementState::Pressed {
-            if !sched.held_keys.contains(&name) {
-                sched.held_keys.push(name);
-            }
+            sched.held_keys.insert(name);
         } else {
-            sched.held_keys.retain(|k| k != &name);
+            sched.held_keys.remove(&name);
         }
     }
     if key_event.state == ElementState::Pressed

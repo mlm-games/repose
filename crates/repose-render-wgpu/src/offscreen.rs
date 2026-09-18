@@ -181,7 +181,9 @@ impl OffscreenRenderer {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
         });
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -213,8 +215,13 @@ impl OffscreenRenderer {
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("repose-offscreen-encoder"),
                 });
-        self.renderer
-            .render_scene_to_encoder(scene, &mut encoder, &self.view, clear);
+        self.renderer.render_scene_to_encoder_with_texture(
+            scene,
+            &mut encoder,
+            &self.view,
+            Some(&self.texture),
+            clear,
+        );
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo {
                 texture: &self.texture,

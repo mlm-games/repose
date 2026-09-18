@@ -207,6 +207,9 @@ pub struct WgpuSceneRenderer {
     // perspective subtree)
     projective_ring: UploadRing,
 
+    // Backdrop-blend composite ring (one BlendInstance per isolated blend)
+    blend_ring: UploadRing,
+
     // Tessellated vector glyph pipeline (always enabled)
     slug_enabled: bool,
     slug_ring: UploadRing,
@@ -231,6 +234,15 @@ pub struct WgpuSceneRenderer {
     /// drained from the layer pool at the start of each translation (they
     /// are single-frame by construction).
     flatten_layer_ids: Vec<u32>,
+
+    /// Backdrop snapshots keyed by isolated-blend layer id. Filled during
+    /// translation (texture allocated) and populated by a texture copy at
+    /// execution time, before the blend composite draws.
+    blend_snapshots: std::collections::HashMap<u32, BlendSnapshot>,
+    /// (blend layer id, parent target) copies to run before the pass that
+    /// composites the blend. Executed between passes: copies the current
+    /// target region into the snapshot texture.
+    blend_copies: Vec<(u32, PassTarget, repose_core::Rect)>,
 
     msaa_samples: u32,
 
@@ -318,6 +330,7 @@ impl Drop for WgpuSceneRenderer {
 
 #[derive(Clone)]
 struct LayerTarget {
+    texture: wgpu::Texture,
     view: wgpu::TextureView,
     bind: wgpu::BindGroup,
     bind_linear: wgpu::BindGroup,
@@ -325,6 +338,17 @@ struct LayerTarget {
     width: u32,
     height: u32,
     rect_px: (f32, f32, f32, f32),
+}
+
+/// Backdrop snapshot for one isolated blend: a copy of the current target
+/// region taken before the source layer is composited, sampled as the
+/// "backdrop" input of the blend shader.
+#[derive(Clone)]
+struct BlendSnapshot {
+    texture: wgpu::Texture,
+    bind: wgpu::BindGroup,
+    width: u32,
+    height: u32,
 }
 
 /// Identifies which render target a `Pass` draws into.
@@ -364,6 +388,19 @@ struct Pipelines {
     /// Screen-space overlay meshes: `LessEqual` compare so they always draw
     /// regardless of any active vector clip.
     mesh_overlay: wgpu::RenderPipeline,
+    /// Fixed-function blend variants of the mesh pipeline, selected by
+    /// `BlendMode`. Backdrop-dependent modes (overlay, color-dodge/burn,
+    /// hard/soft-light, exclusion, hue/saturation/color/luminosity) use the
+    /// `blend_layer` shader instead.
+    mesh_add: wgpu::RenderPipeline,
+    mesh_multiply: wgpu::RenderPipeline,
+    mesh_screen: wgpu::RenderPipeline,
+    mesh_darken: wgpu::RenderPipeline,
+    mesh_lighten: wgpu::RenderPipeline,
+    /// Backdrop-blend composite: samples an isolated source layer and the
+    /// current target, applies the CSS blend formula selected by a uniform,
+    /// and composites premultiplied source-over.
+    blend_layer: wgpu::RenderPipeline,
     /// Stencil increment for vector clips.
     mesh_clip_inc: wgpu::RenderPipeline,
     /// Stencil decrement for vector clips.
@@ -1216,7 +1253,72 @@ impl Pipelines {
             stencil_for_clip_dec,
             clip_color_target,
         );
-
+        let mesh_blend_target = |blend: wgpu::BlendState| wgpu::ColorTargetState {
+            format,
+            blend: Some(blend),
+            write_mask: wgpu::ColorWrites::ALL,
+        };
+        let premult_alpha = wgpu::BlendComponent::OVER;
+        let mesh_add = make_mesh_pipeline(
+            "mesh pipeline (add)",
+            &stencil_for_mesh,
+            &mesh_blend_target(wgpu::BlendState {
+                color: wgpu::BlendComponent {
+                    src_factor: wgpu::BlendFactor::One,
+                    dst_factor: wgpu::BlendFactor::One,
+                    operation: wgpu::BlendOperation::Add,
+                },
+                alpha: premult_alpha,
+            }),
+        );
+        let mesh_multiply = make_mesh_pipeline(
+            "mesh pipeline (multiply)",
+            &stencil_for_mesh,
+            &mesh_blend_target(wgpu::BlendState {
+                color: wgpu::BlendComponent {
+                    src_factor: wgpu::BlendFactor::Dst,
+                    dst_factor: wgpu::BlendFactor::Zero,
+                    operation: wgpu::BlendOperation::Add,
+                },
+                alpha: premult_alpha,
+            }),
+        );
+        let mesh_screen = make_mesh_pipeline(
+            "mesh pipeline (screen)",
+            &stencil_for_mesh,
+            &mesh_blend_target(wgpu::BlendState {
+                color: wgpu::BlendComponent {
+                    src_factor: wgpu::BlendFactor::One,
+                    dst_factor: wgpu::BlendFactor::OneMinusSrc,
+                    operation: wgpu::BlendOperation::Add,
+                },
+                alpha: premult_alpha,
+            }),
+        );
+        let mesh_darken = make_mesh_pipeline(
+            "mesh pipeline (darken)",
+            &stencil_for_mesh,
+            &mesh_blend_target(wgpu::BlendState {
+                color: wgpu::BlendComponent {
+                    src_factor: wgpu::BlendFactor::One,
+                    dst_factor: wgpu::BlendFactor::One,
+                    operation: wgpu::BlendOperation::Min,
+                },
+                alpha: premult_alpha,
+            }),
+        );
+        let mesh_lighten = make_mesh_pipeline(
+            "mesh pipeline (lighten)",
+            &stencil_for_mesh,
+            &mesh_blend_target(wgpu::BlendState {
+                color: wgpu::BlendComponent {
+                    src_factor: wgpu::BlendFactor::One,
+                    dst_factor: wgpu::BlendFactor::One,
+                    operation: wgpu::BlendOperation::Max,
+                },
+                alpha: premult_alpha,
+            }),
+        );
         // Projective layer composite (perspective flattening). Same
         // bind groups as the text/image path (globals + layer texture), with
         // per-instance projected corners. Like `image_rgba` it draws into the
@@ -1300,6 +1402,78 @@ impl Pipelines {
             cache: None,
         });
 
+        let blend_layer_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("blend_layer.wgsl"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
+                "shaders/blend_layer.wgsl"
+            ))),
+        });
+        let blend_layer_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("blend layer pipeline layout"),
+            bind_group_layouts: &[
+                Some(globals_layout),
+                Some(text_bind_layout),
+                Some(text_bind_layout),
+            ],
+            immediate_size: 0,
+        });
+        let blend_vertex_layout = wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<BlendInstance>() as u64,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    shader_location: 0,
+                    offset: 0,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    shader_location: 1,
+                    offset: 16,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    shader_location: 2,
+                    offset: 32,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    shader_location: 3,
+                    offset: 48,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    shader_location: 4,
+                    offset: 64,
+                    format: wgpu::VertexFormat::Uint32,
+                },
+            ],
+        };
+        let blend_layer = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("blend layer pipeline"),
+            layout: Some(&blend_layer_layout),
+            vertex: wgpu::VertexState {
+                module: &blend_layer_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[Some(blend_vertex_layout)],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &blend_layer_shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: Some(stencil_for_content.clone()),
+            multisample: msaa_state,
+            multiview_mask: None,
+            cache: None,
+        });
+
         Self {
             rects,
             borders,
@@ -1317,6 +1491,12 @@ impl Pipelines {
             clip_dec,
             slug,
             mesh,
+            mesh_add,
+            mesh_multiply,
+            mesh_screen,
+            mesh_darken,
+            mesh_lighten,
+            blend_layer,
             mesh_overlay,
             mesh_clip_inc,
             mesh_clip_dec,
@@ -1463,6 +1643,20 @@ enum Cmd {
         ioff: u64,
         icnt: u32,
         uoff: u64,
+        blend: repose_core::BlendMode,
+    },
+    /// Composite an isolated source layer over the current target with a
+    /// backdrop-dependent CSS blend mode. The shader samples both textures
+    /// and composites source-over by hand, so the pass runs REPLACE.
+    /// `parent` records which target the composite draws into (surface or
+    /// layer); the instance NDC is mapped against it, so any parent origin
+    /// works.
+    BlendLayer {
+        off: u64,
+        cnt: u32,
+        src_layer: u32,
+        dst_layer: Option<u32>,
+        parent: PassTarget,
     },
     /// Draw a screen-space overlay mesh (identity transform, device pixels).
     VectorOverlay {
@@ -1741,6 +1935,19 @@ struct ClipInstance {
     xywh: [f32; 4],
     radii: [f32; 4],
     fwd_mat: [f32; 4],
+}
+
+/// Backdrop-blend composite instance: a `GlyphInstance`-shaped quad plus
+/// the `BlendMode` discriminant consumed by `blend_layer.wgsl`.
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct BlendInstance {
+    xywh: [f32; 4],
+    uv: [f32; 4],
+    color: [f32; 4],
+    fwd_mat: [f32; 4],
+    mode: u32,
+    _pad: [f32; 3],
 }
 
 #[repr(C)]
@@ -2307,6 +2514,12 @@ impl WgpuSceneRenderer {
             1 << 16,
             wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         );
+        let blend_ring = UploadRing::new(
+            &device,
+            "ring blend",
+            1 << 16,
+            wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        );
         let ring_projective = UploadRing::new(
             &device,
             "ring projective",
@@ -2396,7 +2609,10 @@ impl WgpuSceneRenderer {
             mesh_clip_stack: Vec::new(),
 
             projective_ring: ring_projective,
+            blend_ring,
             flatten_layer_ids: Vec::new(),
+            blend_snapshots: std::collections::HashMap::new(),
+            blend_copies: Vec::new(),
 
             msaa_samples,
             depth_stencil_tex,
@@ -4134,7 +4350,9 @@ impl WgpuSceneRenderer {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: self.output_format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
         });
         let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
@@ -4185,6 +4403,7 @@ impl WgpuSceneRenderer {
         self.layer_pool.insert(
             layer_id,
             LayerTarget {
+                texture: tex,
                 view,
                 bind,
                 bind_linear,
@@ -5043,6 +5262,206 @@ impl WgpuSceneRenderer {
         self.mesh_uniform_head = 0;
     }
 
+    /// Render one backdrop-dependent blend mesh: isolate the mesh into a
+    /// translator-owned graphics layer, then composite it over the current
+    /// target with the backdrop-blend shader. Works for surface parents and
+    /// layer parents alike: the snapshot copy, isolation layer, and
+    /// composite quad are all expressed in the parent target's pixel space.
+    /// Callers must invoke this while the current pass targets the recorded
+    /// parent: the translator never splits passes between here and the
+    /// appended composite (only `BeginLayer`/perspective push new passes,
+    /// and neither can intervene mid-call). The executor re-checks this
+    /// (`BlendLayer.parent`) and skips a misplaced composite rather than
+    /// drawing over the wrong target.
+    #[allow(clippy::too_many_arguments)]
+    fn emit_isolated_blend(
+        &mut self,
+        mesh: std::sync::Arc<repose_core::VectorMeshData>,
+        transform: [f32; 6],
+        paint: repose_core::PaintDesc,
+        blend: repose_core::BlendMode,
+        current_transform: &repose_core::Transform,
+        current_pass: &mut Pass,
+        passes: &mut Vec<Pass>,
+        target_stack: &mut Vec<PassTarget>,
+        id_head: &mut u32,
+        ids_used: &mut Vec<u32>,
+        current_target_size: &mut (f32, f32),
+        fb_w: f32,
+        fb_h: f32,
+    ) {
+        let parent_target = target_stack.last().copied().unwrap_or(PassTarget::Surface);
+        // Layer parents store surface-positioned rects (`rect_px`) with
+        // layer-local content, so a surface-space aabb maps into the layer
+        // by subtracting the layer origin. Surface parents are identity.
+        let parent_origin = match parent_target {
+            PassTarget::Surface => (0.0, 0.0),
+            PassTarget::Layer(id) => match self.layer_pool.get(&id) {
+                Some(lt) => (lt.rect_px.0, lt.rect_px.1),
+                None => (0.0, 0.0),
+            },
+        };
+        let affine = combine_mesh_affine(current_transform, transform);
+        let aabb = mesh_aabb(&mesh, affine);
+        if aabb.w <= 0.0 || aabb.h <= 0.0 {
+            return;
+        }
+        // Surface-space bbox -> parent-target pixels.
+        let local_rect = repose_core::Rect {
+            x: aabb.x - parent_origin.0,
+            y: aabb.y - parent_origin.1,
+            w: aabb.w,
+            h: aabb.h,
+        };
+        let w = local_rect.w.ceil().max(1.0);
+        let h = local_rect.h.ceil().max(1.0);
+        let layer_rect = repose_core::Rect {
+            x: local_rect.x,
+            y: local_rect.y,
+            w,
+            h,
+        };
+        let layer_id = *id_head;
+        *id_head = id_head.wrapping_add(1);
+        ids_used.push(layer_id);
+
+        // Snapshot the parent target region before compositing: the blend
+        // shader samples it as the backdrop. The copy runs at execution
+        // time, after all earlier passes have rendered.
+        self.alloc_blend_snapshot(layer_id, w as u32, h as u32);
+        self.blend_copies
+            .push((layer_id, parent_target, layer_rect));
+
+        // Render the mesh alone into the layer (layer-local shift so the
+        // layer owns exactly the mesh bbox), then resume the parent pass.
+        // The composite runs in the resumed parent pass.
+        let mut layer_cmds = Vec::new();
+        self.get_or_create_layer(layer_id, w as u32, h as u32, layer_rect);
+        let shift = repose_core::Transform::translate(-local_rect.x, -local_rect.y);
+        let local = current_transform.combine(&shift);
+        self.emit_vector_mesh(
+            &local,
+            &mesh,
+            transform,
+            &paint,
+            repose_core::BlendMode::Alpha,
+            &mut layer_cmds,
+        );
+        let saved = std::mem::replace(
+            current_pass,
+            Pass {
+                target: parent_target,
+                initial_scissor: (0, 0, self.output_width, self.output_height),
+                clear_color: None,
+                cmds: Vec::new(),
+            },
+        );
+        passes.push(Pass {
+            target: PassTarget::Layer(layer_id),
+            initial_scissor: (0, 0, w as u32, h as u32),
+            clear_color: Some([0.0, 0.0, 0.0, 0.0]),
+            cmds: layer_cmds,
+        });
+        passes.push(saved);
+        *current_target_size = (fb_w, fb_h);
+
+        // Composite quad over the mesh bbox in the parent target's pixel
+        // space. The executor maps this NDC against `parent`, so layer
+        // parents at any origin work.
+        let (parent_w, parent_h) = match parent_target {
+            PassTarget::Surface => (fb_w, fb_h),
+            PassTarget::Layer(id) => match self.layer_pool.get(&id) {
+                Some(lt) => (lt.width as f32, lt.height as f32),
+                None => (fb_w, fb_h),
+            },
+        };
+        let ndc = {
+            let cx = local_rect.x + local_rect.w * 0.5;
+            let cy = local_rect.y + local_rect.h * 0.5;
+            let ndc_cx = (cx / parent_w) * 2.0 - 1.0;
+            let ndc_cy = 1.0 - (cy / parent_h) * 2.0;
+            let ndc_w = (local_rect.w / parent_w) * 2.0;
+            let ndc_h = (local_rect.h / parent_h) * 2.0;
+            [ndc_cx, ndc_cy, ndc_w, ndc_h]
+        };
+        let inst = BlendInstance {
+            xywh: ndc,
+            uv: [0.0, 0.0, 1.0, 1.0],
+            color: [1.0, 1.0, 1.0, 1.0],
+            fwd_mat: [1.0, 0.0, 0.0, 1.0],
+            mode: blend.shader_mode(),
+            _pad: [0.0; 3],
+        };
+        self.blend_ring.grow_to_fit(
+            &self.device,
+            std::mem::size_of::<BlendInstance>() as u64,
+        );
+        let bytes = bytemuck::bytes_of(&inst);
+        let (off, _) = self.blend_ring.alloc_write(&self.queue, bytes);
+        current_pass.cmds.push(Cmd::BlendLayer {
+            off,
+            cnt: 1,
+            src_layer: layer_id,
+            dst_layer: Some(layer_id),
+            parent: parent_target,
+        });
+    }
+
+    /// Allocate (or reuse) the backdrop snapshot texture for an isolated
+    /// blend layer.
+    fn alloc_blend_snapshot(&mut self, layer_id: u32, w: u32, h: u32) {
+        let reuse = self
+            .blend_snapshots
+            .get(&layer_id)
+            .is_some_and(|s| s.width == w && s.height == h);
+        if reuse {
+            return;
+        }
+        let tex = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("blend backdrop snapshot"),
+            size: wgpu::Extent3d {
+                width: w.max(1),
+                height: h.max(1),
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: self.output_format,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+        let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("blend snapshot bind"),
+            layout: &self.image_bind_layout_rgba,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.layer_sampler),
+                },
+            ],
+        });
+        let _ = view;
+        self.blend_snapshots.insert(
+            layer_id,
+            BlendSnapshot {
+                texture: tex,
+                bind,
+                width: w,
+                height: h,
+            },
+        );
+    }
+
+    fn blend_snapshot_texture(&self, layer_id: u32) -> Option<wgpu::Texture> {
+        self.blend_snapshots.get(&layer_id).map(|s| s.texture.clone())
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn emit_vector_mesh(
         &mut self,
@@ -5050,6 +5469,7 @@ impl WgpuSceneRenderer {
         mesh: &repose_core::VectorMeshData,
         transform: [f32; 6],
         paint: &repose_core::PaintDesc,
+        blend: repose_core::BlendMode,
         cmds: &mut Vec<Cmd>,
     ) {
         let affine = combine_mesh_affine(current_transform, transform);
@@ -5061,6 +5481,7 @@ impl WgpuSceneRenderer {
             ioff,
             icnt,
             uoff,
+            blend,
         });
     }
 
@@ -5069,6 +5490,28 @@ impl WgpuSceneRenderer {
         scene: &Scene,
         encoder: &mut wgpu::CommandEncoder,
         target_view: &wgpu::TextureView,
+        clear_color_override: Option<[f64; 4]>,
+    ) {
+        self.render_scene_to_encoder_with_texture(
+            scene,
+            encoder,
+            target_view,
+            None,
+            clear_color_override,
+        )
+    }
+
+    /// Same as [`render_scene_to_encoder`](Self::render_scene_to_encoder),
+    /// plus the render target texture for isolated-blend backdrop snapshots.
+    /// Pass `None` when the texture is unavailable (swapchain views); then
+    /// surface-targeted isolated blends are skipped (the isolated source
+    /// layer composites nowhere, so the mesh disappears).
+    pub fn render_scene_to_encoder_with_texture(
+        &mut self,
+        scene: &Scene,
+        encoder: &mut wgpu::CommandEncoder,
+        target_view: &wgpu::TextureView,
+        target_texture: Option<&wgpu::Texture>,
         clear_color_override: Option<[f64; 4]>,
     ) {
         /// AABB of a rect under the *plain affine* part of a transform
@@ -5297,12 +5740,15 @@ impl WgpuSceneRenderer {
         self.mesh_uniform_head = 0;
         self.mesh_clip_stack.clear();
         self.projective_ring.reset();
+        self.blend_ring.reset();
         // Translator-owned flatten layers are single-frame by construction:
         // drop last frame's textures before translating (their composites
         // were submitted last frame, so GPU-side refs are independent).
         for id in self.flatten_layer_ids.drain(..) {
             self.layer_pool.remove(&id);
         }
+        self.blend_snapshots.clear();
+        self.blend_copies.clear();
         let mut batch = Batch::new();
         let mut slug_verts_local: Vec<slug::TessVertex> = Vec::new();
         let mut transform_stack: Vec<Transform> = vec![Transform::identity()];
@@ -6428,18 +6874,38 @@ impl WgpuSceneRenderer {
                     transform,
                     paint,
                     clip: _,
-                    blend: _,
+                    blend,
                 } => {
                     flush_batch!();
-                    let t_identity = Transform::identity();
-                    let current_transform = transform_stack.last().unwrap_or(&t_identity);
-                    self.emit_vector_mesh(
-                        current_transform,
-                        mesh,
-                        *transform,
-                        paint,
-                        &mut current_pass.cmds,
-                    );
+                    if blend.needs_isolation() {
+                        self.emit_isolated_blend(
+                            mesh.clone(),
+                            *transform,
+                            *paint,
+                            *blend,
+                            current_transform,
+                            &mut current_pass,
+                            &mut passes,
+                            &mut target_stack,
+                            &mut flatten_id_head,
+                            &mut flatten_ids_used,
+                            &mut current_target_size,
+                            fb_w,
+                            fb_h,
+                        );
+                    } else {
+                        let t_identity = Transform::identity();
+                        let current_transform =
+                            transform_stack.last().unwrap_or(&t_identity);
+                        self.emit_vector_mesh(
+                            current_transform,
+                            mesh,
+                            *transform,
+                            paint,
+                            *blend,
+                            &mut current_pass.cmds,
+                        );
+                    }
                 }
                 SceneNode::VectorOverlay { meshes } => {
                     flush_batch!();
@@ -6624,7 +7090,66 @@ impl WgpuSceneRenderer {
         let mut clip_depth: u32 = 0;
         let mut clip_depth_stack: Vec<u32> = Vec::new();
 
+        let snapshot_source = target_texture.cloned();
         for (pass_index, pass) in std::mem::take(&mut passes).into_iter().enumerate() {
+            // Populate backdrop snapshots for blends composited in this
+            // pass: copy the parent target region into the snapshot
+            // texture. Passes execute in order, so the parent holds the
+            // true backdrop. Surface parents need the target texture (no
+            // swapchain sampling mid-frame); layer parents copy from the
+            // pool. Either way the region is parent-target pixels. Copies
+            // for other passes stay queued (`remaining`).
+            let needs_snapshot = pass.cmds.iter().any(|c| matches!(c, Cmd::BlendLayer { .. }));
+            if needs_snapshot {
+                let copies = std::mem::take(&mut self.blend_copies);
+                let mut remaining = Vec::with_capacity(copies.len());
+                for (blend_id, target, region) in copies {
+                    let (src_tex, tw, th) = match target {
+                        PassTarget::Layer(parent_id) => match self.layer_pool.get(&parent_id) {
+                            Some(lt) => (lt.texture.clone(), lt.width, lt.height),
+                            None => continue,
+                        },
+                        PassTarget::Surface => match &snapshot_source {
+                            Some(t) => (t.clone(), self.output_width, self.output_height),
+                            None => {
+                                remaining.push((blend_id, target, region));
+                                continue;
+                            }
+                        },
+                    };
+                    let Some(dst_tex) = self.blend_snapshot_texture(blend_id) else {
+                        continue;
+                    };
+                    let sx = (region.x.max(0.0) as u32).min(tw.saturating_sub(1));
+                    let sy = (region.y.max(0.0) as u32).min(th.saturating_sub(1));
+                    let cw = (region.w.ceil() as u32)
+                        .max(1)
+                        .min(tw.saturating_sub(sx).max(1));
+                    let ch = (region.h.ceil() as u32)
+                        .max(1)
+                        .min(th.saturating_sub(sy).max(1));
+                    encoder.copy_texture_to_texture(
+                        wgpu::TexelCopyTextureInfo {
+                            texture: &src_tex,
+                            mip_level: 0,
+                            origin: wgpu::Origin3d { x: sx, y: sy, z: 0 },
+                            aspect: wgpu::TextureAspect::All,
+                        },
+                        wgpu::TexelCopyTextureInfo {
+                            texture: &dst_tex,
+                            mip_level: 0,
+                            origin: wgpu::Origin3d::ZERO,
+                            aspect: wgpu::TextureAspect::All,
+                        },
+                        wgpu::Extent3d {
+                            width: cw,
+                            height: ch,
+                            depth_or_array_layers: 1,
+                        },
+                    );
+                }
+                self.blend_copies = remaining;
+            }
             let (color_view, resolve_target, depth_stencil_view, is_layer) = match pass.target {
                 PassTarget::Surface => {
                     let swap_view = target_view.clone();
@@ -7011,14 +7536,63 @@ impl WgpuSceneRenderer {
                         }
                     }
 
+                    Cmd::BlendLayer {
+                        off,
+                        cnt: n,
+                        src_layer,
+                        dst_layer,
+                        parent,
+                    } => {
+                        let src = self.layer_pool.get(&src_layer).cloned();
+                        // Backdrop is the snapshot copied from the parent
+                        // target before this pass opened (a texture cannot be
+                        // sampled mid-pass while bound as a render target).
+                        // A missing snapshot (surface parent without texture,
+                        // evicted layer) skips the draw: the mesh vanishes
+                        // rather than misrendering.
+                        let dst = dst_layer
+                            .and_then(|id| self.blend_snapshots.get(&id).cloned());
+                        let in_parent = match parent {
+                            PassTarget::Surface => !is_layer,
+                            PassTarget::Layer(id) => {
+                                matches!(pass.target, PassTarget::Layer(pid) if pid == id)
+                            }
+                        };
+                        if let (Some(src_lt), Some(dst_snap)) = (src, dst)
+                            && in_parent
+                        {
+                            let bytes =
+                                (n as u64) * std::mem::size_of::<BlendInstance>() as u64;
+                            rpass.set_pipeline(&pipes.blend_layer);
+                            rpass.set_scissor_rect(0, 0, tw, th);
+                            rpass.set_bind_group(0, &self.globals_bind, &[]);
+                            rpass.set_bind_group(1, &src_lt.bind, &[]);
+                            rpass.set_bind_group(2, &dst_snap.bind, &[]);
+                            rpass.set_vertex_buffer(
+                                0,
+                                self.blend_ring.buf.slice(off..off + bytes),
+                            );
+                            rpass.draw(0..6, 0..n);
+                        }
+                    }
+
                     Cmd::VectorMesh {
                         voff,
                         vcnt,
                         ioff,
                         icnt,
                         uoff,
+                        blend,
                     } => {
-                        draw_indexed_mesh!(&pipes.mesh, uoff, voff, vcnt, ioff, icnt);
+                        let pipe = match blend {
+                            repose_core::BlendMode::Add => &pipes.mesh_add,
+                            repose_core::BlendMode::Multiply => &pipes.mesh_multiply,
+                            repose_core::BlendMode::Screen => &pipes.mesh_screen,
+                            repose_core::BlendMode::Darken => &pipes.mesh_darken,
+                            repose_core::BlendMode::Lighten => &pipes.mesh_lighten,
+                            _ => &pipes.mesh,
+                        };
+                        draw_indexed_mesh!(pipe, uoff, voff, vcnt, ioff, icnt);
                     }
 
                     Cmd::VectorOverlay {

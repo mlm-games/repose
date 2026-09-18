@@ -333,18 +333,33 @@ impl DrawScope {
     /// coordinates to world pixels as a 2x3 affine `[m00, m01, m10, m11, tx,
     /// ty]` (a 2x2 row-major linear part, then translation; identity is
     /// `[1.0, 0.0, 0.0, 1.0, 0.0, 0.0]`). `out = M * local + t`.
+    /// `blend` selects the compositing mode; non-`Alpha` modes need a GPU
+    /// backend with blend support (the wgpu renderer implements all of
+    /// [`BlendMode`](repose_core::BlendMode)).
     pub fn draw_vector_mesh(
         &mut self,
         mesh: Arc<VectorMeshData>,
         transform: [f32; 6],
         paint: PaintDesc,
     ) {
+        self.draw_vector_mesh_blended(mesh, transform, paint, BlendMode::Alpha)
+    }
+
+    /// [`draw_vector_mesh`](Self::draw_vector_mesh) with an explicit blend
+    /// mode.
+    pub fn draw_vector_mesh_blended(
+        &mut self,
+        mesh: Arc<VectorMeshData>,
+        transform: [f32; 6],
+        paint: PaintDesc,
+        blend: BlendMode,
+    ) {
         self.commands.push(DrawCommand::VectorMesh {
             mesh,
             transform,
             paint,
             clip: None,
-            blend: BlendMode::Alpha,
+            blend,
         });
     }
 

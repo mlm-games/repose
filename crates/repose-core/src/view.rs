@@ -447,21 +447,92 @@ pub enum PaintDesc {
     },
 }
 
-/// Blend mode for a `VectorMesh`. Only `Alpha` (premultiplied alpha) is wired
-/// into the renderer today. The remaining variants are reserved.
+/// Blend mode for a `VectorMesh`, following the CSS `mix-blend-mode`
+/// vocabulary used by SVG/Lottie-style artwork. All variants are wired into
+/// the renderer: separable modes use fixed-function blending, the rest
+/// (marked below) isolate the mesh into a graphics layer and composite it
+/// with a custom shader.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 #[derive(Default)]
 pub enum BlendMode {
-    /// Standard premultiplied alpha blending.
+    /// Standard premultiplied alpha blending (`normal`).
     #[default]
     Alpha,
-    /// Additive (screen-space light). Not yet implemented.
-    Add,
-    /// Multiply. Not yet implemented.
-    Multiply,
-    /// Overlay. Not yet implemented.
+    /// `screen`: `1 - (1 - S) * (1 - D)`. Fixed-function.
+    Screen,
+    /// `overlay`: `Multiply` for dark backdrops, `Screen` for light ones.
     Overlay,
+    /// `darken`: per-channel `min(S, D)`. Fixed-function.
+    Darken,
+    /// `lighten`: per-channel `max(S, D)`. Fixed-function.
+    Lighten,
+    /// `color-dodge`: brightens the backdrop toward the source color.
+    ColorDodge,
+    /// `color-burn`: darkens the backdrop toward the source color.
+    ColorBurn,
+    /// `hard-light`: `Overlay` with source and backdrop swapped.
+    HardLight,
+    /// `soft-light`: subtle `Overlay` variant.
+    SoftLight,
+    /// `difference`: per-channel `|S - D|`.
+    /// Needs the backdrop (fixed-function subtract only covers `S - D`),
+    /// so it composites via an isolated layer.
+    Difference,
+    /// `exclusion`: like `difference` with lower contrast.
+    Exclusion,
+    /// `hue`: source hue with backdrop saturation and luminosity.
+    Hue,
+    /// `saturation`: source saturation with backdrop hue and luminosity.
+    Saturation,
+    /// `color`: source hue and saturation with backdrop luminosity.
+    Color,
+    /// `luminosity`: source luminosity with backdrop hue and saturation.
+    Luminosity,
+    /// Additive (screen-space light). Fixed-function.
+    Add,
+    /// `multiply`: per-channel `S * D`. Fixed-function.
+    Multiply,
+}
+
+impl BlendMode {
+    /// Modes implemented with fixed-function hardware blending on the mesh
+    /// pipeline. Everything else isolates the mesh into a graphics layer and
+    /// composites it with the backdrop-blend shader.
+    pub fn needs_isolation(self) -> bool {
+        !matches!(
+            self,
+            BlendMode::Alpha
+                | BlendMode::Add
+                | BlendMode::Multiply
+                | BlendMode::Screen
+                | BlendMode::Darken
+                | BlendMode::Lighten
+        )
+    }
+
+    /// Discriminant consumed by `blend_layer.wgsl` (`mode` flat varying).
+    pub fn shader_mode(self) -> u32 {
+        match self {
+            BlendMode::Alpha => 0,
+            BlendMode::Add => 1,
+            BlendMode::Multiply => 2,
+            BlendMode::Screen => 3,
+            BlendMode::Overlay => 4,
+            BlendMode::Darken => 5,
+            BlendMode::Lighten => 6,
+            BlendMode::ColorDodge => 7,
+            BlendMode::ColorBurn => 8,
+            BlendMode::HardLight => 9,
+            BlendMode::SoftLight => 10,
+            BlendMode::Difference => 11,
+            BlendMode::Exclusion => 12,
+            BlendMode::Hue => 13,
+            BlendMode::Saturation => 14,
+            BlendMode::Color => 15,
+            BlendMode::Luminosity => 16,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
