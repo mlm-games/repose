@@ -161,15 +161,21 @@ pub enum DropdownMenuEntry {
 /// Renders as a single overlay entry with a transparent full-screen scrim and
 /// positioned card, matching Compose's Popup behavior. The card is bounded in
 /// height so vertical_scroll activates when content overflows.
+///
+/// The layer is the ambient runtime host; `None` resolves to it, an explicit
+/// handle overrides it for tests and nested layers.
+///
+/// The layer is the ambient runtime host; `None` resolves to it, an explicit
+/// handle overrides it for tests and nested layers.
 pub fn DropdownMenu(
     state: Rc<MenuState>,
-    overlay: impl Into<Option<OverlayHandle>>,
+    overlay: Option<OverlayHandle>,
     modifier: Modifier,
     trigger: View,
     items: Vec<DropdownMenuEntry>,
     config: DropdownMenuConfig,
 ) -> View {
-    let overlay = resolve_overlay(overlay.into());
+    let overlay = resolve_overlay(overlay);
     let th = theme();
     let ddm_id = remember(unique_component_id);
     let overlay_guard = remember_with_key(format!("ddm_oguard_{ddm_id}"), || {

@@ -613,6 +613,9 @@ fn tooltip_surface(
 
 /// Wraps `content` with a tooltip shown when `state` is visible.
 ///
+/// The layer is the ambient runtime host; `None` resolves to it, an explicit
+/// handle overrides it for tests and nested layers.
+///
 /// The popup renders in the ambient overlay layer (never clipped by parents
 /// or scroll containers) and is flipped/clamped into the window container
 /// like Compose `TooltipBox` + `TooltipPositionProviderImpl`. Pass an
@@ -624,12 +627,12 @@ fn tooltip_surface(
 pub fn TooltipBox(
     text: impl Into<String>,
     state: Rc<TooltipState>,
-    overlay: impl Into<Option<OverlayHandle>>,
+    overlay: Option<OverlayHandle>,
     modifier: Modifier,
     content: View,
     config: TooltipConfig,
 ) -> View {
-    let overlay = resolve_overlay(overlay.into());
+    let overlay = resolve_overlay(overlay);
     let text: Rc<str> = Rc::from(text.into());
     let id = remember(unique_component_id);
     let th = theme();

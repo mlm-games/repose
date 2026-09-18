@@ -300,7 +300,7 @@ impl SnackbarController {
     /// ([`with_ambient_overlay`]), falling back to a fresh handle when
     /// composition runs outside a runtime frame (tests, previews).
     pub fn ambient() -> Self {
-        let overlay = ambient_overlay().unwrap_or_else(OverlayHandle::new);
+        let overlay = ambient_overlay().unwrap_or_default();
         Self::with_handle(overlay)
     }
 

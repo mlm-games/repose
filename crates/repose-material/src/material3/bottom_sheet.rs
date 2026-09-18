@@ -134,14 +134,17 @@ impl SheetState {
 ///
 /// Renders as an overlay so it is not clipped by parent containers.
 /// Shows on `state.show()`, dismisses on `state.dismiss()` or scrim tap.
+///
+/// The layer is the ambient runtime host; `None` resolves to it, an explicit
+/// handle overrides it for tests and nested layers.
 pub fn ModalBottomSheet(
     state: Rc<SheetState>,
-    overlay: impl Into<Option<OverlayHandle>>,
+    overlay: Option<OverlayHandle>,
     modifier: Modifier,
     content: View,
     config: BottomSheetConfig,
 ) -> View {
-    let overlay = resolve_overlay(overlay.into());
+    let overlay = resolve_overlay(overlay);
     let th = theme();
     // Peek heights are Dp; the slide animation runs in px (pointer space).
     let peek_h = Dp(state.peek_height.get().max(config.peek_height.0));

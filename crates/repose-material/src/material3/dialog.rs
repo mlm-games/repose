@@ -132,6 +132,9 @@ fn clamp_dialog_modifier(mut m: Modifier, platform_max_w: Dp, platform_max_h: Dp
 /// Unlike the inline `AlertDialog`, this version renders outside the layout tree
 /// so it is never clipped by parent containers, scroll areas, or stacks.
 ///
+/// The layer is the ambient runtime host; `None` resolves to it, an explicit
+/// handle overrides it for tests and nested layers.
+///
 /// Caller should create a `DialogState` and manage visibility via `show()`/`dismiss()`.
 ///
 /// Focus behavior: dialog content is wrapped in a focus group, so Tab/Shift+Tab
@@ -143,12 +146,12 @@ fn clamp_dialog_modifier(mut m: Modifier, platform_max_w: Dp, platform_max_h: Dp
 /// `on_dismiss_request = Some(Rc::new(|| {}))` to prevent Escape from closing.
 pub fn Dialog(
     state: Rc<DialogState>,
-    overlay: impl Into<Option<OverlayHandle>>,
+    overlay: Option<OverlayHandle>,
     modifier: Modifier,
     properties: DialogProperties,
     content: View,
 ) -> View {
-    let overlay = resolve_overlay(overlay.into());
+    let overlay = resolve_overlay(overlay);
     let overlay_guard =
         remember_with_key(state.key("oguard"), || RefCell::new(None::<OverlayGuard>));
 
@@ -461,7 +464,7 @@ impl Default for AlertDialogConfig {
 /// dismiss button. Managed via a shared `DialogState`.
 pub fn AlertDialog(
     state: Rc<DialogState>,
-    overlay: impl Into<Option<OverlayHandle>>,
+    overlay: Option<OverlayHandle>,
     title: View,
     text: View,
     confirm_button: View,
@@ -519,7 +522,7 @@ impl Default for DatePickerDialogConfig {
 /// The `on_dismiss` fires on Cancel or scrim tap.
 pub fn DatePickerDialog(
     state: Rc<DialogState>,
-    overlay: impl Into<Option<OverlayHandle>>,
+    overlay: Option<OverlayHandle>,
     picker_state: Rc<DatePickerState>,
     on_confirm: Rc<dyn Fn(i32, u32, u32)>,
     on_dismiss: Rc<dyn Fn()>,
@@ -578,7 +581,7 @@ impl Default for TimePickerDialogConfig {
 /// The `on_dismiss` fires on Cancel or scrim tap.
 pub fn TimePickerDialog(
     state: Rc<DialogState>,
-    overlay: impl Into<Option<OverlayHandle>>,
+    overlay: Option<OverlayHandle>,
     picker_state: Rc<TimePickerState>,
     on_confirm: Rc<dyn Fn(u32, u32)>,
     on_dismiss: Rc<dyn Fn()>,

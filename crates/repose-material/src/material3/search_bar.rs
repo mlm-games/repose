@@ -889,7 +889,8 @@ pub fn set_window_container_width(w: f32) {
 }
 
 /// Resolve the layer for an overlay entry: the explicit `overlay` when
-/// given, else the ambient runtime host.
+/// given, else the ambient runtime host. `None` disables the popup and
+/// renders only the inline anchor/content, for tests and previews.
 fn resolve_overlay(explicit: Option<OverlayHandle>) -> Option<OverlayHandle> {
     explicit.or_else(ambient_overlay)
 }
@@ -897,15 +898,18 @@ fn resolve_overlay(explicit: Option<OverlayHandle>) -> Option<OverlayHandle> {
 /// M3 Expanded Full-Screen Search Bar -> rendered in an overlay covering the
 /// entire window. Uses the state's own `progress()` for animation.
 /// Equivalent to CK's `ExpandedFullScreenSearchBar(state, inputField, ...)`.
+///
+/// The layer is the ambient runtime host; `None` resolves to it, an explicit
+/// handle overrides it for tests and nested layers.
 pub fn ExpandedFullScreenSearchBar(
     state: Rc<SearchBarState>,
-    overlay: impl Into<Option<OverlayHandle>>,
+    overlay: Option<OverlayHandle>,
     input_field: View,
     modifier: Modifier,
     config: ExpandedFullScreenSearchBarConfig,
     content: View,
 ) -> View {
-    let overlay = resolve_overlay(overlay.into());
+    let overlay = resolve_overlay(overlay);
     // Mark as full-screen so AppBarWithSearch can hide the collapsed bar
     state.expands_to_full_screen.set(true);
 
@@ -1020,15 +1024,18 @@ pub fn ExpandedFullScreenSearchBar(
 /// M3 Expanded Docked Search Bar -> rendered as an overlay popup anchored below
 /// the collapsed search bar using `collapsed_layout_rect`.
 /// Equivalent to CK's `ExpandedDockedSearchBar(state, inputField, ...)`.
+///
+/// The layer is the ambient runtime host; `None` resolves to it, an explicit
+/// handle overrides it for tests and nested layers.
 pub fn ExpandedDockedSearchBar(
     state: Rc<SearchBarState>,
-    overlay: impl Into<Option<OverlayHandle>>,
+    overlay: Option<OverlayHandle>,
     input_field: View,
     modifier: Modifier,
     config: ExpandedDockedSearchBarConfig,
     content: View,
 ) -> View {
-    let overlay = resolve_overlay(overlay.into());
+    let overlay = resolve_overlay(overlay);
     // Docked search bar does NOT expand to full-screen
     state.expands_to_full_screen.set(false);
 
