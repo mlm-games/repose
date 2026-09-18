@@ -317,25 +317,23 @@ impl ReposeRuntime {
         let overlay = self.overlay.clone();
         let mut compose_once = |this: &mut Self| {
             let overlay = overlay.clone();
+            let ambient = this.overlay.clone();
             let mut inner = |s: &mut Scheduler| {
-                let content = (root_fn)(s, &rc);
-                overlay.host(Modifier::new().fill_max_size(), content)
+                repose_ui::overlay::with_ambient_overlay(ambient.clone(), || {
+                    let content = (root_fn)(s, &rc);
+                    overlay.host(Modifier::new().fill_max_size(), content)
+                })
             };
             match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                repose_ui::overlay::with_ambient_overlay(
-                    this.overlay.clone(),
-                    || {
-                        compose_frame_inner_with_ancestors(
-                            &mut this.sched,
-                            &mut inner,
-                            this.scale,
-                            size,
-                            this.hover_id,
-                            &this.hover_ancestors,
-                            &this.pressed_ids,
-                            &this.textfield_states,
-                        )
-                    },
+                compose_frame_inner_with_ancestors(
+                    &mut this.sched,
+                    &mut inner,
+                    this.scale,
+                    size,
+                    this.hover_id,
+                    &this.hover_ancestors,
+                    &this.pressed_ids,
+                    &this.textfield_states,
                 )
             })) {
                 Ok(frame) => frame,

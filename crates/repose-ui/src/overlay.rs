@@ -311,7 +311,7 @@ impl SnackbarController {
                     queue: VecDeque::new(),
                     active: None,
                 }),
-                overlay: overlay.clone(),
+                overlay,
             }),
         };
 
@@ -319,8 +319,7 @@ impl SnackbarController {
         controller
     }
 
-    /// The handle this controller posts entries to. Used by `SnackbarHost`
-    /// to render the ambient layer without extra threading.
+    /// The handle this controller posts entries to.
     pub fn handle(&self) -> OverlayHandle {
         self.inner.overlay.clone()
     }
