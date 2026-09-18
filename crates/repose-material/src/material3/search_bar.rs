@@ -9,7 +9,7 @@ use repose_core::text::ImeAction;
 use repose_core::*;
 use repose_ui::{
     BasicTextField, Box, Column, Row, Spacer, Text, TextFieldState, TextStyle, ViewExt, ZStack,
-    anim::animate_f32, overlay::OverlayGuard, overlay::{OverlayHandle, ambient_overlay},
+    anim::animate_f32, overlay::OverlayGuard, overlay::ambient_overlay,
 };
 
 use super::app_bar::WindowInsets;
@@ -888,28 +888,19 @@ pub fn set_window_container_width(w: f32) {
     repose_core::locals::set_window_container_width(w);
 }
 
-/// Resolve the layer for an overlay entry: the explicit `overlay` when
-/// given, else the ambient runtime host. `None` disables the popup and
-/// renders only the inline anchor/content, for tests and previews.
-fn resolve_overlay(explicit: Option<OverlayHandle>) -> Option<OverlayHandle> {
-    explicit.or_else(ambient_overlay)
-}
-
 /// M3 Expanded Full-Screen Search Bar -> rendered in an overlay covering the
 /// entire window. Uses the state's own `progress()` for animation.
 /// Equivalent to CK's `ExpandedFullScreenSearchBar(state, inputField, ...)`.
 ///
-/// The layer is the ambient runtime host; `None` resolves to it, an explicit
-/// handle overrides it for tests and nested layers.
+/// Renders into the ambient overlay layer installed by the runtime.
 pub fn ExpandedFullScreenSearchBar(
     state: Rc<SearchBarState>,
-    overlay: Option<OverlayHandle>,
     input_field: View,
     modifier: Modifier,
     config: ExpandedFullScreenSearchBarConfig,
     content: View,
 ) -> View {
-    let overlay = resolve_overlay(overlay);
+    let overlay = ambient_overlay();
     // Mark as full-screen so AppBarWithSearch can hide the collapsed bar
     state.expands_to_full_screen.set(true);
 
@@ -1025,17 +1016,15 @@ pub fn ExpandedFullScreenSearchBar(
 /// the collapsed search bar using `collapsed_layout_rect`.
 /// Equivalent to CK's `ExpandedDockedSearchBar(state, inputField, ...)`.
 ///
-/// The layer is the ambient runtime host; `None` resolves to it, an explicit
-/// handle overrides it for tests and nested layers.
+/// Renders into the ambient overlay layer installed by the runtime.
 pub fn ExpandedDockedSearchBar(
     state: Rc<SearchBarState>,
-    overlay: Option<OverlayHandle>,
     input_field: View,
     modifier: Modifier,
     config: ExpandedDockedSearchBarConfig,
     content: View,
 ) -> View {
-    let overlay = resolve_overlay(overlay);
+    let overlay = ambient_overlay();
     // Docked search bar does NOT expand to full-screen
     state.expands_to_full_screen.set(false);
 

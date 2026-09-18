@@ -6,18 +6,11 @@ use std::rc::Rc;
 use repose_core::*;
 use repose_ui::{
     Box, Column, Row, Text, TextStyle, ViewExt, ZStack, overlay::OverlayGuard,
-    overlay::{OverlayHandle, ambient_overlay},
+    overlay::ambient_overlay,
 };
 
 use super::util::apply_tonal_elevation;
 use super::*;
-
-/// Resolve the layer for an overlay entry: the explicit `overlay` when
-/// given, else the ambient runtime host. `None` disables the popup and
-/// renders only the inline anchor/content, for tests and previews.
-fn resolve_overlay(explicit: Option<OverlayHandle>) -> Option<OverlayHandle> {
-    explicit.or_else(ambient_overlay)
-}
 
 /// Configuration for [`DropdownMenu`].
 #[derive(Clone, Debug)]
@@ -162,20 +155,15 @@ pub enum DropdownMenuEntry {
 /// positioned card, matching Compose's Popup behavior. The card is bounded in
 /// height so vertical_scroll activates when content overflows.
 ///
-/// The layer is the ambient runtime host; `None` resolves to it, an explicit
-/// handle overrides it for tests and nested layers.
-///
-/// The layer is the ambient runtime host; `None` resolves to it, an explicit
-/// handle overrides it for tests and nested layers.
+/// Renders into the ambient overlay layer installed by the runtime.
 pub fn DropdownMenu(
     state: Rc<MenuState>,
-    overlay: Option<OverlayHandle>,
     modifier: Modifier,
     trigger: View,
     items: Vec<DropdownMenuEntry>,
     config: DropdownMenuConfig,
 ) -> View {
-    let overlay = resolve_overlay(overlay);
+    let overlay = ambient_overlay();
     let th = theme();
     let ddm_id = remember(unique_component_id);
     let overlay_guard = remember_with_key(format!("ddm_oguard_{ddm_id}"), || {

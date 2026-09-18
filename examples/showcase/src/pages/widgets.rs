@@ -299,7 +299,6 @@ pub fn screen() -> View {
                 TooltipBox(
                     "This is a tooltip with the M3 plain style.",
                     tooltip_state_inner.clone(),
-                    None,
                     Modifier::new(),
                     Box(Modifier::new()
                         .padding(sp::MD)

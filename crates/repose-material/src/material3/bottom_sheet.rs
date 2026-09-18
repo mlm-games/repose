@@ -7,19 +7,12 @@ use repose_core::animation::AnimationSpec;
 use repose_core::*;
 use repose_ui::{
     Box, Column, Row, ViewExt, ZStack, anim::animate_f32_from, overlay::OverlayGuard,
-    overlay::{OverlayHandle, ambient_overlay},
+    overlay::ambient_overlay,
 };
 
 use crate::ripple::{RippleConfig, ripple};
 
 use super::*;
-
-/// Resolve the layer for an overlay entry: the explicit `overlay` when
-/// given, else the ambient runtime host. `None` disables the popup and
-/// renders only the inline anchor/content, for tests and previews.
-fn resolve_overlay(explicit: Option<OverlayHandle>) -> Option<OverlayHandle> {
-    explicit.or_else(ambient_overlay)
-}
 
 /// Configuration for [`BottomSheet`] / `ModalBottomSheet`.
 #[derive(Clone, Debug)]
@@ -134,17 +127,13 @@ impl SheetState {
 ///
 /// Renders as an overlay so it is not clipped by parent containers.
 /// Shows on `state.show()`, dismisses on `state.dismiss()` or scrim tap.
-///
-/// The layer is the ambient runtime host; `None` resolves to it, an explicit
-/// handle overrides it for tests and nested layers.
 pub fn ModalBottomSheet(
     state: Rc<SheetState>,
-    overlay: Option<OverlayHandle>,
     modifier: Modifier,
     content: View,
     config: BottomSheetConfig,
 ) -> View {
-    let overlay = resolve_overlay(overlay);
+    let overlay = ambient_overlay();
     let th = theme();
     // Peek heights are Dp; the slide animation runs in px (pointer space).
     let peek_h = Dp(state.peek_height.get().max(config.peek_height.0));

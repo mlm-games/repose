@@ -245,7 +245,6 @@ pub fn TopBar(current: Route, vm: SettingsVm, compact: bool) -> View {
             ),
             Dialog(
                 settings_state.clone(),
-                None,
                 Modifier::new(),
                 DialogProperties {
                     ..Default::default()
