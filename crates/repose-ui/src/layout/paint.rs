@@ -370,6 +370,8 @@ impl LayoutEngine {
                 || modifier.click
                 || has_dnd
                 || modifier.on_action.is_some()
+                || modifier.on_key_event.is_some()
+                || modifier.on_preview_key_event.is_some()
                 || modifier.focusable == Some(true)
                 || (modifier.input_blocker && !modifier.hit_passthrough)))
             || (modifier.disabled && modifier.click && alpha_accum > 0.01);

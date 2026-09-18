@@ -2308,9 +2308,9 @@ fn key_ancestor_chain(f: &Frame, focused: Option<u64>) -> Vec<u64> {
         leaf = f
             .hit_regions
             .iter()
+            .filter(|h| !h.disabled)
             .find(|h| h.parent.is_none_or(|p| !ids.contains(&p)))
-            .map(|h| h.id)
-            .or_else(|| f.hit_regions.first().map(|h| h.id));
+            .map(|h| h.id);
     }
     let Some(mut cur) = leaf else {
         return Vec::new();
