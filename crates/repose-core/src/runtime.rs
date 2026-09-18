@@ -593,7 +593,7 @@ impl HitRegion {
             on_action: m.on_action.clone(),
             on_key_event: m.on_key_event.clone(),
             on_preview_key_event: m.on_preview_key_event.clone(),
-            cursor: m.cursor,
+            cursor: m.cursor.clone(),
             on_drag_start: m.on_drag_start.clone(),
             on_drag_end: m.on_drag_end.clone(),
             on_drag_enter: m.on_drag_enter.clone(),

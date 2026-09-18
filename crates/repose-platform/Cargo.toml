@@ -39,6 +39,7 @@ wasm-bindgen-futures = { workspace = true }
 gilrs = { workspace = true, optional = true }
 web-sys = { workspace = true }
 repose-text = { workspace = true }
+image = { workspace = true }
 winit = { workspace = true, features = ["rwh_05"] }
 console_error_panic_hook = { workspace = true }
 console_log = { workspace = true }

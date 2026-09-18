@@ -189,7 +189,7 @@ pub(crate) fn winit_key_to_repose(
 }
 
 #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
-pub(crate) fn map_cursor(c: repose_core::CursorIcon) -> winit::window::Cursor {
+pub(crate) fn map_cursor(c: &repose_core::CursorIcon) -> winit::window::Cursor {
     use winit::window::{Cursor, CursorIcon as W};
     match c {
         repose_core::CursorIcon::Hidden => Cursor::Icon(W::Default),
@@ -202,18 +202,21 @@ pub(crate) fn map_cursor(c: repose_core::CursorIcon) -> winit::window::Cursor {
         repose_core::CursorIcon::NeswResize => Cursor::Icon(W::NeswResize),
         repose_core::CursorIcon::Grab => Cursor::Icon(W::Grab),
         repose_core::CursorIcon::Grabbing => Cursor::Icon(W::Grabbing),
+        repose_core::CursorIcon::Custom(_) => Cursor::Icon(W::Default),
     }
 }
 
 /// Whether the cursor suggestion hides the OS pointer (`Hidden`
 /// carries no winit icon; the host must toggle visibility itself).
-pub(crate) fn cursor_is_hidden(c: repose_core::CursorIcon) -> bool {
+pub(crate) fn cursor_is_hidden(c: &repose_core::CursorIcon) -> bool {
     matches!(c, repose_core::CursorIcon::Hidden)
 }
 
 /// CSS cursor keyword for a [`CursorIcon`](repose_core::CursorIcon),
 /// applied to the web canvas `style.cursor`. `Hidden` maps to `none`.
-pub(crate) fn cursor_css(c: repose_core::CursorIcon) -> &'static str {
+/// `Custom` has no keyword (data URLs handled separately); falls back
+/// to `default` here so the match stays total.
+pub(crate) fn cursor_css(c: &repose_core::CursorIcon) -> &'static str {
     match c {
         repose_core::CursorIcon::Hidden => "none",
         repose_core::CursorIcon::Default => "default",
@@ -225,6 +228,7 @@ pub(crate) fn cursor_css(c: repose_core::CursorIcon) -> &'static str {
         repose_core::CursorIcon::NeswResize => "nesw-resize",
         repose_core::CursorIcon::Grab => "grab",
         repose_core::CursorIcon::Grabbing => "grabbing",
+        repose_core::CursorIcon::Custom(_) => "default",
     }
 }
 

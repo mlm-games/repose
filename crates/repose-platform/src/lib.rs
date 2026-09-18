@@ -223,6 +223,9 @@ pub fn run_desktop_app_with_config(
         // Last applied OS window theme (dark/light) to avoid spamming set_theme.
         last_window_theme: Option<bool>,
 
+        custom_cursor: Option<(u64, winit::window::CustomCursor)>,
+        last_cursor_key: Option<(u8, u64)>,
+
         last_redraw: Instant,
         pending_redraw: bool,
 
@@ -315,6 +318,8 @@ pub fn run_desktop_app_with_config(
                 last_redraw: Instant::now(),
                 pending_redraw: false,
                 last_window_theme: None,
+                custom_cursor: None,
+                last_cursor_key: None,
                 redraw_requested: Cell::new(false),
                 touch_gestures: rc::TouchGestureState::default(),
                 gamepad: gamepad::create_backend()
@@ -377,6 +382,103 @@ pub fn run_desktop_app_with_config(
                 return;
             };
             repose_render_wgpu::apply_render_commands(backend, self.render.drain());
+        }
+
+        /// Content hash for the custom-cursor cache: FNV over bytes +
+        /// dims + hotspot. Collision odds are negligible for a 1-entry
+        /// cache that only dedupes identical consecutive frames.
+        #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
+        fn custom_cursor_key(img: &repose_core::CustomCursorImage) -> u64 {
+            let mut h: u64 = 0xcbf29ce484222325;
+            for b in img.rgba.iter().copied().chain(
+                img.size
+                    .iter()
+                    .flat_map(|v| v.to_le_bytes())
+                    .chain(img.hotspot.iter().flat_map(|v| v.to_le_bytes())),
+            ) {
+                h ^= b as u64;
+                h = h.wrapping_mul(0x100000001b3);
+            }
+            h ^= (img.rgba.len() as u64).wrapping_mul(0x9e3779b97f4a7c15);
+            h
+        }
+
+        /// Dedup key for `set_cursor` traffic: content hash for `Custom`,
+        /// discriminant otherwise (egui-winit bitmap path parity).
+        #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
+        fn cursor_key(c: &repose_core::CursorIcon) -> (u8, u64) {
+            match c {
+                repose_core::CursorIcon::Default => (0, 0),
+                repose_core::CursorIcon::Pointer => (1, 0),
+                repose_core::CursorIcon::Text => (2, 0),
+                repose_core::CursorIcon::EwResize => (3, 0),
+                repose_core::CursorIcon::NsResize => (4, 0),
+                repose_core::CursorIcon::NwseResize => (5, 0),
+                repose_core::CursorIcon::NeswResize => (6, 0),
+                repose_core::CursorIcon::Grab => (7, 0),
+                repose_core::CursorIcon::Grabbing => (8, 0),
+                repose_core::CursorIcon::Hidden => (9, 0),
+                repose_core::CursorIcon::Custom(img) => (10, Self::custom_cursor_key(img)),
+            }
+        }
+
+        /// Apply one cursor suggestion to the window (desktop): plain
+        /// icons via `map_cursor`, `Custom` via a cached
+        /// `create_custom_cursor` handle rebuilt only when the pixels
+        /// change (egui-winit bitmap path parity). Invalid art
+        /// (`BadImage`) falls back to the default arrow, never a panic.
+        #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
+        fn apply_cursor_static(
+            win: &std::sync::Arc<winit::window::Window>,
+            cache: &mut Option<(u64, winit::window::CustomCursor)>,
+            last_key: &mut Option<(u8, u64)>,
+            el: Option<&winit::event_loop::ActiveEventLoop>,
+            c: &repose_core::CursorIcon,
+        ) {
+            let key = Self::cursor_key(c);
+            if *last_key == Some(key) {
+                return;
+            }
+            *last_key = Some(key);
+            if let repose_core::CursorIcon::Custom(img) = c {
+                let hash = key.1;
+                let hit = cache.as_ref().filter(|(k, _)| *k == hash).map(|(_, h)| h.clone());
+                let custom = match hit {
+                    Some(h) => Some(h),
+                    None => match el {
+                        Some(el) => {
+                            match winit::window::CustomCursor::from_rgba(
+                                img.rgba.to_vec(),
+                                img.size[0],
+                                img.size[1],
+                                img.hotspot[0],
+                                img.hotspot[1],
+                            ) {
+                                Ok(source) => {
+                                    let h = el.create_custom_cursor(source);
+                                    *cache = Some((hash, h.clone()));
+                                    Some(h)
+                                }
+                                Err(e) => {
+                                    log::warn!("invalid custom cursor, falling back: {e:?}");
+                                    *cache = None;
+                                    None
+                                }
+                            }
+                        }
+                        None => cache.as_ref().map(|(_, h)| h.clone()),
+                    },
+                };
+                win.set_cursor_visible(true);
+                match custom {
+                    Some(h) => win.set_cursor(h),
+                    None => win.set_cursor(map_cursor(c)),
+                }
+                return;
+            }
+            *cache = cache.take().and(None);
+            win.set_cursor_visible(!cursor_is_hidden(c));
+            win.set_cursor(map_cursor(c));
         }
 
         fn reset_pointer_state(&mut self) {
@@ -603,8 +705,7 @@ pub fn run_desktop_app_with_config(
                     if let Some(win) = &self.window
                         && let Some(c) = result.cursor
                     {
-                        win.set_cursor_visible(!cursor_is_hidden(c));
-                        win.set_cursor(map_cursor(c));
+                        Self::apply_cursor_static(win, &mut self.custom_cursor, &mut self.last_cursor_key, Some(el), &c);
                     }
 
                     self.request_redraw();
@@ -927,8 +1028,14 @@ pub fn run_desktop_app_with_config(
                     let output = self.rt.frame(&mut self.root, &self.render);
 
                     if let Some(cursor) = &output.platform.cursor {
-                        win.set_cursor_visible(!cursor_is_hidden(*cursor));
-                        win.set_cursor(map_cursor(*cursor));
+                        let win = win.clone();
+                        Self::apply_cursor_static(
+                            &win,
+                            &mut self.custom_cursor,
+                            &mut self.last_cursor_key,
+                            Some(el),
+                            cursor,
+                        );
                     }
 
                     if let Some(dark) = output.platform.window_theme_dark

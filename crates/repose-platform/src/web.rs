@@ -254,16 +254,26 @@ impl App {
     /// Mirror the desktop runner's cursor handling onto the web canvas:
     /// `Some` applies the matching CSS keyword (`Hidden` -> `none`), `None`
     /// restores the default arrow. Cached per value so the DOM style is only
-    /// touched on change.
+    /// touched on change. `Custom` encodes the pixels as a PNG data URL
+    /// (browsers cap cursors ~128px, so bigger art scales down to fit);
+    /// encode failures fall back to `default`, never a panic.
     fn apply_frame_cursor(&self, window: &Window, cursor: &Option<repose_core::CursorIcon>) {
         use std::cell::RefCell;
         thread_local! {
-            static LAST_CURSOR: RefCell<Option<&'static str>> = const { RefCell::new(None) };
+            static LAST_CURSOR: RefCell<Option<String>> = const { RefCell::new(None) };
         }
-        let next = cursor.map(rc::cursor_css).unwrap_or("default");
+        let next: String = match cursor {
+            Some(repose_core::CursorIcon::Custom(img)) => {
+                match Self::custom_cursor_css(img) {
+                    Some(url) => url,
+                    None => "default".to_string(),
+                }
+            }
+            other => other.as_ref().map(rc::cursor_css).unwrap_or("default").to_string(),
+        };
         let changed = LAST_CURSOR.with(|last| {
-            if *last.borrow() != Some(next) {
-                *last.borrow_mut() = Some(next);
+            if last.borrow().as_deref() != Some(next.as_str()) {
+                *last.borrow_mut() = Some(next.clone());
                 true
             } else {
                 false
@@ -275,7 +285,74 @@ impl App {
         let Some(canvas) = window.canvas() else {
             return;
         };
-        let _ = canvas.style().set_property("cursor", next);
+        let _ = canvas.style().set_property("cursor", &next);
+    }
+
+    /// Encode a `Custom` cursor as a CSS `url(data:image/png;base64,…)`
+    /// value with the GML hotspot. Browsers cap cursors ~128px, so art
+    /// bigger than that scales down (hotspot scales with it). Returns
+    /// `None` when the pixels are malformed or PNG/base64 encoding is
+    /// unavailable — callers fall back to the default arrow.
+    fn custom_cursor_css(img: &repose_core::CustomCursorImage) -> Option<String> {
+        const MAX: u32 = 128;
+        let (w, h) = (img.size[0] as u32, img.size[1] as u32);
+        if w == 0 || h == 0 || w > 2048 || h > 2048 {
+            return None;
+        }
+        if img.rgba.len() != (w * h * 4) as usize {
+            return None;
+        }
+        let scale = (MAX as f32 / w.max(h) as f32).min(1.0);
+        let (dw, dh) = ((w as f32 * scale).round().max(1.0) as u32, (h as f32 * scale).round().max(1.0) as u32);
+        let mut px = Vec::with_capacity((dw * dh * 4) as usize);
+        for y in 0..dh {
+            for x in 0..dw {
+                let sx = ((x as f32 / scale).floor() as u32).min(w - 1);
+                let sy = ((y as f32 / scale).floor() as u32).min(h - 1);
+                let i = ((sy * w + sx) * 4) as usize;
+                px.extend_from_slice(&img.rgba[i..i + 4]);
+            }
+        }
+        let (hx, hy) = (
+            (img.hotspot[0] as f32 * scale).round().clamp(0.0, dw.saturating_sub(1) as f32) as u32,
+            (img.hotspot[1] as f32 * scale).round().clamp(0.0, dh.saturating_sub(1) as f32) as u32,
+        );
+        let mut png = Vec::new();
+        {
+            use image::ImageEncoder as _;
+            let enc = image::codecs::png::PngEncoder::new(&mut png);
+            enc.write_image(&px, dw, dh, image::ExtendedColorType::Rgba8)
+                .ok()?;
+        }
+        let b64 = Self::image_base64_encode(&png);
+        Some(format!("url(data:image/png;base64,{b64}) {hx} {hy}, default"))
+    }
+
+    /// Minimal base64 (RFC 4648, padded) over bytes. Vendored so the web
+    /// runner needs no new dependency for one CSS data URL.
+    fn image_base64_encode(bytes: &[u8]) -> String {
+        const ALPHABET: &[u8; 64] =
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        let mut out = String::with_capacity((bytes.len() + 2) / 3 * 4);
+        for chunk in bytes.chunks(3) {
+            let b0 = chunk[0] as u32;
+            let b1 = *chunk.get(1).unwrap_or(&0) as u32;
+            let b2 = *chunk.get(2).unwrap_or(&0) as u32;
+            let n = (b0 << 16) | (b1 << 8) | b2;
+            out.push(ALPHABET[((n >> 18) & 63) as usize] as char);
+            out.push(ALPHABET[((n >> 12) & 63) as usize] as char);
+            out.push(if chunk.len() > 1 {
+                ALPHABET[((n >> 6) & 63) as usize] as char
+            } else {
+                '='
+            });
+            out.push(if chunk.len() > 2 {
+                ALPHABET[(n & 63) as usize] as char
+            } else {
+                '='
+            });
+        }
+        out
     }
 
     fn is_textfield(&self, id: u64) -> bool {

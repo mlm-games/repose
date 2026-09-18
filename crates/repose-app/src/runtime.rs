@@ -598,7 +598,7 @@ impl ReposeRuntime {
                 cursor: if dnd::is_dragging() {
                     Some(CursorIcon::Grabbing)
                 } else {
-                    self.cursor
+                    self.cursor.clone()
                 },
                 hover_id: self.hover_id,
             };
@@ -664,7 +664,7 @@ impl ReposeRuntime {
             .rev()
             .find(|h| !h.disabled && h.rect.contains(pos));
 
-        self.cursor = top.and_then(|h| h.cursor).or(Some(CursorIcon::Default));
+        self.cursor = top.and_then(|h| h.cursor.clone()).or(Some(CursorIcon::Default));
 
         let new_hover = top.map(|h| h.id);
 
@@ -717,7 +717,7 @@ impl ReposeRuntime {
         }
 
         PointerMoveResult {
-            cursor: self.cursor,
+            cursor: self.cursor.clone(),
             hover_id: self.hover_id,
         }
     }
@@ -1122,7 +1122,7 @@ impl ReposeRuntime {
         } else {
             new_hover
                 .and_then(|id| new_frame.hit_regions.iter().find(|h| h.id == id))
-                .and_then(|h| h.cursor)
+                .and_then(|h| h.cursor.clone())
                 .or(Some(CursorIcon::Default))
         };
 
@@ -2224,7 +2224,7 @@ impl ReposeRuntime {
 
     /// Get the cursor suggestion (set during pointer-move handling).
     pub fn cursor_suggestion(&self) -> Option<CursorIcon> {
-        self.cursor
+        self.cursor.clone()
     }
 
     /// Take the cursor suggestion (clears it).
