@@ -11,7 +11,8 @@ use repose_core::locals::{Density, set_density_default, with_density};
 use repose_core::runtime::{Frame, Scheduler};
 use repose_core::shortcuts::DragAction;
 use repose_core::{
-    CursorIcon, Dp, HitRegion, Interaction, RenderContext, Scene, Sp, Vec2, View, request_frame,
+    CursorIcon, Dp, HitRegion, Interaction, Modifier, RenderContext, Scene, Sp, Vec2, View,
+    request_frame,
 };
 use repose_ui::textfield::{
     TF_FONT_SP, TextFieldState, TextMeasureConfig, caret_xy_for_byte, measure_text,
@@ -148,6 +149,9 @@ const LONG_PRESS_SLOP_DP: f32 = 18.0;
 pub struct ReposeRuntime {
     pub sched: Scheduler,
     pub scale: f32,
+    /// Ambient host layer for floating surfaces. Installed around
+    /// composition each frame; entries render at the root.
+    pub overlay: repose_ui::overlay::OverlayHandle,
 
     pub modifiers: Modifiers,
     pub mouse_pos_px: (f32, f32),
@@ -232,7 +236,15 @@ impl GamepadPad {
 
 impl ReposeRuntime {
     pub fn new() -> Self {
+        Self::with_overlay(repose_ui::overlay::OverlayHandle::new())
+    }
+
+    /// Create a runtime sharing `overlay` as the ambient host layer.
+    /// Entries posted through this handle render at the root; per-frame
+    /// `show_guard` state can still target other handles as an escape hatch.
+    pub fn with_overlay(overlay: repose_ui::overlay::OverlayHandle) -> Self {
         Self {
+            overlay,
             sched: Scheduler::new(),
             scale: 1.0,
             modifiers: Modifiers::default(),
@@ -302,18 +314,28 @@ impl ReposeRuntime {
 
         let size = self.sched.size;
         let rc = render_ctx.clone();
+        let overlay = self.overlay.clone();
         let mut compose_once = |this: &mut Self| {
-            let mut inner = |s: &mut Scheduler| (root_fn)(s, &rc);
+            let overlay = overlay.clone();
+            let mut inner = |s: &mut Scheduler| {
+                let content = (root_fn)(s, &rc);
+                overlay.host(Modifier::new().fill_max_size(), content)
+            };
             match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                compose_frame_inner_with_ancestors(
-                    &mut this.sched,
-                    &mut inner,
-                    this.scale,
-                    size,
-                    this.hover_id,
-                    &this.hover_ancestors,
-                    &this.pressed_ids,
-                    &this.textfield_states,
+                repose_ui::overlay::with_ambient_overlay(
+                    this.overlay.clone(),
+                    || {
+                        compose_frame_inner_with_ancestors(
+                            &mut this.sched,
+                            &mut inner,
+                            this.scale,
+                            size,
+                            this.hover_id,
+                            &this.hover_ancestors,
+                            &this.pressed_ids,
+                            &this.textfield_states,
+                        )
+                    },
                 )
             })) {
                 Ok(frame) => frame,

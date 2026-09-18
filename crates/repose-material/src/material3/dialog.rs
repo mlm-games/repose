@@ -5,13 +5,20 @@ use std::rc::Rc;
 use std::cell::RefCell;
 
 use repose_core::*;
-use repose_ui::overlay::{OverlayGuard, OverlayHandle};
+use repose_ui::overlay::{OverlayGuard, OverlayHandle, ambient_overlay};
 use repose_ui::{Box, Column, ViewExt, ZStack, box_with_constraints_with_key};
 use web_time::Duration;
 
 use super::AlertDialogDefaults;
 use super::{DatePicker, DatePickerConfig, DatePickerState};
 use super::{TimePicker, TimePickerConfig, TimePickerState};
+
+/// Resolve the layer for an overlay entry: the explicit `overlay` when
+/// given, else the ambient runtime host. `None` disables the popup and
+/// renders only the inline anchor/content, for tests and previews.
+fn resolve_overlay(explicit: Option<OverlayHandle>) -> Option<OverlayHandle> {
+    explicit.or_else(ambient_overlay)
+}
 
 /// State controlling dialog visibility.
 pub struct DialogState {
@@ -136,11 +143,12 @@ fn clamp_dialog_modifier(mut m: Modifier, platform_max_w: Dp, platform_max_h: Dp
 /// `on_dismiss_request = Some(Rc::new(|| {}))` to prevent Escape from closing.
 pub fn Dialog(
     state: Rc<DialogState>,
-    overlay: OverlayHandle,
+    overlay: impl Into<Option<OverlayHandle>>,
     modifier: Modifier,
     properties: DialogProperties,
     content: View,
 ) -> View {
+    let overlay = resolve_overlay(overlay.into());
     let overlay_guard =
         remember_with_key(state.key("oguard"), || RefCell::new(None::<OverlayGuard>));
 
@@ -235,7 +243,9 @@ pub fn Dialog(
     let visible = state.is_visible() || progress > 0.01;
 
     if visible {
-        if overlay_guard.borrow().is_none() {
+        if overlay_guard.borrow().is_none()
+            && let Some(overlay) = overlay.clone()
+        {
             let builder: Rc<dyn Fn() -> View> = Rc::new({
                 let state = state.clone();
                 let anim = anim.clone();
@@ -451,7 +461,7 @@ impl Default for AlertDialogConfig {
 /// dismiss button. Managed via a shared `DialogState`.
 pub fn AlertDialog(
     state: Rc<DialogState>,
-    overlay: OverlayHandle,
+    overlay: impl Into<Option<OverlayHandle>>,
     title: View,
     text: View,
     confirm_button: View,
@@ -509,7 +519,7 @@ impl Default for DatePickerDialogConfig {
 /// The `on_dismiss` fires on Cancel or scrim tap.
 pub fn DatePickerDialog(
     state: Rc<DialogState>,
-    overlay: OverlayHandle,
+    overlay: impl Into<Option<OverlayHandle>>,
     picker_state: Rc<DatePickerState>,
     on_confirm: Rc<dyn Fn(i32, u32, u32)>,
     on_dismiss: Rc<dyn Fn()>,
@@ -568,7 +578,7 @@ impl Default for TimePickerDialogConfig {
 /// The `on_dismiss` fires on Cancel or scrim tap.
 pub fn TimePickerDialog(
     state: Rc<DialogState>,
-    overlay: OverlayHandle,
+    overlay: impl Into<Option<OverlayHandle>>,
     picker_state: Rc<TimePickerState>,
     on_confirm: Rc<dyn Fn(u32, u32)>,
     on_dismiss: Rc<dyn Fn()>,

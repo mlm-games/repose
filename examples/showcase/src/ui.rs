@@ -10,7 +10,6 @@ use repose_material::material3::{
 };
 use repose_material::{Icon, material_symbols};
 use repose_navigation::Navigator;
-use repose_ui::overlay::OverlayHandle;
 use repose_ui::scroll::{
     HorizontalScrollArea, ScrollArea, remember_horizontal_scroll_state, remember_scroll_state,
 };
@@ -134,7 +133,6 @@ pub struct SettingsVm {
 pub fn AppShell(
     current: Route,
     nav: Navigator<Route>,
-    overlay: OverlayHandle,
     settings: SettingsVm,
     content: View,
 ) -> View {
@@ -143,13 +141,13 @@ pub fn AppShell(
 
     let shell = if compact {
         Column(Modifier::new().fill_max_size()).child((
-            TopBar(current, overlay, settings, true),
+            TopBar(current, settings, true),
             CompactNav(current, nav),
             PageViewport(current, content, true),
         ))
     } else {
         Column(Modifier::new().fill_max_size()).child((
-            TopBar(current, overlay, settings, false),
+            TopBar(current, settings, false),
             Row(Modifier::new().fill_max_size())
                 .child((NavRail(current, nav), PageViewport(current, content, false))),
         ))
@@ -215,7 +213,7 @@ fn PageHero(route: Route, compact: bool) -> View {
     .child(title_block)
 }
 
-pub fn TopBar(current: Route, overlay: OverlayHandle, vm: SettingsVm, compact: bool) -> View {
+pub fn TopBar(current: Route, vm: SettingsVm, compact: bool) -> View {
     let settings_state = remember(DialogState::new);
     let th = theme();
 
@@ -247,7 +245,7 @@ pub fn TopBar(current: Route, overlay: OverlayHandle, vm: SettingsVm, compact: b
             ),
             Dialog(
                 settings_state.clone(),
-                overlay,
+                None,
                 Modifier::new(),
                 DialogProperties {
                     ..Default::default()

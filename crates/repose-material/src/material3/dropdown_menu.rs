@@ -6,11 +6,18 @@ use std::rc::Rc;
 use repose_core::*;
 use repose_ui::{
     Box, Column, Row, Text, TextStyle, ViewExt, ZStack, overlay::OverlayGuard,
-    overlay::OverlayHandle,
+    overlay::{OverlayHandle, ambient_overlay},
 };
 
 use super::util::apply_tonal_elevation;
 use super::*;
+
+/// Resolve the layer for an overlay entry: the explicit `overlay` when
+/// given, else the ambient runtime host. `None` disables the popup and
+/// renders only the inline anchor/content, for tests and previews.
+fn resolve_overlay(explicit: Option<OverlayHandle>) -> Option<OverlayHandle> {
+    explicit.or_else(ambient_overlay)
+}
 
 /// Configuration for [`DropdownMenu`].
 #[derive(Clone, Debug)]
@@ -156,12 +163,13 @@ pub enum DropdownMenuEntry {
 /// height so vertical_scroll activates when content overflows.
 pub fn DropdownMenu(
     state: Rc<MenuState>,
-    overlay: OverlayHandle,
+    overlay: impl Into<Option<OverlayHandle>>,
     modifier: Modifier,
     trigger: View,
     items: Vec<DropdownMenuEntry>,
     config: DropdownMenuConfig,
 ) -> View {
+    let overlay = resolve_overlay(overlay.into());
     let th = theme();
     let ddm_id = remember(unique_component_id);
     let overlay_guard = remember_with_key(format!("ddm_oguard_{ddm_id}"), || {
@@ -214,7 +222,9 @@ pub fn DropdownMenu(
     let explicit_anchor = state.anchor.get();
 
     if menu_visible {
-        if overlay_guard.borrow().is_none() {
+        if overlay_guard.borrow().is_none()
+            && let Some(overlay) = overlay.clone()
+        {
             let anim = anim.clone();
             let current_items = current_items.clone();
             let state = state.clone();

@@ -6,13 +6,19 @@ use std::sync::Arc;
 
 use repose_core::*;
 use repose_ui::{
-    Box, Column, Text, TextStyle, ViewExt, ZStack, anim::animate_f32,
-    overlay::OverlayGuard,
-    overlay::OverlayHandle,
+    Box, Column, Text, TextStyle, ViewExt, ZStack, anim::animate_f32, overlay::OverlayGuard,
+    overlay::{OverlayHandle, ambient_overlay},
 };
 use web_time::Duration;
 
 use super::*;
+
+/// Resolve the layer for an overlay entry: the explicit `overlay` when
+/// given, else the ambient runtime host. `None` disables the popup and
+/// renders only the inline anchor/content, for tests and previews.
+fn resolve_overlay(explicit: Option<OverlayHandle>) -> Option<OverlayHandle> {
+    explicit.or_else(ambient_overlay)
+}
 
 /// Where the tooltip sits relative to its anchor.
 ///
@@ -607,20 +613,23 @@ fn tooltip_surface(
 
 /// Wraps `content` with a tooltip shown when `state` is visible.
 ///
-/// The popup renders in `overlay` (never clipped by parents or scroll
-/// containers) and is flipped/clamped into the window container like Compose
-/// `TooltipBox` + `TooltipPositionProviderImpl`.
+/// The popup renders in the ambient overlay layer (never clipped by parents
+/// or scroll containers) and is flipped/clamped into the window container
+/// like Compose `TooltipBox` + `TooltipPositionProviderImpl`. Pass an
+/// explicit `overlay` to target a different layer, or `None` to keep only
+/// the inline anchor.
 ///
 /// When [`TooltipConfig::enable_user_input`] is true (default), the tooltip is
 /// shown on pointer hover and dismissed on leave.
 pub fn TooltipBox(
     text: impl Into<String>,
     state: Rc<TooltipState>,
-    overlay: OverlayHandle,
+    overlay: impl Into<Option<OverlayHandle>>,
     modifier: Modifier,
     content: View,
     config: TooltipConfig,
 ) -> View {
+    let overlay = resolve_overlay(overlay.into());
     let text: Rc<str> = Rc::from(text.into());
     let id = remember(unique_component_id);
     let th = theme();
@@ -687,7 +696,9 @@ pub fn TooltipBox(
     });
 
     if tooltip_visible {
-        if overlay_guard.borrow().is_none() {
+        if overlay_guard.borrow().is_none()
+            && let Some(overlay) = overlay.clone()
+        {
             let current_body = current_body.clone();
             let current_config = current_config.clone();
             let anchor_rect = anchor_rect.clone();

@@ -3,7 +3,6 @@ use std::rc::Rc;
 
 use repose_core::prelude::*;
 use repose_navigation::Navigator;
-use repose_ui::overlay::OverlayHandle;
 use repose_ui::windowing::WindowManagerState;
 
 use crate::app::Route;
@@ -32,7 +31,6 @@ pub mod windows;
 /// Everything a page might need from the app shell.
 #[derive(Clone)]
 pub struct PageCtx {
-    pub overlay: OverlayHandle,
     pub global_windows: Rc<RefCell<WindowManagerState>>,
     pub nav: Navigator<Route>,
 }
@@ -41,7 +39,7 @@ pub fn render(ctx: &PageCtx, route: Route) -> View {
     match route {
         Route::Home => home::screen(ctx.nav.clone()),
         Route::Layout => layout::screen(),
-        Route::Widgets => widgets::screen(ctx.overlay.clone()),
+        Route::Widgets => widgets::screen(),
         Route::Text => text::screen(),
         Route::Scroll => scroll::screen(),
         Route::ScrollFeatures => scroll_features::screen(),
@@ -55,7 +53,7 @@ pub fn render(ctx: &PageCtx, route: Route) -> View {
         Route::Docking => docking::screen(),
         Route::Errors => errors::screen(),
         Route::Windows => windows::screen(ctx.global_windows.clone()),
-        Route::M3 => m3::screen(ctx.overlay.clone()),
+        Route::M3 => m3::screen(),
         Route::Adaptive => adaptive::screen(),
         Route::VectorMesh => vector_mesh::screen(),
         Route::Embedded => embedded::screen(),

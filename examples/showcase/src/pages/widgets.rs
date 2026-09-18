@@ -10,7 +10,6 @@ use repose_material::material3::{
     TabRow, TabRowConfig, TextButton, TooltipBox, TooltipConfig, TooltipState, VerticalDivider,
 };
 use repose_material::{Icon, material_symbols};
-use repose_ui::overlay::OverlayHandle;
 use repose_ui::*;
 
 use crate::ui::{Hint, Labeled, Page, Section, sp};
@@ -41,7 +40,7 @@ fn focus_cell(idx: i32) -> View {
     )
 }
 
-pub fn screen(overlay: OverlayHandle) -> View {
+pub fn screen() -> View {
     let cb = remember(|| signal(true));
     let sw = remember(|| signal(false));
     let radio = remember(|| signal(0u8));
@@ -300,7 +299,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
                 TooltipBox(
                     "This is a tooltip with the M3 plain style.",
                     tooltip_state_inner.clone(),
-                    overlay.clone(),
+                    None,
                     Modifier::new(),
                     Box(Modifier::new()
                         .padding(sp::MD)

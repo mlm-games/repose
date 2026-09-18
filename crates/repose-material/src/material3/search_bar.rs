@@ -9,7 +9,7 @@ use repose_core::text::ImeAction;
 use repose_core::*;
 use repose_ui::{
     BasicTextField, Box, Column, Row, Spacer, Text, TextFieldState, TextStyle, ViewExt, ZStack,
-    anim::animate_f32, overlay::OverlayGuard, overlay::OverlayHandle,
+    anim::animate_f32, overlay::OverlayGuard, overlay::{OverlayHandle, ambient_overlay},
 };
 
 use super::app_bar::WindowInsets;
@@ -888,17 +888,24 @@ pub fn set_window_container_width(w: f32) {
     repose_core::locals::set_window_container_width(w);
 }
 
+/// Resolve the layer for an overlay entry: the explicit `overlay` when
+/// given, else the ambient runtime host.
+fn resolve_overlay(explicit: Option<OverlayHandle>) -> Option<OverlayHandle> {
+    explicit.or_else(ambient_overlay)
+}
+
 /// M3 Expanded Full-Screen Search Bar -> rendered in an overlay covering the
 /// entire window. Uses the state's own `progress()` for animation.
 /// Equivalent to CK's `ExpandedFullScreenSearchBar(state, inputField, ...)`.
 pub fn ExpandedFullScreenSearchBar(
     state: Rc<SearchBarState>,
-    overlay: OverlayHandle,
+    overlay: impl Into<Option<OverlayHandle>>,
     input_field: View,
     modifier: Modifier,
     config: ExpandedFullScreenSearchBarConfig,
     content: View,
 ) -> View {
+    let overlay = resolve_overlay(overlay.into());
     // Mark as full-screen so AppBarWithSearch can hide the collapsed bar
     state.expands_to_full_screen.set(true);
 
@@ -925,7 +932,9 @@ pub fn ExpandedFullScreenSearchBar(
     let visible = expanded || progress > 0.01;
 
     if visible {
-        if overlay_guard.borrow().is_none() {
+        if overlay_guard.borrow().is_none()
+            && let Some(overlay) = overlay.clone()
+        {
             let input_fr = FocusRequester::new();
             let focus_requested = Rc::new(Cell::new(false));
             let builder: Rc<dyn Fn() -> View> = Rc::new({
@@ -1013,12 +1022,13 @@ pub fn ExpandedFullScreenSearchBar(
 /// Equivalent to CK's `ExpandedDockedSearchBar(state, inputField, ...)`.
 pub fn ExpandedDockedSearchBar(
     state: Rc<SearchBarState>,
-    overlay: OverlayHandle,
+    overlay: impl Into<Option<OverlayHandle>>,
     input_field: View,
     modifier: Modifier,
     config: ExpandedDockedSearchBarConfig,
     content: View,
 ) -> View {
+    let overlay = resolve_overlay(overlay.into());
     // Docked search bar does NOT expand to full-screen
     state.expands_to_full_screen.set(false);
 
@@ -1044,7 +1054,9 @@ pub fn ExpandedDockedSearchBar(
     let visible = expanded || progress > 0.01;
 
     if visible {
-        if overlay_guard.borrow().is_none() {
+        if overlay_guard.borrow().is_none()
+            && let Some(overlay) = overlay.clone()
+        {
             let input_fr = FocusRequester::new();
             let focus_requested = Rc::new(Cell::new(false));
             let builder: Rc<dyn Fn() -> View> = Rc::new({

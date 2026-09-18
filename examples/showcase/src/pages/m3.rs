@@ -22,7 +22,6 @@ material_symbols! {
 }
 use repose_ui::{
     anim::{animate_f32, animate_keyframes},
-    overlay::OverlayHandle,
     *,
 };
 use web_time::Duration;
@@ -45,7 +44,7 @@ fn rail_item(
     }
 }
 
-pub fn screen(overlay: OverlayHandle) -> View {
+pub fn screen() -> View {
     // DropdownMenu state
     let menu_state = remember(MenuState::new);
     let menu_label = remember(|| signal("Choose…".to_string()));
@@ -111,7 +110,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
                     .size(th.typography.body_medium),
                 DropdownMenu(
                     menu_state.clone(),
-                    overlay.clone(),
+                    None,
                     Modifier::new().fill_max_width(),
                     Button(
                         Modifier::new(),
@@ -141,7 +140,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
                 ),
                 ModalBottomSheet(
                     sheet_state.clone(),
-                    overlay.clone(),
+                    None,
                     Modifier::new(),
                     Column(Modifier::new().padding(sp::XL).gap(sp::SM)).child((
                         Text("Sheet Content").color(th.on_surface).size(Sp(18.0)),
@@ -220,7 +219,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
                     .size(th.typography.body_medium),
                 DatePickerDialog(
                     date_dialog_state.clone(),
-                    overlay.clone(),
+                    None,
                     date_state.clone(),
                     Rc::new({
                         let r = date_result.clone();
@@ -238,7 +237,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
                 ),
                 TimePickerDialog(
                     time_dialog_state.clone(),
-                    overlay.clone(),
+                    None,
                     time_state.clone(),
                     Rc::new({
                         let r = time_result.clone();
@@ -464,7 +463,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
                             ),
                             DropdownMenu(
                                 split_menu.clone(),
-                                overlay.clone(),
+                                None,
                                 Modifier::new(),
                                 SplitButtonTrailingButton(
                                     Modifier::new(),

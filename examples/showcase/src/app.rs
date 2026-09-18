@@ -9,7 +9,7 @@ use repose_material::material3;
 use repose_navigation::{
     NavDisplay, NavTransition, Navigator, back, remember_back_stack, renderer,
 };
-use repose_ui::overlay::{OverlayHandle, SnackbarController};
+use repose_ui::overlay::SnackbarController;
 use repose_ui::windowing::{WindowHost, WindowManagerState};
 use repose_ui::{Column, ViewExt};
 use serde::{Deserialize, Serialize};
@@ -278,8 +278,7 @@ pub fn app(_s: &mut Scheduler) -> View {
     let ui_scale = remember(|| signal(1.0f32));
     let text_scale = remember(|| signal(1.0f32));
 
-    let overlay = remember(OverlayHandle::new);
-    let snackbar = remember(|| SnackbarController::new((*overlay).clone()));
+    let snackbar = remember(SnackbarController::ambient);
 
     let stack = remember_back_stack(Route::Home);
     let navigator = Navigator {
@@ -298,7 +297,6 @@ pub fn app(_s: &mut Scheduler) -> View {
     let current = stack.top().map(|(_, k, _, _)| k).unwrap_or(Route::Home);
 
     let ctx = PageCtx {
-        overlay: (*overlay).clone(),
         global_windows: global_windows.clone(),
         nav: navigator.clone(),
     };
@@ -343,18 +341,9 @@ pub fn app(_s: &mut Scheduler) -> View {
     let content = ui::AppShell(
         current,
         navigator,
-        (*overlay).clone(),
         settings,
         NavDisplay(stack.clone(), render, None, NavTransition::default()),
     );
-
-    let content = WindowHost(
-        "showcase_global_windows",
-        Modifier::new().fill_max_size(),
-        global_windows,
-        content,
-    );
-    let overlay_root = (*overlay).host(Modifier::new().fill_max_size(), content);
 
     let shortcut_note = remember(|| signal("Press Ctrl+S to trigger".to_string()));
     let shortcut_fired = remember(|| signal(false));
@@ -371,7 +360,12 @@ pub fn app(_s: &mut Scheduler) -> View {
     );
 
     Column(Modifier::new().fill_max_size()).child((
-        overlay_root,
+        WindowHost(
+            "showcase_global_windows",
+            Modifier::new().fill_max_size(),
+            global_windows,
+            content,
+        ),
         ui::ShortcutHud(shortcut_note.get(), shortcut_fired.get()),
     ))
 }

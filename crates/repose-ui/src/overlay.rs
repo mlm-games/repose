@@ -11,6 +11,30 @@ use web_time::{Duration, Instant};
 thread_local! {
     static SNACKBAR_REGISTRY: RefCell<Vec<Weak<SnackbarControllerInner>>> =
         const { RefCell::new(Vec::new()) };
+    static AMBIENT_OVERLAY: RefCell<Option<OverlayHandle>> = const { RefCell::new(None) };
+}
+
+/// Run `f` with `handle` installed as the ambient overlay for this frame.
+///
+/// The platform runtime wraps composition in this, so floating surfaces
+/// (dropdowns, tooltips, dialogs, snackbars) resolve their layer without
+/// the caller threading an `OverlayHandle` through every view. An
+/// explicitly passed handle still works as an escape hatch.
+pub fn with_ambient_overlay<R>(handle: OverlayHandle, f: impl FnOnce() -> R) -> R {
+    struct Guard;
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            AMBIENT_OVERLAY.with(|slot| *slot.borrow_mut() = None);
+        }
+    }
+    AMBIENT_OVERLAY.with(|slot| *slot.borrow_mut() = Some(handle));
+    let _guard = Guard;
+    f()
+}
+
+/// The ambient [`OverlayHandle`] installed by the runtime, if any.
+pub fn ambient_overlay() -> Option<OverlayHandle> {
+    AMBIENT_OVERLAY.with(|slot| slot.borrow().clone())
 }
 
 /// Duration of the snackbar exit animation before the overlay entry is removed.
@@ -109,6 +133,11 @@ impl OverlayHandle {
         }
     }
 
+    /// Hoist `content` plus this handle's entries under one root.
+    ///
+    /// The runtime calls this implicitly around the app root each frame
+    /// (see [`with_ambient_overlay`]); explicit `host()` calls remain for
+    /// tests and advanced layering.
     pub fn host(&self, modifier: Modifier, content: View) -> View {
         let mut root = View::new(0, ViewKind::OverlayHost).modifier(modifier);
         root.children.push(content);
@@ -264,18 +293,36 @@ impl ActiveSnackbar {
 
 impl SnackbarController {
     pub fn new(overlay: OverlayHandle) -> Self {
+        Self::with_handle(overlay)
+    }
+
+    /// Resolve the ambient handle installed by the runtime
+    /// ([`with_ambient_overlay`]), falling back to a fresh handle when
+    /// composition runs outside a runtime frame (tests, previews).
+    pub fn ambient() -> Self {
+        let overlay = ambient_overlay().unwrap_or_else(OverlayHandle::new);
+        Self::with_handle(overlay)
+    }
+
+    fn with_handle(overlay: OverlayHandle) -> Self {
         let controller = Self {
             inner: Rc::new(SnackbarControllerInner {
                 state: RefCell::new(SnackbarState {
                     queue: VecDeque::new(),
                     active: None,
                 }),
-                overlay,
+                overlay: overlay.clone(),
             }),
         };
 
         SNACKBAR_REGISTRY.with(|reg| reg.borrow_mut().push(Rc::downgrade(&controller.inner)));
         controller
+    }
+
+    /// The handle this controller posts entries to. Used by `SnackbarHost`
+    /// to render the ambient layer without extra threading.
+    pub fn handle(&self) -> OverlayHandle {
+        self.inner.overlay.clone()
     }
 
     fn live_controllers() -> Vec<Rc<SnackbarControllerInner>> {
