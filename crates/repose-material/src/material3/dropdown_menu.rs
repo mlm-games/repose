@@ -142,11 +142,40 @@ const DDM_ITEM_H_PAD: Dp = Dp(12.0);
 const DDM_ITEM_MIN_HEIGHT: Dp = Dp(48.0);
 const DDM_MIN_OPEN_HEIGHT: Dp = Dp(48.0);
 
-/// Either a menu item or a divider.
+/// Either a menu item, a divider, or a nested submenu.
+///
+/// A submenu renders its label as a row with an expansion affordance; its
+/// children are rendered inline as an indented group directly beneath it.
+/// This keeps one overlay entry with a single scrim (nested popups would
+/// need a second positioning pass and a second scrim-dismiss layer).
 #[derive(Clone)]
 pub enum DropdownMenuEntry {
     Item(DropdownMenuItem),
     Divider,
+    Submenu(DropdownMenuSubmenu),
+}
+
+/// A labelled group of entries rendered inline beneath its header row.
+#[derive(Clone)]
+pub struct DropdownMenuSubmenu {
+    pub text: String,
+    pub enabled: bool,
+    pub children: Vec<DropdownMenuEntry>,
+}
+
+impl DropdownMenuSubmenu {
+    pub fn new(text: impl Into<String>, children: Vec<DropdownMenuEntry>) -> Self {
+        Self {
+            text: text.into(),
+            enabled: true,
+            children,
+        }
+    }
+
+    pub fn disabled(mut self) -> Self {
+        self.enabled = false;
+        self
+    }
 }
 
 /// M3 Dropdown Menu anchored to a trigger element.
@@ -333,6 +362,10 @@ fn estimate_dropdown_height(items: &[DropdownMenuEntry], config: &DropdownMenuCo
             DropdownMenuEntry::Item(_) => {
                 h += config.item_height.max(DDM_ITEM_MIN_HEIGHT).0;
             }
+            DropdownMenuEntry::Submenu(sub) => {
+                h += config.item_height.max(DDM_ITEM_MIN_HEIGHT).0;
+                h += estimate_dropdown_height(&sub.children, config) - 2.0 * DDM_VERTICAL_PADDING.0;
+            }
             // Divider: 1px line + 12px horizontal margins (also vertical here).
             DropdownMenuEntry::Divider => h += 1.0 + 2.0 * 12.0,
         }
@@ -340,6 +373,138 @@ fn estimate_dropdown_height(items: &[DropdownMenuEntry], config: &DropdownMenuCo
     h
 }
 
+fn render_dropdown_item(
+    th: &Theme,
+    item: &DropdownMenuItem,
+    state: Rc<MenuState>,
+    config: &DropdownMenuConfig,
+) -> View {
+    let text_color = if item.enabled {
+        config.item_text_color
+    } else {
+        config.disabled_item_text_color
+    };
+    let on_click = item.on_click.clone();
+    let state = state.clone();
+    let item_source: Rc<MutableInteractionSource> = remember(MutableInteractionSource::new);
+
+    let mut modifier = Modifier::new()
+        .fill_max_width()
+        .min_height(config.item_height.max(DDM_ITEM_MIN_HEIGHT))
+        .padding_values(PaddingValues {
+            left: DDM_ITEM_H_PAD,
+            right: DDM_ITEM_H_PAD,
+            top: Dp::ZERO,
+            bottom: Dp::ZERO,
+        })
+        .align_items(AlignItems::CENTER);
+
+    if item.enabled {
+        modifier = modifier
+            .state_colors(StateColors {
+                default: Color::TRANSPARENT,
+                hovered: Color::TRANSPARENT,
+                focused: Color::TRANSPARENT,
+                pressed: Color::TRANSPARENT,
+                dragged: th.on_surface.with_alpha_f32(0.12),
+                disabled: Color::TRANSPARENT,
+            })
+            .interaction_source(&item_source)
+            .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
+                color: Some(th.on_surface),
+                bounded: true,
+                ..Default::default()
+            }))
+            .clickable()
+            .on_click(move || {
+                on_click();
+                state.dismiss();
+            });
+    }
+
+    let mut row_children: Vec<View> = Vec::new();
+    if let Some(icon) = item.leading_icon.clone() {
+        row_children.push(icon);
+        row_children.push(Box(Modifier::new().width(DDM_ITEM_H_PAD)));
+    }
+    row_children.push(
+        Box(Modifier::new().flex_grow(1.0)).child(
+            Text(item.text.clone())
+                .color(text_color)
+                .size(th.typography.label_large)
+                .single_line(),
+        ),
+    );
+    if let Some(icon) = item.trailing_icon.clone() {
+        row_children.push(Box(Modifier::new().width(DDM_ITEM_H_PAD)));
+        row_children.push(icon);
+    }
+    Row(modifier).child(row_children)
+}
+
+fn render_dropdown_submenu(
+    th: &Theme,
+    sub: &DropdownMenuSubmenu,
+    state: Rc<MenuState>,
+    config: &DropdownMenuConfig,
+) -> View {
+    let header_color = if sub.enabled {
+        config.item_text_color
+    } else {
+        config.disabled_item_text_color
+    };
+    let header = Row(Modifier::new()
+        .fill_max_width()
+        .min_height(config.item_height.max(DDM_ITEM_MIN_HEIGHT))
+        .padding_values(PaddingValues {
+            left: DDM_ITEM_H_PAD,
+            right: DDM_ITEM_H_PAD,
+            top: Dp::ZERO,
+            bottom: Dp::ZERO,
+        })
+        .align_items(AlignItems::CENTER))
+    .child((
+        Box(Modifier::new().flex_grow(1.0)).child(
+            Text(sub.text.clone())
+                .color(header_color)
+                .size(th.typography.label_large)
+                .single_line(),
+        ),
+        Box(Modifier::new().width(DDM_ITEM_H_PAD)),
+        Text("›")
+            .color(header_color)
+            .size(th.typography.label_large),
+    ));
+
+    let nested: Vec<View> = sub
+        .children
+        .iter()
+        .map(|entry| match entry {
+            DropdownMenuEntry::Item(item) => render_dropdown_item(th, item, state.clone(), config),
+            DropdownMenuEntry::Submenu(nested) => {
+                render_dropdown_submenu(th, nested, state.clone(), config)
+            }
+            DropdownMenuEntry::Divider => Box(Modifier::new()
+                .fill_max_width()
+                .height(Dp(1.0))
+                .margin(Dp(12.0))
+                .background(config.divider_color)),
+        })
+        .collect();
+
+    Column(Modifier::new().fill_max_width()).child((
+        header,
+        Box(Modifier::new()
+            .fill_max_width()
+            .padding_values(PaddingValues {
+                left: DDM_ITEM_H_PAD,
+                right: Dp::ZERO,
+                top: Dp::ZERO,
+                bottom: Dp::ZERO,
+            }))
+        .child(Column(Modifier::new().fill_max_width()).with_children(nested)),
+    ))
+}
 fn render_dropdown_menu_content(
     th: &Theme,
     items: &[DropdownMenuEntry],
@@ -351,69 +516,9 @@ fn render_dropdown_menu_content(
     let children: Vec<View> = items
         .iter()
         .map(|entry| match entry {
-            DropdownMenuEntry::Item(item) => {
-                let text_color = if item.enabled {
-                    config.item_text_color
-                } else {
-                    config.disabled_item_text_color
-                };
-                let on_click = item.on_click.clone();
-                let state = state.clone();
-                let item_source: Rc<MutableInteractionSource> =
-                    remember(MutableInteractionSource::new);
-
-                let mut modifier = Modifier::new()
-                    .fill_max_width()
-                    .min_height(config.item_height.max(DDM_ITEM_MIN_HEIGHT))
-                    .padding_values(PaddingValues {
-                        left: DDM_ITEM_H_PAD,
-                        right: DDM_ITEM_H_PAD,
-                        top: Dp::ZERO,
-                        bottom: Dp::ZERO,
-                    })
-                    .align_items(AlignItems::CENTER);
-
-                if item.enabled {
-                    modifier = modifier
-                        .state_colors(StateColors {
-                            default: Color::TRANSPARENT,
-                            hovered: Color::TRANSPARENT,
-                            focused: Color::TRANSPARENT,
-                            pressed: Color::TRANSPARENT,
-                            dragged: th.on_surface.with_alpha_f32(0.12),
-                            disabled: Color::TRANSPARENT,
-                        })
-                        .interaction_source(&item_source)
-                        .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
-                            color: Some(th.on_surface),
-                            bounded: true,
-                            ..Default::default()
-                        }))
-                        .clickable()
-                        .on_click(move || {
-                            on_click();
-                            state.dismiss();
-                        });
-                }
-
-                let mut row_children: Vec<View> = Vec::new();
-                if let Some(icon) = item.leading_icon.clone() {
-                    row_children.push(icon);
-                    row_children.push(Box(Modifier::new().width(DDM_ITEM_H_PAD)));
-                }
-                row_children.push(
-                    Box(Modifier::new().flex_grow(1.0)).child(
-                        Text(item.text.clone())
-                            .color(text_color)
-                            .size(th.typography.label_large)
-                            .single_line(),
-                    ),
-                );
-                if let Some(icon) = item.trailing_icon.clone() {
-                    row_children.push(Box(Modifier::new().width(DDM_ITEM_H_PAD)));
-                    row_children.push(icon);
-                }
-                Row(modifier).child(row_children)
+            DropdownMenuEntry::Item(item) => render_dropdown_item(th, item, state.clone(), config),
+            DropdownMenuEntry::Submenu(sub) => {
+                render_dropdown_submenu(th, sub, state.clone(), config)
             }
             DropdownMenuEntry::Divider => Box(Modifier::new()
                 .fill_max_width()

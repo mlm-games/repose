@@ -5,10 +5,10 @@ use repose_material::material3::dialog::{DatePickerDialog, DialogState, TimePick
 use repose_material::material3::{
     BottomSheet, BottomSheetConfig, Button, ButtonConfig, ButtonGroup, ButtonGroupScope,
     DatePickerDialogConfig, DatePickerState, DropdownMenu, DropdownMenuConfig, DropdownMenuEntry,
-    DropdownMenuItem, MenuState, ModalBottomSheet, NavRailItem, NavigationRail,
-    NavigationRailConfig, SegmentConfig, SegmentedButton, SegmentedButtonConfig, SheetState,
-    SplitButtonConfig, SplitButtonLayout, SplitButtonLeadingButton, SplitButtonTonalLeadingButton,
-    SplitButtonTonalTrailingToggleButton, SplitButtonTrailingButton,
+    DropdownMenuItem, DropdownMenuSubmenu, MenuState, ModalBottomSheet, NavRailItem,
+    NavigationRail, NavigationRailConfig, SegmentConfig, SegmentedButton, SegmentedButtonConfig,
+    SheetState, SplitButtonConfig, SplitButtonLayout, SplitButtonLeadingButton,
+    SplitButtonTonalLeadingButton, SplitButtonTonalTrailingToggleButton, SplitButtonTrailingButton,
     SplitButtonTrailingToggleButton, TextButton, TimePickerDialogConfig, TimePickerState,
 };
 use repose_material::{Icon, material_symbols};
@@ -95,10 +95,19 @@ pub fn screen() -> View {
         })),
         DropdownMenuEntry::Item(DropdownMenuItem::new("Item 3 (disabled)", || {}).disabled()),
         DropdownMenuEntry::Divider,
-        DropdownMenuEntry::Item(DropdownMenuItem::new("Item 4", {
-            let l = menu_label.clone();
-            move || l.set("Item 4".to_string())
-        })),
+        DropdownMenuEntry::Submenu(DropdownMenuSubmenu::new(
+            "More",
+            vec![
+                DropdownMenuEntry::Item(DropdownMenuItem::new("Item 4", {
+                    let l = menu_label.clone();
+                    move || l.set("Item 4".to_string())
+                })),
+                DropdownMenuEntry::Item(DropdownMenuItem::new("Item 5", {
+                    let l = menu_label.clone();
+                    move || l.set("Item 5".to_string())
+                })),
+            ],
+        )),
     ];
 
     Page(vec![
