@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use rustc_hash::FxHashMap;
 
 use crate::scope::Scope;
-use crate::{CursorIcon, Rect, Scene, View, semantics::Role};
+use crate::{CursorIcon, Rect, Scene, View, input::PhysicalKey, semantics::Role};
 
 thread_local! {
     pub static COMPOSER: RefCell<Composer> = RefCell::new(Composer::default());
@@ -671,14 +671,13 @@ pub struct Scheduler {
     scope_local_counters: FxHashMap<String, u32>,
     pub focused: Option<u64>,
     pub size: (u32, u32),
-    /// Polled physical-key names currently down (`KeyW`, `Digit1`,
-    /// `Space`, ... — winit `KeyCode` debug names, layout-independent
-    /// positions, not glyphs). The platform runner maintains this from
-    /// raw `KeyboardInput` events without passing through focus
-    /// dispatch; games reconcile their event-staged held sets against
-    /// it every frame (GML `keyboard_check` parity). Cleared on window
-    /// focus loss (no key-ups arrive across an alt-tab).
-    pub held_keys: HashSet<String>,
+    /// Polled physical keys currently down, layout-independent
+    /// positions (see [`PhysicalKey`]). The platform runner maintains
+    /// this from raw `KeyboardInput` events without passing through
+    /// focus dispatch; games reconcile their event-staged held sets
+    /// against it every frame (GML `keyboard_check` parity). Cleared
+    /// on window focus loss (no key-ups arrive across an alt-tab).
+    pub held_keys: HashSet<PhysicalKey>,
     /// Window focus as of the last platform event. `false` drops every
     /// held key on the game side.
     pub window_focused: bool,
@@ -787,10 +786,9 @@ impl Scheduler {
         self.next_id - 1
     }
 
-    /// True while the named physical key is in the polled snapshot
-    /// (`KeyW`, `Digit1`, `Space`, ... — winit `KeyCode` debug names).
-    pub fn is_held(&self, name: &str) -> bool {
-        self.held_keys.contains(name)
+    /// True while the named physical key is in the polled snapshot.
+    pub fn is_held(&self, key: PhysicalKey) -> bool {
+        self.held_keys.contains(&key)
     }
 
     /// Snapshot the current ID counter (before executing a scope body) so the

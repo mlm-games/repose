@@ -216,12 +216,12 @@ pub fn on_keyboard_input(
     // so the platform publishes hardware levels where composition can
     // see them. Focus dispatch below is unchanged.
     {
-        let name = physical_key_name(key_event.physical_key);
+        let key = map_physical_key(key_event.physical_key);
         let sched = &mut rt.sched;
         if key_event.state == ElementState::Pressed {
-            sched.held_keys.insert(name);
+            sched.held_keys.insert(key);
         } else {
-            sched.held_keys.remove(&name);
+            sched.held_keys.remove(&key);
         }
     }
     if key_event.state == ElementState::Pressed
@@ -248,6 +248,14 @@ pub fn physical_key_name(key: PhysicalKey) -> String {
         PhysicalKey::Code(code) => format!("{code:?}"),
         PhysicalKey::Unidentified(native) => format!("Unidentified({native:?})"),
     }
+}
+
+/// Typed physical position for a winit key (`None` wraps to
+/// [`repose_core::input::PhysicalKey::Unidentified`], never `None`:
+/// every physical press has a position). Backs both the `KeyEvent`
+/// field and the `Scheduler::held_keys` snapshot.
+pub fn map_physical_key(key: PhysicalKey) -> repose_core::input::PhysicalKey {
+    repose_core::input::PhysicalKey::from_name(&physical_key_name(key))
 }
 
 /// Ime dispatch helper.

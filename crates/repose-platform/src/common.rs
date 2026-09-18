@@ -184,7 +184,7 @@ pub(crate) fn winit_key_to_repose(
             repose_core::input::KeyEventType::Up
         },
         utf16_code_point: utf16,
-        physical: Some(crate::runner_common::physical_key_name(ev.physical_key)),
+        physical: Some(crate::runner_common::map_physical_key(ev.physical_key)),
     }
 }
 
