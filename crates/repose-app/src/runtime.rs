@@ -1249,29 +1249,19 @@ impl ReposeRuntime {
         };
         let f = &frame;
 
-        // Escape / BrowserBack: cancel DnD first, then try focus key dispatch.
-        // If nothing consumed it, route to the root `on_key_event` as a
-        // last resort.
-        if event.event_type == KeyEventType::Down && !event.is_repeat && event.key == Key::Escape {
-            if dnd::handle_drag_action(&DragAction::Cancel) {
-                request_frame();
-                return true;
-            }
-            // Try dispatch through focus chain
-            if self.dispatch_focus_key_event(f, event) {
-                request_frame();
-                return true;
-            }
-            if self.dispatch_root_key_event(f, event) {
-                request_frame();
-                return true;
-            }
-            return false;
+        // Escape / BrowserBack: cancel DnD first so a grabbed pointer does
+        // not swallow back / exit handling, then fall through to the normal
+        // key pipeline so ancestors up to the root see the event.
+        if event.event_type == KeyEventType::Down
+            && !event.is_repeat
+            && event.key == Key::Escape
+            && dnd::handle_drag_action(&DragAction::Cancel)
+        {
+            request_frame();
+            return true;
         }
 
-        // Dispatch through focus ancestor chain
-        let consumed = self.dispatch_focus_key_event(f, event);
-        if consumed {
+        if self.dispatch_key_event(f, event) {
             request_frame();
             return true;
         }
@@ -1570,61 +1560,36 @@ impl ReposeRuntime {
         false
     }
 
-    /// Dispatch a key event through the focus ancestor chain.
-    /// HACK (for pause menu in games): Root fallback for global keys (Escape today): invoke the root
-    /// region's `on_key_event` when focus dispatch found no taker.
-    fn dispatch_root_key_event(&self, f: &Frame, event: &KeyEvent) -> bool {
-        let ids: std::collections::HashSet<u64> = f.hit_regions.iter().map(|h| h.id).collect();
-        let root = f
-            .hit_regions
-            .iter()
-            .filter(|h| !h.disabled)
-            .find(|h| h.parent.is_none_or(|p| !ids.contains(&p)))
-            .or_else(|| f.hit_regions.iter().find(|h| !h.disabled));
-        let Some(root) = root else {
-            return false;
-        };
-        if let Some(cb) = &root.on_key_event {
-            return cb(event.clone());
-        }
-        false
-    }
-
-    fn dispatch_focus_key_event(&self, f: &Frame, event: &KeyEvent) -> bool {
-        let Some(focused) = self.sched.focused else {
-            return false;
-        };
-
+    /// Dispatch a key event through the compose hierarchy, mirroring
+    /// Compose `FocusOwner.dispatchKeyEvent`: resolve the focused key-input
+    /// node (falling back to the root when unfocused), then run the preview
+    /// tunnel root -> focused and the bubble focused -> root.
+    fn dispatch_key_event(&self, f: &Frame, event: &KeyEvent) -> bool {
+        let chain = key_ancestor_chain(f, self.sched.focused);
         let hit_by_id: HashMap<u64, &HitRegion> = f.hit_regions.iter().map(|h| (h.id, h)).collect();
-        let sem_parent_of: HashMap<u64, u64> = f
-            .semantics_nodes
-            .iter()
-            .filter_map(|n| n.parent.map(|p| (n.id, p)))
-            .collect();
 
-        let mut ancestors = Vec::new();
-        let mut cur = focused;
-        loop {
-            ancestors.push(cur);
-            if let Some(&p) = sem_parent_of.get(&cur) {
-                cur = p;
-            } else {
-                break;
+        for &id in &chain {
+            let Some(hit) = hit_by_id.get(&id) else {
+                continue;
+            };
+            if hit.disabled {
+                continue;
             }
-        }
-
-        for &id in ancestors.iter().rev() {
-            if let Some(hit) = hit_by_id.get(&id)
-                && let Some(cb) = &hit.on_preview_key_event
+            if let Some(cb) = &hit.on_preview_key_event
                 && cb(event.clone())
             {
                 return true;
             }
         }
 
-        for &id in ancestors.iter() {
-            if let Some(hit) = hit_by_id.get(&id)
-                && let Some(cb) = &hit.on_key_event
+        for &id in chain.iter().rev() {
+            let Some(hit) = hit_by_id.get(&id) else {
+                continue;
+            };
+            if hit.disabled {
+                continue;
+            }
+            if let Some(cb) = &hit.on_key_event
                 && cb(event.clone())
             {
                 return true;
@@ -2329,6 +2294,37 @@ where
     }
 
     frame
+}
+
+/// Compose `FocusOwner.dispatchKeyEvent` chain: focused node up through its
+/// hit-region ancestors, root first.
+/// Falls back to the root alone when unfocused, unknown, or orphaned.
+fn key_ancestor_chain(f: &Frame, focused: Option<u64>) -> Vec<u64> {
+    let parent_of: HashMap<u64, Option<u64>> =
+        f.hit_regions.iter().map(|h| (h.id, h.parent)).collect();
+    let mut leaf = focused.filter(|id| parent_of.contains_key(id));
+    if leaf.is_none() {
+        let ids: HashSet<u64> = parent_of.keys().copied().collect();
+        leaf = f
+            .hit_regions
+            .iter()
+            .find(|h| h.parent.is_none_or(|p| !ids.contains(&p)))
+            .map(|h| h.id)
+            .or_else(|| f.hit_regions.first().map(|h| h.id));
+    }
+    let Some(mut cur) = leaf else {
+        return Vec::new();
+    };
+    let mut chain = vec![cur];
+    while let Some(parent) = parent_of.get(&cur).copied().flatten() {
+        if chain.contains(&parent) {
+            break;
+        }
+        chain.push(parent);
+        cur = parent;
+    }
+    chain.reverse();
+    chain
 }
 
 fn hover_chain_for(frame: Option<&Frame>, hover: Option<u64>) -> std::collections::HashSet<u64> {
