@@ -125,6 +125,8 @@ pub enum Key {
     PageUp,
     PageDown,
     Space,
+    ShiftLeft,
+    ShiftRight,
     F(u8), // F1-F12
     Unknown,
 }

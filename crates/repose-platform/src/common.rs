@@ -171,6 +171,7 @@ pub(crate) fn winit_key_to_repose(
 ) -> repose_core::input::KeyEvent {
     let utf16 = match mapped_key {
         repose_core::input::Key::Character(c) => *c as u16,
+        repose_core::input::Key::ShiftLeft | repose_core::input::Key::ShiftRight => 0,
         _ => 0,
     };
     repose_core::input::KeyEvent {
@@ -289,6 +290,8 @@ pub(crate) fn map_key(
         PhysicalKey::Code(KeyCode::PageUp) => Key::PageUp,
         PhysicalKey::Code(KeyCode::PageDown) => Key::PageDown,
         PhysicalKey::Code(KeyCode::Space) => Key::Space,
+        PhysicalKey::Code(KeyCode::ShiftLeft) => Key::ShiftLeft,
+        PhysicalKey::Code(KeyCode::ShiftRight) => Key::ShiftRight,
         PhysicalKey::Code(KeyCode::KeyA) => Key::Character('a'),
         PhysicalKey::Code(KeyCode::KeyB) => Key::Character('b'),
         PhysicalKey::Code(KeyCode::KeyC) => Key::Character('c'),
