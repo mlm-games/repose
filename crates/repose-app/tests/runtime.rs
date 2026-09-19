@@ -8,7 +8,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use repose_app::ReposeRuntime;
-use repose_core::input::{Key, KeyEvent, KeyEventType, Modifiers, PointerButton};
+use repose_core::input::{Key, KeyEvent, KeyEventType, Modifiers, PhysicalKey, PointerButton};
 use repose_core::runtime::{Frame, SemNode};
 use repose_core::semantics::Role;
 use repose_core::shortcuts::Action;
@@ -426,7 +426,7 @@ fn keyboard_hold_long_press_fires_and_suppresses_click() {
         is_repeat: false,
         event_type: KeyEventType::Down,
         utf16_code_point: 0,
-        physical: Some("Space".to_string()),
+        physical: Some(PhysicalKey::Space),
     };
     let up = KeyEvent {
         key: Key::Space,
@@ -434,7 +434,7 @@ fn keyboard_hold_long_press_fires_and_suppresses_click() {
         is_repeat: false,
         event_type: KeyEventType::Up,
         utf16_code_point: 0,
-        physical: Some("Space".to_string()),
+        physical: Some(PhysicalKey::Space),
     };
 
     assert!(rt.handle_key(&down));
