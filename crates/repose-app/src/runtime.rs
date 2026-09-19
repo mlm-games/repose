@@ -872,15 +872,7 @@ impl ReposeRuntime {
             request_frame();
         } else {
             self.hit_path = None;
-            if self.ime_preedit {
-                for state_rc in self.textfield_states.values() {
-                    let mut st = state_rc.borrow_mut();
-                    if st.composition.is_some() {
-                        st.commit_composition(String::new());
-                    }
-                }
-                self.ime_preedit = false;
-            }
+            self.finish_compositions();
             self.sched.focused = None;
             request_frame();
         }
@@ -916,18 +908,20 @@ impl ReposeRuntime {
             return result;
         }
 
-        self.pressed_ids.clear();
-
-        let Some(f) = &self.frame_cache else {
-            self.capture_id = None;
-            self.hit_path = None;
-            return result;
+        let f = match &self.frame_cache {
+            Some(f) => f.clone(),
+            None => {
+                self.capture_id = None;
+                self.hit_path = None;
+                return result;
+            }
         };
 
         if let Some(path) = &self.hit_path {
             self.dispatch_pointer_to_path(PointerEventKind::Up(button), pos, path);
             result.consumed = true;
         }
+        self.pressed_ids.clear();
 
         // Long-press resolution: `poll_long_press` normally fires on timeout when held.
         if let Some((lid, t0, _, _)) = self.long_press.take()
@@ -1004,9 +998,9 @@ impl ReposeRuntime {
 
         // TextField drag end
         if let Some(cid) = self.capture_id
-            && is_tf_hit(f, cid)
+            && is_tf_hit(&f, cid)
         {
-            let key = tf_key_of(f, cid);
+            let key = tf_key_of(&f, cid);
             if let Some(state_rc) = self.textfield_states.get(&key) {
                 state_rc.borrow_mut().end_drag();
             }
@@ -1777,6 +1771,13 @@ impl ReposeRuntime {
 
     /// Process an IME event.
     pub fn handle_ime(&mut self, event: &ImeEvent) {
+        // Ime::Disabled arrives after set_ime_allowed(false). by then the confirmed
+        // composition text is already in the buffer, so keep it.
+        if matches!(event, ImeEvent::Cancel) {
+            self.finish_compositions();
+            request_frame();
+            return;
+        }
         let Some(fid) = self.sched.focused else {
             return;
         };
@@ -1787,7 +1788,7 @@ impl ReposeRuntime {
             return;
         }
         let key = tf_key_of(f, fid);
-        let Some(state_rc) = self.textfield_states.get(&key) else {
+        let Some(state_rc) = self.textfield_states.get(&key).cloned() else {
             return;
         };
 
@@ -1809,17 +1810,26 @@ impl ReposeRuntime {
                 repose_ui::textfield::ensure_caret_visible(&mut state, true);
                 notify_text_change(f, fid, state.text.clone());
             }
-            ImeEvent::Cancel => {
-                self.ime_preedit = false;
-                if state.composition.is_some() {
-                    state.cancel_composition();
-                    repose_ui::textfield::ensure_caret_visible(&mut state, true);
-                    notify_text_change(f, fid, state.text.clone());
-                }
-            }
+            ImeEvent::Cancel => unreachable!(),
         }
 
         request_frame();
+    }
+
+    /// Finish the active composition in every field without deleting text.
+    /// Used for focus changes and IME disconnects where the confirmed text
+    /// must be kept; distinct from cancelling, which discards the preedit.
+    pub fn finish_compositions(&mut self) {
+        if !self.ime_preedit {
+            return;
+        }
+        for state_rc in self.textfield_states.values() {
+            let mut st = state_rc.borrow_mut();
+            if st.composition.is_some() {
+                st.finish_composition();
+            }
+        }
+        self.ime_preedit = false;
     }
 
     /// Handle focus lost (window unfocused, etc.). Physical-key and
@@ -1831,7 +1841,7 @@ impl ReposeRuntime {
         self.handle_pointer_cancel();
         self.held_keys.clear();
         self.held_mouse.clear();
-        self.ime_preedit = false;
+        self.finish_compositions();
     }
 
     /// Report one physical key transition (`true` = down). Platform
@@ -1892,6 +1902,14 @@ impl ReposeRuntime {
         self.frame_cache
             .as_ref()
             .map(|f| is_textfield_in_frame(f, id))
+            .unwrap_or(false)
+    }
+
+    /// True if the given id is an enabled, editable text field.
+    pub fn is_editable_textfield(&self, id: u64) -> bool {
+        self.frame_cache
+            .as_ref()
+            .map(|f| is_tf_editable(f, id))
             .unwrap_or(false)
     }
 
@@ -2613,6 +2631,93 @@ fn dispatch_scroll(
         (true, first_consumer)
     } else {
         (false, None)
+    }
+}
+
+#[cfg(test)]
+mod ime_tests {
+    use super::*;
+    use repose_core::input::ImeEvent;
+
+    const TF_ID: u64 = 100;
+
+    fn editable_frame(id: u64) -> Frame {
+        let rect = repose_core::Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 200.0,
+            h: 30.0,
+        };
+        Frame {
+            scene: Default::default(),
+            hit_regions: vec![HitRegion {
+                id,
+                rect,
+                focusable: true,
+                tf_state_key: Some(id),
+                tf_multiline: false,
+                tf_enabled: true,
+                tf_read_only: false,
+                ..Default::default()
+            }],
+            semantics_nodes: vec![repose_core::runtime::SemNode {
+                id,
+                role: repose_core::semantics::Role::TextField,
+                label: Some("Field".into()),
+                rect,
+                focused: true,
+                ..Default::default()
+            }],
+            focus_chain: vec![id],
+        }
+    }
+
+    fn focused_rt() -> ReposeRuntime {
+        let mut rt = ReposeRuntime::new();
+        rt.sched.focused = Some(TF_ID);
+        rt.cache_frame(editable_frame(TF_ID));
+        let _ = rt.ensure_textfield_state(TF_ID);
+        rt
+    }
+
+    #[test]
+    fn preedit_cursor_uses_byte_offsets_for_non_ascii() {
+        let mut rt = focused_rt();
+        rt.handle_ime(&ImeEvent::Update {
+            text: "あb".to_string(),
+            cursor: Some((3, 3)),
+        });
+        let st = rt.textfield_states[&TF_ID].borrow();
+        assert_eq!(st.text, "あb");
+        assert_eq!(st.selection, 3..3);
+    }
+
+    #[test]
+    fn disable_keeps_composed_text() {
+        let mut rt = focused_rt();
+        rt.handle_ime(&ImeEvent::Update {
+            text: "あ".to_string(),
+            cursor: None,
+        });
+        assert!(rt.ime_preedit);
+        rt.handle_ime(&ImeEvent::Cancel);
+        let st = rt.textfield_states[&TF_ID].borrow();
+        assert_eq!(st.text, "あ");
+        assert!(st.composition.is_none());
+        assert!(!rt.ime_preedit);
+    }
+
+    #[test]
+    fn defocus_finish_keeps_text() {
+        let mut rt = focused_rt();
+        rt.handle_ime(&ImeEvent::Update {
+            text: "x".to_string(),
+            cursor: None,
+        });
+        rt.sched.focused = None;
+        rt.handle_focus_lost();
+        assert_eq!(rt.textfield_states[&TF_ID].borrow().text, "x");
+        assert!(!rt.ime_preedit);
     }
 }
 

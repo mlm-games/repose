@@ -168,7 +168,11 @@ pub fn run_android_app_with_options(
                 return;
             };
 
-            let focused_tf = self.rt.sched.focused.filter(|id| self.rt.is_textfield(*id));
+            let focused_tf = self
+                .rt
+                .sched
+                .focused
+                .filter(|id| self.rt.is_editable_textfield(*id));
             if focused_tf == self.ime_shown_for && self.ime_visible && !force {
                 return;
             }
@@ -180,7 +184,7 @@ pub fn run_android_app_with_options(
             self.ime_visible = focused_tf.is_some();
             self.ime_shown_for = focused_tf;
             if focused_tf.is_none() {
-                self.rt.ime_preedit = false;
+                self.rt.finish_compositions();
             }
         }
 
@@ -280,6 +284,9 @@ pub fn run_android_app_with_options(
             self.notify_lifecycle(AppLifecycle::Background);
             self.backend = None;
             self.window = None;
+            self.rt.handle_focus_lost();
+            self.ime_visible = false;
+            self.ime_shown_for = None;
             // Do NOT request a redraw here: the surface is gone.
         }
 
@@ -436,14 +443,6 @@ pub fn run_android_app_with_options(
                             return;
                         }
                     }
-                    log::info!(
-                        "KeyboardInput: physical_key={:?}, logical_key={:?}, text={:?}, state={:?}, repeat={}",
-                        key_event.physical_key,
-                        key_event.logical_key,
-                        key_event.text,
-                        key_event.state,
-                        key_event.repeat
-                    );
                     let mut no_inspector: Option<repose_devtools::Inspector> = None;
                     if crate::runner_common::on_keyboard_input(
                         &mut self.rt,

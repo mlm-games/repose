@@ -817,8 +817,8 @@ impl TextFieldState {
         self.composition = Some(anchor_start..(anchor_start + text.len()));
 
         if let Some((c0, c1)) = cursor {
-            let b0 = char_to_byte(&text, c0);
-            let b1 = char_to_byte(&text, c1);
+            let b0 = clamp_cursor_in_str(&text, c0);
+            let b1 = clamp_cursor_in_str(&text, c1);
             self.selection = (anchor_start + b0)..(anchor_start + b1);
         } else {
             let end = anchor_start + text.len();
@@ -872,6 +872,12 @@ impl TextFieldState {
         }
     }
 
+    pub fn finish_composition(&mut self) {
+        self.composition = None;
+        self.preferred_x_px = None;
+        self.reset_caret_blink();
+    }
+
     pub fn cancel_composition(&mut self) {
         if let Some(r) = self.composition.take() {
             let s = clamp_to_char_boundary(&self.text, r.start.min(self.text.len()));
@@ -884,6 +890,14 @@ impl TextFieldState {
         self.preferred_x_px = None;
         self.reset_caret_blink();
     }
+}
+
+fn clamp_cursor_in_str(s: &str, i: usize) -> usize {
+    let mut j = i.min(s.len());
+    while j > 0 && !s.is_char_boundary(j) {
+        j -= 1;
+    }
+    j
 }
 
 fn is_grapheme_boundary(text: &str, byte: usize) -> bool {

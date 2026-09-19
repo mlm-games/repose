@@ -67,6 +67,10 @@ pub fn sync_ime_for_focused(
         set_ime_for_textfield(window, false);
         return;
     };
+    if !hit.tf_enabled || hit.tf_read_only || hit.tf_state_key.is_none() {
+        set_ime_for_textfield(window, false);
+        return;
+    };
     set_ime_for_textfield_ex(
         window,
         true,
