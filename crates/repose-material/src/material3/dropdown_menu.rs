@@ -143,11 +143,7 @@ const DDM_ITEM_MIN_HEIGHT: Dp = Dp(48.0);
 const DDM_MIN_OPEN_HEIGHT: Dp = Dp(48.0);
 
 /// Either a menu item, a divider, or a nested submenu.
-///
-/// A submenu renders its label as a row with an expansion affordance; its
-/// children are rendered inline as an indented group directly beneath it.
-/// This keeps one overlay entry with a single scrim (nested popups would
-/// need a second positioning pass and a second scrim-dismiss layer).
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone)]
 pub enum DropdownMenuEntry {
     Item(DropdownMenuItem),
@@ -155,7 +151,8 @@ pub enum DropdownMenuEntry {
     Submenu(DropdownMenuSubmenu),
 }
 
-/// A labelled group of entries rendered inline beneath its header row.
+/// A labelled group of entries rendered in a cascading popup anchored to
+/// its header row.
 #[derive(Clone)]
 pub struct DropdownMenuSubmenu {
     pub text: String,
@@ -307,6 +304,7 @@ pub fn DropdownMenu(
                         &adjusted_config,
                         scroll_state.clone(),
                         available_height,
+                        *ddm_id,
                     );
 
                     let transform_origin_y = if place_below { 0.0 } else { 1.0 };
@@ -359,14 +357,9 @@ fn estimate_dropdown_height(items: &[DropdownMenuEntry], config: &DropdownMenuCo
     let mut h = 2.0 * DDM_VERTICAL_PADDING.0;
     for entry in items {
         match entry {
-            DropdownMenuEntry::Item(_) => {
+            DropdownMenuEntry::Item(_) | DropdownMenuEntry::Submenu(_) => {
                 h += config.item_height.max(DDM_ITEM_MIN_HEIGHT).0;
             }
-            DropdownMenuEntry::Submenu(sub) => {
-                h += config.item_height.max(DDM_ITEM_MIN_HEIGHT).0;
-                h += estimate_dropdown_height(&sub.children, config) - 2.0 * DDM_VERTICAL_PADDING.0;
-            }
-            // Divider: 1px line + 12px horizontal margins (also vertical here).
             DropdownMenuEntry::Divider => h += 1.0 + 2.0 * 12.0,
         }
     }
@@ -442,18 +435,31 @@ fn render_dropdown_item(
     Row(modifier).child(row_children)
 }
 
+#[derive(Clone)]
+struct DropdownSubmenuHost {
+    parent_state: Rc<MenuState>,
+    open_child: Rc<RefCell<Option<String>>>,
+    anchor_rects: Rc<RefCell<std::collections::HashMap<String, Rect>>>,
+    popup_size: Rc<RefCell<repose_core::Vec2>>,
+}
+
 fn render_dropdown_submenu(
     th: &Theme,
     sub: &DropdownMenuSubmenu,
-    state: Rc<MenuState>,
+    parent: &DropdownSubmenuHost,
     config: &DropdownMenuConfig,
+    ddm_id: u64,
 ) -> View {
     let header_color = if sub.enabled {
         config.item_text_color
     } else {
         config.disabled_item_text_color
     };
-    let header = Row(Modifier::new()
+    let open = parent.open_child.borrow().as_ref() == Some(&sub.text);
+    let parent = parent.clone();
+    let text = sub.text.clone();
+    let enabled = sub.enabled;
+    let mut header_modifier = Modifier::new()
         .fill_max_width()
         .min_height(config.item_height.max(DDM_ITEM_MIN_HEIGHT))
         .padding_values(PaddingValues {
@@ -462,8 +468,34 @@ fn render_dropdown_submenu(
             top: Dp::ZERO,
             bottom: Dp::ZERO,
         })
-        .align_items(AlignItems::CENTER))
-    .child((
+        .align_items(AlignItems::CENTER);
+    if enabled {
+        let parent_toggle = parent.clone();
+        let text_toggle = text.clone();
+        let parent_hover = parent.clone();
+        let text_hover = text.clone();
+        header_modifier = header_modifier
+            .clickable()
+            .on_click(move || {
+                let mut slot = parent_toggle.open_child.borrow_mut();
+                if slot.as_ref() == Some(&text_toggle) {
+                    *slot = None;
+                } else {
+                    *slot = Some(text_toggle.clone());
+                }
+                request_frame();
+            })
+            .hoverable(
+                move || {
+                    *parent_hover.open_child.borrow_mut() = Some(text_hover.clone());
+                    request_frame();
+                },
+                move || {
+                    request_frame();
+                },
+            );
+    }
+    let header = Row(header_modifier).child((
         Box(Modifier::new().flex_grow(1.0)).child(
             Text(sub.text.clone())
                 .color(header_color)
@@ -476,34 +508,123 @@ fn render_dropdown_submenu(
             .size(th.typography.label_large),
     ));
 
-    let nested: Vec<View> = sub
-        .children
-        .iter()
-        .map(|entry| match entry {
-            DropdownMenuEntry::Item(item) => render_dropdown_item(th, item, state.clone(), config),
-            DropdownMenuEntry::Submenu(nested) => {
-                render_dropdown_submenu(th, nested, state.clone(), config)
+    let anchor_rect = parent.anchor_rects.borrow().get(&sub.text).cloned();
+    let guard_key = format!("ddm_sub_{ddm_id}_{}", sub.text);
+    let guard = remember_with_key(guard_key, || RefCell::new(None::<OverlayGuard>));
+    if !open {
+        guard.borrow_mut().take();
+        parent.anchor_rects.borrow_mut().remove(&sub.text);
+        return header;
+    }
+    let Some(anchor) = anchor_rect else {
+        return Box(Modifier::new().on_globally_positioned({
+            let parent = parent.clone();
+            let text = sub.text.clone();
+            move |rect| {
+                parent.anchor_rects.borrow_mut().insert(text.clone(), rect);
+                request_frame();
             }
-            DropdownMenuEntry::Divider => Box(Modifier::new()
-                .fill_max_width()
-                .height(Dp(1.0))
-                .margin(Dp(12.0))
-                .background(config.divider_color)),
-        })
-        .collect();
+        }))
+        .child(header);
+    };
 
-    Column(Modifier::new().fill_max_width()).child((
-        header,
-        Box(Modifier::new()
-            .fill_max_width()
-            .padding_values(PaddingValues {
-                left: DDM_ITEM_H_PAD,
-                right: Dp::ZERO,
-                top: Dp::ZERO,
-                bottom: Dp::ZERO,
-            }))
-        .child(Column(Modifier::new().fill_max_width()).with_children(nested)),
-    ))
+    let overlay = ambient_overlay();
+    if guard.borrow().is_none()
+        && let Some(overlay) = overlay
+    {
+        let parent_state = parent.parent_state.clone();
+        let parent = parent.clone();
+        let text = sub.text.clone();
+        let children = sub.children.clone();
+        let config = config.clone();
+        let th = *th;
+        guard.borrow_mut().replace(overlay.show_guard(
+            Rc::new(move || {
+                let win_w = get_window_container_width();
+                let win_h = get_window_container_height();
+                let hm = config.vertical_margin.0;
+                let measured = *parent.popup_size.borrow();
+                let menu_w = if measured.x > 0.0 {
+                    measured.x
+                } else {
+                    config.max_width.0.max(config.min_width.0).max(1.0)
+                };
+                let est_h = if measured.y > 0.0 {
+                    measured.y
+                } else {
+                    estimate_dropdown_height(&children, &config).max(48.0)
+                };
+                let mut x = anchor.x + anchor.w + config.offset_x.0;
+                if x + menu_w > win_w - hm {
+                    x = (anchor.x - menu_w - config.offset_x.0).max(hm);
+                }
+                let mut y = (anchor.y - DDM_VERTICAL_PADDING.0).max(hm);
+                if y + est_h > win_h - hm {
+                    y = (win_h - hm - est_h).max(hm);
+                }
+                let items: Vec<View> = children
+                    .iter()
+                    .map(|entry| match entry {
+                        DropdownMenuEntry::Item(item) => {
+                            render_dropdown_item(&th, item, parent_state.clone(), &config)
+                        }
+                        DropdownMenuEntry::Submenu(nested) => {
+                            render_dropdown_submenu(&th, nested, &parent, &config, ddm_id)
+                        }
+                        DropdownMenuEntry::Divider => render_dropdown_divider(&config),
+                    })
+                    .collect();
+                let popup_size = parent.popup_size.clone();
+                let card = render_dropdown_card(
+                    &th,
+                    &config,
+                    Box(Modifier::new().on_size_changed(move |s| {
+                        if *popup_size.borrow() != s {
+                            *popup_size.borrow_mut() = s;
+                            request_frame();
+                        }
+                    }))
+                    .child(Column(Modifier::new().fill_max_width()).with_children(items)),
+                );
+                let scrim = Box(Modifier::new().fill_max_size().on_pointer_down({
+                    let parent = parent.clone();
+                    let text = text.clone();
+                    move |_| {
+                        if parent.open_child.borrow().as_ref() == Some(&text) {
+                            *parent.open_child.borrow_mut() = None;
+                            request_frame();
+                        }
+                    }
+                }));
+                let popup =
+                    Box(Modifier::new()
+                        .absolute()
+                        .offset(Some(Dp(x)), Some(Dp(y)), None, None))
+                    .child(card);
+                ZStack(Modifier::new().fill_max_size().absolute()).child((scrim, popup))
+            }),
+            902.0,
+            false,
+        ));
+    }
+    Box(Modifier::new().on_globally_positioned({
+        let parent = parent.clone();
+        let text = sub.text.clone();
+        move |rect| {
+            if parent.anchor_rects.borrow().get(&text) != Some(&rect) {
+                parent.anchor_rects.borrow_mut().insert(text.clone(), rect);
+            }
+        }
+    }))
+    .child(header)
+}
+
+fn render_dropdown_divider(config: &DropdownMenuConfig) -> View {
+    Box(Modifier::new()
+        .fill_max_width()
+        .height(Dp(1.0))
+        .margin(Dp(12.0))
+        .background(config.divider_color))
 }
 fn render_dropdown_menu_content(
     th: &Theme,
@@ -512,19 +633,29 @@ fn render_dropdown_menu_content(
     config: &DropdownMenuConfig,
     scroll_state: Rc<ScrollState>,
     max_height: f32,
+    ddm_id: u64,
 ) -> View {
+    let host = DropdownSubmenuHost {
+        parent_state: state,
+        open_child: remember_state_with_key(format!("ddm_subopen_{ddm_id}"), || None::<String>),
+        anchor_rects: remember_state_with_key(
+            format!("ddm_subanchor_{ddm_id}"),
+            std::collections::HashMap::<String, Rect>::new,
+        ),
+        popup_size: remember_state_with_key(format!("ddm_subpopup_{ddm_id}"), || {
+            repose_core::Vec2 { x: 0.0, y: 0.0 }
+        }),
+    };
     let children: Vec<View> = items
         .iter()
         .map(|entry| match entry {
-            DropdownMenuEntry::Item(item) => render_dropdown_item(th, item, state.clone(), config),
-            DropdownMenuEntry::Submenu(sub) => {
-                render_dropdown_submenu(th, sub, state.clone(), config)
+            DropdownMenuEntry::Item(item) => {
+                render_dropdown_item(th, item, host.parent_state.clone(), config)
             }
-            DropdownMenuEntry::Divider => Box(Modifier::new()
-                .fill_max_width()
-                .height(Dp(1.0))
-                .margin(Dp(12.0))
-                .background(config.divider_color)),
+            DropdownMenuEntry::Submenu(sub) => {
+                render_dropdown_submenu(th, sub, &host, config, ddm_id)
+            }
+            DropdownMenuEntry::Divider => render_dropdown_divider(config),
         })
         .collect();
 
@@ -540,6 +671,15 @@ fn render_dropdown_menu_content(
         .vertical_scroll(axis_binding))
     .child(Column(Modifier::new().fill_max_width()).with_children(children));
 
+    Box(render_dropdown_card_modifier(th, config)).child(items_column)
+}
+
+/// Shared card chrome for the root menu and cascading submenu popups.
+fn render_dropdown_card(th: &Theme, config: &DropdownMenuConfig, content: View) -> View {
+    Box(render_dropdown_card_modifier(th, config)).child(content)
+}
+
+fn render_dropdown_card_modifier(th: &Theme, config: &DropdownMenuConfig) -> Modifier {
     let shadow_elevation = config.shadow_elevation.unwrap_or(th.elevation.level2);
 
     let mut card_modifier = Modifier::new()
@@ -565,5 +705,5 @@ fn render_dropdown_menu_content(
         card_modifier = card_modifier.border(border_width, border_color, border_radius);
     }
 
-    Box(card_modifier).child(items_column)
+    card_modifier
 }
