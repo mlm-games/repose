@@ -714,8 +714,17 @@ pub fn TooltipBox(
                     let anchor = *anchor_rect.borrow();
                     let win_w = get_window_container_width();
                     let win_h = get_window_container_height();
-                    let popup_w = config.max_width.0.min(win_w).max(1.0);
-                    let popup_h = TooltipDefaults::MIN_HEIGHT.0;
+                    let measured = *popup_size.borrow();
+                    let popup_w = if measured.x > 0.0 {
+                        measured.x
+                    } else {
+                        config.max_width.0.min(win_w).max(1.0)
+                    };
+                    let popup_h = if measured.y > 0.0 {
+                        measured.y
+                    } else {
+                        TooltipDefaults::MIN_HEIGHT.0
+                    };
                     let (x, y) = tooltip_position(
                         config.position,
                         anchor,
@@ -726,10 +735,9 @@ pub fn TooltipBox(
                         win_h,
                     );
                     let scale = 0.8 + 0.2 * frame_alpha.min(1.0);
-                    let measured = *popup_size.borrow();
                     let real = Vec2 {
-                        x: if measured.x > 0.0 { measured.x } else { popup_w },
-                        y: if measured.y > 0.0 { measured.y } else { popup_h },
+                        x: popup_w,
+                        y: popup_h,
                     };
                     let side = caret_side(config.position, y, x, anchor);
                     let container = match config.kind {
