@@ -17,20 +17,42 @@ impl Dispose {
     }
 }
 
-/// Runs `f()` immediately and returns its `Dispose`.
+/// Runs `f()` immediately and returns its `Dispose`, registering cleanup on
+/// the current scope when one exists. Like `scoped_effect`, this runs on every
+/// call - for mount-once semantics use `scoped_effect_once` or
+/// `disposable_effect`.
 pub fn effect<F>(f: F) -> Dispose
 where
     F: FnOnce() -> Dispose + 'static,
 {
-    // run now
     let d = f();
 
-    // auto-register cleanup in the current scope if one exists
     if let Some(scope) = crate::scope::current_scope() {
         let d2 = d.clone();
         scope.add_disposer(move || d2.run());
+    } else {
+        debug_assert!(
+            false,
+            "effect called without a current Scope; cleanup cannot be tracked"
+        );
+        log::error!("effect called without a current Scope; cleanup untracked");
     }
 
+    d
+}
+
+/// Mount-once effect: runs `f` only the first time this call site composes.
+/// Later recompositions return the original `Dispose` without re-running setup.
+#[track_caller]
+pub fn effect_once(f: impl FnOnce() -> Dispose + 'static) -> Dispose {
+    let loc = std::panic::Location::caller();
+    let key = format!("effect:{}:{}:{}", loc.file(), loc.line(), loc.column());
+    let slot = crate::remember_with_key(key, || RefCell::new(None::<Dispose>));
+    if let Some(d) = slot.borrow().as_ref() {
+        return d.clone();
+    }
+    let d = effect(f);
+    *slot.borrow_mut() = Some(d.clone());
     d
 }
 /// Helper to register cleanup inside effect.

@@ -139,12 +139,10 @@ pub fn current_scope() -> Option<Scope> {
     })
 }
 
-/// Access this scope's memo cache from anywhere inside a `scope!` body.
-/// Returns the cached value for `key`, or creates it with `init` and stores it.
-/// The value persists until the scope is disposed.
-///
-/// Unlike `remember_with_key`, this is scoped to the current composition scope
-/// and is automatically cleaned up when the scope is no longer composed.
+/// Access the current `Scope`'s memo cache (`Scope::memo`).
+/// The value lives until that `Scope` is disposed (navigation pop, root
+/// shutdown) - not merely until a `scope!` cache key stops composing,
+/// since `scope!` is a memo cache, not a `Scope`.
 pub fn scope_memo<T: 'static>(key: &str, init: impl FnOnce() -> T) -> Rc<T> {
     match current_scope() {
         Some(scope) => scope.memo(key, init),
@@ -152,10 +150,30 @@ pub fn scope_memo<T: 'static>(key: &str, init: impl FnOnce() -> T) -> Rc<T> {
     }
 }
 
+/// Mount-once scoped effect: runs `f` only the first time this call site
+/// composes, registering cleanup on the current scope. Later recompositions
+/// are no-ops. Requires composition context.
+#[track_caller]
+pub fn scoped_effect_once(f: impl FnOnce() -> Dispose + 'static) {
+    let loc = std::panic::Location::caller();
+    let key = format!(
+        "scoped_effect:{}:{}:{}",
+        loc.file(),
+        loc.line(),
+        loc.column()
+    );
+    let installed = crate::remember_with_key(key, || std::cell::Cell::new(false));
+    if !installed.get() {
+        installed.set(true);
+        scoped_effect(f);
+    }
+}
+
 /// Scoped effect that auto-cleans up.
 ///
 /// Runs `f()` immediately and registers the returned `Dispose` to run when the
-/// current scope is disposed.
+/// current scope is disposed. This runs on every call - for mount-once
+/// semantics use `scoped_effect_once`, `disposable_effect`, or keyed variants.
 pub fn scoped_effect<F>(f: F)
 where
     F: FnOnce() -> Dispose + 'static,
@@ -164,8 +182,11 @@ where
         let cleanup = f();
         scope.add_disposer(move || cleanup.run());
     } else {
-        // No scope, run setup now, but drop cleanup (legacy "leak" behavior).
-        let _cleanup = f();
+        debug_assert!(
+            false,
+            "scoped_effect called without a current Scope; setup skipped so cleanup cannot leak"
+        );
+        log::error!("scoped_effect called without a current Scope; setup skipped");
     }
 }
 

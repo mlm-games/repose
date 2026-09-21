@@ -484,10 +484,23 @@ impl ReposeRuntime {
     /// registry. Replaces platform-local copies of this logic.
     pub fn after_compose(&mut self, frame: &Frame, scale: f32) {
         ensure_all_tf_states_from_frame(&mut self.textfield_states, frame);
+        self.prune_textfield_states(frame);
         self.ensure_focused_state_in_frame(frame);
         self.reconcile_hover_from_mouse_pos(frame);
         repose_core::dnd::set_dnd_frame(Some(frame.clone()));
         repose_core::dnd::set_dnd_scale(scale);
+    }
+
+    fn prune_textfield_states(&mut self, frame: &Frame) {
+        if self.textfield_states.is_empty() {
+            return;
+        }
+        let live: std::collections::HashSet<u64> = frame
+            .hit_regions
+            .iter()
+            .filter_map(|h| h.tf_state_key)
+            .collect();
+        self.textfield_states.retain(|k, _| live.contains(k));
     }
 
     /// Lazy-init the focused textfield's persistent state (FocusRequester

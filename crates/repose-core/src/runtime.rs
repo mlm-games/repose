@@ -334,23 +334,33 @@ pub fn spatial_focus_next(
 #[derive(Default)]
 pub struct Composer {
     pub slots: Vec<Box<dyn Any>>,
-    /// Caller identity for each slot, used to detect stale slots
-    /// when the composition tree changes between frames.
     pub slot_callers: Vec<&'static Location<'static>>,
     pub cursor: usize,
     pub keyed_slots: FxHashMap<String, Box<dyn Any>>,
-    /// Per-scope cached state for the `scope!` macro.
-    /// Keyed by the scope key string.
+    pub keyed_owner: FxHashMap<String, String>,
+    pub live_keyed_owners: rustc_hash::FxHashSet<String>,
     pub scope_caches: FxHashMap<String, crate::scope_cache::ScopeCache>,
+    pub live_scope_keys: rustc_hash::FxHashSet<String>,
 }
 
 pub struct ComposeGuard {
     scope: Scope,
 }
 
+pub(crate) fn current_scope_key_for_remember() -> Option<String> {
+    crate::scope_cache::current_scope_key()
+}
+
 impl ComposeGuard {
     pub fn begin() -> Self {
-        COMPOSER.with(|c| c.borrow_mut().cursor = 0);
+        COMPOSER.with(|c| {
+            let mut c = c.borrow_mut();
+            c.cursor = 0;
+            c.live_scope_keys.clear();
+            c.live_keyed_owners.clear();
+            c.live_scope_keys.insert(String::new());
+            c.live_keyed_owners.insert(String::new());
+        });
 
         let scope = ROOT_SCOPE.with(|rs| {
             if let Some(existing) = rs.borrow().clone() {
@@ -372,10 +382,42 @@ impl ComposeGuard {
 
 impl Drop for ComposeGuard {
     fn drop(&mut self) {
-        // ROOT_SCOPE.with(|rs| { Do not clear every frame
-        //     *rs.borrow_mut() = None;
-        // });
+        COMPOSER.with(|c| {
+            let mut c = c.borrow_mut();
+            let n = c.cursor;
+            if c.slots.len() > n {
+                c.slots.truncate(n);
+            }
+            if c.slot_callers.len() > n {
+                c.slot_callers.truncate(n);
+            }
+        });
+        crate::scope_cache::gc_dead_scopes();
     }
+}
+
+/// Dispose the root composition scope and clear all composer caches.
+///
+/// Call once on process exit (desktop `exiting`, tests). After this the next
+/// `ComposeGuard::begin` starts from a fresh root scope.
+pub fn shutdown_composition() {
+    ROOT_SCOPE.with(|rs| {
+        if let Some(scope) = rs.borrow_mut().take() {
+            scope.dispose();
+        }
+    });
+    COMPOSER.with(|c| {
+        let mut c = c.borrow_mut();
+        c.slots.clear();
+        c.slot_callers.clear();
+        c.keyed_slots.clear();
+        c.keyed_owner.clear();
+        c.live_keyed_owners.clear();
+        c.scope_caches.clear();
+        c.live_scope_keys.clear();
+        c.cursor = 0;
+    });
+    crate::scope_cache::clear_all_scope_deps();
 }
 
 /// Slot-based remember (sequential composition only).
@@ -427,13 +469,17 @@ pub fn remember<T: 'static>(init: impl FnOnce() -> T) -> Rc<T> {
 
 /// Key-based remember.
 pub fn remember_with_key<T: 'static>(key: impl Into<String>, init: impl FnOnce() -> T) -> Rc<T> {
+    let owner = current_scope_key_for_remember().unwrap_or_default();
     COMPOSER.with(|c| {
         let mut c = c.borrow_mut();
         let key = key.into();
 
         if let Some(existing) = c.keyed_slots.get(&key) {
             if let Some(rc) = existing.downcast_ref::<Rc<T>>() {
-                return rc.clone();
+                let rc = rc.clone();
+                c.keyed_owner.insert(key.clone(), owner.clone());
+                c.live_keyed_owners.insert(owner);
+                return rc;
             } else {
                 log::warn!(
                     "remember_with_key: key '{}' reused with a different type; replacing.",
@@ -450,7 +496,9 @@ pub fn remember_with_key<T: 'static>(key: impl Into<String>, init: impl FnOnce()
         }
 
         let rc: Rc<T> = Rc::new(init());
-        c.keyed_slots.insert(key, Box::new(rc.clone()));
+        c.keyed_slots.insert(key.clone(), Box::new(rc.clone()));
+        c.keyed_owner.insert(key, owner.clone());
+        c.live_keyed_owners.insert(owner);
         rc
     })
 }
@@ -876,20 +924,11 @@ impl Scheduler {
     }
 }
 
-/// Avoids cross-test pollution
+/// Test helper: full composer reset. Production shutdown should call
+/// `shutdown_composition`.
 #[cfg(test)]
 pub fn clear_composer() {
-    COMPOSER.with(|c| {
-        let mut c = c.borrow_mut();
-        c.slots.clear();
-        c.slot_callers.clear();
-        c.keyed_slots.clear();
-        c.scope_caches.clear();
-        c.cursor = 0;
-    });
-    ROOT_SCOPE.with(|rs| {
-        *rs.borrow_mut() = None;
-    });
+    shutdown_composition();
 }
 
 #[cfg(test)]

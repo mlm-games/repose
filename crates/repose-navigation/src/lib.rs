@@ -88,8 +88,7 @@ impl<K: NavKey> NavBackStack<K> {
         self.version.set(v.wrapping_add(1));
     }
 
-    fn push_inner(&self, key: K) {
-        let mut s = self.inner.borrow_mut();
+    fn fresh_entry(&self, s: &mut BackState<K>, key: K) {
         let id = s.next_id;
         s.next_id += 1;
         s.entries.push(Entry {
@@ -98,6 +97,11 @@ impl<K: NavKey> NavBackStack<K> {
             saved: Rc::new(SavedState::default()),
             scope: Scope::new(),
         });
+    }
+
+    fn push_inner(&self, key: K) {
+        let mut s = self.inner.borrow_mut();
+        self.fresh_entry(&mut s, key);
         s.last_dir = TransitionDir::Push;
     }
 
@@ -127,23 +131,15 @@ impl<K: NavKey> NavBackStack<K> {
     /// entry's state across would leak scroll/`remember_saveable` values
     /// between unrelated destinations.
     fn replace_inner(&self, key: K) {
-        if let Some(e) = {
+        let old = {
             let mut s = self.inner.borrow_mut();
-            s.entries.pop()
-        } {
-            e.scope.dispose();
-        }
-        {
-            let mut s = self.inner.borrow_mut();
-            let id = s.next_id;
-            s.next_id += 1;
-            s.entries.push(Entry {
-                id,
-                key,
-                saved: Rc::new(SavedState::default()),
-                scope: Scope::new(),
-            });
+            let old = s.entries.pop();
+            self.fresh_entry(&mut s, key);
             s.last_dir = TransitionDir::Push;
+            old
+        };
+        if let Some(e) = old {
+            e.scope.dispose();
         }
     }
 
@@ -176,26 +172,16 @@ impl<K: NavKey> NavBackStack<K> {
         }
         let old_entries = {
             let mut s = self.inner.borrow_mut();
-            std::mem::take(&mut s.entries)
+            let old = std::mem::take(&mut s.entries);
+            for k in keys {
+                self.fresh_entry(&mut s, k);
+            }
+            s.last_dir = TransitionDir::None;
+            old
         };
         for e in old_entries {
             e.scope.dispose();
         }
-
-        let mut s = self.inner.borrow_mut();
-        s.entries = Vec::new();
-        for k in keys {
-            let id = s.next_id;
-            s.next_id += 1;
-            s.entries.push(Entry {
-                id,
-                key: k,
-                saved: Rc::new(SavedState::default()),
-                scope: Scope::new(),
-            });
-        }
-        s.last_dir = TransitionDir::None;
-        drop(s);
         self.bump();
     }
 }
@@ -225,8 +211,16 @@ impl<K: NavKey> Navigator<K> {
         ok
     }
     pub fn clear_and_push(&self, k: K) {
-        while self.stack.pop_inner() {}
-        self.stack.push_inner(k);
+        let old_entries = {
+            let mut s = self.stack.inner.borrow_mut();
+            let old = std::mem::take(&mut s.entries);
+            self.stack.fresh_entry(&mut s, k);
+            s.last_dir = TransitionDir::Push;
+            old
+        };
+        for e in old_entries {
+            e.scope.dispose();
+        }
         self.stack.bump();
     }
     pub fn pop_to<F: Fn(&K) -> bool>(&self, pred: F, inclusive: bool) {
@@ -437,6 +431,10 @@ pub mod back {
         let _ = H.try_with(|h| *h.borrow_mut() = handler);
     }
 
+    pub(crate) fn current() -> Option<Handler> {
+        H.try_with(|h| h.borrow().clone()).unwrap_or(None)
+    }
+
     pub fn handle() -> bool {
         H.try_with(|h| {
             if let Some(handler) = h.borrow().as_ref() {
@@ -450,12 +448,14 @@ pub mod back {
 }
 
 /// Install/uninstall the global back handler for the displayed stack.
+/// Restores the previous handler on unmount (supports nesting).
 pub fn InstallBackHandler<K: NavKey>(stack: NavBackStack<K>) -> Dispose {
     let nav = Navigator {
         stack: stack.clone(),
     };
+    let prev = back::current();
     back::set(Some(Rc::new(move || nav.pop())));
-    on_unmount(|| back::set(None))
+    on_unmount(move || back::set(prev.clone()))
 }
 
 #[cfg(test)]

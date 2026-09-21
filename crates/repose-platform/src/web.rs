@@ -206,6 +206,21 @@ struct App {
 }
 
 impl App {
+    fn poll_visibility_lifecycle(&self) {
+        let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
+            return;
+        };
+        let hidden = doc.hidden();
+        let want = if hidden {
+            repose_app::lifecycle::AppLifecycle::Background
+        } else {
+            repose_app::lifecycle::AppLifecycle::Foreground
+        };
+        if repose_app::lifecycle::current_lifecycle() != Some(want) {
+            repose_app::lifecycle::push_lifecycle(want);
+        }
+    }
+
     fn new(
         root: Box<dyn FnMut(&mut Scheduler, &RenderContext) -> View>,
         options: WebOptions,
@@ -1114,6 +1129,8 @@ impl ApplicationHandler<()> for App {
 
     fn about_to_wait(&mut self, el: &ActiveEventLoop) {
         crate::process_deeplinks();
+        crate::process_lifecycle();
+        self.poll_visibility_lifecycle();
         if !self.rt.take_rumble_requests().is_empty() {
             log::warn!("gamepad: rumble not supported on web");
         }

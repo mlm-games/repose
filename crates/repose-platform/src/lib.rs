@@ -47,16 +47,40 @@ static EVENT_LOOP_PROXY: OnceLock<winit::event_loop::EventLoopProxy<()>> = OnceL
 static ABOUT_TO_WAIT_CALLBACK: Mutex<Option<Box<dyn Fn() + Send>>> = Mutex::new(None);
 
 pub use repose_app::lifecycle::{
-    AppLifecycle, current_lifecycle, process_deeplinks, process_lifecycle, run_pre_redraw,
-    set_on_deeplink, set_on_lifecycle, set_pre_redraw,
+    AppLifecycle, add_deeplink_listener, add_lifecycle_listener, current_lifecycle,
+    process_deeplinks, process_lifecycle, remove_deeplink_listener, remove_lifecycle_listener,
+    run_pre_redraw, set_on_deeplink, set_on_lifecycle, set_pre_redraw,
 };
 
 /// Queue a lifecycle transition and wake the UI loop. Thin wrapper over `repose_app`.
+/// Window focus alone does not push here: hosts push `Foreground`/`Background`
+/// on real visibility transitions (Android resumed/suspended, desktop
+/// occluded/visible, web visibilitychange), and `process_lifecycle` drains them.
 #[cfg(target_os = "android")]
 pub(crate) fn push_lifecycle(state: AppLifecycle) {
     repose_app::lifecycle::push_lifecycle(state);
     #[cfg(not(target_arch = "wasm32"))]
     wake_event_loop();
+}
+
+/// Non-Android hosts and tests: queue a lifecycle transition and wake the loop
+/// when a proxy exists. Prefer pushing only on real visibility transitions.
+#[cfg(not(target_os = "android"))]
+pub fn push_lifecycle(state: AppLifecycle) {
+    repose_app::lifecycle::push_lifecycle(state);
+    #[cfg(not(target_arch = "wasm32"))]
+    wake_event_loop();
+}
+
+/// Desktop visibility policy: hidden windows report `Background`, visible
+/// windows report `Foreground`. Call from focus/occluded handlers.
+#[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
+pub fn push_window_lifecycle(visible: bool) {
+    push_lifecycle(if visible {
+        AppLifecycle::Foreground
+    } else {
+        AppLifecycle::Background
+    });
 }
 
 /// Push a deeplink payload and wake the UI loop. Thin wrapper over `repose_app`.
@@ -585,6 +609,7 @@ pub fn run_desktop_app_with_config(
 
                 WindowEvent::Focused(focused) => {
                     self.rt.sched.window_focused = focused;
+                    crate::push_window_lifecycle(focused);
                     if !focused {
                         self.rt.handle_focus_lost();
                         self.rt.sched.held_keys.clear();
@@ -1192,6 +1217,7 @@ pub fn run_desktop_app_with_config(
                 }
             }
             process_deeplinks();
+            process_lifecycle();
 
             if let Some(backend) = &mut self.gamepad {
                 for ev in backend.poll() {
@@ -1305,9 +1331,25 @@ pub fn run_desktop_app_with_config(
             _: winit::event::DeviceEvent,
         ) {
         }
-        fn suspended(&mut self, _: &winit::event_loop::ActiveEventLoop) {}
-        fn exiting(&mut self, _: &winit::event_loop::ActiveEventLoop) {}
-        fn memory_warning(&mut self, _: &winit::event_loop::ActiveEventLoop) {}
+        fn suspended(&mut self, _: &winit::event_loop::ActiveEventLoop) {
+            crate::push_window_lifecycle(false);
+        }
+        fn exiting(&mut self, _: &winit::event_loop::ActiveEventLoop) {
+            repose_core::shutdown_composition();
+        }
+        fn memory_warning(&mut self, _: &winit::event_loop::ActiveEventLoop) {
+            repose_core::runtime::COMPOSER.with(|c| {
+                let mut c = c.borrow_mut();
+                let n = c.cursor;
+                if c.slots.len() > n {
+                    c.slots.truncate(n);
+                }
+                if c.slot_callers.len() > n {
+                    c.slot_callers.truncate(n);
+                }
+            });
+            repose_core::scope_cache::gc_dead_scopes();
+        }
     }
 
     impl App {

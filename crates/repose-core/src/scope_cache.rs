@@ -168,6 +168,12 @@ pub fn should_run(key: &str, input_hash: u64) -> bool {
     })
 }
 
+/// Current innermost `scope!` key, if any. Used to attribute keyed
+/// remembers to their owning scope for GC.
+pub fn current_scope_key() -> Option<String> {
+    CURRENT_SCOPE_KEY.with(|k| k.borrow().clone())
+}
+
 /// Retrieve the cached View for a scope being skipped, advancing the remember-slot
 /// cursor so sibling scopes remain consistent. IDs are self-contained in the cached
 /// View (packed scope-local IDs), so no global ID advance is needed.
@@ -183,6 +189,8 @@ pub fn get_cached(key: &str, _s: &mut crate::runtime::Scheduler) -> View {
         };
 
         c.cursor += slot_delta;
+        c.live_scope_keys.insert(key.to_string());
+        c.live_keyed_owners.insert(key.to_string());
         view
     })
 }
@@ -200,7 +208,70 @@ pub fn set_cache(key: &str, input_hash: u64, view: View, slot_delta: usize) {
                 clean: true,
             },
         );
+        c.live_scope_keys.insert(key.to_string());
+        c.live_keyed_owners.insert(key.to_string());
     });
+}
+
+/// Remove scope caches (and their keyed remembers) that were not composed
+/// this frame. Called at the end of composition from `ComposeGuard::Drop`.
+pub fn gc_dead_scopes() {
+    crate::runtime::COMPOSER.with(|c| {
+        let mut c = c.borrow_mut();
+        if c.live_scope_keys.is_empty() && c.live_keyed_owners.len() <= 1 {
+            return;
+        }
+        let dead_scopes: Vec<String> = c
+            .scope_caches
+            .keys()
+            .filter(|k| !c.live_scope_keys.contains(*k))
+            .cloned()
+            .collect();
+        for key in dead_scopes {
+            c.scope_caches.remove(&key);
+            clear_scope_deps_locked(&key);
+        }
+        let dead_keyed: Vec<String> = c
+            .keyed_owner
+            .iter()
+            .filter(|(_, owner)| !c.live_keyed_owners.contains(*owner))
+            .map(|(k, _)| k.clone())
+            .collect();
+        for key in dead_keyed {
+            c.keyed_slots.remove(&key);
+            c.keyed_owner.remove(&key);
+        }
+        c.live_scope_keys.clear();
+        c.live_keyed_owners.clear();
+        c.live_scope_keys.insert(String::new());
+        c.live_keyed_owners.insert(String::new());
+    });
+}
+
+fn clear_scope_deps_locked(key: &str) {
+    SCOPE_TO_SIGNALS.with(|m| {
+        let signals = m.borrow_mut().remove(key);
+        if let Some(signals) = signals {
+            SCOPE_SIGNAL_DEPS.with(|deps| {
+                let mut deps = deps.borrow_mut();
+                for signal_id in signals {
+                    if let Some(scopes) = deps.get_mut(&signal_id) {
+                        scopes.remove(key);
+                        if scopes.is_empty() {
+                            deps.remove(&signal_id);
+                        }
+                    }
+                }
+            });
+        }
+    });
+}
+
+pub fn clear_all_scope_deps() {
+    SCOPE_SIGNAL_DEPS.with(|d| d.borrow_mut().clear());
+    SCOPE_TO_SIGNALS.with(|d| d.borrow_mut().clear());
+    CURRENT_SCOPE_STACK.with(|s| s.borrow_mut().clear());
+    CURRENT_SCOPE_KEY.with(|k| *k.borrow_mut() = None);
 }
 
 #[cfg(test)]

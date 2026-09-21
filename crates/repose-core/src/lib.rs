@@ -73,13 +73,14 @@
 //!
 //! ## Effects and cleanup
 //!
-//! Use `effect` / `scoped_effect` for one‑off side‑effects with cleanups:
+//! Use `scoped_effect_once` / `disposable_effect` for mount-once side-effects
+//! with cleanups:
 //!
 //! ```ignore
 //! use repose_core::*;
 //!
 //! fn Example() -> View {
-//!     scoped_effect(|| {
+//!     scoped_effect_once(|| {
 //!         log::info!("Mounted Example");
 //!         on_unmount(|| log::info!("Unmounted Example"))
 //!     });
@@ -89,13 +90,16 @@
 //! }
 //! ```
 //!
-//! - `effect` runs once when the view is composed and returns a `Dispose`
-//!   guard that will be run when the scope is torn down.
-//! - `scoped_effect` is wired to the current `Scope` and is cleaned up on
-//!   scope disposal (e.g. when a navigation entry is popped).
+//! - `effect` / `scoped_effect` run on every call and register cleanup on the
+//!   current `Scope`. Called directly in a composable body they re-run every
+//!   frame - use `effect_once` / `scoped_effect_once` for mount-once setup.
+//! - `disposable_effect(key, ..)` re-runs on key change and cleans up on
+//!   unmount (callsite-keyed, branch-stable).
+//! - `launched_effect!(key, ..)` is the cancellable launched variant;
+//!   `launched_effect_uncancelled!` is explicit fire-and-forget.
 //!
 //! For long‑running tasks (network, timers), prefer building small helpers on
-//! top of `scoped_effect` so everything cleans up correctly when the UI that
+//! top of `disposable_effect` so everything cleans up correctly when the UI that
 //! owns it disappears.
 
 pub mod animation;
@@ -194,6 +198,10 @@ pub use repose_macros::View;
 /// }
 /// ```
 ///
+/// Keys are global bare strings: two call sites sharing one key share one
+/// cache entry. Use `scope_auto!` for static call sites or `scope_keyed!`
+/// with a stable item id inside lists.
+///
 /// # Signal auto-tracking
 ///
 /// Any `Signal::get()` call inside the body automatically registers the scope
@@ -285,5 +293,34 @@ macro_rules! scope {
 
             _result
         }
+    }};
+}
+
+/// `scope!` with an auto-namespaced key (`module:file:line:col`). Use for
+/// static call sites so two components cannot share one cache entry.
+/// For dynamic lists, pass a stable item id as part of `$key` instead.
+#[macro_export]
+macro_rules! scope_auto {
+    ($s:expr, [$($input:expr),* $(,)?], $body:block) => {{
+        $crate::scope!(
+            concat!(module_path!(), ":", file!(), ":", line!(), ":", column!()),
+            $s,
+            [$($input),*],
+            $body
+        )
+    }};
+}
+
+/// `scope!` keyed by a stable item id plus the call site. Use inside loops /
+/// lazy lists so each item owns its cache entry.
+#[macro_export]
+macro_rules! scope_keyed {
+    ($s:expr, $id:expr, [$($input:expr),* $(,)?], $body:block) => {{
+        $crate::scope!(
+            concat!(module_path!(), ":", file!(), ":", line!(), ":", column!(), ":", $id),
+            $s,
+            [$($input),*],
+            $body
+        )
     }};
 }

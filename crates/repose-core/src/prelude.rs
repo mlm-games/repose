@@ -5,7 +5,7 @@ pub use crate::animation::{
 };
 pub use crate::color::{Brush, Color, LinearGradient, TileMode};
 pub use crate::dnd::*;
-pub use crate::effects::{Dispose, effect, on_unmount};
+pub use crate::effects::{Dispose, effect, effect_once, on_unmount};
 pub use crate::error::*;
 pub use crate::frame_clock::{
     peek_frame_request, request_frame, request_present, take_frame_request,
@@ -34,7 +34,7 @@ pub use crate::runtime::{
     ComposeGuard, FocusDirection, FocusManager, FocusRequester, Frame, Scheduler, remember,
     remember_state, remember_state_with_key, remember_with_key, take_focus_request,
 };
-pub use crate::scope::{Scope, current_scope, scope_memo, scoped_effect};
+pub use crate::scope::{Scope, current_scope, scope_memo, scoped_effect, scoped_effect_once};
 pub use crate::scroll::{
     HorizontalScrollState, ScrollAxis, ScrollAxisBinding, ScrollBinding, ScrollBothBinding,
     ScrollPhysics, ScrollState, ScrollStateXY, run_post_scroll, run_pre_scroll,

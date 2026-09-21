@@ -76,6 +76,8 @@ impl<T> Signal<T> {
     }
 
     /// Set the signal value and notify subscribers + the reactive graph.
+    /// Always notifies, even if the value is equal - prefer `set_neq` for UI
+    /// state where equality is cheap.
     /// Subscribers observe a snapshot clone, so re-entrant `set`/`update`
     /// inside a subscriber cannot alias the reference they hold.
     pub fn set(&self, v: T)

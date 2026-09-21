@@ -30,7 +30,7 @@ pub fn screen(nav: Navigator<Route>) -> View {
 fn platform_status() -> View {
     use repose_platform::AppLifecycle;
 
-    scoped_effect(|| {
+    scoped_effect_once(|| {
         repose_platform::set_on_lifecycle(Box::new(|state| {
             log::info!("Lifecycle: {state:?}");
             repose_core::request_frame();

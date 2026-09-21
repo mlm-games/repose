@@ -2,8 +2,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use repose_core::{
-    ColorScheme, TextDirection, prelude::*, set_text_direction_default, set_text_scale_default,
-    set_theme_default, set_ui_scale_default, shortcuts, signal,
+    ColorScheme, TextDirection, prelude::*, scoped_effect_once, set_text_direction_default,
+    set_text_scale_default, set_theme_default, set_ui_scale_default, shortcuts, signal,
 };
 use repose_material::material3;
 use repose_navigation::{
@@ -251,7 +251,7 @@ fn install_save_shortcut(snackbar: SnackbarController, on_fire: Rc<dyn Fn()>) {
         shortcuts::Action::Custom("showcase.save".into()),
     );
 
-    scoped_effect(move || {
+    scoped_effect_once(move || {
         let map_scope = shortcuts::InstallShortcutMap(map.clone());
         let snackbar = snackbar.clone();
         let on_fire = on_fire.clone();

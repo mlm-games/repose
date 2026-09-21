@@ -2,7 +2,7 @@ use std::any::Any;
 use std::cell::{Ref, RefCell, RefMut};
 use std::rc::Rc;
 
-use crate::{Signal, reactive, remember_with_key, request_frame, signal};
+use crate::{Signal, reactive, remember_with_key, request_frame};
 
 #[allow(dead_code)]
 pub struct MutableState<T: Clone + 'static> {
@@ -74,20 +74,23 @@ fn produce_state_inner<T: Clone + 'static>(
 ) -> Rc<Signal<T>> {
     let full_key = format!("produce:{key}");
     let rc: Rc<(Signal<T>, ProduceHandle)> = remember_with_key(full_key.clone(), || {
-        let out: Signal<T> = signal(producer());
-        let out_clone = out.clone();
-
-        let obs_id = reactive::new_observer({
-            let producer = producer.clone();
-            move || {
-                let v = producer();
-                write(out_clone.clone(), v);
+        let out_cell: Rc<RefCell<Option<Signal<T>>>> = Rc::new(RefCell::new(None));
+        let out_cell_c = out_cell.clone();
+        let producer_c = producer.clone();
+        let obs_id = reactive::new_observer(move || {
+            let v = producer_c();
+            if let Some(out) = out_cell_c.borrow().as_ref() {
+                write(out.clone(), v);
+            } else {
+                *out_cell_c.borrow_mut() = Some(Signal::new(v));
             }
         });
 
-        // Establish initial deps and value
         reactive::run_observer_now(obs_id);
 
+        let out = out_cell.borrow().as_ref().cloned().unwrap_or_else(|| {
+            Signal::new(producer())
+        });
         (out, ProduceHandle { obs: obs_id })
     });
     if let Some(scope) = crate::scope::current_scope() {
@@ -149,6 +152,9 @@ impl<T: 'static> Mutable<T> {
         crate::signal_fired();
         request_frame();
     }
+
+    /// Unconditional write + frame request. Prefer `set_neq`/`update_neq` for
+    /// UI state where equality is cheap - `set`/`update` always invalidate.
 
     /// Like [`set`], but skips the frame request + signal when the value is
     /// unchanged (`T: PartialEq`).

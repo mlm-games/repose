@@ -410,14 +410,22 @@ struct ScopedSlot<K> {
 }
 
 /// Keyed [`scoped_delay`]: reschedules when `key` changes (cancelling the
-/// previous generation via its flag) and suppresses on unmount. Must be
-/// called inside composition; outside a scope it degrades to [`delay`].
+/// previous generation via its flag) and suppresses on unmount. Storage is
+/// callsite-keyed, so branches above the call site cannot shift slots.
+#[track_caller]
 pub fn scoped_delay_with_key<K: PartialEq + Clone + 'static>(
     key: K,
     duration: Duration,
     cb: impl FnOnce() + 'static,
 ) {
-    let cell: Rc<RefCell<ScopedSlot<K>>> = crate::remember(|| {
+    let loc = std::panic::Location::caller();
+    let callsite = format!(
+        "scoped_delay:{}:{}:{}",
+        loc.file(),
+        loc.line(),
+        loc.column()
+    );
+    let cell: Rc<RefCell<ScopedSlot<K>>> = crate::remember_with_key(callsite, || {
         RefCell::new(ScopedSlot {
             key: None,
             alive: Rc::new(RefCell::new(true)),
