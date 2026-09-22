@@ -31,4 +31,6 @@ repose-material.workspace = true
 winit = { workspace = true }
 anyhow = { workspace = true }
 log = { workspace = true }
-android_logger = { workspace = true }
+
+[target.'cfg(target_os = "android")'.dependencies]
+rlobkit-app-events = { workspace = true }

@@ -1,5 +1,4 @@
 #![cfg(target_os = "android")]
-use log::LevelFilter;
 use repose_core::prelude::*;
 use repose_material::material3::{Button, ButtonConfig};
 use repose_platform::RenderContext;
@@ -41,6 +40,9 @@ fn app(_s: &mut Scheduler, _rc: &RenderContext) -> View {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn android_main(android_app: AndroidApp) {
-    android_logger::init_once(android_logger::Config::default().with_max_level(LevelFilter::Trace));
+    rlobkit_app_events::android_log::init(
+        env!("CARGO_PKG_NAME"),
+        concat!(env!("CARGO_PKG_NAME"), "=trace"),
+    );
     let _ = run_android_app_with_options(android_app, app, AndroidOptions::default());
 }

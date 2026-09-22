@@ -30,7 +30,7 @@ label = "Repose Showcase"
 fullscreen = true
 
 [target.'cfg(target_os = "android")'.dependencies]
-android_logger = { workspace = true }
+rlobkit-app-events = { workspace = true }
 
 [dependencies]
 repose-core.workspace = true

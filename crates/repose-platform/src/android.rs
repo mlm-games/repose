@@ -51,6 +51,10 @@ pub fn run_android_app_with_options(
     root: impl FnMut(&mut Scheduler, &RenderContext) -> View + 'static,
     options: AndroidOptions,
 ) -> anyhow::Result<()> {
+    // Android logcat init is owned by the app: call
+    // `rlobkit_app_events::android_log::init` from `android_main` before
+    // this runner starts. The runner stays logger-agnostic so apps keep
+    // one shared tracing backend with no `log`-global races.
     repose_core::animation::set_clock(Box::new(repose_core::animation::SystemClock));
 
     let event_loop = winit::event_loop::EventLoopBuilder::new()
@@ -282,8 +286,15 @@ pub fn run_android_app_with_options(
             self.surface_active = false;
             self.in_foreground = false;
             self.notify_lifecycle(AppLifecycle::Background);
-            self.backend = None;
-            self.window = None;
+            // Never destroy the backend/surface here. wgpu-hal 30.0.1
+            // panics (SIGABRT, unrecoverable) when a surface is
+            // destroyed with an acquired SurfaceTexture still alive
+            // ("SwapchainAcquireSemaphore ... still in use"), and the
+            // frame in flight at suspend time always holds one. The
+            // backend + window survive across suspend/resume; `resumed`
+            // only creates them when missing (first boot), and resize
+            // or format changes reconfigure the existing surface in
+            // place instead of rebuilding it.
             self.rt.handle_focus_lost();
             self.ime_visible = false;
             self.ime_shown_for = None;
@@ -292,6 +303,21 @@ pub fn run_android_app_with_options(
 
         fn resumed(&mut self, el: &winit::event_loop::ActiveEventLoop) {
             if self.window.is_some() {
+                // Backend survived suspend: the surface may need a
+                // reconfigure against the (possibly new) native window.
+                if let (Some(backend), Some(window)) =
+                    (self.backend.as_mut(), self.window.as_ref())
+                {
+                    let size = window.inner_size();
+                    if size.width > 0 && size.height > 0 {
+                        backend.configure_surface(size.width, size.height);
+                    }
+                }
+                self.surface_active = true;
+                self.in_foreground = true;
+                self.notify_lifecycle(AppLifecycle::Foreground);
+                self.dirty = true;
+                self.request_redraw();
                 return;
             }
 

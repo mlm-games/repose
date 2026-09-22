@@ -27,9 +27,6 @@ pub fn desktop_main() {
 }
 
 #[cfg(target_os = "android")]
-use log::LevelFilter;
-
-#[cfg(target_os = "android")]
 use repose_core::prelude::*;
 
 #[cfg(target_os = "android")]
@@ -41,7 +38,10 @@ use winit::platform::android::activity::AndroidApp;
 #[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 pub extern "C" fn android_main(android_app: AndroidApp) {
-    android_logger::init_once(android_logger::Config::default().with_max_level(LevelFilter::Info));
+    rlobkit_app_events::android_log::init(
+        env!("CARGO_PKG_NAME"),
+        concat!(env!("CARGO_PKG_NAME"), "=info"),
+    );
     let _ =
         run_android_app_with_options(android_app, |s, _rc| app::app(s), AndroidOptions::default());
 }

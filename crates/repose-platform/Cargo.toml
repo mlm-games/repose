@@ -32,6 +32,7 @@ gilrs = { workspace = true, optional = true }
 [target.'cfg(target_os = "android")'.dependencies]
 winit = { workspace = true, features = ["android-native-activity"] }
 accesskit_winit = { workspace = true }
+rlobkit-app-events = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { workspace = true }

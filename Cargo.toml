@@ -74,7 +74,7 @@ parley = { version = "0.11", default-features = false, features = ["std"] }
 skrifa = "0.44"
 swash = "0.2"
 
-android_logger = "0.15"
+rlobkit-app-events = { version = "0.5", default-features = false }
 web-time = "1"
 web-workers = "0.3"
 rustc-hash = "2.1"
