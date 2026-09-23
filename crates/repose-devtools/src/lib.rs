@@ -1,3 +1,4 @@
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use web_time::Instant;
@@ -15,8 +16,7 @@ pub struct Hud {
     frame_count: u64,
     last_frame: Option<Instant>,
     fps_smooth: f32,
-    fps_history: [f32; FPS_HISTORY_LEN],
-    fps_history_idx: usize,
+    fps_history: web_workers::ring::RingBuffer<f32>,
     pub metrics: Option<Metrics>,
     selected_widget: Option<SelectedWidget>,
 }
@@ -51,8 +51,9 @@ impl Hud {
             frame_count: 0,
             last_frame: None,
             fps_smooth: 0.0,
-            fps_history: [0.0; FPS_HISTORY_LEN],
-            fps_history_idx: 0,
+            fps_history: web_workers::ring::RingBuffer::new(
+                NonZeroUsize::new(FPS_HISTORY_LEN).unwrap(),
+            ),
             metrics: None,
             selected_widget: None,
         }
@@ -82,8 +83,7 @@ impl Hud {
                 } else {
                     (1.0 - a) * self.fps_smooth + a * fps
                 };
-                self.fps_history[self.fps_history_idx] = fps;
-                self.fps_history_idx = (self.fps_history_idx + 1) % FPS_HISTORY_LEN;
+                self.fps_history.push(fps);
             }
         }
     }
@@ -116,7 +116,6 @@ impl Hud {
                 bar_w - 4.0,
                 16.0,
                 &self.fps_history,
-                self.fps_history_idx,
             );
 
             let fps_norm = (self.fps_smooth / 60.0).min(1.0);
@@ -328,11 +327,10 @@ impl Hud {
         y: f32,
         w: f32,
         h: f32,
-        history: &[f32],
-        idx: usize,
+        history: &web_workers::ring::RingBuffer<f32>,
     ) {
         let n = history.len();
-        if n == 0 || idx == 0 {
+        if n == 0 {
             return;
         }
         scene.nodes.push(SceneNode::Rect {
@@ -342,9 +340,7 @@ impl Hud {
         });
         let bin_w = w / n as f32;
         let max_fps = 60.0f32.max(history.iter().copied().fold(0.0f32, f32::max));
-        for i in 0..n {
-            // Walk oldest->newest: idx points one past the newest sample.
-            let sample = history[(i + idx) % n];
+        for (i, sample) in history.iter().copied().enumerate() {
             let frac = (sample / max_fps).min(1.0);
             let bh = (h - 2.0) * frac;
             let color = if frac >= 0.83 {
