@@ -142,7 +142,7 @@ pub fn handle_touch_raw(
 /// stay visible across frames (unlike the press edge, which fires
 /// once and is gone). GML `device_mouse_*` parity: stable per-finger
 /// ids, physical-px positions sampled every tick while held.
-fn sync_touch_points(rt: &mut ReposeRuntime, touch_gestures: &TouchGestureState) {
+pub fn sync_touch_points(rt: &mut ReposeRuntime, touch_gestures: &TouchGestureState) {
     rt.sched.touch_points.clear();
     rt.sched
         .touch_points
@@ -207,7 +207,9 @@ pub fn on_touch_with_ime(
     let pos_px = (t.location.x as f32, t.location.y as f32);
     let tid = t.id;
     if t.phase == winit::event::TouchPhase::Started {
+        touch_gestures.contact_down(tid, pos_px);
         let focused = touch_gestures.touch_started(rt, tid, pos_px);
+        sync_touch_points(rt, touch_gestures);
         if let Some(fid) = focused {
             if rt.is_textfield(fid) {
                 let (purpose, ac, cap) = rt.focused_keyboard_hints();

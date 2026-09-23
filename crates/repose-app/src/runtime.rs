@@ -167,6 +167,15 @@ pub struct ReposeRuntime {
     /// Hit path captured at pointer-down: every region under the pointer,
     /// ordered bottom-up (deepest child first, ancestors last).
     pub hit_path: Option<Vec<u64>>,
+    /// Per-finger press table: every concurrent touch owns its own
+    /// hit path (unlike the single mouse `hit_path`/`capture_id`,
+    /// which is the single-primary tap emulation's). Game viewports
+    /// stage per-finger contacts off the dispatched events, so the
+    /// second finger's joystick/button press stages alongside the
+    /// first instead of stealing its path. UI press arbitration
+    /// (tap/click/scroll) stays single-primary in `touch_gesture`;
+    /// this only routes the per-finger event stream.
+    pub touch_paths: HashMap<u64, Vec<u64>>,
     /// Which scroll consumer currently owns the wheel gesture.
     pub scroll_capture_id: Option<u64>,
     last_scroll_at: Option<web_time::Instant>,
@@ -263,6 +272,7 @@ impl ReposeRuntime {
             hover_leave: HashMap::new(),
             capture_id: None,
             hit_path: None,
+            touch_paths: HashMap::new(),
             scroll_capture_id: None,
             last_scroll_at: None,
             pressed_ids: HashSet::new(),
@@ -719,6 +729,28 @@ impl ReposeRuntime {
             request_frame();
         }
 
+        if let Some(tid) = touch {
+            if let Some(path) = self.touch_paths.get(&tid).cloned() {
+                let live: Vec<u64> = path
+                    .iter()
+                    .copied()
+                    .filter(|id| f.hit_regions.iter().any(|h| h.id == *id))
+                    .collect();
+                if live.is_empty() {
+                    self.touch_paths.remove(&tid);
+                } else {
+                    self.dispatch_pointer_to_path(PointerEventKind::Move, pos, &live, touch);
+                    if live.len() != path.len() {
+                        self.touch_paths.insert(tid, live);
+                    }
+                }
+            }
+            return PointerMoveResult {
+                cursor: self.cursor.clone(),
+                hover_id: self.hover_id,
+            };
+        }
+
         if let Some(path) = &self.hit_path {
             let live: Vec<u64> = path
                 .iter()
@@ -831,6 +863,10 @@ impl ReposeRuntime {
             self.capture_id = Some(hit.id);
             result.capture_id = Some(hit.id);
             result.consumed = true;
+            // Per-finger path (touch only)
+            if let Some(tid) = touch {
+                self.touch_paths.insert(tid, path.clone());
+            }
 
             // A new press cancels a still-pending delayed single click only
             // when it qualifies as the second tap of a double click on the
@@ -978,11 +1014,27 @@ impl ReposeRuntime {
         let f = match &self.frame_cache {
             Some(f) => f.clone(),
             None => {
-                self.capture_id = None;
-                self.hit_path = None;
+                if touch.is_none() {
+                    self.capture_id = None;
+                    self.hit_path = None;
+                } else if let Some(tid) = touch {
+                    self.touch_paths.remove(&tid);
+                }
                 return result;
             }
         };
+
+        // Touch releases route down the finger's own path (see
+        // `handle_touch_press`)
+        if let Some(tid) = touch {
+            if let Some(path) = self.touch_paths.remove(&tid) {
+                self.dispatch_pointer_to_path(PointerEventKind::Up(button), pos, &path, touch);
+                result.consumed = true;
+            }
+            self.pressed_ids.clear();
+            request_frame();
+            return result;
+        }
 
         if let Some(path) = &self.hit_path {
             self.dispatch_pointer_to_path(PointerEventKind::Up(button), pos, path, touch);
@@ -1081,12 +1133,24 @@ impl ReposeRuntime {
 
     /// Cancel mouse pointer state (focus lost). Touch fingers never feed
     /// the polled mouse position, so only a mouse cancel clears it.
+    /// A touch cancel drops just that finger's path (the viewport
+    /// must drop the contact); a mouse cancel (`None`) keeps the old
+    /// full-reset behavior for the single mouse path.
     pub fn handle_touch_cancel(&mut self, touch: Option<u64>) {
-        let saved = self.sched.pointer_pos_px;
-        self.handle_pointer_cancel();
-        if touch.is_some() {
+        if let Some(tid) = touch {
+            let saved = self.sched.pointer_pos_px;
+            if let Some(path) = self.touch_paths.remove(&tid) {
+                let pos = Vec2 {
+                    x: self.mouse_pos_px.0,
+                    y: self.mouse_pos_px.1,
+                };
+                self.dispatch_pointer_to_path(PointerEventKind::Cancel, pos, &path, touch);
+            }
             self.sched.pointer_pos_px = saved;
+            request_frame();
+            return;
         }
+        self.handle_pointer_cancel();
     }
 
     pub fn handle_pointer_cancel(&mut self) {
@@ -1218,6 +1282,7 @@ impl ReposeRuntime {
     fn reset_pointer_state(&mut self) {
         self.capture_id = None;
         self.hit_path = None;
+        self.touch_paths.clear();
         self.pressed_ids.clear();
         self.pending_click = None;
         self.last_down = None;

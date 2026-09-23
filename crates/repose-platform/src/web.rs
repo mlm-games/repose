@@ -939,9 +939,11 @@ impl ApplicationHandler<()> for App {
                 let scale = self.scale(&window);
                 if t.phase == winit::event::TouchPhase::Started {
                     let pos_px = (t.location.x as f32, t.location.y as f32);
+                    self.touch_gestures.contact_down(t.id, pos_px);
                     let focused = self
                         .touch_gestures
                         .touch_started(&mut self.rt, t.id, pos_px);
+                    crate::runner_common::sync_touch_points(&mut self.rt, &self.touch_gestures);
                     if let Some(fid) = focused {
                         if self.is_textfield(fid) {
                             let (purpose, ac, cap) = self.rt.focused_keyboard_hints();

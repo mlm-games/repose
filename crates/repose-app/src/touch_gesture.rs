@@ -167,6 +167,10 @@ impl TouchGestureState {
         let was_empty = self.active_touches.is_empty();
         let _ = was_empty;
         self.active_touches.insert(tid, pos_px);
+        // Every finger dispatches its own press immediately: games stage
+        // per-finger contacts off these events (GML `device_mouse_*`
+        // parity).
+        rt.handle_touch_press(Self::touch_finger(tid), pos, PointerButton::Primary);
 
         let is_primary = self.primary_touch_id.is_none();
         if is_primary {
@@ -187,10 +191,7 @@ impl TouchGestureState {
         if self.pending_primary.is_some() {
             self.pending_primary = None;
         }
-        if self.primary_press_dispatched {
-            rt.handle_touch_cancel(None);
-            self.primary_press_dispatched = false;
-        }
+        self.primary_press_dispatched = false;
         if self.active_touches.len() >= 2 {
             let pointer_pos = self
                 .primary_touch_id
@@ -223,6 +224,8 @@ impl TouchGestureState {
         let mut pan: Option<(Vec2, Vec2)> = None;
         let mut rotation: Option<(f32, Vec2)> = None;
         self.active_touches.insert(tid, pos_px);
+        rt.handle_touch_move(Self::touch_finger(tid), pos);
+        dirty = true;
 
         if self.active_touches.len() >= 2 {
             let pointer_pos = self
@@ -282,9 +285,7 @@ impl TouchGestureState {
             let dy = pos_px.1 - pending_pos.y;
             let dist = (dx * dx + dy * dy).sqrt();
             if dt > 0.03 || dist > 6.0 * scale {
-                let _focused = rt
-                    .handle_touch_press(Self::touch_finger(pending_tid), pending_pos, PointerButton::Primary)
-                    .focused;
+                let _ = (pending_pos, pending_tid);
                 self.primary_press_dispatched = true;
                 self.pending_primary = None;
             } else {
@@ -321,10 +322,6 @@ impl TouchGestureState {
                     }
                 }
             }
-
-            if self.primary_press_dispatched {
-                rt.handle_touch_move(Self::touch_finger(tid), pos);
-            }
             dirty = true;
         }
 
@@ -349,6 +346,11 @@ impl TouchGestureState {
         let was_multi = self.active_touches.len() >= 2;
 
         let mut press = None;
+        if cancelled {
+            rt.handle_touch_cancel(Self::touch_finger(tid));
+        } else {
+            rt.handle_touch_release(Self::touch_finger(tid), pos, PointerButton::Primary);
+        }
         if is_primary {
             if let Some((pending_pos, _, pending_tid)) = self.pending_primary.take() {
                 if !cancelled && !was_multi && self.active_touches.len() < 2 {
@@ -356,18 +358,10 @@ impl TouchGestureState {
                         rt.handle_touch_press(Self::touch_finger(pending_tid), pending_pos, PointerButton::Primary)
                             .focused,
                     );
-                    rt.handle_touch_release(Self::touch_finger(tid), pos, PointerButton::Primary);
                 }
                 self.primary_press_dispatched = false;
             } else if self.primary_press_dispatched {
-                if cancelled || was_multi {
-                    rt.handle_touch_cancel(Self::touch_finger(tid));
-                } else {
-                    rt.handle_touch_release(Self::touch_finger(tid), pos, PointerButton::Primary);
-                }
                 self.primary_press_dispatched = false;
-            } else if cancelled || was_multi {
-                rt.handle_touch_cancel(Self::touch_finger(tid));
             }
         }
 
@@ -456,6 +450,8 @@ impl TouchGestureState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::RefCell;
+    use std::rc::Rc;
 
     #[test]
     fn twist_reports_rotation_once_past_slop() {
@@ -493,6 +489,92 @@ mod tests {
         assert!(
             rotation.is_none(),
             "exact-zero rotation must not spam Rotate gestures"
+        );
+    }
+
+    #[test]
+    fn second_finger_down_registers_before_any_move() {
+        let mut rt = ReposeRuntime::new();
+        let mut g = TouchGestureState::default();
+        g.contact_down(1, (10.0, 10.0));
+        g.touch_started(&mut rt, 1, (10.0, 10.0));
+        g.contact_down(2, (200.0, 200.0));
+        g.touch_started(&mut rt, 2, (200.0, 200.0));
+        assert_eq!(
+            g.active_touches().len(),
+            2,
+            "both fingers visible while held still"
+        );
+        assert!(
+            g.active_touches().contains_key(&1) && g.active_touches().contains_key(&2),
+            "no finger dropped before its first move"
+        );
+    }
+
+    #[test]
+    fn every_finger_dispatches_its_own_press_move_release() {
+        use repose_core::input::{PointerEvent, PointerEventKind, PointerKind};
+        use std::collections::HashMap;
+        let mut rt = ReposeRuntime::new();
+        let seen: Rc<RefCell<HashMap<u64, Vec<PointerEventKind>>>> =
+            Rc::new(RefCell::new(HashMap::new()));
+        let seen_down = seen.clone();
+        let mk = move |_kind: PointerKind| {
+            let seen_down = seen_down.clone();
+            Rc::new(move |ev: PointerEvent| {
+                seen_down
+                    .borrow_mut()
+                    .entry(ev.id.0)
+                    .or_default()
+                    .push(ev.event);
+            })
+        };
+        rt.cache_frame(repose_core::runtime::Frame {
+            scene: Default::default(),
+            hit_regions: vec![repose_core::HitRegion {
+                id: 1,
+                rect: repose_core::Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 400.0,
+                    h: 400.0,
+                },
+                on_pointer_down: Some(mk(PointerKind::Touch)),
+                on_pointer_move: Some(mk(PointerKind::Touch)),
+                on_pointer_up: Some(mk(PointerKind::Touch)),
+                ..Default::default()
+            }],
+            semantics_nodes: Vec::new(),
+            focus_chain: Vec::new(),
+        });
+        let mut g = TouchGestureState::default();
+        g.touch_started(&mut rt, 1, (10.0, 10.0));
+        g.touch_started(&mut rt, 2, (200.0, 200.0));
+        g.touch_moved(&mut rt, 1, (12.0, 10.0), 1.0);
+        g.touch_moved(&mut rt, 2, (200.0, 202.0), 1.0);
+        g.touch_ended(&mut rt, 1, (12.0, 10.0), false);
+        g.touch_ended(&mut rt, 2, (200.0, 202.0), false);
+        let seen = seen.borrow();
+        for fid in [1u64, 2u64] {
+            let kinds: Vec<_> = seen.get(&fid).cloned().unwrap_or_default();
+            assert!(
+                kinds
+                    .iter()
+                    .any(|k| matches!(k, PointerEventKind::Down(_))),
+                "finger {fid} must dispatch its own press, got {kinds:?}"
+            );
+            assert!(
+                kinds.iter().any(|k| matches!(k, PointerEventKind::Move)),
+                "finger {fid} must dispatch its own move, got {kinds:?}"
+            );
+            assert!(
+                kinds.iter().any(|k| matches!(k, PointerEventKind::Up(_))),
+                "finger {fid} must dispatch its own release, got {kinds:?}"
+            );
+        }
+        assert!(
+            rt.touch_paths.is_empty(),
+            "both finger paths must drop on release"
         );
     }
 }
