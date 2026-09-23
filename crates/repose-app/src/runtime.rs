@@ -208,10 +208,12 @@ pub struct ReposeRuntime {
 
     cursor: Option<CursorIcon>,
 
-    /// Per-runtime shortcut state. `handle_key` resolves chords and
-    /// `dispatch_action` handles actions against this first; the
-    /// process-global thread-locals in `repose_core::shortcuts` stay as a
-    /// fallback so tests and headless compose without a runner keep working.
+    /// Per-runtime shortcut state: games compose `InstallShortcutMap` /
+    /// `InstallShortcutHandler` once in the root view and the runtime
+    /// resolves against it, so two apps in one process never share
+    /// bindings. Falls back to the process-global
+    /// `repose_core::shortcuts` thread-locals so headless tests that
+    /// never composed keep working.
     pub shortcuts: repose_core::shortcuts::ShortcutState,
 
     pub textfield_states: HashMap<u64, Rc<RefCell<TextFieldState>>>,
@@ -1358,18 +1360,9 @@ impl ReposeRuntime {
         // Action dispatch (shortcuts like Ctrl+C, Tab, etc.)
         if event.event_type == KeyEventType::Down
             && !event.is_repeat
-            && let Some(action) = self
-                .shortcuts
-                .resolve_action(&repose_core::shortcuts::KeyChord::new(
-                    event.key.clone(),
-                    self.modifiers,
-                ))
-                .or_else(|| {
-                    repose_core::shortcuts::resolve_action(repose_core::shortcuts::KeyChord::new(
-                        event.key.clone(),
-                        self.modifiers,
-                    ))
-                })
+            && let Some(action) = repose_core::shortcuts::resolve_action(
+                repose_core::shortcuts::KeyChord::new(event.key.clone(), self.modifiers),
+            )
         {
             // `dispatch_action` covers focus navigation internally.
             if self.dispatch_action(action.clone()) {
@@ -1717,12 +1710,7 @@ impl ReposeRuntime {
             return true;
         }
 
-        // 3) Global shortcut handler: runtime-owned first, then the
-        // process-global fallback (tests / headless compose).
-        if self.shortcuts.handle(action.clone()) {
-            request_frame();
-            return true;
-        }
+        // 3) Global shortcut handler
         if repose_core::shortcuts::handle(action.clone()) {
             request_frame();
             return true;

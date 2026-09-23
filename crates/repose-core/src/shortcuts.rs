@@ -1,5 +1,5 @@
 use crate::Vec2;
-use crate::effects::{Dispose, on_unmount};
+use crate::effects::{Dispose, effect_once, on_unmount};
 use crate::input::{Key, Modifiers, PointerKind};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -181,11 +181,22 @@ impl ShortcutState {
         {
             return Some(action);
         }
-        self.default_map.action_for(chord)
+        if let Some(action) = self.default_map.action_for(chord) {
+            return Some(action);
+        }
+        resolve_action(chord.clone())
     }
 
     pub fn handle(&self, action: Action) -> bool {
-        self.handler.as_ref().map(|f| f(action)).unwrap_or(false)
+        if self
+            .handler
+            .as_ref()
+            .map(|f| f(action.clone()))
+            .unwrap_or(false)
+        {
+            return true;
+        }
+        handle(action)
     }
 }
 
@@ -236,23 +247,33 @@ pub fn set_default_map(map: ShortcutMap) {
 }
 
 /// Push a shortcut map for the current scope, popped on unmount.
+/// Idempotent: recomposing the installing view (e.g. every frame of a game
+/// root view) re-runs setup without stacking duplicates (mount-once
+/// semantics). Resolution order is innermost-installed scope first.
 #[allow(non_snake_case)]
 pub fn InstallShortcutMap(map: ShortcutMap) -> Dispose {
-    SCOPES.with(|scopes| scopes.borrow_mut().push(map));
-    on_unmount(|| {
-        let _ = SCOPES.try_with(|scopes| {
-            scopes.borrow_mut().pop();
-        });
+    effect_once(move || {
+        let map = map.clone();
+        SCOPES.with(|scopes| scopes.borrow_mut().push(map));
+        on_unmount(|| {
+            let _ = SCOPES.try_with(|scopes| {
+                scopes.borrow_mut().pop();
+            });
+        })
     })
 }
 
-/// Install/uninstall a global shortcut handler for the current scope.
+/// Install/uninstall a shortcut handler for the current scope.
+/// Idempotent like [`InstallShortcutMap`]: recomposing the installing view
+/// replaces the previous handler instead of stacking.
 /// Restores the previous handler on unmount (supports nesting).
 #[allow(non_snake_case)]
 pub fn InstallShortcutHandler(handler: Handler) -> Dispose {
-    let prev = HANDLER.with(|h| h.borrow_mut().replace(handler));
-    on_unmount(move || {
-        let _ = HANDLER.try_with(|h| *h.borrow_mut() = prev);
+    effect_once(move || {
+        let prev = HANDLER.with(|h| h.borrow_mut().replace(handler.clone()));
+        on_unmount(move || {
+            let _ = HANDLER.try_with(|h| *h.borrow_mut() = prev);
+        })
     })
 }
 
