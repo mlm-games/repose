@@ -277,7 +277,11 @@ pub fn run_android_app_with_options(
             false
         }
         fn overlay_drag_indicator(&self, scene: &mut Scene) {
-            repose_core::dnd::overlay_drag_indicator(scene, self.rt.mouse_pos_px, false);
+            Self::overlay_drag_indicator_static(scene, self.rt.mouse_pos_px);
+        }
+
+        fn overlay_drag_indicator_static(scene: &mut Scene, pos: (f32, f32)) {
+            repose_core::dnd::overlay_drag_indicator(scene, pos, false);
         }
     }
 
@@ -286,15 +290,12 @@ pub fn run_android_app_with_options(
             self.surface_active = false;
             self.in_foreground = false;
             self.notify_lifecycle(AppLifecycle::Background);
-            // Never destroy the backend/surface here. wgpu-hal 30.0.1
-            // panics (SIGABRT, unrecoverable) when a surface is
-            // destroyed with an acquired SurfaceTexture still alive
-            // ("SwapchainAcquireSemaphore ... still in use"), and the
-            // frame in flight at suspend time always holds one. The
-            // backend + window survive across suspend/resume; `resumed`
-            // only creates them when missing (first boot), and resize
-            // or format changes reconfigure the existing surface in
-            // place instead of rebuilding it.
+            // Drop the surface but keep device/queue/pipelines. `frame()`
+            // never holds an acquired texture across events, so this cannot
+            // strand the swapchain.
+            if let Some(backend) = self.backend.as_mut() {
+                backend.take_surface();
+            }
             self.rt.handle_focus_lost();
             self.ime_visible = false;
             self.ime_shown_for = None;
@@ -303,18 +304,25 @@ pub fn run_android_app_with_options(
 
         fn resumed(&mut self, el: &winit::event_loop::ActiveEventLoop) {
             if self.window.is_some() {
-                // Backend survived suspend: the surface may need a
-                // reconfigure against the (possibly new) native window.
-                if let (Some(backend), Some(window)) =
-                    (self.backend.as_mut(), self.window.as_ref())
+                let recreated = match (&mut self.backend, &self.window) {
+                    (Some(backend), Some(window)) => match backend.recreate_surface(window) {
+                        Ok(()) => true,
+                        Err(e) => {
+                            log::warn!("surface recreate failed: {e:?}");
+                            false
+                        }
+                    },
+                    _ => false,
+                };
+                if recreated
+                    && let (Some(window), Some(_)) = (self.window.as_ref(), self.backend.as_ref())
                 {
                     let size = window.inner_size();
-                    if size.width > 0 && size.height > 0 {
-                        backend.configure_surface(size.width, size.height);
-                    }
+                    let sf = window.scale_factor() as f32;
+                    self.sync_window_size(size, sf);
                 }
-                self.surface_active = true;
-                self.in_foreground = true;
+                self.surface_active = recreated;
+                self.in_foreground = recreated;
                 self.notify_lifecycle(AppLifecycle::Foreground);
                 self.dirty = true;
                 self.request_redraw();
@@ -501,7 +509,7 @@ pub fn run_android_app_with_options(
                 }
 
                 WindowEvent::RedrawRequested => {
-                    if !self.surface_active {
+                    if !self.surface_active || self.backend.is_none() {
                         return; // surface gone; never touch the GPU
                     }
 
@@ -515,21 +523,35 @@ pub fn run_android_app_with_options(
                         // Present-only: no compose, just present cached scene with updated textures
                         self.process_render_commands();
                         let scale = self.scale();
-                        let mut scene_opt = None;
-                        if let Some(frame) = self.rt.frame_cache.as_ref() {
-                            let mut scene = frame.scene.clone();
-                            self.overlay_drag_indicator(&mut scene);
-                            scene_opt = Some(scene);
-                        }
-                        if let (Some(backend), Some(scene)) =
-                            (self.backend.as_mut(), scene_opt.as_ref())
+                        let dragging = repose_core::dnd::is_dragging();
+                        let (presented, has_frame) = match (&mut self.backend, &self.rt.frame_cache)
                         {
-                            backend.frame(
-                                scene,
-                                GlyphRasterConfig {
-                                    px: Px(18.0 * scale),
-                                },
-                            );
+                            (Some(backend), Some(frame)) => {
+                                let mut overlay;
+                                let scene = if dragging {
+                                    overlay = frame.scene.clone();
+                                    Self::overlay_drag_indicator_static(
+                                        &mut overlay,
+                                        self.rt.mouse_pos_px,
+                                    );
+                                    &overlay
+                                } else {
+                                    &frame.scene
+                                };
+                                (
+                                    backend.frame(
+                                        scene,
+                                        GlyphRasterConfig {
+                                            px: Px(18.0 * scale),
+                                        },
+                                    ),
+                                    true,
+                                )
+                            }
+                            _ => (false, self.rt.frame_cache.is_some()),
+                        };
+                        if !presented && has_frame {
+                            return;
                         }
                         self.last_redraw = web_time::Instant::now();
                         return;
@@ -577,7 +599,7 @@ pub fn run_android_app_with_options(
                     let Some(backend) = self.backend.as_mut() else {
                         return;
                     };
-                    backend.frame(
+                    let presented = backend.frame(
                         &scene,
                         GlyphRasterConfig {
                             px: Px(18.0 * scale),
@@ -587,7 +609,9 @@ pub fn run_android_app_with_options(
                     self.rt.cache_frame(frame);
                     self.last_redraw = web_time::Instant::now();
 
-                    self.dirty = false;
+                    if presented {
+                        self.dirty = false;
+                    }
 
                     if self.continuous_redraw() || animating {
                         if let Some(win) = self.window.as_ref() {

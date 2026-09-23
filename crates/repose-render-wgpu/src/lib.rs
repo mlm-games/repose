@@ -295,8 +295,11 @@ pub struct WgpuSceneRenderer {
 }
 
 pub struct WgpuSurfaceBackend {
+    #[cfg(feature = "winit-surface")]
+    instance: Option<wgpu::Instance>,
     pub surface: Option<wgpu::Surface<'static>>,
     pub surface_config: Option<wgpu::SurfaceConfiguration>,
+    pending_reconfigure: bool,
     pub renderer: WgpuSceneRenderer,
 }
 
@@ -2786,8 +2789,11 @@ impl WgpuSurfaceBackend {
         surface.configure(&renderer.device, &config);
 
         Ok(WgpuSurfaceBackend {
+            #[cfg(feature = "winit-surface")]
+            instance: Some(instance),
             surface: Some(surface),
             surface_config: Some(config),
+            pending_reconfigure: false,
             renderer,
         })
     }
@@ -4877,9 +4883,56 @@ fn init_atlas_color(device: &wgpu::Device) -> AtlasRGBA {
 }
 
 #[cfg(feature = "winit-surface")]
+impl WgpuSurfaceBackend {
+    /// Drop the surface, keeping device/queue/pipelines. Releases the old
+    /// native-window binding. Call `recreate_surface` to present again.
+    pub fn take_surface(&mut self) -> Option<wgpu::Surface<'static>> {
+        self.surface.take()
+    }
+
+    /// Create a fresh surface for `window` on the retained instance and
+    /// configure it. Recovers from `CurrentSurfaceTexture::Lost`, where
+    /// reconfiguring the old surface object cannot help.
+    pub fn recreate_surface(
+        &mut self,
+        window: &Arc<winit::window::Window>,
+    ) -> anyhow::Result<()> {
+        let Some(instance) = self.instance.as_ref() else {
+            anyhow::bail!("no wgpu instance retained; cannot recreate surface")
+        };
+        let size = window.inner_size();
+        if size.width == 0 || size.height == 0 {
+            anyhow::bail!("window has zero size; defer surface recreation");
+        }
+        let surface = instance.create_surface(window.clone())?;
+        if let Some(config) = self.surface_config.as_mut() {
+            config.width = size.width;
+            config.height = size.height;
+        } else {
+            anyhow::bail!("no surface config retained; cannot recreate surface")
+        }
+        let config = self.surface_config.as_ref().expect("checked above");
+        surface.configure(&self.renderer.device, config);
+        self.surface = Some(surface);
+        self.renderer.output_width = size.width;
+        self.renderer.output_height = size.height;
+        self.renderer.recreate_msaa_and_depth_stencil();
+        self.renderer.recreate_working_space_texture();
+        Ok(())
+    }
+}
+
+#[cfg(feature = "winit-surface")]
 impl RenderBackend for WgpuSurfaceBackend {
     fn configure_surface(&mut self, width: u32, height: u32) {
         if width == 0 || height == 0 {
+            return;
+        }
+        if self.renderer.output_width == width && self.renderer.output_height == height {
+            if let Some(ref mut config) = self.surface_config {
+                config.width = width;
+                config.height = height;
+            }
             return;
         }
         self.renderer.output_width = width;
@@ -4896,66 +4949,49 @@ impl RenderBackend for WgpuSurfaceBackend {
         self.renderer.recreate_working_space_texture();
     }
 
-    fn frame(&mut self, scene: &Scene, _glyph_cfg: GlyphRasterConfig) {
-        let surface = self.surface.as_ref().expect("WgpuSurfaceBackend::frame() requires a surface (use from_device + render_to_view instead)");
-        let surface_config = self
-            .surface_config
-            .as_ref()
-            .expect("surface_config required for frame()");
+    fn frame(&mut self, scene: &Scene, _glyph_cfg: GlyphRasterConfig) -> bool {
+        if self.pending_reconfigure {
+            if let (Some(surface), Some(config)) =
+                (self.surface.as_ref(), self.surface_config.as_ref())
+            {
+                surface.configure(&self.renderer.device, config);
+            }
+            self.pending_reconfigure = false;
+        }
 
         self.renderer.frame_index = self.renderer.frame_index.wrapping_add(1);
         self.renderer.slug_cache.next_frame();
 
         if self.renderer.output_width == 0 || self.renderer.output_height == 0 {
-            return;
+            request_frame();
+            return false;
         }
 
-        let mut retries = 0u32;
-        const MAX_RETRIES: u32 = 4;
-        let frame = loop {
-            match surface.get_current_texture() {
-                wgpu::CurrentSurfaceTexture::Success(f) => break f,
-                wgpu::CurrentSurfaceTexture::Suboptimal(f) => {
-                    log::warn!("suboptimal surface; reconfiguring");
-                    surface.configure(&self.renderer.device, surface_config);
-                    break f;
-                }
-                wgpu::CurrentSurfaceTexture::Outdated => {
-                    retries += 1;
-                    if retries >= MAX_RETRIES {
-                        log::warn!(
-                            "surface outdated persisted after {MAX_RETRIES} retries; skipping frame"
-                        );
-                        return;
+        let Some(surface) = self.surface.as_ref() else {
+            request_frame();
+            return false;
+        };
+        let frame = match surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(f) => f,
+            wgpu::CurrentSurfaceTexture::Suboptimal(f) => {
+                self.pending_reconfigure = true;
+                f
+            }
+            other => {
+                match other {
+                    wgpu::CurrentSurfaceTexture::Outdated
+                    | wgpu::CurrentSurfaceTexture::Lost
+                    | wgpu::CurrentSurfaceTexture::Validation => {
+                        log::warn!("surface {other:?}; reconfiguring next frame");
+                        self.pending_reconfigure = true;
                     }
-                    log::warn!("surface outdated; reconfiguring");
-                    surface.configure(&self.renderer.device, surface_config);
-                }
-                wgpu::CurrentSurfaceTexture::Lost => {
-                    retries += 1;
-                    if retries >= MAX_RETRIES {
-                        log::warn!(
-                            "surface lost persisted after {MAX_RETRIES} retries; skipping frame"
-                        );
-                        return;
+                    wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {
+                        log::debug!("surface {other:?}; retrying next frame");
                     }
-                    log::warn!("surface lost; reconfiguring");
-                    surface.configure(&self.renderer.device, surface_config);
+                    _ => {}
                 }
-                wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {
-                    request_frame();
-                    return;
-                }
-                wgpu::CurrentSurfaceTexture::Validation => {
-                    retries += 1;
-                    if retries >= MAX_RETRIES {
-                        log::warn!(
-                            "surface validation persisted after {MAX_RETRIES} retries; skipping frame"
-                        );
-                        return;
-                    }
-                    surface.configure(&self.renderer.device, surface_config);
-                }
+                request_frame();
+                return false;
             }
         };
 
@@ -5016,7 +5052,10 @@ impl RenderBackend for WgpuSurfaceBackend {
             .submit(std::iter::once(encoder.finish()));
         if let Err(e) = catch_unwind(AssertUnwindSafe(|| self.renderer.queue.present(frame))) {
             log::warn!("queue.present panicked: {:?}", e);
+            request_frame();
+            return false;
         }
+        true
     }
 }
 

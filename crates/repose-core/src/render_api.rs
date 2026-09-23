@@ -9,5 +9,5 @@ pub struct GlyphRasterConfig {
 
 pub trait RenderBackend {
     fn configure_surface(&mut self, width: u32, height: u32);
-    fn frame(&mut self, scene: &Scene, glyph_cfg: GlyphRasterConfig);
+    fn frame(&mut self, scene: &Scene, glyph_cfg: GlyphRasterConfig) -> bool;
 }
