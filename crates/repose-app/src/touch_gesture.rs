@@ -188,7 +188,7 @@ impl TouchGestureState {
             self.pending_primary = None;
         }
         if self.primary_press_dispatched {
-            rt.handle_pointer_cancel();
+            rt.handle_touch_cancel(None);
             self.primary_press_dispatched = false;
         }
         if self.active_touches.len() >= 2 {
@@ -276,14 +276,14 @@ impl TouchGestureState {
             return (dirty, None, None, None);
         }
 
-        if let Some((pending_pos, pending_instant, _pending_tid)) = self.pending_primary {
+        if let Some((pending_pos, pending_instant, pending_tid)) = self.pending_primary {
             let dt = (web_time::Instant::now() - pending_instant).as_secs_f32();
             let dx = pos_px.0 - pending_pos.x;
             let dy = pos_px.1 - pending_pos.y;
             let dist = (dx * dx + dy * dy).sqrt();
             if dt > 0.03 || dist > 6.0 * scale {
                 let _focused = rt
-                    .handle_pointer_press(pending_pos, PointerButton::Primary)
+                    .handle_touch_press(Self::touch_finger(pending_tid), pending_pos, PointerButton::Primary)
                     .focused;
                 self.primary_press_dispatched = true;
                 self.pending_primary = None;
@@ -323,7 +323,7 @@ impl TouchGestureState {
             }
 
             if self.primary_press_dispatched {
-                rt.handle_pointer_move(pos);
+                rt.handle_touch_move(Self::touch_finger(tid), pos);
             }
             dirty = true;
         }
@@ -350,24 +350,24 @@ impl TouchGestureState {
 
         let mut press = None;
         if is_primary {
-            if let Some((pending_pos, _, _)) = self.pending_primary.take() {
+            if let Some((pending_pos, _, pending_tid)) = self.pending_primary.take() {
                 if !cancelled && !was_multi && self.active_touches.len() < 2 {
                     press = Some(
-                        rt.handle_pointer_press(pending_pos, PointerButton::Primary)
+                        rt.handle_touch_press(Self::touch_finger(pending_tid), pending_pos, PointerButton::Primary)
                             .focused,
                     );
-                    rt.handle_pointer_release(pos, PointerButton::Primary);
+                    rt.handle_touch_release(Self::touch_finger(tid), pos, PointerButton::Primary);
                 }
                 self.primary_press_dispatched = false;
             } else if self.primary_press_dispatched {
                 if cancelled || was_multi {
-                    rt.handle_pointer_cancel();
+                    rt.handle_touch_cancel(Self::touch_finger(tid));
                 } else {
-                    rt.handle_pointer_release(pos, PointerButton::Primary);
+                    rt.handle_touch_release(Self::touch_finger(tid), pos, PointerButton::Primary);
                 }
                 self.primary_press_dispatched = false;
             } else if cancelled || was_multi {
-                rt.handle_pointer_cancel();
+                rt.handle_touch_cancel(Self::touch_finger(tid));
             }
         }
 
@@ -410,6 +410,12 @@ impl TouchGestureState {
     /// Live touch contacts in physical px, keyed by winit touch id.
     /// Single source for game touch zones (unlike the press
     /// edge, which fires once and is gone).
+    /// Finger id carried on gesture-dispatched pointer events, so
+    /// game viewports can attribute each touch to its finger.
+    fn touch_finger(tid: u64) -> Option<u64> {
+        Some(tid)
+    }
+
     pub fn active_touches(&self) -> &BTreeMap<u64, (f32, f32)> {
         &self.active_touches
     }

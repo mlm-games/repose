@@ -85,18 +85,15 @@ pub fn handle_touch_raw(
 ) -> TouchResult {
     let pos_px = (t.location.x as f32, t.location.y as f32);
     let tid = t.id;
-    // Live contact table sync (single source: `TouchGestureState`).
-    match t.phase {
-        winit::event::TouchPhase::Started | winit::event::TouchPhase::Moved => {
-            touch_gestures.contact_down(tid, pos_px);
-        }
-        winit::event::TouchPhase::Ended | winit::event::TouchPhase::Cancelled => {
-            touch_gestures.contact_up(tid);
-        }
-    }
     match t.phase {
         winit::event::TouchPhase::Started => {
+            // Sync before the gesture layer: `touch_started` reads
+            // the table for multi-finger detection (`len() >= 2`
+            // cancels the pending primary instead of dispatching a
+            // press), so the second finger must already be present.
+            touch_gestures.contact_down(tid, pos_px);
             touch_gestures.touch_started(rt, tid, pos_px);
+            sync_touch_points(rt, touch_gestures);
             TouchResult {
                 dirty: true,
                 pinch: None,
@@ -107,7 +104,9 @@ pub fn handle_touch_raw(
             }
         }
         winit::event::TouchPhase::Moved => {
+            touch_gestures.contact_down(tid, pos_px);
             let (dirty, pinch, pan, rotation) = touch_gestures.touch_moved(rt, tid, pos_px, scale);
+            sync_touch_points(rt, touch_gestures);
             TouchResult {
                 dirty,
                 pinch,
@@ -119,7 +118,12 @@ pub fn handle_touch_raw(
         }
         winit::event::TouchPhase::Ended | winit::event::TouchPhase::Cancelled => {
             let cancelled = t.phase == winit::event::TouchPhase::Cancelled;
+            // Sync before the gesture layer: `touch_ended` derives
+            // tap-vs-multi from the table (`was_multi`), so the lifted
+            // finger must still be present.
             let ended = touch_gestures.touch_ended(rt, tid, pos_px, cancelled);
+            touch_gestures.contact_up(tid);
+            sync_touch_points(rt, touch_gestures);
             TouchResult {
                 dirty: false,
                 pinch: None,
@@ -130,6 +134,19 @@ pub fn handle_touch_raw(
             }
         }
     }
+}
+
+/// Publish the live contact table into `sched.touch_points` (single
+/// sync point: every runner funnels raw touch through
+/// `handle_touch_raw`). Games snapshot it each frame, so held fingers
+/// stay visible across frames (unlike the press edge, which fires
+/// once and is gone). GML `device_mouse_*` parity: stable per-finger
+/// ids, physical-px positions sampled every tick while held.
+fn sync_touch_points(rt: &mut ReposeRuntime, touch_gestures: &TouchGestureState) {
+    rt.sched.touch_points.clear();
+    rt.sched
+        .touch_points
+        .extend(touch_gestures.active_touches().iter().map(|(id, (x, y))| (*id, *x, *y)));
 }
 
 /// HACK: Legacy wrapper that dispatches gestures inline (use `handle_touch_raw` when caller

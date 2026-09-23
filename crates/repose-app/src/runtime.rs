@@ -558,18 +558,21 @@ impl ReposeRuntime {
         out
     }
 
-    fn dispatch_pointer_to_path(&self, kind: PointerEventKind, pos: Vec2, path: &[u64]) {
+    fn dispatch_pointer_to_path(
+        &self,
+        kind: PointerEventKind,
+        pos: Vec2,
+        path: &[u64],
+        touch: Option<u64>,
+    ) {
         let Some(f) = &self.frame_cache else {
             return;
         };
-        let base = PointerEvent::new(
-            PointerId(0),
-            PointerKind::Mouse,
-            kind,
-            pos,
-            1.0,
-            self.modifiers,
-        );
+        let (id, pkind) = match touch {
+            Some(tid) => (PointerId(tid), PointerKind::Touch),
+            None => (PointerId(0), PointerKind::Mouse),
+        };
+        let base = PointerEvent::new(id, pkind, kind, pos, 1.0, self.modifiers);
         for &id in path {
             let Some(h) = f.hit_regions.iter().find(|h| h.id == id) else {
                 continue;
@@ -599,6 +602,12 @@ impl ReposeRuntime {
 
     /// Process a pointer-move event. Returns cursor suggestion.
     pub fn handle_pointer_move(&mut self, pos: Vec2) -> PointerMoveResult {
+        self.handle_touch_move(None, pos)
+    }
+
+    /// Touch move with a stable finger id (same pairing as
+    /// [`Self::handle_touch_press`]; hover fallback stays mouse).
+    pub fn handle_touch_move(&mut self, touch: Option<u64>, pos: Vec2) -> PointerMoveResult {
         self.mouse_pos_px = (pos.x, pos.y);
         self.pointer_inside = true;
 
@@ -706,21 +715,18 @@ impl ReposeRuntime {
                 self.hit_path = None;
                 self.capture_id = None;
             } else {
-                self.dispatch_pointer_to_path(PointerEventKind::Move, pos, &live);
+                self.dispatch_pointer_to_path(PointerEventKind::Move, pos, &live, touch);
             }
         }
         if self.hit_path.is_none()
             && let Some(h) = top
             && let Some(cb) = &h.on_pointer_move
         {
-            let mut pe = PointerEvent::new(
-                PointerId(0),
-                PointerKind::Mouse,
-                PointerEventKind::Move,
-                pos,
-                1.0,
-                self.modifiers,
-            );
+            let (id, kind) = match touch {
+                Some(tid) => (PointerId(tid), PointerKind::Touch),
+                None => (PointerId(0), PointerKind::Mouse),
+            };
+            let mut pe = PointerEvent::new(id, kind, PointerEventKind::Move, pos, 1.0, self.modifiers);
             pe.origin = Vec2 {
                 x: h.rect.x,
                 y: h.rect.y,
@@ -738,6 +744,19 @@ impl ReposeRuntime {
     /// Process a pointer button press. Returns focus/capture info.
     pub fn handle_pointer_press(
         &mut self,
+        pos: Vec2,
+        button: PointerButton,
+    ) -> PointerButtonResult {
+        self.handle_touch_press(None, pos, button)
+    }
+
+    /// Touch press with a stable finger id: same hit-path dispatch as
+    /// the mouse press, but the event carries `PointerKind::Touch` +
+    /// the finger id, so game viewports stage per-finger contacts
+    /// instead of one shared mouse point (GML `device_mouse_*` parity).
+    pub fn handle_touch_press(
+        &mut self,
+        touch: Option<u64>,
         pos: Vec2,
         button: PointerButton,
     ) -> PointerButtonResult {
@@ -784,7 +803,10 @@ impl ReposeRuntime {
             dnd::handle_drag_action(&DragAction::Press {
                 position: pos,
                 capture_id: hit.id,
-                kind: PointerKind::Mouse,
+                kind: match touch {
+                    Some(_) => PointerKind::Touch,
+                    None => PointerKind::Mouse,
+                },
                 modifiers: self.modifiers,
             });
 
@@ -880,7 +902,7 @@ impl ReposeRuntime {
                 }
             }
 
-            self.dispatch_pointer_to_path(PointerEventKind::Down(button), pos, &path);
+            self.dispatch_pointer_to_path(PointerEventKind::Down(button), pos, &path, touch);
 
             request_frame();
         } else {
@@ -896,6 +918,17 @@ impl ReposeRuntime {
     /// Process a pointer button release.
     pub fn handle_pointer_release(
         &mut self,
+        pos: Vec2,
+        button: PointerButton,
+    ) -> PointerButtonResult {
+        self.handle_touch_release(None, pos, button)
+    }
+
+    /// Touch release with a stable finger id (same pairing as
+    /// [`Self::handle_touch_press`]).
+    pub fn handle_touch_release(
+        &mut self,
+        touch: Option<u64>,
         pos: Vec2,
         button: PointerButton,
     ) -> PointerButtonResult {
@@ -931,7 +964,7 @@ impl ReposeRuntime {
         };
 
         if let Some(path) = &self.hit_path {
-            self.dispatch_pointer_to_path(PointerEventKind::Up(button), pos, path);
+            self.dispatch_pointer_to_path(PointerEventKind::Up(button), pos, path, touch);
             result.consumed = true;
         }
         self.pressed_ids.clear();
@@ -1026,6 +1059,11 @@ impl ReposeRuntime {
     }
 
     /// Cancel pointer state (focus lost, cursor left window, etc.).
+    pub fn handle_touch_cancel(&mut self, touch: Option<u64>) {
+        let _ = touch;
+        self.handle_pointer_cancel()
+    }
+
     pub fn handle_pointer_cancel(&mut self) {
         if let Some(f) = &self.frame_cache
             && let Some(cid) = self.capture_id
@@ -1053,7 +1091,7 @@ impl ReposeRuntime {
             self.modifiers,
         );
         if let Some(path) = &self.hit_path {
-            self.dispatch_pointer_to_path(PointerEventKind::Cancel, pos, path);
+            self.dispatch_pointer_to_path(PointerEventKind::Cancel, pos, path, None);
         }
         self.reset_pointer_state();
     }
@@ -1854,6 +1892,7 @@ impl ReposeRuntime {
         self.handle_pointer_cancel();
         self.held_keys.clear();
         self.held_mouse.clear();
+        self.sched.touch_points.clear();
         self.finish_compositions();
     }
 

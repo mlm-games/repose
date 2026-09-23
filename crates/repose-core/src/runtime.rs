@@ -729,6 +729,13 @@ pub struct Scheduler {
     /// Window focus as of the last platform event. `false` drops every
     /// held key on the game side.
     pub window_focused: bool,
+    /// Live touch contacts in physical px: `(touch id, x, y)` per
+    /// finger currently down. Written by the platform runners from
+    /// raw `WindowEvent::Touch` (Started/Moved/Ended-Cancelled), read
+    /// by games through `feed_polled`-style staging snapshots
+    /// (GML `device_mouse_x_to_gui(i)` parity: stable per-finger slot
+    /// ids, positions sampled every tick while held).
+    pub touch_points: Vec<(u64, f32, f32)>,
     /// Polled mouse-button levels, same source as `held_keys`
     /// (GML `mouse_check_button` parity; repairs a missed button-up
     /// when the release lands outside the window).
@@ -763,6 +770,7 @@ impl Scheduler {
             size: (1280, 800),
             held_keys: HashSet::new(),
             window_focused: true,
+            touch_points: Vec::new(),
             mouse_primary: false,
             mouse_secondary: false,
             mouse_middle: false,
