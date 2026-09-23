@@ -407,6 +407,25 @@ impl TouchGestureState {
         }
     }
 
+    /// Live touch contacts in physical px, keyed by winit touch id.
+    /// Single source for game touch zones (unlike the press
+    /// edge, which fires once and is gone).
+    pub fn active_touches(&self) -> &BTreeMap<u64, (f32, f32)> {
+        &self.active_touches
+    }
+
+    /// Record a live contact (Started/Moved). Called from
+    /// `handle_touch_raw` before the gesture layer runs.
+    pub fn contact_down(&mut self, tid: u64, pos_px: (f32, f32)) {
+        self.active_touches.insert(tid, pos_px);
+    }
+
+    /// Drop a live contact (Ended/Cancelled). Called from
+    /// `handle_touch_raw` before the gesture layer runs.
+    pub fn contact_up(&mut self, tid: u64) {
+        self.active_touches.remove(&tid);
+    }
+
     pub fn multi_touch_info(&self) -> Option<MultiTouchDelta> {
         let state = self.gesture_state.as_ref()?;
         let prev = state.previous.unwrap_or(state.current);

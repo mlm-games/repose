@@ -85,6 +85,15 @@ pub fn handle_touch_raw(
 ) -> TouchResult {
     let pos_px = (t.location.x as f32, t.location.y as f32);
     let tid = t.id;
+    // Live contact table sync (single source: `TouchGestureState`).
+    match t.phase {
+        winit::event::TouchPhase::Started | winit::event::TouchPhase::Moved => {
+            touch_gestures.contact_down(tid, pos_px);
+        }
+        winit::event::TouchPhase::Ended | winit::event::TouchPhase::Cancelled => {
+            touch_gestures.contact_up(tid);
+        }
+    }
     match t.phase {
         winit::event::TouchPhase::Started => {
             touch_gestures.touch_started(rt, tid, pos_px);
