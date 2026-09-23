@@ -153,6 +153,48 @@ impl ShortcutMap {
 
 pub type Handler = Rc<dyn Fn(Action) -> bool>;
 
+#[derive(Clone)]
+pub struct ShortcutState {
+    pub handler: Option<Handler>,
+    pub default_map: ShortcutMap,
+    pub scopes: Vec<ShortcutMap>,
+}
+
+impl ShortcutState {
+    pub fn new() -> Self {
+        Self {
+            handler: None,
+            default_map: default_map(),
+            scopes: Vec::new(),
+        }
+    }
+
+    pub fn resolve_action(&self, chord: &KeyChord) -> Option<Action> {
+        if chord.key == Key::Unknown {
+            return None;
+        }
+        if let Some(action) = self
+            .scopes
+            .iter()
+            .rev()
+            .find_map(|scope| scope.action_for(chord))
+        {
+            return Some(action);
+        }
+        self.default_map.action_for(chord)
+    }
+
+    pub fn handle(&self, action: Action) -> bool {
+        self.handler.as_ref().map(|f| f(action)).unwrap_or(false)
+    }
+}
+
+impl Default for ShortcutState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 thread_local! {
     static HANDLER: RefCell<Option<Handler>> = RefCell::new(None);
     static DEFAULT_MAP: RefCell<ShortcutMap> = RefCell::new(default_map());

@@ -208,6 +208,12 @@ pub struct ReposeRuntime {
 
     cursor: Option<CursorIcon>,
 
+    /// Per-runtime shortcut state. `handle_key` resolves chords and
+    /// `dispatch_action` handles actions against this first; the
+    /// process-global thread-locals in `repose_core::shortcuts` stay as a
+    /// fallback so tests and headless compose without a runner keep working.
+    pub shortcuts: repose_core::shortcuts::ShortcutState,
+
     pub textfield_states: HashMap<u64, Rc<RefCell<TextFieldState>>>,
     /// Connected gamepads by backend id: display name plus live button/axis
     /// state. Fed by [`ReposeRuntime::handle_gamepad`].
@@ -272,6 +278,7 @@ impl ReposeRuntime {
             pending_click: None,
             frame_cache: None,
             cursor: None,
+            shortcuts: repose_core::shortcuts::ShortcutState::new(),
             textfield_states: HashMap::new(),
             gamepads: HashMap::new(),
             pending_rumble: Vec::new(),
@@ -610,6 +617,9 @@ impl ReposeRuntime {
     pub fn handle_touch_move(&mut self, touch: Option<u64>, pos: Vec2) -> PointerMoveResult {
         self.mouse_pos_px = (pos.x, pos.y);
         self.pointer_inside = true;
+        if touch.is_none() {
+            self.sched.pointer_pos_px = Some((pos.x, pos.y));
+        }
 
         if dnd::handle_drag_action(&DragAction::Move {
             position: pos,
@@ -686,7 +696,9 @@ impl ReposeRuntime {
             .rev()
             .find(|h| !h.disabled && h.rect.contains(pos));
 
-        self.cursor = top.and_then(|h| h.cursor.clone()).or(Some(CursorIcon::Default));
+        self.cursor = top
+            .and_then(|h| h.cursor.clone())
+            .or(Some(CursorIcon::Default));
 
         let new_hover = top.map(|h| h.id);
 
@@ -726,7 +738,8 @@ impl ReposeRuntime {
                 Some(tid) => (PointerId(tid), PointerKind::Touch),
                 None => (PointerId(0), PointerKind::Mouse),
             };
-            let mut pe = PointerEvent::new(id, kind, PointerEventKind::Move, pos, 1.0, self.modifiers);
+            let mut pe =
+                PointerEvent::new(id, kind, PointerEventKind::Move, pos, 1.0, self.modifiers);
             pe.origin = Vec2 {
                 x: h.rect.x,
                 y: h.rect.y,
@@ -761,6 +774,9 @@ impl ReposeRuntime {
         button: PointerButton,
     ) -> PointerButtonResult {
         self.mouse_pos_px = (pos.x, pos.y);
+        if touch.is_none() {
+            self.sched.pointer_pos_px = Some((pos.x, pos.y));
+        }
         self.held_mouse.insert(button);
         let _ = repose_core::request_input_mode(repose_core::InputMode::Touch);
 
@@ -933,6 +949,9 @@ impl ReposeRuntime {
         button: PointerButton,
     ) -> PointerButtonResult {
         self.mouse_pos_px = (pos.x, pos.y);
+        if touch.is_none() {
+            self.sched.pointer_pos_px = Some((pos.x, pos.y));
+        }
         self.held_mouse.remove(&button);
         let mut result = PointerButtonResult {
             focused: self.sched.focused,
@@ -1058,13 +1077,18 @@ impl ReposeRuntime {
         result
     }
 
-    /// Cancel pointer state (focus lost, cursor left window, etc.).
+    /// Cancel mouse pointer state (focus lost). Touch fingers never feed
+    /// the polled mouse position, so only a mouse cancel clears it.
     pub fn handle_touch_cancel(&mut self, touch: Option<u64>) {
-        let _ = touch;
-        self.handle_pointer_cancel()
+        let saved = self.sched.pointer_pos_px;
+        self.handle_pointer_cancel();
+        if touch.is_some() {
+            self.sched.pointer_pos_px = saved;
+        }
     }
 
     pub fn handle_pointer_cancel(&mut self) {
+        self.sched.pointer_pos_px = None;
         if let Some(f) = &self.frame_cache
             && let Some(cid) = self.capture_id
             && is_tf_hit(f, cid)
@@ -1334,9 +1358,18 @@ impl ReposeRuntime {
         // Action dispatch (shortcuts like Ctrl+C, Tab, etc.)
         if event.event_type == KeyEventType::Down
             && !event.is_repeat
-            && let Some(action) = repose_core::shortcuts::resolve_action(
-                repose_core::shortcuts::KeyChord::new(event.key.clone(), self.modifiers),
-            )
+            && let Some(action) = self
+                .shortcuts
+                .resolve_action(&repose_core::shortcuts::KeyChord::new(
+                    event.key.clone(),
+                    self.modifiers,
+                ))
+                .or_else(|| {
+                    repose_core::shortcuts::resolve_action(repose_core::shortcuts::KeyChord::new(
+                        event.key.clone(),
+                        self.modifiers,
+                    ))
+                })
         {
             // `dispatch_action` covers focus navigation internally.
             if self.dispatch_action(action.clone()) {
@@ -1684,7 +1717,12 @@ impl ReposeRuntime {
             return true;
         }
 
-        // 3) Global shortcut handler
+        // 3) Global shortcut handler: runtime-owned first, then the
+        // process-global fallback (tests / headless compose).
+        if self.shortcuts.handle(action.clone()) {
+            request_frame();
+            return true;
+        }
         if repose_core::shortcuts::handle(action.clone()) {
             request_frame();
             return true;

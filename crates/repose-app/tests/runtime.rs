@@ -602,3 +602,48 @@ fn mouse_buttons_track_press_release() {
     let _ = rt.handle_pointer_release(pos, PointerButton::Secondary);
     assert!(!rt.mouse_button_held(PointerButton::Secondary));
 }
+
+#[test]
+fn pointer_pos_tracks_mouse_only() {
+    let mut rt = ReposeRuntime::new();
+    assert_eq!(rt.sched.pointer_pos_px, None);
+    let pos = Vec2 { x: 10.0, y: 20.0 };
+    rt.cache_frame(textfield_frame(TF_ID));
+    let _ = rt.handle_pointer_move(pos);
+    assert_eq!(rt.sched.pointer_pos_px, Some((10.0, 20.0)));
+    let _ = rt.handle_touch_move(Some(7), Vec2 { x: 99.0, y: 99.0 });
+    assert_eq!(rt.sched.pointer_pos_px, Some((10.0, 20.0)));
+    rt.handle_pointer_cancel();
+    assert_eq!(rt.sched.pointer_pos_px, None);
+    let _ = rt.handle_pointer_press(pos, PointerButton::Primary);
+    assert_eq!(rt.sched.pointer_pos_px, Some((10.0, 20.0)));
+    rt.handle_focus_lost();
+    assert_eq!(rt.sched.pointer_pos_px, None);
+}
+
+#[test]
+fn runtime_shortcuts_are_per_runtime() {
+    use repose_core::input::Key;
+    use repose_core::shortcuts::{Action, KeyChord};
+    let mut a = ReposeRuntime::new();
+    let mut b = ReposeRuntime::new();
+    a.shortcuts.default_map.insert(
+        Key::Character('k'),
+        Modifiers::default(),
+        Action::Custom("a".into()),
+    );
+    b.shortcuts.default_map.insert(
+        Key::Character('k'),
+        Modifiers::default(),
+        Action::Custom("b".into()),
+    );
+    let chord = KeyChord::new(Key::Character('k'), Modifiers::default());
+    assert_eq!(
+        a.shortcuts.resolve_action(&chord),
+        Some(Action::Custom("a".into()))
+    );
+    assert_eq!(
+        b.shortcuts.resolve_action(&chord),
+        Some(Action::Custom("b".into()))
+    );
+}

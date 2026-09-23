@@ -719,6 +719,9 @@ pub struct Scheduler {
     scope_local_counters: FxHashMap<String, u32>,
     pub focused: Option<u64>,
     pub size: (u32, u32),
+    /// Last known mouse pointer position in physical px, updated on
+    /// mouse move/press/release without passing through focus dispatch.
+    pub pointer_pos_px: Option<(f32, f32)>,
     /// Polled physical keys currently down, layout-independent
     /// positions (see [`PhysicalKey`]). The platform runner maintains
     /// this from raw `KeyboardInput` events without passing through
@@ -768,6 +771,7 @@ impl Scheduler {
             scope_local_counters: FxHashMap::default(),
             focused: None,
             size: (1280, 800),
+            pointer_pos_px: None,
             held_keys: HashSet::new(),
             window_focused: true,
             touch_points: Vec::new(),
