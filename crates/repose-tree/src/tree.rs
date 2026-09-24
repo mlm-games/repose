@@ -652,6 +652,20 @@ impl ViewTree {
             self.invalidate_subcompose_cache(node_id);
         }
 
+        let view_id = self.compute_view_id(view, node_id, parent, index_in_parent);
+        let old_view_id: u64 = self
+            .nodes
+            .get(node_id)
+            .map(|n| n.view_id)
+            .unwrap_or(view_id);
+        self.assign_view_id(
+            node_id,
+            old_view_id,
+            view_id,
+            view.id == 0,
+            "reconcile_node",
+        );
+
         let new_children_hashes = if let ViewKind::SubcomposeLayout { content } = &view.kind {
             let subcomposed = self.run_subcompose(node_id, content);
             let slot_views: Vec<View> = subcomposed.into_iter().map(|(_, v)| v).collect();
@@ -661,13 +675,6 @@ impl ViewTree {
         };
 
         let new_subtree_hash = hash_subtree(content_hash, &new_children_hashes);
-
-        let view_id = self.compute_view_id(view, node_id, parent, index_in_parent);
-        let old_view_id: u64 = self
-            .nodes
-            .get(node_id)
-            .map(|n| n.view_id)
-            .unwrap_or(view_id);
 
         let subtree_changed;
         let replaced_values;
@@ -704,8 +711,6 @@ impl ViewTree {
             } else if !content_changed && !identity.paint && !identity.layout {
                 ctx.skipped += 1;
             }
-
-            node.view_id = view_id;
         }
         drop(replaced_values);
 
@@ -714,20 +719,6 @@ impl ViewTree {
         }
         if subtree_changed || identity.layout {
             self.mark_dirty(node_id);
-        }
-        if old_view_id != view_id && self.view_id_map.get(&old_view_id).copied() == Some(node_id) {
-            self.view_id_map.remove(&old_view_id);
-        }
-        if let Some(existing) = self.view_id_map.get(&view_id).copied()
-            && existing != node_id
-        {
-            log::error!(
-                "reconcile_node: duplicate View.id {}; keeping the first node {:?}",
-                view_id,
-                existing
-            );
-        } else {
-            self.view_id_map.insert(view_id, node_id);
         }
 
         node_id
@@ -976,6 +967,9 @@ impl ViewTree {
             node.scope_key = view.scope_key.clone();
         }
 
+        let view_id = self.compute_view_id(view, node_id, parent, index_in_parent);
+        self.assign_view_id(node_id, 0, view_id, view.id == 0, "create_node");
+
         let child_depth = depth + 1;
         let mut child_ids: SmallVec<[NodeId; 4]> = SmallVec::new();
         let mut child_hashes: Vec<u64> = Vec::with_capacity(view.children.len());
@@ -999,7 +993,6 @@ impl ViewTree {
             );
         }
 
-        let view_id = self.compute_view_id(view, node_id, parent, index_in_parent);
         let subtree_hash = hash_subtree(content_hash, &child_hashes);
 
         let node = self
@@ -1008,19 +1001,6 @@ impl ViewTree {
             .expect("create_node: node just inserted");
         node.children = child_ids;
         node.subtree_hash = subtree_hash;
-        node.view_id = view_id;
-
-        if let Some(existing) = self.view_id_map.get(&view_id).copied()
-            && existing != node_id
-        {
-            log::error!(
-                "create_node: duplicate View.id {}; keeping the first node {:?}",
-                view_id,
-                existing
-            );
-        } else {
-            self.view_id_map.insert(view_id, node_id);
-        }
         self.dirty.insert(node_id);
 
         node_id
@@ -1042,7 +1022,10 @@ impl ViewTree {
             .map(|n| n.view_id)
             .unwrap_or(0);
 
-        let salt = view.modifier.key.unwrap_or(index_in_parent as u64);
+        let salt = match view.modifier.key {
+            Some(key) => key.wrapping_mul(2).wrapping_add(1),
+            None => (index_in_parent as u64).wrapping_mul(2),
+        };
 
         let mut id = parent_id.wrapping_mul(31).wrapping_add(salt);
         id = id.wrapping_mul(0x9E3779B97F4A7C15);
@@ -1053,6 +1036,67 @@ impl ViewTree {
         }
 
         id
+    }
+
+    fn assign_view_id(
+        &mut self,
+        node_id: NodeId,
+        old_view_id: ViewId,
+        requested_view_id: ViewId,
+        generated: bool,
+        phase: &str,
+    ) {
+        let view_id = if generated {
+            self.available_generated_view_id(node_id, requested_view_id)
+        } else {
+            requested_view_id
+        };
+
+        if old_view_id != view_id && self.view_id_map.get(&old_view_id).copied() == Some(node_id) {
+            self.view_id_map.remove(&old_view_id);
+        }
+
+        if let Some(existing) = self.view_id_map.get(&view_id).copied()
+            && existing != node_id
+        {
+            log::error!(
+                "{}: duplicate View.id {}; keeping the first node {:?}",
+                phase,
+                view_id,
+                existing
+            );
+        } else {
+            self.view_id_map.insert(view_id, node_id);
+        }
+
+        if let Some(node) = self.nodes.get_mut(node_id) {
+            node.view_id = view_id;
+        }
+    }
+
+    fn available_generated_view_id(&self, node_id: NodeId, requested: ViewId) -> ViewId {
+        if self
+            .view_id_map
+            .get(&requested)
+            .map_or(true, |existing| *existing == node_id)
+        {
+            return requested;
+        }
+
+        let mut candidate = requested;
+        loop {
+            candidate = candidate.wrapping_add(1);
+            if candidate == 0 {
+                candidate = 1;
+            }
+            if self
+                .view_id_map
+                .get(&candidate)
+                .map_or(true, |existing| *existing == node_id)
+            {
+                return candidate;
+            }
+        }
     }
 
     /// Mark a node and its descendants for removal.
@@ -1359,6 +1403,39 @@ mod tests {
         tree.update(&root2);
 
         assert!(tree.stats.reconciled_nodes > 0);
+    }
+
+    #[test]
+    fn generated_view_ids_are_unique_and_stable() {
+        let mut tree = ViewTree::new();
+        let branch = |text: &str| box_view().with_children(vec![text_view(text)]);
+        let root = box_view().with_children(vec![
+            text_view("keyed").modifier(Modifier::new().key(1)),
+            text_view("unkeyed"),
+            branch("left"),
+            branch("right"),
+        ]);
+
+        tree.update(&root);
+        let first: Vec<(NodeId, u64)> = tree
+            .iter_with_ids()
+            .map(|(id, node)| (id, node.view_id))
+            .collect();
+        let unique: std::collections::HashSet<u64> = first.iter().map(|(_, id)| *id).collect();
+        assert_eq!(unique.len(), first.len());
+        for (node_id, view_id) in &first {
+            assert_eq!(
+                tree.get_by_view_id(*view_id).map(|node| node.id),
+                Some(*node_id)
+            );
+        }
+
+        tree.update(&root);
+        let second: Vec<(NodeId, u64)> = tree
+            .iter_with_ids()
+            .map(|(id, node)| (id, node.view_id))
+            .collect();
+        assert_eq!(first, second);
     }
 
     #[test]
