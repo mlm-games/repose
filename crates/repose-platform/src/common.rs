@@ -52,22 +52,27 @@ pub fn sync_viewport(
     }
 }
 
-/// Shared helper used by platform runners to sync IME state for focused textfields.
+/// Shared helper used by native platform runners to sync IME state for focused textfields.
+#[cfg(not(target_arch = "wasm32"))]
 #[allow(dead_code)]
 pub fn sync_ime_for_focused(
     window: &winit::window::Window,
     rt: &repose_app::ReposeRuntime,
     frame: &repose_core::runtime::Frame,
 ) {
+    if !rt.sched.window_focused {
+        set_ime_for_textfield(window, false);
+        return;
+    }
     let Some(fid) = rt.sched.focused else {
         set_ime_for_textfield(window, false);
         return;
     };
-    let Some(hit) = frame.hit_regions.iter().find(|h| h.id == fid) else {
+    if !is_editable_textfield_hit(frame, fid) {
         set_ime_for_textfield(window, false);
         return;
-    };
-    if !hit.tf_enabled || hit.tf_read_only || hit.tf_state_key.is_none() {
+    }
+    let Some(hit) = frame.hit_regions.iter().find(|h| h.id == fid) else {
         set_ime_for_textfield(window, false);
         return;
     };
@@ -78,11 +83,14 @@ pub fn sync_ime_for_focused(
         hit.auto_correct.unwrap_or(true),
         hit.capitalization,
     );
-    let sf = window.scale_factor();
-    window.set_ime_cursor_area(
-        winit::dpi::LogicalPosition::new(hit.rect.x as f64 / sf, hit.rect.y as f64 / sf),
-        winit::dpi::LogicalSize::new(hit.rect.w as f64 / sf, hit.rect.h as f64 / sf),
-    );
+    #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
+    {
+        let sf = window.scale_factor();
+        window.set_ime_cursor_area(
+            winit::dpi::LogicalPosition::new(hit.rect.x as f64 / sf, hit.rect.y as f64 / sf),
+            winit::dpi::LogicalSize::new(hit.rect.w as f64 / sf, hit.rect.h as f64 / sf),
+        );
+    }
 }
 
 /// Whether a compose is needed based on dirty/frame/present flags.
@@ -163,9 +171,57 @@ pub(crate) fn update_modifiers(modifiers: &mut Modifiers, state: &winit::keyboar
     };
 }
 
+pub(crate) fn is_editable_hit(hit: &repose_core::HitRegion) -> bool {
+    hit.tf_enabled && !hit.tf_read_only && hit.tf_state_key.is_some()
+}
+
+pub(crate) fn editable_textfield_hit<'a>(
+    hits: &'a [repose_core::HitRegion],
+    semantics: &[repose_core::runtime::SemNode],
+    id: u64,
+) -> Option<&'a repose_core::HitRegion> {
+    let hit = hits.iter().find(|hit| hit.id == id)?;
+    (is_editable_hit(hit)
+        && semantics
+            .iter()
+            .any(|node| node.id == id && node.role == repose_core::semantics::Role::TextField))
+    .then_some(hit)
+}
+
+pub(crate) fn is_editable_textfield_hit(frame: &Frame, id: u64) -> bool {
+    editable_textfield_hit(&frame.hit_regions, &frame.semantics_nodes, id).is_some()
+}
+
 #[allow(dead_code)]
 pub(crate) fn hit_index_by_id(frame: &Frame, id: u64) -> Option<usize> {
     repose_app::hit_index_by_id(frame, id)
+}
+
+pub(crate) fn is_back_key(event: &winit::event::KeyEvent) -> bool {
+    if event.logical_key == winit::keyboard::Key::Named(winit::keyboard::NamedKey::BrowserBack)
+        || matches!(
+            event.physical_key,
+            winit::keyboard::PhysicalKey::Code(winit::keyboard::KeyCode::BrowserBack)
+        )
+    {
+        return true;
+    }
+    #[cfg(target_os = "android")]
+    if matches!(
+        event.physical_key,
+        winit::keyboard::PhysicalKey::Unidentified(winit::keyboard::NativeKeyCode::Android(4))
+    ) {
+        return true;
+    }
+    false
+}
+
+pub(crate) fn is_escape_key(event: &winit::event::KeyEvent) -> bool {
+    event.logical_key == winit::keyboard::Key::Named(winit::keyboard::NamedKey::Escape)
+        || matches!(
+            event.physical_key,
+            winit::keyboard::PhysicalKey::Code(winit::keyboard::KeyCode::Escape)
+        )
 }
 
 pub(crate) fn winit_key_to_repose(
@@ -212,6 +268,7 @@ pub(crate) fn map_cursor(c: &repose_core::CursorIcon) -> winit::window::Cursor {
 
 /// Whether the cursor suggestion hides the OS pointer (`Hidden`
 /// carries no winit icon; the host must toggle visibility itself).
+#[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 pub(crate) fn cursor_is_hidden(c: &repose_core::CursorIcon) -> bool {
     matches!(c, repose_core::CursorIcon::Hidden)
 }
@@ -220,6 +277,7 @@ pub(crate) fn cursor_is_hidden(c: &repose_core::CursorIcon) -> bool {
 /// applied to the web canvas `style.cursor`. `Hidden` maps to `none`.
 /// `Custom` has no keyword (data URLs handled separately); falls back
 /// to `default` here so the match stays total.
+#[cfg(target_arch = "wasm32")]
 pub(crate) fn cursor_css(c: &repose_core::CursorIcon) -> &'static str {
     match c {
         repose_core::CursorIcon::Hidden => "none",
@@ -237,6 +295,7 @@ pub(crate) fn cursor_css(c: &repose_core::CursorIcon) -> &'static str {
 }
 
 // IME helpers.
+#[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 pub fn map_ime_purpose(hint: repose_core::ImePurposeHint) -> winit::window::ImePurpose {
     match hint {
         repose_core::ImePurposeHint::Password => winit::window::ImePurpose::Password,
@@ -244,6 +303,7 @@ pub fn map_ime_purpose(hint: repose_core::ImePurposeHint) -> winit::window::ImeP
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn set_ime_for_textfield(window: &winit::window::Window, is_textfield: bool) {
     set_ime_for_textfield_ex(
         window,
@@ -254,16 +314,18 @@ pub fn set_ime_for_textfield(window: &winit::window::Window, is_textfield: bool)
     );
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn set_ime_for_textfield_ex(
     window: &winit::window::Window,
     is_textfield: bool,
-    purpose: repose_core::ImePurposeHint,
+    _purpose: repose_core::ImePurposeHint,
     _auto_correct: bool,
     _capitalization: repose_core::KeyboardCapitalization,
 ) {
     if is_textfield {
         window.set_ime_allowed(true);
-        window.set_ime_purpose(map_ime_purpose(purpose));
+        #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
+        window.set_ime_purpose(map_ime_purpose(_purpose));
     } else {
         window.set_ime_allowed(false);
     }
@@ -288,7 +350,7 @@ pub(crate) fn map_key(
         PhysicalKey::Code(KeyCode::Backspace) => Key::Backspace,
         PhysicalKey::Code(KeyCode::Delete) => Key::Delete,
         PhysicalKey::Code(KeyCode::Insert) => Key::Insert,
-        PhysicalKey::Code(KeyCode::Escape) => Key::Escape,
+        PhysicalKey::Code(KeyCode::Escape) | PhysicalKey::Code(KeyCode::BrowserBack) => Key::Escape,
         PhysicalKey::Code(KeyCode::ArrowLeft) => Key::ArrowLeft,
         PhysicalKey::Code(KeyCode::ArrowRight) => Key::ArrowRight,
         PhysicalKey::Code(KeyCode::ArrowUp) => Key::ArrowUp,

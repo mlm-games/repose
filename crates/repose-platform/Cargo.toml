@@ -2,7 +2,9 @@
 name = "repose-platform"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
 description = "Platform runners (winit Desktop, Android and Web)"
 
 [features]

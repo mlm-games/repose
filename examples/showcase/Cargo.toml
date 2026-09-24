@@ -2,7 +2,9 @@
 name = "showcase"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
+description = "Cross-platform Repose UI showcase"
 publish = false
 default-run = "showcase-desktop"
 
@@ -20,14 +22,15 @@ path = "src/main.rs"
 [package.metadata.android]
 package = "com.example.showcase"
 apk_name = "showcase"
-target_sdk_version = 35
-min_sdk_version = 26
 build_targets = ["aarch64-linux-android"]
-split_per_abi = true
+
+[package.metadata.android.sdk]
+min_sdk_version = 26
+target_sdk_version = 35
 
 [package.metadata.android.application]
 label = "Repose Showcase"
-fullscreen = true
+theme = "@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen"
 
 [target.'cfg(target_os = "android")'.dependencies]
 rlobkit-app-events = { workspace = true }

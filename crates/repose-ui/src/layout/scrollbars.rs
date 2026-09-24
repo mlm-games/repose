@@ -5,6 +5,7 @@ use std::rc::Rc;
 use repose_core::*;
 
 use crate::Interactions;
+use crate::hit_testing::{HitContext, register_hit};
 
 #[derive(Clone, Copy)]
 pub(crate) enum ScrollbarAxis {
@@ -23,6 +24,7 @@ pub(crate) fn push_scrollbar(
     z: f32,
     axis: ScrollbarAxis,
     set_offset: Option<Rc<dyn Fn(f32)>>,
+    hit_context: &HitContext,
 ) {
     let vp_len = match axis {
         ScrollbarAxis::V => vp.h,
@@ -117,28 +119,29 @@ pub(crate) fn push_scrollbar(
             (if max_p > 0.0 { p / max_p } else { 0.0 }) * max_scroll
         });
 
-        let extract = match axis {
-            ScrollbarAxis::V => {
-                (|pe: &PointerEvent| pe.position_in_window().y) as fn(&PointerEvent) -> f32
-            }
-            ScrollbarAxis::H => {
-                (|pe: &PointerEvent| pe.position_in_window().x) as fn(&PointerEvent) -> f32
-            }
-        };
-
         let on_pd = {
             let s = s.clone();
             let m = map.clone();
-            Rc::new(move |pe: PointerEvent| s(m(extract(&pe))))
+            let context = hit_context.clone();
+            let vertical = matches!(axis, ScrollbarAxis::V);
+            Rc::new(move |pe: PointerEvent| {
+                let local = context.to_local(pe.position_in_window());
+                s(m(if vertical { local.y } else { local.x }))
+            })
         };
         let on_pm = if interactions.pressed.contains(&tid) {
             let s = s.clone();
             let m = map.clone();
-            Some(Rc::new(move |pe: PointerEvent| s(m(extract(&pe)))) as Rc<dyn Fn(PointerEvent)>)
+            let context = hit_context.clone();
+            let vertical = matches!(axis, ScrollbarAxis::V);
+            Some(Rc::new(move |pe: PointerEvent| {
+                let local = context.to_local(pe.position_in_window());
+                s(m(if vertical { local.y } else { local.x }))
+            }) as Rc<dyn Fn(PointerEvent)>)
         } else {
             None
         };
-        hits.push(HitRegion {
+        let mut hit = HitRegion {
             id: tid,
             rect: thumb_rect,
             z_index: z + 1000.0,
@@ -146,6 +149,8 @@ pub(crate) fn push_scrollbar(
             on_pointer_move: on_pm,
             on_pointer_up: Some(Rc::new(|_| {})),
             ..Default::default()
-        });
+        };
+        register_hit(&mut hit, hit_context, None);
+        hits.push(hit);
     }
 }

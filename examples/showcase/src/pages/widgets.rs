@@ -49,6 +49,7 @@ pub fn screen() -> View {
     let r_b = remember(|| signal(0.8f32));
     let prog = remember(|| signal(0.4f32));
     let filter_selected = remember(|| signal(false));
+    let chip_action = remember(|| signal("No chip action yet".to_string()));
     let tab_index = remember(|| signal(0usize));
     let search_state = remember(SearchBarState::new);
     let tooltip_state = remember(TooltipState::new);
@@ -134,7 +135,11 @@ pub fn screen() -> View {
                     },
                     SliderConfig::default(),
                 ),
-                Row(Modifier::new().fill_max_width().gap(sp::MD)).child((
+                FlowRow(
+                    Modifier::new().fill_max_width().gap(sp::MD),
+                    FlowRowConfig::default(),
+                )
+                .child((
                     Column(Modifier::new().gap(sp::SM).flex_grow(1.0)).child((
                         Text(format!("Linear: {:.0}%", prog.get() * 100.0))
                             .size(Sp(13.0))
@@ -155,7 +160,11 @@ pub fn screen() -> View {
                         CircularProgressIndicator(None, Default::default()),
                     )),
                 )),
-                Row(Modifier::new().gap(sp::MD)).child((
+                FlowRow(
+                    Modifier::new().fill_max_width().gap(sp::MD),
+                    FlowRowConfig::default(),
+                )
+                .child((
                     TextButton(
                         Modifier::new(),
                         {
@@ -258,7 +267,14 @@ pub fn screen() -> View {
         Section(
             "Badge / BadgedBox",
             Column(Modifier::new().padding(sp::MD).gap(sp::MD)).child((
-                Row(Modifier::new().gap(sp::XL).align_items(AlignItems::CENTER)).child((
+                FlowRow(
+                    Modifier::new()
+                        .fill_max_width()
+                        .gap(sp::XL)
+                        .align_items(AlignItems::CENTER),
+                    FlowRowConfig::default(),
+                )
+                .child((
                     BadgedBox(
                         Badge(None, BadgeConfig::default()),
                         Icon(Symbols::info).size(Sp(24.0)).color(th.on_surface),
@@ -363,27 +379,50 @@ pub fn screen() -> View {
             Column(Modifier::new().padding(sp::MD).gap(sp::LG)).child((
                 Column(Modifier::new().gap(sp::SM)).child((
                     Hint("AssistChip"),
-                    Row(Modifier::new().gap(sp::SM)).child((
-                        AssistChip(|| {}, Text("Basic"), None, None, ChipConfig::default()),
-                        AssistChip(
-                            || {},
-                            Text("Leading"),
-                            Some(Icon(Symbols::add).size(Sp(18.0))),
-                            None,
-                            ChipConfig::default(),
-                        ),
-                        AssistChip(
-                            || {},
-                            Text("Both"),
-                            Some(Icon(Symbols::search).size(Sp(18.0))),
-                            Some(Icon(Symbols::close).size(Sp(18.0))),
-                            ChipConfig::default(),
-                        ),
+                    FlowRow(
+                        Modifier::new().fill_max_width().gap(sp::SM),
+                        FlowRowConfig::default(),
+                    )
+                    .child((
+                        {
+                            let action = chip_action.clone();
+                            AssistChip(
+                                move || action.set("Basic".to_string()),
+                                Text("Basic"),
+                                None,
+                                None,
+                                ChipConfig::default(),
+                            )
+                        },
+                        {
+                            let action = chip_action.clone();
+                            AssistChip(
+                                move || action.set("Leading".to_string()),
+                                Text("Leading"),
+                                Some(Icon(Symbols::add).size(Sp(18.0))),
+                                None,
+                                ChipConfig::default(),
+                            )
+                        },
+                        {
+                            let action = chip_action.clone();
+                            AssistChip(
+                                move || action.set("Both".to_string()),
+                                Text("Both"),
+                                Some(Icon(Symbols::search).size(Sp(18.0))),
+                                Some(Icon(Symbols::close).size(Sp(18.0))),
+                                ChipConfig::default(),
+                            )
+                        },
                     )),
                 )),
                 Column(Modifier::new().gap(sp::SM)).child((
                     Hint("FilterChip (toggle)"),
-                    Row(Modifier::new().gap(sp::SM)).child((
+                    FlowRow(
+                        Modifier::new().fill_max_width().gap(sp::SM),
+                        FlowRowConfig::default(),
+                    )
+                    .child((
                         FilterChip(
                             filter_selected.get(),
                             {
@@ -395,24 +434,33 @@ pub fn screen() -> View {
                             None,
                             ChipConfig::default(),
                         ),
-                        FilterChip(
-                            true,
-                            || {},
-                            Text("Active"),
-                            None,
-                            None,
-                            ChipConfig::default(),
-                        ),
-                        FilterChip(
-                            true,
-                            || {},
-                            Text("Trailing"),
-                            Some(Icon(Symbols::favorite).size(Sp(18.0))),
-                            Some(Icon(Symbols::close).size(Sp(18.0))),
-                            ChipConfig::default(),
-                        ),
+                        {
+                            let action = chip_action.clone();
+                            FilterChip(
+                                true,
+                                move || action.set("Active".to_string()),
+                                Text("Active"),
+                                None,
+                                None,
+                                ChipConfig::default(),
+                            )
+                        },
+                        {
+                            let action = chip_action.clone();
+                            FilterChip(
+                                true,
+                                move || action.set("Trailing".to_string()),
+                                Text("Trailing"),
+                                Some(Icon(Symbols::favorite).size(Sp(18.0))),
+                                Some(Icon(Symbols::close).size(Sp(18.0))),
+                                ChipConfig::default(),
+                            )
+                        },
                     )),
                 )),
+                Text(format!("Last chip action: {}", chip_action.get()))
+                    .size(Sp(13.0))
+                    .color(th.on_surface_variant),
             )),
         ),
         Section(

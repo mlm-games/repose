@@ -7,28 +7,151 @@ use repose_ui::{Box, Column, Row, Spacer, Text, TextStyle, ViewExt};
 
 use super::*;
 
+struct DateParts {
+    year: Signal<i32>,
+    month: Signal<u32>,
+    day: Signal<u32>,
+}
+
+fn install_date_normalizers(parts: &Rc<DateParts>) {
+    let weak = Rc::downgrade(parts);
+    parts.year.subscribe(move |year| {
+        let Some(parts) = weak.upgrade() else { return };
+        let month = parts.month.get().clamp(1, 12);
+        let day = parts.day.get().clamp(1, days_in_month(*year, month));
+        if parts.month.get() != month {
+            parts.month.set_neq(month);
+        }
+        if parts.day.get() != day {
+            parts.day.set_neq(day);
+        }
+    });
+
+    let weak = Rc::downgrade(parts);
+    parts.month.subscribe(move |_| {
+        let Some(parts) = weak.upgrade() else { return };
+        let year = parts.year.get();
+        let month = parts.month.get().clamp(1, 12);
+        let day = parts.day.get().clamp(1, days_in_month(year, month));
+        if parts.month.get() != month {
+            parts.month.set_neq(month);
+        }
+        if parts.day.get() != day {
+            parts.day.set_neq(day);
+        }
+    });
+}
+
 /// State for `DatePicker` - manages selected date.
 pub struct DatePickerState {
     pub year: Signal<i32>,
-    pub month: Signal<u32>, // 1-12
+    pub month: Signal<u32>,
     pub day: Signal<u32>,
+    id: u64,
+    _parts: Rc<DateParts>,
 }
 
 impl DatePickerState {
     pub fn new(year: i32, month: u32, day: u32) -> Self {
+        let month = month.clamp(1, 12);
+        let day = day.clamp(1, days_in_month(year, month));
+        Self::from_signals(signal(year), signal(month), signal(day))
+    }
+
+    fn from_signals(year: Signal<i32>, month: Signal<u32>, day: Signal<u32>) -> Self {
+        let parts = Rc::new(DateParts {
+            year: year.clone(),
+            month: month.clone(),
+            day: day.clone(),
+        });
+        install_date_normalizers(&parts);
         Self {
-            year: signal(year),
-            month: signal(month.clamp(1, 12)),
-            day: signal(day.clamp(1, 31)),
+            year,
+            month,
+            day,
+            id: unique_component_id(),
+            _parts: parts,
         }
     }
 
+    pub fn key(&self, suffix: &str) -> String {
+        format!("date-picker:{}_{}", self.id, suffix)
+    }
+
+    pub fn try_new(year: i32, month: u32, day: u32) -> Option<Self> {
+        is_valid_date(year, month, day)
+            .then(|| Self::from_signals(signal(year), signal(month), signal(day)))
+    }
+
+    pub fn is_valid(year: i32, month: u32, day: u32) -> bool {
+        is_valid_date(year, month, day)
+    }
+
+    pub fn is_valid_date(year: i32, month: u32, day: u32) -> bool {
+        is_valid_date(year, month, day)
+    }
+
+    pub fn set_year(&self, year: i32) {
+        let month = self.month.get().clamp(1, 12);
+        let day = self.day.get().clamp(1, days_in_month(year, month));
+        repose_core::reactive::batch(|| {
+            self.year.set_neq(year);
+            self.month.set_neq(month);
+            self.day.set_neq(day);
+        });
+    }
+
+    pub fn set_month(&self, month: u32) {
+        let month = month.clamp(1, 12);
+        let year = self.year.get();
+        let day = self.day.get().clamp(1, days_in_month(year, month));
+        repose_core::reactive::batch(|| {
+            self.year.set_neq(year);
+            self.month.set_neq(month);
+            self.day.set_neq(day);
+        });
+    }
+
+    pub fn set_day(&self, day: u32) {
+        let year = self.year.get();
+        let month = self.month.get().clamp(1, 12);
+        let day = day.clamp(1, days_in_month(year, month));
+        repose_core::reactive::batch(|| {
+            self.year.set_neq(year);
+            self.month.set_neq(month);
+            self.day.set_neq(day);
+        });
+    }
+
+    pub fn set_date(&self, year: i32, month: u32, day: u32) -> bool {
+        if !is_valid_date(year, month, day) {
+            return false;
+        }
+        repose_core::reactive::batch(|| {
+            self.year.set_neq(year);
+            self.month.set_neq(month);
+            self.day.set_neq(day);
+        });
+        true
+    }
+
     pub fn selected_date(&self) -> (i32, u32, u32) {
-        (self.year.get(), self.month.get(), self.day.get())
+        let year = self.year.get();
+        let month = self.month.get().clamp(1, 12);
+        let day = self.day.get().clamp(1, days_in_month(year, month));
+        (year, month, day)
+    }
+
+    pub fn current_date(&self) -> (i32, u32, u32) {
+        self.selected_date()
     }
 }
 
-fn days_in_month(year: i32, month: u32) -> u32 {
+pub fn is_valid_date(year: i32, month: u32, day: u32) -> bool {
+    (1..=12).contains(&month) && day >= 1 && day <= days_in_month(year, month)
+}
+
+pub fn days_in_month(year: i32, month: u32) -> u32 {
     match month {
         1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
         4 | 6 | 9 | 11 => 30,
@@ -67,7 +190,6 @@ struct ReposeDate {
 }
 
 impl ReposeDate {
-    /// Compute today's date from the system clock.
     fn now() -> Self {
         let duration = web_time::SystemTime::now()
             .duration_since(web_time::UNIX_EPOCH)
@@ -90,6 +212,11 @@ impl ReposeDate {
             day: d as u32,
         }
     }
+}
+
+pub fn today_date() -> (i32, u32, u32) {
+    let today = ReposeDate::now();
+    (today.year, today.month, today.day)
 }
 
 const MONTH_NAMES: [&str; 12] = [
@@ -151,6 +278,8 @@ pub struct DatePickerConfig {
     pub modifier: Modifier,
     pub colors: DatePickerColors,
     pub show_mode_toggle: bool,
+    pub confirm_label: String,
+    pub dismiss_label: String,
 }
 
 impl Default for DatePickerConfig {
@@ -159,11 +288,42 @@ impl Default for DatePickerConfig {
             modifier: Modifier::new(),
             colors: DatePickerColors::default(),
             show_mode_toggle: true,
+            confirm_label: DatePickerDefaults::CONFIRM_LABEL.to_string(),
+            dismiss_label: DatePickerDefaults::DISMISS_LABEL.to_string(),
         }
     }
 }
 
-/// M3 Date Picker dialog with month/year navigation, proper calendar grid,
+fn navigation_button(
+    instance_key: &str,
+    label: &'static str,
+    glyph: &str,
+    color: Color,
+    on_click: impl Fn() + 'static,
+) -> View {
+    let source = remember_with_key(
+        format!("{instance_key}:navigation:{label}"),
+        MutableInteractionSource::new,
+    );
+    let modifier = Modifier::new()
+        .size(
+            DatePickerDefaults::DATE_CELL_SIZE,
+            DatePickerDefaults::DATE_CELL_SIZE,
+        )
+        .semantics(Semantics {
+            role: Role::Button,
+            label: Some(label.into()),
+            enabled: true,
+            ..Default::default()
+        });
+    let modifier = super::util::apply_m3_clickable(modifier, &source, color, true, on_click);
+    Box(modifier
+        .align_items(AlignItems::CENTER)
+        .justify_content(JustifyContent::CENTER))
+    .child(Text(glyph.to_string()).color(color).size(Sp(16.0)))
+}
+
+/// M3 Date Picker with month/year navigation, proper calendar grid,
 /// today indicator, and confirm/cancel actions.
 pub fn DatePicker(
     state: Rc<DatePickerState>,
@@ -172,121 +332,131 @@ pub fn DatePicker(
     config: DatePickerConfig,
 ) -> View {
     let th = theme();
+    let instance_key = state.key("navigation");
     let (year, month, day) = state.selected_date();
     let dim = days_in_month(year, month);
     let start_dow = first_day_of_month(year, month);
 
-    // Year step helpers
     let prev_year = {
         let s = state.clone();
         move || {
-            s.year.set(s.year.get() - 1);
-            let d = days_in_month(s.year.get(), s.month.get());
-            if s.day.get() > d {
-                s.day.set(d);
-            }
+            let next = s.year.get().saturating_sub(1);
+            s.set_year(next);
         }
     };
     let next_year = {
         let s = state.clone();
         move || {
-            s.year.set(s.year.get() + 1);
-            let d = days_in_month(s.year.get(), s.month.get());
-            if s.day.get() > d {
-                s.day.set(d);
-            }
+            let next = s.year.get().saturating_add(1);
+            s.set_year(next);
         }
     };
 
     let prev_month = {
         let s = state.clone();
         move || {
-            if s.month.get() == 1 {
-                s.year.set(s.year.get() - 1);
-                s.month.set(12);
+            let (y, m, d) = s.selected_date();
+            let (next_y, next_m) = if m == 1 {
+                (y.saturating_sub(1), 12)
             } else {
-                s.month.set(s.month.get() - 1);
-            }
-            let d = days_in_month(s.year.get(), s.month.get());
-            if s.day.get() > d {
-                s.day.set(d);
-            }
+                (y, m - 1)
+            };
+            s.set_date(next_y, next_m, d.min(days_in_month(next_y, next_m)));
         }
     };
 
     let next_month = {
         let s = state.clone();
         move || {
-            if s.month.get() == 12 {
-                s.year.set(s.year.get() + 1);
-                s.month.set(1);
+            let (y, m, d) = s.selected_date();
+            let (next_y, next_m) = if m == 12 {
+                (y.saturating_add(1), 1)
             } else {
-                s.month.set(s.month.get() + 1);
-            }
-            let d = days_in_month(s.year.get(), s.month.get());
-            if s.day.get() > d {
-                s.day.set(d);
-            }
+                (y, m + 1)
+            };
+            s.set_date(next_y, next_m, d.min(days_in_month(next_y, next_m)));
         }
     };
 
-    // Determine today for highlight
-    let now = ReposeDate::now();
-    let today = (now.year, now.month, now.day);
+    let today = today_date();
+    let selected_value = format!("{year:04}-{month:02}-{day:02}");
+    let dismiss_label = config.dismiss_label.clone();
+    let confirm_label = config.confirm_label.clone();
+    let dismiss_semantics_label = dismiss_label.clone();
+    let confirm_semantics_label = confirm_label.clone();
 
-    Column(config.modifier.padding(Dp(16.0))).child((
+    let year_controls: View = if config.show_mode_toggle {
+        Row(Modifier::new().gap(Dp(8.0)).align_items(AlignItems::CENTER)).child((
+            navigation_button(
+                &instance_key,
+                "Previous year",
+                "‹",
+                config.colors.navigation_color,
+                prev_year,
+            ),
+            Box(Modifier::new()
+                .background(config.colors.year_selected_container_color)
+                .clip_rounded(Dp(4.0)))
+            .child(
+                Text(year.to_string())
+                    .size(th.typography.body_small)
+                    .color(config.colors.year_selected_content_color),
+            ),
+            navigation_button(
+                &instance_key,
+                "Next year",
+                "›",
+                config.colors.navigation_color,
+                next_year,
+            ),
+        ))
+    } else {
+        Box(Modifier::new()).child(
+            Text(year.to_string())
+                .size(th.typography.body_small)
+                .color(config.colors.year_unselected_content_color),
+        )
+    };
+
+    Column(
+        config
+            .modifier
+            .background(config.colors.container_color)
+            .padding(DatePickerDefaults::HORIZONTAL_PADDING)
+            .semantics(Semantics {
+                role: Role::Container,
+                label: Some("Date picker".into()),
+                value: Some(selected_value),
+                ..Default::default()
+            }),
+    )
+    .child((
         // Month header
         Row(Modifier::new()
             .fill_max_width()
             .align_items(AlignItems::CENTER))
         .child((
-            IconButton(
-                Box(Modifier::new()).child(
-                    Text("◀")
-                        .color(config.colors.navigation_color)
-                        .size(Sp(16.0)),
-                ),
+            navigation_button(
+                &instance_key,
+                "Previous month",
+                "◀",
+                config.colors.navigation_color,
                 prev_month,
-                IconButtonConfig::default(),
             ),
             Spacer(),
             Column(Modifier::new().align_items(AlignItems::CENTER)).child((
                 Text(MONTH_NAMES[(month - 1) as usize].to_string())
                     .size(th.typography.title_medium)
                     .color(config.colors.header_color),
-                Row(Modifier::new().gap(Dp(8.0)).align_items(AlignItems::CENTER)).child((
-                    IconButton(
-                        Box(Modifier::new()).child(
-                            Text("‹")
-                                .color(config.colors.navigation_color)
-                                .size(Sp(14.0)),
-                        ),
-                        prev_year,
-                        IconButtonConfig::default(),
-                    ),
-                    Text(year.to_string())
-                        .size(th.typography.body_small)
-                        .color(th.on_surface_variant),
-                    IconButton(
-                        Box(Modifier::new()).child(
-                            Text("›")
-                                .color(config.colors.navigation_color)
-                                .size(Sp(14.0)),
-                        ),
-                        next_year,
-                        IconButtonConfig::default(),
-                    ),
-                )),
+                year_controls,
             )),
             Spacer(),
-            IconButton(
-                Box(Modifier::new()).child(
-                    Text("▶")
-                        .color(config.colors.navigation_color)
-                        .size(Sp(16.0)),
-                ),
+            navigation_button(
+                &instance_key,
+                "Next month",
+                "▶",
+                config.colors.navigation_color,
                 next_month,
-                IconButtonConfig::default(),
             ),
         )),
         Box(Modifier::new().fill_max_width().height(Dp(12.0))),
@@ -298,8 +468,8 @@ pub fn DatePicker(
                 .iter()
                 .map(|d| {
                     Box(Modifier::new()
-                        .width(Dp(40.0))
-                        .height(Dp(40.0))
+                        .width(DatePickerDefaults::DATE_CELL_SIZE)
+                        .height(DatePickerDefaults::DATE_CELL_SIZE)
                         .align_items(AlignItems::CENTER)
                         .justify_content(JustifyContent::CENTER))
                     .child(
@@ -319,7 +489,9 @@ pub fn DatePicker(
                 for d in 0..7 {
                     let cell_idx = w * 7 + d;
                     if cell_idx < start_dow {
-                        week.push(Box(Modifier::new().width(Dp(40.0)).height(Dp(40.0))));
+                        week.push(Box(Modifier::new()
+                            .width(DatePickerDefaults::DATE_CELL_SIZE)
+                            .height(DatePickerDefaults::DATE_CELL_SIZE)));
                     } else {
                         let day_num = (cell_idx - start_dow + 1) as i32;
                         if day_num <= dim as i32 {
@@ -327,16 +499,25 @@ pub fn DatePicker(
                             let is_today =
                                 today.0 == year && today.1 == month && today.2 == day_num as u32;
                             let s = state.clone();
+                            let day_value = format!("{year:04}-{month:02}-{day_num:02}");
+                            let day_label = format!("{day_num}");
+                            let day_color = if is_selected {
+                                config.colors.selected_day_color
+                            } else if is_today {
+                                config.colors.today_content_color
+                            } else {
+                                config.colors.day_color
+                            };
                             week.push(
                                 Box(Modifier::new()
-                                    .width(Dp(40.0))
-                                    .height(Dp(40.0))
+                                    .width(DatePickerDefaults::DATE_CELL_SIZE)
+                                    .height(DatePickerDefaults::DATE_CELL_SIZE)
                                     .background(if is_selected {
                                         config.colors.selected_day_container_color
                                     } else {
                                         Color::TRANSPARENT
                                     })
-                                    .clip_rounded(Dp(20.0))
+                                    .clip_rounded(DatePickerDefaults::DATE_CELL_SIZE * 0.5)
                                     .indication(crate::ripple::ripple(
                                         crate::ripple::RippleConfig {
                                             color: Some(theme().on_surface),
@@ -348,28 +529,35 @@ pub fn DatePicker(
                                     .justify_content(JustifyContent::CENTER)
                                     .clickable()
                                     .on_click(move || {
-                                        s.day.set(day_num as u32);
+                                        let (y, m, _) = s.selected_date();
+                                        s.set_date(y, m, day_num as u32);
+                                    })
+                                    .semantics(Semantics {
+                                        role: Role::Button,
+                                        label: Some(day_label),
+                                        enabled: true,
+                                        selected: Some(is_selected),
+                                        value: Some(day_value),
+                                        ..Default::default()
                                     }))
                                 .child({
                                     let mut t = Text(day_num.to_string())
                                         .size(th.typography.body_medium)
-                                        .color(if is_selected {
-                                            config.colors.selected_day_color
-                                        } else {
-                                            config.colors.day_color
-                                        });
+                                        .color(day_color);
                                     if is_today && !is_selected {
                                         t = t.modifier(Modifier::new().border(
-                                            Dp(1.0),
+                                            DatePickerDefaults::TODAY_BORDER_WIDTH,
                                             config.colors.today_border_color,
-                                            Dp(10.0),
+                                            DatePickerDefaults::DATE_CELL_SIZE * 0.5,
                                         ));
                                     }
                                     t
                                 }),
                             );
                         } else {
-                            week.push(Box(Modifier::new().width(Dp(40.0)).height(Dp(40.0))));
+                            week.push(Box(Modifier::new()
+                                .width(DatePickerDefaults::DATE_CELL_SIZE)
+                                .height(DatePickerDefaults::DATE_CELL_SIZE)));
                         }
                     }
                 }
@@ -391,8 +579,14 @@ pub fn DatePicker(
                     move || (on_dismiss)()
                 },
                 ButtonConfig::default(),
-                || Text("Cancel").size(Sp(14.0)),
-            ),
+                move || Text(dismiss_label.clone()).size(Sp(14.0)),
+            )
+            .semantics(Semantics {
+                role: Role::Button,
+                label: Some(dismiss_semantics_label),
+                enabled: true,
+                ..Default::default()
+            }),
             Button(
                 Modifier::new(),
                 {
@@ -404,8 +598,35 @@ pub fn DatePicker(
                     }
                 },
                 ButtonConfig::default(),
-                || Text("OK").size(Sp(14.0)),
-            ),
+                move || Text(confirm_label.clone()).size(Sp(14.0)),
+            )
+            .semantics(Semantics {
+                role: Role::Button,
+                label: Some(confirm_semantics_label),
+                enabled: true,
+                ..Default::default()
+            }),
         )),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn invalid_dates_are_not_exposed() {
+        assert!(DatePickerState::try_new(2024, 2, 30).is_none());
+        assert_eq!(
+            DatePickerState::new(2024, 2, 30).selected_date(),
+            (2024, 2, 29)
+        );
+        let state = DatePickerState::new(2024, 1, 31);
+        assert!(!state.set_date(2023, 2, 29));
+        assert_eq!(state.selected_date(), (2024, 1, 31));
+        state.month.set(2);
+        assert_eq!(state.day.get(), 29);
+        state.year.set(2023);
+        assert_eq!(state.day.get(), 28);
+    }
 }

@@ -2,7 +2,7 @@ use repose_core::{prelude::*, signal};
 use repose_ui::lazy::{LazyHorizontalGrid, LazyVerticalGrid};
 use repose_ui::*;
 
-use crate::ui::{DemoTile, Hint, Page, Section, sp};
+use crate::ui::{DemoTile, Hint, Page, Section, compact_layout, sp};
 
 #[derive(Clone)]
 struct GridItem {
@@ -24,16 +24,23 @@ pub fn screen() -> View {
     });
     let vert_state = remember_with_key("grid_state", LazyGridState::new);
     let horiz_state = remember_with_key("grid_h_state", LazyGridState::new);
+    let compact = compact_layout();
+    let columns = if compact { 1 } else { 4 };
+    let horizontal_columns = if compact { 1 } else { 3 };
 
     Page(vec![
         Section(
             "LazyVerticalGrid",
             Column(Modifier::new().padding(sp::MD).gap(sp::MD)).child((
                 Hint(
-                    "Virtualized 4-column grid over 200 items -> only visible cells are composed.",
+                    if compact {
+                        "Virtualized single-column grid over 200 items -> only visible cells are composed."
+                    } else {
+                        "Virtualized 4-column grid over 200 items -> only visible cells are composed."
+                    },
                 ),
                 LazyVerticalGrid(
-                    4,
+                    columns,
                     items.get(),
                     100.0,
                     |item, _| {
@@ -62,9 +69,13 @@ pub fn screen() -> View {
         Section(
             "LazyHorizontalGrid",
             Column(Modifier::new().padding(sp::MD).gap(sp::MD)).child((
-                Hint("Same data laid out in 3 fixed rows, scrolling horizontally."),
+                Hint(if compact {
+                    "Same data laid out in one compact column, scrolling horizontally."
+                } else {
+                    "Same data laid out in 3 fixed rows, scrolling horizontally."
+                }),
                 LazyHorizontalGrid(
-                    3,
+                    horizontal_columns,
                     items.get(),
                     120.0,
                     |item, _| {

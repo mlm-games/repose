@@ -29,7 +29,8 @@ fn task_card(task: Task) -> View {
     };
 
     Box(Modifier::new()
-        .width(Dp(220.0))
+        .fill_max_width()
+        .max_width(Dp(220.0))
         .padding(sp::MD)
         .background(th.surface_container)
         .border(Dp(1.0), th.outline_variant, sp::MD)
@@ -134,7 +135,11 @@ pub fn screen() -> View {
             "Drag tasks",
             Column(Modifier::new().gap(sp::MD)).child((
                 Hint("Grab a card from Backlog and drop it into the target zone below."),
-                FlowRow(Modifier::new().gap(sp::MD), FlowRowConfig::default()).child((
+                FlowRow(
+                    Modifier::new().fill_max_width().gap(sp::MD),
+                    FlowRowConfig::default(),
+                )
+                .child((
                     task_card(Task {
                         id: 1,
                         title: "Refine hero layout",

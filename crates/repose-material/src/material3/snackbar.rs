@@ -82,11 +82,26 @@ pub fn Snackbar(
     let fg = config.content_color;
     let action_color = config.action_color;
 
+    let instance_id = remember(unique_component_id);
+    let identity = match modifier.key {
+        Some(key) => format!("snackbar:key:{key}"),
+        None => format!("snackbar:instance:{instance_id}"),
+    };
     let slide_target = if dismissing { 80.0 } else { 0.0 };
-    let slide = animate_f32_from("snackbar_slide", 80.0, slide_target, th.motion.overlay);
+    let slide = animate_f32_from(
+        format!("{identity}:slide"),
+        80.0,
+        slide_target,
+        th.motion.overlay,
+    );
 
     let alpha_target = if dismissing { 0.0 } else { 1.0 };
-    let alpha = animate_f32_from("snackbar_alpha", 0.0, alpha_target, th.motion.overlay);
+    let alpha = animate_f32_from(
+        format!("{identity}:alpha"),
+        0.0,
+        alpha_target,
+        th.motion.overlay,
+    );
 
     let snackbar = Box(Modifier::new()
         .translate(0.0, slide)
@@ -241,6 +256,7 @@ pub fn show_simple_snackbar(
         on_click: on_action.unwrap_or_else(|| Rc::new(|| {})),
     });
     let view_action = action.clone();
+    let animation_id = unique_component_id();
     controller.show(SnackbarRequest {
         message,
         action,
@@ -249,7 +265,7 @@ pub fn show_simple_snackbar(
             Snackbar(
                 view_message.clone(),
                 view_action.clone(),
-                Modifier::new(),
+                Modifier::new().key(animation_id),
                 SnackbarConfig::default(),
                 dismissing,
             )

@@ -2,7 +2,7 @@ use repose_core::prelude::*;
 use repose_ui::adaptive::{ListDetailPaneScaffold, ListDetailPaneValue, PaneScaffoldDirective};
 use repose_ui::{Box, Column, Row, Text, TextStyle, ViewExt, subcompose_layout_with_slots};
 
-use crate::ui::{Hint, Section, sp};
+use crate::ui::{Hint, Section, compact_layout, sp};
 
 #[derive(Clone, Copy)]
 struct ListEntry {
@@ -133,15 +133,30 @@ pub fn screen() -> View {
         move || detail_pane.clone(),
     );
 
-    let main_col = Column(Modifier::new().flex_grow(1.0).fill_max_height().gap(sp::MD)).child((
+    let compact = compact_layout();
+    let main_modifier = if compact {
+        Modifier::new().flex_grow(1.0).fill_max_width().gap(sp::MD)
+    } else {
+        Modifier::new()
+            .flex_grow(1.0)
+            .fill_max_width()
+            .fill_max_height()
+            .gap(sp::MD)
+    };
+    let main_col = Column(main_modifier).child((
         Section("ListDetailPaneScaffold", scaffold),
         multi_slot_demo(),
     ));
 
-    Row(Modifier::new().fill_max_size().padding(sp::MD).gap(sp::MD)).child((
-        Box(Modifier::new().width(Dp(280.0)).fill_max_height()).child(header),
-        main_col,
-    ))
+    if compact {
+        Column(Modifier::new().fill_max_size().padding(sp::MD).gap(sp::MD))
+            .child((header, main_col))
+    } else {
+        Row(Modifier::new().fill_max_size().padding(sp::MD).gap(sp::MD)).child((
+            Box(Modifier::new().width(Dp(280.0)).fill_max_height()).child(header),
+            main_col,
+        ))
+    }
 }
 
 /// Multi-slot `SubcomposeLayout`: stable "header" slot + width-dependent "body" slot.

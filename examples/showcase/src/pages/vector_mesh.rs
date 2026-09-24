@@ -105,7 +105,9 @@ pub fn screen() -> View {
                 ),
                 Canvas(
                     Modifier::new()
-                        .size(Dp(560.0), Dp(200.0))
+                        .fill_max_width()
+                        .max_width(Dp(560.0))
+                        .height(Dp(200.0))
                         .background(theme().surface)
                         .border(Dp(1.0), theme().outline, Dp(16.0))
                         .clip_rounded(Dp(16.0)),
@@ -158,7 +160,9 @@ pub fn screen() -> View {
                 ),
                 Canvas(
                     Modifier::new()
-                        .size(Dp(560.0), Dp(200.0))
+                        .fill_max_width()
+                        .max_width(Dp(560.0))
+                        .height(Dp(200.0))
                         .background(theme().surface)
                         .border(Dp(1.0), theme().outline, Dp(16.0))
                         .clip_rounded(Dp(16.0)),
@@ -216,7 +220,9 @@ pub fn screen() -> View {
                 ),
                 Canvas(
                     Modifier::new()
-                        .size(Dp(560.0), Dp(220.0))
+                        .fill_max_width()
+                        .max_width(Dp(560.0))
+                        .height(Dp(220.0))
                         .background(theme().surface)
                         .border(Dp(1.0), theme().outline, Dp(16.0))
                         .clip_rounded(Dp(16.0)),
@@ -254,14 +260,16 @@ pub fn screen() -> View {
             )),
         ),
         Section(
-            "Screen-space overlay",
+            "Canvas-local overlay",
             Column(Modifier::new().padding(sp::MD).gap(sp::MD)).child((
                 Hint(
-                    "draw_vector_overlay draws in final device pixels with no world transform, applicable for playheads, handles, and rubber-band selectors.",
+                    "draw_vector_overlay draws in the canvas rect without a world transform, suitable for playheads, handles, and rubber-band selectors.",
                 ),
                 Canvas(
                     Modifier::new()
-                        .size(Dp(560.0), Dp(120.0))
+                        .fill_max_width()
+                        .max_width(Dp(560.0))
+                        .height(Dp(120.0))
                         .background(theme().surface)
                         .border(Dp(1.0), theme().outline, Dp(16.0))
                         .clip_rounded(Dp(16.0)),

@@ -15,7 +15,9 @@
 
 use std::collections::HashMap;
 
-use super::{CallbackResources, ScreenDescriptor};
+use super::{CallbackRenderPass, CallbackResources, ScreenDescriptor};
+
+const MAX_DEPTH_RESOURCE_BYTES: u64 = 256 * 1024 * 1024;
 
 /// Fullscreen textured triangle: samples the offscreen scene 1:1.
 const BLIT_WGSL: &str = r#"
@@ -49,6 +51,9 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 #[derive(Default)]
 pub struct DepthComposite {
     targets: HashMap<String, Target>,
+    next_tick: u64,
+    frame_index: u64,
+    bytes_total: u64,
 }
 
 struct Target {
@@ -62,6 +67,9 @@ struct Target {
     depth_format: wgpu::TextureFormat,
     blit_pipeline: wgpu::RenderPipeline,
     blit_bind: wgpu::BindGroup,
+    last_used_tick: u64,
+    last_used_frame: u64,
+    bytes: u64,
 }
 
 impl DepthComposite {
@@ -69,6 +77,27 @@ impl DepthComposite {
     /// first use). One store per render pass; ids disambiguate viewports.
     pub fn get(resources: &mut CallbackResources) -> &mut Self {
         resources.get_or_insert_with::<Self>()
+    }
+
+    pub fn begin_frame(&mut self) {
+        self.frame_index = self.frame_index.wrapping_add(1);
+    }
+
+    pub fn end_frame(&mut self) {
+        if self.frame_index == 0 {
+            return;
+        }
+        let frame_index = self.frame_index;
+        let mut removed = 0u64;
+        self.targets.retain(|_, target| {
+            if target.last_used_frame == frame_index {
+                true
+            } else {
+                removed = removed.saturating_add(target.bytes);
+                false
+            }
+        });
+        self.bytes_total = self.bytes_total.saturating_sub(removed);
     }
 
     /// Ensure the offscreen target for `id` at `w`x`h` (recreates on
@@ -86,10 +115,51 @@ impl DepthComposite {
         let w = w.max(1);
         let h = h.max(1);
         let key = (screen.target_format, screen.sample_count, w, h);
-        if self.targets.get(id).is_some_and(|t| t.key == key) {
+        self.next_tick = self.next_tick.wrapping_add(1);
+        let tick = self.next_tick;
+        if let Some(target) = self.targets.get_mut(id)
+            && target.key == key
+        {
+            target.last_used_tick = tick;
+            target.last_used_frame = self.frame_index;
             return;
         }
         let depth_format = wgpu::TextureFormat::Depth24PlusStencil8;
+        let scene_bytes = screen
+            .target_format
+            .theoretical_memory_footprint(wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            });
+        let depth_bytes = depth_format.theoretical_memory_footprint(wgpu::Extent3d {
+            width: w,
+            height: h,
+            depth_or_array_layers: 1,
+        });
+        let bytes = scene_bytes.saturating_add(depth_bytes);
+        if w > device.limits().max_texture_dimension_2d
+            || h > device.limits().max_texture_dimension_2d
+            || bytes > MAX_DEPTH_RESOURCE_BYTES
+        {
+            return;
+        }
+        if let Some(old) = self.targets.remove(id) {
+            self.bytes_total = self.bytes_total.saturating_sub(old.bytes);
+        }
+        while self.bytes_total.saturating_add(bytes) > MAX_DEPTH_RESOURCE_BYTES {
+            let Some(oldest) = self
+                .targets
+                .iter()
+                .min_by_key(|(_, target)| target.last_used_tick)
+                .map(|(id, _)| id.clone())
+            else {
+                return;
+            };
+            if let Some(old) = self.targets.remove(&oldest) {
+                self.bytes_total = self.bytes_total.saturating_sub(old.bytes);
+            }
+        }
         let scene = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("depth_composite_scene"),
             size: wgpu::Extent3d {
@@ -215,7 +285,8 @@ impl DepthComposite {
                         compare: wgpu::CompareFunction::LessEqual,
                         ..Default::default()
                     },
-                    ..Default::default()
+                    read_mask: 0xFF,
+                    write_mask: 0,
                 },
                 bias: wgpu::DepthBiasState::default(),
             }),
@@ -238,8 +309,24 @@ impl DepthComposite {
                 depth_format,
                 blit_pipeline,
                 blit_bind: bind,
+                last_used_tick: tick,
+                last_used_frame: self.frame_index,
+                bytes,
             },
         );
+        self.bytes_total = self.bytes_total.saturating_add(bytes);
+        if self.targets.len() > 64 {
+            let oldest = self
+                .targets
+                .iter()
+                .min_by_key(|(_, target)| target.last_used_tick)
+                .map(|(id, _)| id.clone());
+            if let Some(id) = oldest
+                && let Some(old) = self.targets.remove(&id)
+            {
+                self.bytes_total = self.bytes_total.saturating_sub(old.bytes);
+            }
+        }
     }
 
     /// Begin the offscreen scene pass for `id` (clearing color to `clear`
@@ -298,7 +385,7 @@ impl DepthComposite {
     /// renderer has already set the viewport to the callback rect, which
     /// matches the offscreen texture 1:1 (both come from the painted frame
     /// geometry). No-op when `id` has no target.
-    pub fn blit(&self, id: &str, rpass: &mut wgpu::RenderPass<'_>) {
+    pub fn blit(&self, id: &str, rpass: &mut CallbackRenderPass<'_, '_>) {
         let Some(t) = self.targets.get(id) else {
             return;
         };

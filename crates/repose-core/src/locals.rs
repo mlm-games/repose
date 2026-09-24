@@ -16,6 +16,7 @@ use std::ops::Deref;
 use std::any::{Any, TypeId};
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::sync::OnceLock;
 
 use parking_lot::RwLock;
@@ -36,6 +37,29 @@ pub enum TextDirection {
 
 thread_local! {
     static LOCALS_STACK: RefCell<Vec<HashMap<TypeId, Box<dyn Any>>>> = RefCell::new(Vec::new());
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum LocalId {
+    Theme,
+    Density,
+    UiScale,
+    TextScale,
+    TextDirection,
+    WindowInsets,
+    WindowSizeClass,
+    ContainerWidth,
+    ContainerHeight,
+    ContentColor,
+    TextSize,
+    Indication,
+    InputMode,
+}
+
+impl LocalId {
+    fn index(self) -> usize {
+        self as usize
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -66,30 +90,73 @@ fn defaults() -> &'static RwLock<Defaults> {
 
 /// Set the global default theme used when no local Theme is active.
 pub fn set_theme_default(t: Theme) {
-    defaults().write().theme = t;
+    let changed = {
+        let mut defaults = defaults().write();
+        let changed = fingerprint_theme(&defaults.theme) != fingerprint_theme(&t);
+        defaults.theme = t;
+        changed
+    };
+    if changed {
+        crate::request_frame();
+    }
 }
 
 /// Set the global default text direction used when no local TextDirection is active.
 pub fn set_text_direction_default(d: TextDirection) {
-    defaults().write().text_direction = d;
+    let changed = {
+        let mut defaults = defaults().write();
+        let changed = defaults.text_direction != d;
+        defaults.text_direction = d;
+        changed
+    };
+    if changed {
+        crate::request_frame();
+    }
 }
 
 /// Set the global default UI scale used when no local UiScale is active.
 pub fn set_ui_scale_default(s: UiScale) {
-    defaults().write().ui_scale = UiScale(s.0.max(0.0));
+    let value = UiScale(s.0.max(0.0));
+    let changed = {
+        let mut defaults = defaults().write();
+        let changed = defaults.ui_scale.0.to_bits() != value.0.to_bits();
+        defaults.ui_scale = value;
+        changed
+    };
+    if changed {
+        crate::request_frame();
+    }
 }
 
 /// Set the global default text scale used when no local TextScale is active.
 pub fn set_text_scale_default(s: TextScale) {
-    defaults().write().text_scale = TextScale(s.0.max(0.0));
+    let value = TextScale(s.0.max(0.0));
+    let changed = {
+        let mut defaults = defaults().write();
+        let changed = defaults.text_scale.0.to_bits() != value.0.to_bits();
+        defaults.text_scale = value;
+        changed
+    };
+    if changed {
+        crate::request_frame();
+    }
 }
 
 /// Set the global default device density (dp->px) used when no local Density is active.
 /// Platform runners should call this whenever the window scale factor changes.
 pub fn set_density_default(d: Density) {
-    defaults().write().density = Density {
+    let value = Density {
         scale: d.scale.max(0.0),
     };
+    let changed = {
+        let mut defaults = defaults().write();
+        let changed = defaults.density.scale.to_bits() != value.scale.to_bits();
+        defaults.density = value;
+        changed
+    };
+    if changed {
+        crate::request_frame();
+    }
 }
 
 pub use crate::units::{Dp, DpOffset, DpRect, DpSize, Px, Sp, UnitExt};
@@ -116,40 +183,109 @@ fn with_locals_frame<R>(f: impl FnOnce() -> R) -> R {
     struct Guard;
     impl Drop for Guard {
         fn drop(&mut self) {
-            let _ = LOCALS_STACK.try_with(|st| {
-                st.borrow_mut().pop();
-            });
+            let frame = LOCALS_STACK
+                .try_with(|stack| {
+                    stack
+                        .try_borrow_mut()
+                        .ok()
+                        .and_then(|mut stack| stack.pop())
+                })
+                .ok()
+                .flatten();
+            drop(frame);
         }
     }
-    LOCALS_STACK.with(|st| st.borrow_mut().push(HashMap::new()));
+    LOCALS_STACK.with(|stack| stack.borrow_mut().push(HashMap::new()));
     let _guard = Guard;
     f()
 }
 
-fn set_local_boxed(t: TypeId, v: Box<dyn Any>) {
-    LOCALS_STACK.with(|st| {
-        if let Some(top) = st.borrow_mut().last_mut() {
-            top.insert(t, v);
-        } else {
-            // no frame: create a temporary one
-            let mut m = HashMap::new();
-            m.insert(t, v);
-            st.borrow_mut().push(m);
-        }
-    });
+fn set_local_boxed(t: TypeId, value: Box<dyn Any>) {
+    let old = LOCALS_STACK
+        .try_with(|stack| {
+            let mut stack = stack.try_borrow_mut().ok()?;
+            let old = stack.last_mut()?.insert(t, value);
+            Some(old)
+        })
+        .ok()
+        .flatten();
+    drop(old);
 }
 
 fn get_local<T: 'static + Copy>() -> Option<T> {
-    LOCALS_STACK.with(|st| {
-        for frame in st.borrow().iter().rev() {
-            if let Some(v) = frame.get(&TypeId::of::<T>())
-                && let Some(t) = v.downcast_ref::<T>()
+    LOCALS_STACK.with(|stack| {
+        for frame in stack.borrow().iter().rev() {
+            if let Some(value) = frame.get(&TypeId::of::<T>())
+                && let Some(value) = value.downcast_ref::<T>()
             {
-                return Some(*t);
+                return Some(*value);
             }
         }
         None
     })
+}
+
+fn record_local<T: 'static>(id: LocalId, value: &T, fingerprint: impl FnOnce(&T) -> u64) {
+    crate::scope_cache::record_scope_local_read(id.index(), fingerprint(value));
+}
+
+fn fingerprint_color(value: &Color) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    value.0.hash(&mut hasher);
+    value.1.hash(&mut hasher);
+    value.2.hash(&mut hasher);
+    value.3.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn fingerprint_theme(value: &Theme) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    format!("{value:?}").hash(&mut hasher);
+    hasher.finish()
+}
+
+fn fingerprint_text_size(value: Option<Sp>) -> u64 {
+    value.map(|size| size.0.to_bits() as u64).unwrap_or(0)
+}
+
+fn fingerprint_input_mode(value: crate::input::InputMode) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    std::mem::discriminant(&value).hash(&mut hasher);
+    hasher.finish()
+}
+
+fn fingerprint_f32(value: f32) -> u64 {
+    value.to_bits() as u64
+}
+
+fn fingerprint_window_insets(value: &WindowInsets) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    value.top.to_bits().hash(&mut hasher);
+    value.bottom.to_bits().hash(&mut hasher);
+    value.left.to_bits().hash(&mut hasher);
+    value.right.to_bits().hash(&mut hasher);
+    value.ime_bottom.to_bits().hash(&mut hasher);
+    hasher.finish()
+}
+
+fn fingerprint_window_size_class(value: &WindowSizeClass) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    value.width.hash(&mut hasher);
+    value.height.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn fingerprint_text_direction(value: &TextDirection) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    std::mem::discriminant(value).hash(&mut hasher);
+    hasher.finish()
+}
+
+fn fingerprint_indication(value: &Option<Rc<dyn IndicationNodeFactory>>) -> u64 {
+    value
+        .as_ref()
+        .map(|value| Rc::as_ptr(value) as *const () as usize as u64)
+        .unwrap_or(0)
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -663,9 +799,15 @@ pub fn with_content_color<R>(color: Color, f: impl FnOnce() -> R) -> R {
 }
 
 pub fn content_color() -> Color {
-    get_local::<ContentColor>()
-        .map(|c| c.0)
-        .unwrap_or_else(|| theme().on_surface)
+    let value = get_local::<ContentColor>()
+        .map(|color| color.0)
+        .unwrap_or_else(|| {
+            get_local::<Theme>()
+                .unwrap_or_else(|| defaults().read().theme)
+                .on_surface
+        });
+    record_local(LocalId::ContentColor, &value, fingerprint_color);
+    value
 }
 
 /// Compose `@Composable contentColorFor(backgroundColor)`.
@@ -701,7 +843,11 @@ pub fn with_text_size<R>(size: Sp, f: impl FnOnce() -> R) -> R {
 }
 
 pub fn text_size() -> Option<Sp> {
-    get_local::<TextSize>().map(|t| t.0)
+    let value = get_local::<TextSize>().map(|size| size.0);
+    record_local(LocalId::TextSize, &value, |value| {
+        fingerprint_text_size(*value)
+    });
+    value
 }
 
 /// Composition-local default indication (ripple/highlight) factory.
@@ -741,22 +887,31 @@ pub fn with_input_mode<R>(mode: crate::input::InputMode, f: impl FnOnce() -> R) 
 
 /// Read a composition-local input mode override, if any.
 pub(crate) fn local_input_mode() -> Option<crate::input::InputMode> {
-    get_local::<LocalInputMode>().map(|m| m.0)
+    let value = get_local::<LocalInputMode>().map(|mode| mode.0);
+    let effective = value.unwrap_or_else(crate::input::default_input_mode);
+    record_local(LocalId::InputMode, &effective, |value| {
+        fingerprint_input_mode(*value)
+    });
+    value
+}
+
+fn raw_local_indication() -> Option<Rc<dyn IndicationNodeFactory>> {
+    LOCALS_STACK.with(|stack| {
+        for frame in stack.borrow().iter().rev() {
+            if let Some(value) = frame.get(&TypeId::of::<LocalIndication>())
+                && let Some(indication) = value.downcast_ref::<LocalIndication>()
+            {
+                return indication.0.clone();
+            }
+        }
+        None
+    })
 }
 
 pub fn local_indication() -> Option<Rc<dyn IndicationNodeFactory>> {
-    // Manual stack walk (get_local requires Copy, which LocalIndication is not).
-
-    LOCALS_STACK.with(|st| {
-        for frame in st.borrow().iter().rev() {
-            if let Some(v) = frame.get(&TypeId::of::<LocalIndication>())
-                && let Some(li) = v.downcast_ref::<LocalIndication>()
-            {
-                return li.0.clone();
-            }
-        }
-        None::<Rc<dyn IndicationNodeFactory>>
-    })
+    let value = raw_local_indication();
+    record_local(LocalId::Indication, &value, fingerprint_indication);
+    value
 }
 
 /// System window insets (status bar, navigation bar, IME keyboard, etc.)
@@ -773,52 +928,105 @@ pub struct WindowInsets {
 
 /// Set the global default window insets (platform should call this when insets change).
 pub fn set_window_insets_default(insets: WindowInsets) {
-    defaults().write().window_insets = insets;
+    let changed = {
+        let mut defaults = defaults().write();
+        let old = defaults.window_insets;
+        let changed = old.top.to_bits() != insets.top.to_bits()
+            || old.bottom.to_bits() != insets.bottom.to_bits()
+            || old.left.to_bits() != insets.left.to_bits()
+            || old.right.to_bits() != insets.right.to_bits()
+            || old.ime_bottom.to_bits() != insets.ime_bottom.to_bits();
+        defaults.window_insets = insets;
+        changed
+    };
     set_local_boxed(TypeId::of::<WindowInsets>(), Box::new(insets));
+    if changed {
+        crate::request_frame();
+    }
 }
 
 /// Update just the IME bottom inset (keyboard height in px). Platform runners
 /// call this when the soft keyboard opens/closes.
 pub fn set_ime_inset(height_px: f32) {
-    let mut insets = defaults().write().window_insets;
-    insets.ime_bottom = height_px;
-    // Also immediately set the thread-local so it's visible to the current frame
-    set_local_boxed(TypeId::of::<WindowInsets>(), Box::new(insets));
+    let insets = {
+        let mut defaults = defaults().write();
+        let changed = defaults.window_insets.ime_bottom.to_bits() != height_px.to_bits();
+        defaults.window_insets.ime_bottom = height_px;
+        (changed, defaults.window_insets)
+    };
+    set_local_boxed(TypeId::of::<WindowInsets>(), Box::new(insets.1));
+    if insets.0 {
+        crate::request_frame();
+    }
 }
 
 /// Query current window insets.
 pub fn window_insets() -> WindowInsets {
-    get_local::<WindowInsets>().unwrap_or_else(|| defaults().read().window_insets)
+    let value = get_local::<WindowInsets>().unwrap_or_else(|| defaults().read().window_insets);
+    record_local(LocalId::WindowInsets, &value, fingerprint_window_insets);
+    value
 }
 
 /// Set the logical window container size (in dp). The `LayoutEngine` calls
 /// this on every layout from the physical viewport + density.
 pub fn set_window_container_size(width_dp: f32, height_dp: f32) {
-    let mut d = defaults().write();
-    d.container_width = width_dp;
-    d.container_height = height_dp;
+    let changed = {
+        let mut defaults = defaults().write();
+        let changed = defaults.container_width.to_bits() != width_dp.to_bits()
+            || defaults.container_height.to_bits() != height_dp.to_bits();
+        defaults.container_width = width_dp;
+        defaults.container_height = height_dp;
+        changed
+    };
+    if changed {
+        crate::request_frame();
+    }
 }
 
 /// Set just the logical window container width (in dp). Prefer
 /// [`set_window_container_size`]. Kept for hosts that update one axis at a time.
 pub fn set_window_container_width(w_dp: f32) {
-    defaults().write().container_width = w_dp;
+    let changed = {
+        let mut defaults = defaults().write();
+        let changed = defaults.container_width.to_bits() != w_dp.to_bits();
+        defaults.container_width = w_dp;
+        changed
+    };
+    if changed {
+        crate::request_frame();
+    }
 }
 
 /// Set just the logical window container height (in dp). Prefer
 /// [`set_window_container_size`]. Kept for hosts that update one axis at a time.
 pub fn set_window_container_height(h_dp: f32) {
-    defaults().write().container_height = h_dp;
+    let changed = {
+        let mut defaults = defaults().write();
+        let changed = defaults.container_height.to_bits() != h_dp.to_bits();
+        defaults.container_height = h_dp;
+        changed
+    };
+    if changed {
+        crate::request_frame();
+    }
 }
 
 /// The logical window container width in dp (used by Material dropdowns).
 pub fn get_window_container_width() -> f32 {
-    defaults().read().container_width
+    let value = defaults().read().container_width;
+    record_local(LocalId::ContainerWidth, &value, |value| {
+        fingerprint_f32(*value)
+    });
+    value
 }
 
 /// The logical window container height in dp (used by Material search bars).
 pub fn get_window_container_height() -> f32 {
-    defaults().read().container_height
+    let value = defaults().read().container_height;
+    record_local(LocalId::ContainerHeight, &value, |value| {
+        fingerprint_f32(*value)
+    });
+    value
 }
 
 /// Coarse width category for a window, computed from its current size.
@@ -906,7 +1114,15 @@ pub fn calculate_window_size_class(
 /// Set the global default window size class used when no local is active.
 /// Called by the `LayoutEngine` on resize.
 pub fn set_window_size_class_default(class: WindowSizeClass) {
-    defaults().write().window_size_class = class;
+    let changed = {
+        let mut defaults = defaults().write();
+        let changed = defaults.window_size_class != class;
+        defaults.window_size_class = class;
+        changed
+    };
+    if changed {
+        crate::request_frame();
+    }
 }
 
 /// Override the window size class for a subtree of the composition.
@@ -920,22 +1136,111 @@ pub fn with_window_size_class<R>(class: WindowSizeClass, f: impl FnOnce() -> R) 
 /// Query current window size class. Returns a default-initialized
 /// `WindowSizeClass` (Compact/Compact) if nothing has been set yet.
 pub fn window_size_class() -> WindowSizeClass {
-    get_local::<WindowSizeClass>().unwrap_or_else(|| defaults().read().window_size_class)
+    let value =
+        get_local::<WindowSizeClass>().unwrap_or_else(|| defaults().read().window_size_class);
+    record_local(
+        LocalId::WindowSizeClass,
+        &value,
+        fingerprint_window_size_class,
+    );
+    value
 }
 
-macro_rules! def_local_getter {
-    ($fn_name:ident, $ty:ty, $default_field:ident) => {
-        pub fn $fn_name() -> $ty {
-            get_local::<$ty>().unwrap_or_else(|| defaults().read().$default_field)
+pub fn theme() -> Theme {
+    let value = get_local::<Theme>().unwrap_or_else(|| defaults().read().theme);
+    record_local(LocalId::Theme, &value, fingerprint_theme);
+    value
+}
+
+pub fn density() -> Density {
+    let value = get_local::<Density>().unwrap_or_else(|| defaults().read().density);
+    record_local(LocalId::Density, &value, |value| {
+        fingerprint_f32(value.scale)
+    });
+    value
+}
+
+pub fn ui_scale() -> UiScale {
+    let value = get_local::<UiScale>().unwrap_or_else(|| defaults().read().ui_scale);
+    record_local(LocalId::UiScale, &value, |value| fingerprint_f32(value.0));
+    value
+}
+
+pub fn text_scale() -> TextScale {
+    let value = get_local::<TextScale>().unwrap_or_else(|| defaults().read().text_scale);
+    record_local(LocalId::TextScale, &value, |value| fingerprint_f32(value.0));
+    value
+}
+
+pub fn text_direction() -> TextDirection {
+    let value = get_local::<TextDirection>().unwrap_or_else(|| defaults().read().text_direction);
+    record_local(LocalId::TextDirection, &value, fingerprint_text_direction);
+    value
+}
+
+pub(crate) fn local_fingerprint(id: usize) -> u64 {
+    match id {
+        id if id == LocalId::Theme.index() => {
+            fingerprint_theme(&get_local::<Theme>().unwrap_or_else(|| defaults().read().theme))
         }
-    };
+        id if id == LocalId::Density.index() => fingerprint_f32(
+            get_local::<Density>()
+                .unwrap_or_else(|| defaults().read().density)
+                .scale,
+        ),
+        id if id == LocalId::UiScale.index() => fingerprint_f32(
+            get_local::<UiScale>()
+                .unwrap_or_else(|| defaults().read().ui_scale)
+                .0,
+        ),
+        id if id == LocalId::TextScale.index() => fingerprint_f32(
+            get_local::<TextScale>()
+                .unwrap_or_else(|| defaults().read().text_scale)
+                .0,
+        ),
+        id if id == LocalId::TextDirection.index() => fingerprint_text_direction(
+            &get_local::<TextDirection>().unwrap_or_else(|| defaults().read().text_direction),
+        ),
+        id if id == LocalId::WindowInsets.index() => fingerprint_window_insets(
+            &get_local::<WindowInsets>().unwrap_or_else(|| defaults().read().window_insets),
+        ),
+        id if id == LocalId::WindowSizeClass.index() => fingerprint_window_size_class(
+            &get_local::<WindowSizeClass>().unwrap_or_else(|| defaults().read().window_size_class),
+        ),
+        id if id == LocalId::ContainerWidth.index() => {
+            fingerprint_f32(defaults().read().container_width)
+        }
+        id if id == LocalId::ContainerHeight.index() => {
+            fingerprint_f32(defaults().read().container_height)
+        }
+        id if id == LocalId::ContentColor.index() => fingerprint_color(
+            &get_local::<ContentColor>()
+                .map(|value| value.0)
+                .unwrap_or_else(|| {
+                    get_local::<Theme>()
+                        .unwrap_or_else(|| defaults().read().theme)
+                        .on_surface
+                }),
+        ),
+        id if id == LocalId::TextSize.index() => {
+            fingerprint_text_size(get_local::<TextSize>().map(|value| value.0))
+        }
+        id if id == LocalId::Indication.index() => fingerprint_indication(&raw_local_indication()),
+        id if id == LocalId::InputMode.index() => {
+            fingerprint_input_mode(crate::input::input_mode())
+        }
+        _ => 0,
+    }
 }
 
-def_local_getter!(theme, Theme, theme);
-def_local_getter!(density, Density, density);
-def_local_getter!(ui_scale, UiScale, ui_scale);
-def_local_getter!(text_scale, TextScale, text_scale);
-def_local_getter!(text_direction, TextDirection, text_direction);
+pub fn locals_stamp() -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    for id in 0..=LocalId::InputMode.index() {
+        id.hash(&mut hasher);
+        local_fingerprint(id).hash(&mut hasher);
+    }
+    hasher.finish()
+}
 
 #[cfg(test)]
 mod tests {

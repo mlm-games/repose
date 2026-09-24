@@ -41,13 +41,19 @@ impl Default for NavigationDrawerConfig {
 /// State controlling drawer open/close.
 pub struct DrawerState {
     visible: Signal<bool>,
+    id: u64,
 }
 
 impl DrawerState {
     pub fn new() -> Rc<Self> {
         Rc::new(Self {
             visible: signal(false),
+            id: unique_component_id(),
         })
+    }
+
+    pub fn key(&self, suffix: &str) -> String {
+        format!("drawer:{}_{}", self.id, suffix)
     }
 
     pub fn is_open(&self) -> bool {
@@ -55,11 +61,11 @@ impl DrawerState {
     }
 
     pub fn open(&self) {
-        self.visible.set(true);
+        self.visible.set_neq(true);
     }
 
     pub fn dismiss(&self) {
-        self.visible.set(false);
+        self.visible.set_neq(false);
     }
 }
 
@@ -73,8 +79,12 @@ pub fn ModalNavigationDrawer(
     let _th = theme();
 
     let drawer_offset = animate_f32(
-        "modal_drawer_offset",
-        if drawer_state.is_open() { 0.0 } else { -360.0 },
+        drawer_state.key("modal-offset"),
+        if drawer_state.is_open() {
+            0.0
+        } else {
+            -config.width.0
+        },
         theme().motion.spring,
     );
 
@@ -134,8 +144,12 @@ pub fn DismissibleNavigationDrawer(
 ) -> View {
     let _th = theme();
     let drawer_offset = animate_f32(
-        "dismissible_drawer_offset",
-        if drawer_state.is_open() { 0.0 } else { -360.0 },
+        drawer_state.key("dismissible-offset"),
+        if drawer_state.is_open() {
+            0.0
+        } else {
+            -config.width.0
+        },
         theme().motion.spring,
     );
 

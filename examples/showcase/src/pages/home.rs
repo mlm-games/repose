@@ -31,11 +31,13 @@ fn platform_status() -> View {
     use repose_platform::AppLifecycle;
 
     scoped_effect_once(|| {
-        repose_platform::set_on_lifecycle(Box::new(|state| {
+        let listener_id = repose_platform::add_lifecycle_listener(Box::new(|state| {
             log::info!("Lifecycle: {state:?}");
             repose_core::request_frame();
         }));
-        Dispose::new(|| {})
+        Dispose::new(move || {
+            repose_platform::remove_lifecycle_listener(listener_id);
+        })
     });
 
     let lifecycle = match repose_platform::current_lifecycle() {
@@ -141,7 +143,10 @@ fn status_row(label: &str, value: &str, value_color: Color) -> View {
     .child((
         Caption(label),
         Spacer(),
-        Text(value).size(Sp(13.0)).color(value_color).single_line(),
+        Text(value)
+            .size(Sp(13.0))
+            .color(value_color)
+            .modifier(Modifier::new().flex_grow(1.0)),
     ))
 }
 
@@ -162,10 +167,13 @@ fn hero(nav: Navigator<Route>) -> View {
             Text("Adaptive M3 components across desktop, web, and Android.")
                 .size(Sp(16.0))
                 .color(th.on_primary_container.with_alpha(210)),
-            Row(Modifier::new()
-                .fill_max_width()
-                .justify_content(JustifyContent::CENTER)
-                .gap(sp::MD))
+            FlowRow(
+                Modifier::new()
+                    .fill_max_width()
+                    .justify_content(JustifyContent::CENTER)
+                    .gap(sp::MD),
+                FlowRowConfig::default(),
+            )
             .child((
                 cta_button("M3 Components", {
                     let nav = nav.clone();
@@ -198,7 +206,8 @@ fn feature_card(route: Route, nav: Navigator<Route>) -> View {
 
     Box(Modifier::new()
         .key(route.id())
-        .width(Dp(280.0))
+        .fill_max_width()
+        .max_width(Dp(280.0))
         .padding(sp::LG)
         .background(th.surface_container)
         .border(Dp(1.0), th.outline_variant, Dp(24.0))

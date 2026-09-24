@@ -5,14 +5,24 @@ use std::panic::Location;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
+use crate::effects::Dispose;
 use crate::scope::Scope;
 use crate::{CursorIcon, Rect, Scene, View, input::PhysicalKey, semantics::Role};
 
 thread_local! {
     pub static COMPOSER: RefCell<Composer> = RefCell::new(Composer::default());
     static ROOT_SCOPE: RefCell<Option<Scope>> = const { RefCell::new(None) };
+    static INITIALIZER_STACK: RefCell<Vec<InitializerKind>> =
+        const { RefCell::new(Vec::new()) };
+    static PENDING_INITIALIZER_CURSOR: RefCell<Option<usize>> =
+        const { RefCell::new(None) };
+    static KEYED_DISPOSERS: RefCell<FxHashMap<String, KeyedDisposerEntry>> =
+        RefCell::new(FxHashMap::default());
+    static KEYED_DISPOSER_ORDER: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    static PENDING_KEYED_REGISTRATIONS: RefCell<Vec<(String, Dispose, String)>> =
+        const { RefCell::new(Vec::new()) };
 
     /// Programmatic focus requests queued by `FocusRequester`. A queue (not a
     /// single slot) so multiple requests in one frame are honored in order
@@ -21,8 +31,218 @@ thread_local! {
         const { RefCell::new(std::collections::VecDeque::new()) };
 }
 
-/// Sentinel value meaning "clear focus entirely".
 pub const CLEAR_FOCUS_MARKER: u64 = u64::MAX;
+
+const ROOT_OWNER: &str = "\0repose:root-owner";
+
+struct KeyedDisposerEntry {
+    disposer: Dispose,
+    owners: FxHashSet<String>,
+}
+
+enum InitializerKind {
+    Sequential,
+    Keyed,
+}
+
+pub(crate) fn scope_owner_token(scope: Option<&str>) -> String {
+    match scope {
+        Some(scope) if !scope.is_empty() => scope.to_string(),
+        _ => ROOT_OWNER.to_string(),
+    }
+}
+
+fn queue_keyed_registration(key: String, disposer: Dispose, owner: String) {
+    let queued = PENDING_KEYED_REGISTRATIONS.try_with(|pending| {
+        pending.try_borrow_mut().ok().map(|mut pending| {
+            pending.push((key, disposer, owner));
+            true
+        })
+    });
+    if !matches!(queued, Ok(Some(true))) {
+        crate::request_frame();
+    }
+}
+
+pub(crate) fn flush_keyed_disposer_registrations() {
+    let pending = PENDING_KEYED_REGISTRATIONS.try_with(|pending| {
+        pending
+            .try_borrow_mut()
+            .ok()
+            .map(|mut pending| std::mem::take(&mut *pending))
+    });
+    let Ok(Some(pending)) = pending else {
+        crate::request_frame();
+        return;
+    };
+    for (key, disposer, owner) in pending {
+        register_keyed_disposer_for_owner(key, disposer, owner);
+    }
+}
+
+pub(crate) fn register_keyed_disposer(key: String, disposer: Dispose) {
+    let owner = scope_owner_token(crate::scope_cache::current_scope_key().as_deref());
+    register_keyed_disposer_for_owner(key, disposer, owner);
+}
+
+pub(crate) fn register_keyed_disposer_for_owner(key: String, disposer: Dispose, owner: String) {
+    let result = KEYED_DISPOSERS
+        .try_with(|registry| {
+            let mut registry = match registry.try_borrow_mut() {
+                Ok(registry) => registry,
+                Err(_) => return Err(()),
+            };
+            if let Some(entry) = registry.get_mut(&key) {
+                if entry.owners.contains(&owner) && !entry.disposer.ptr_eq(&disposer) {
+                    let previous = std::mem::replace(&mut entry.disposer, disposer.clone());
+                    return Ok((false, Some(previous)));
+                }
+                entry.owners.insert(owner.clone());
+                return Ok((false, None));
+            }
+            registry.insert(
+                key.clone(),
+                KeyedDisposerEntry {
+                    disposer: disposer.clone(),
+                    owners: FxHashSet::from_iter([owner.clone()]),
+                },
+            );
+            Ok((true, None))
+        })
+        .ok();
+    match result {
+        Some(Ok((true, previous))) => {
+            let _ = KEYED_DISPOSER_ORDER.try_with(|order| {
+                if let Ok(mut order) = order.try_borrow_mut()
+                    && !order.iter().any(|registered| registered == &key)
+                {
+                    order.push(key.clone());
+                }
+            });
+            drop(previous);
+        }
+        Some(Ok((false, previous))) => {
+            if let Some(previous) = previous {
+                run_keyed_disposer(previous);
+            }
+        }
+        Some(Err(())) | None => queue_keyed_registration(key, disposer, owner),
+    }
+}
+
+pub(crate) fn keyed_disposer_has_owner(key: &str, disposer: &Dispose, owner: &str) -> bool {
+    KEYED_DISPOSERS
+        .try_with(|registry| {
+            registry.try_borrow().ok().and_then(|registry| {
+                registry
+                    .get(key)
+                    .filter(|entry| entry.disposer.ptr_eq(disposer))
+                    .map(|entry| entry.owners.contains(owner))
+            })
+        })
+        .ok()
+        .flatten()
+        .unwrap_or(false)
+}
+
+pub(crate) fn remove_keyed_disposer_for_owner(key: &str, disposer: &Dispose, owner: &str) -> bool {
+    let mut to_run = None;
+    let mut owner_removed = false;
+    let mut registry_removed = false;
+    let result = KEYED_DISPOSERS.try_with(|registry| {
+        let mut registry = match registry.try_borrow_mut() {
+            Ok(registry) => registry,
+            Err(_) => return false,
+        };
+        let Some(entry) = registry.get_mut(key) else {
+            return true;
+        };
+        if !entry.disposer.ptr_eq(disposer) {
+            return true;
+        }
+        owner_removed = entry.owners.remove(owner);
+        if entry.owners.is_empty() {
+            if let Some(entry) = registry.remove(key) {
+                to_run = Some(entry.disposer);
+                registry_removed = true;
+            }
+        }
+        true
+    });
+    if !matches!(result, Ok(true)) {
+        queue_keyed_registration(key.to_string(), disposer.clone(), owner.to_string());
+        return false;
+    }
+    if registry_removed {
+        let _ = KEYED_DISPOSER_ORDER.try_with(|order| {
+            if let Ok(mut order) = order.try_borrow_mut() {
+                order.retain(|registered| registered != key);
+            }
+        });
+    }
+    if let Some(disposer) = to_run {
+        run_keyed_disposer(disposer);
+        true
+    } else {
+        owner_removed
+    }
+}
+
+pub(crate) fn take_keyed_disposer(key: &str) -> Option<Dispose> {
+    let disposer = KEYED_DISPOSERS
+        .try_with(|registry| {
+            registry
+                .try_borrow_mut()
+                .ok()?
+                .remove(key)
+                .map(|entry| entry.disposer)
+        })
+        .ok()
+        .flatten();
+    if disposer.is_some() {
+        let _ = KEYED_DISPOSER_ORDER.try_with(|order| {
+            if let Ok(mut order) = order.try_borrow_mut() {
+                order.retain(|registered| registered != key);
+            }
+        });
+    }
+    disposer
+}
+
+pub(crate) fn take_all_keyed_disposers() -> Vec<Dispose> {
+    flush_keyed_disposer_registrations();
+    let order = KEYED_DISPOSER_ORDER
+        .try_with(|order| {
+            order
+                .try_borrow_mut()
+                .ok()
+                .map(|mut order| std::mem::take(&mut *order))
+        })
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    let disposers = KEYED_DISPOSERS
+        .try_with(|registry| {
+            registry.try_borrow_mut().ok().map(|mut registry| {
+                let mut result = Vec::with_capacity(registry.len());
+                for key in order.into_iter().rev() {
+                    if let Some(entry) = registry.remove(&key) {
+                        result.push(entry.disposer);
+                    }
+                }
+                result.extend(registry.drain().map(|(_, entry)| entry.disposer));
+                result
+            })
+        })
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    disposers
+}
+
+pub(crate) fn run_keyed_disposer(disposer: Dispose) {
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| disposer.run()));
+}
 
 /// Process-wide unique id for namespacing `remember_with_key` slots
 /// (dialogs, menus, sheets, tooltips, ...).
@@ -338,6 +558,7 @@ pub struct Composer {
     pub cursor: usize,
     pub keyed_slots: FxHashMap<String, Box<dyn Any>>,
     pub keyed_owner: FxHashMap<String, String>,
+    pub keyed_owners: FxHashMap<String, rustc_hash::FxHashSet<String>>,
     pub live_keyed_owners: rustc_hash::FxHashSet<String>,
     pub scope_caches: FxHashMap<String, crate::scope_cache::ScopeCache>,
     pub live_scope_keys: rustc_hash::FxHashSet<String>,
@@ -347,19 +568,123 @@ pub struct ComposeGuard {
     scope: Scope,
 }
 
+pub(crate) fn keyed_disposer_order(key: &str) -> usize {
+    KEYED_DISPOSER_ORDER
+        .try_with(|order| {
+            order
+                .try_borrow()
+                .ok()
+                .and_then(|order| order.iter().position(|registered| registered == key))
+        })
+        .ok()
+        .flatten()
+        .unwrap_or(usize::MAX)
+}
+
+pub(crate) fn release_keyed_owner(key: &str, owner: &str) -> (bool, Option<Box<dyn Any>>) {
+    let result = COMPOSER
+        .try_with(|composer| {
+            let mut composer = match composer.try_borrow_mut() {
+                Ok(composer) => composer,
+                Err(_) => return (false, None, None),
+            };
+            let owners = match composer.keyed_owners.get_mut(key) {
+                Some(owners) => owners,
+                None => return (false, None, None),
+            };
+            owners.remove(owner);
+            if !owners.is_empty() {
+                return (true, None, None);
+            }
+            composer.keyed_owners.remove(key);
+            let old_owner = composer.keyed_owner.remove(key);
+            (true, composer.keyed_slots.remove(key), old_owner)
+        })
+        .unwrap_or((false, None, None));
+    drop(result.2);
+    (result.0, result.1)
+}
+
+pub(crate) fn take_dead_keyed_slots(composer: &mut Composer) -> Vec<(String, Box<dyn Any>)> {
+    let dead: Vec<String> = composer
+        .keyed_slots
+        .keys()
+        .filter(|key| {
+            let live = composer
+                .keyed_owners
+                .get(*key)
+                .map(|owners| {
+                    owners
+                        .iter()
+                        .any(|owner| composer.live_keyed_owners.contains(owner))
+                })
+                .or_else(|| {
+                    composer
+                        .keyed_owner
+                        .get(*key)
+                        .map(|owner| composer.live_keyed_owners.contains(owner))
+                })
+                .unwrap_or(false);
+            !live
+        })
+        .cloned()
+        .collect();
+    let mut removed = Vec::with_capacity(dead.len());
+    for key in dead {
+        if let Some(value) = composer.keyed_slots.remove(&key) {
+            removed.push((key.clone(), value));
+        }
+        composer.keyed_owner.remove(&key);
+        composer.keyed_owners.remove(&key);
+    }
+    removed
+}
+
 pub(crate) fn current_scope_key_for_remember() -> Option<String> {
     crate::scope_cache::current_scope_key()
 }
 
+fn flush_initializer_cursor() {
+    let pending = PENDING_INITIALIZER_CURSOR
+        .try_with(|pending| {
+            pending
+                .try_borrow_mut()
+                .ok()
+                .and_then(|mut pending| pending.take())
+        })
+        .ok()
+        .flatten();
+    let Some(cursor) = pending else {
+        return;
+    };
+    let restored = COMPOSER
+        .try_with(|composer| {
+            composer
+                .try_borrow_mut()
+                .ok()
+                .map(|mut composer| composer.cursor = cursor)
+        })
+        .ok()
+        .flatten();
+    if restored.is_none() {
+        let _ = PENDING_INITIALIZER_CURSOR.try_with(|pending| {
+            if let Ok(mut pending) = pending.try_borrow_mut() {
+                *pending = Some(cursor);
+            }
+        });
+    }
+}
+
 impl ComposeGuard {
     pub fn begin() -> Self {
+        flush_initializer_cursor();
         COMPOSER.with(|c| {
             let mut c = c.borrow_mut();
             c.cursor = 0;
             c.live_scope_keys.clear();
             c.live_keyed_owners.clear();
             c.live_scope_keys.insert(String::new());
-            c.live_keyed_owners.insert(String::new());
+            c.live_keyed_owners.insert(scope_owner_token(None));
         });
 
         let scope = ROOT_SCOPE.with(|rs| {
@@ -378,20 +703,27 @@ impl ComposeGuard {
     pub fn scope(&self) -> &Scope {
         &self.scope
     }
+
+    pub fn live_scope_keys(&self) -> rustc_hash::FxHashSet<String> {
+        COMPOSER.with(|c| c.borrow().live_scope_keys.clone())
+    }
 }
 
 impl Drop for ComposeGuard {
     fn drop(&mut self) {
-        COMPOSER.with(|c| {
+        let removed = COMPOSER.with(|c| {
             let mut c = c.borrow_mut();
             let n = c.cursor;
+            let mut removed = Vec::new();
             if c.slots.len() > n {
-                c.slots.truncate(n);
+                removed.extend(c.slots.drain(n..));
             }
             if c.slot_callers.len() > n {
                 c.slot_callers.truncate(n);
             }
+            removed
         });
+        drop(removed);
         crate::scope_cache::gc_dead_scopes();
     }
 }
@@ -401,106 +733,284 @@ impl Drop for ComposeGuard {
 /// Call once on process exit (desktop `exiting`, tests). After this the next
 /// `ComposeGuard::begin` starts from a fresh root scope.
 pub fn shutdown_composition() {
-    ROOT_SCOPE.with(|rs| {
-        if let Some(scope) = rs.borrow_mut().take() {
-            scope.dispose();
-        }
-    });
-    COMPOSER.with(|c| {
+    let scope = ROOT_SCOPE.with(|rs| rs.borrow_mut().take());
+    if let Some(scope) = scope {
+        scope.dispose();
+    }
+    let removed = COMPOSER.with(|c| {
         let mut c = c.borrow_mut();
-        c.slots.clear();
-        c.slot_callers.clear();
-        c.keyed_slots.clear();
+        let slots = std::mem::take(&mut c.slots);
+        let callers = std::mem::take(&mut c.slot_callers);
+        let keyed = std::mem::take(&mut c.keyed_slots);
+        let caches = std::mem::take(&mut c.scope_caches);
         c.keyed_owner.clear();
+        c.keyed_owners.clear();
         c.live_keyed_owners.clear();
-        c.scope_caches.clear();
         c.live_scope_keys.clear();
         c.cursor = 0;
+        (slots, callers, keyed, caches)
     });
+    drop(removed);
+    for disposer in take_all_keyed_disposers() {
+        run_keyed_disposer(disposer);
+    }
+    crate::animation_driver::shutdown();
     crate::scope_cache::clear_all_scope_deps();
+    INITIALIZER_STACK.with(|stack| stack.borrow_mut().clear());
+    PENDING_INITIALIZER_CURSOR.with(|pending| {
+        let _ = pending.borrow_mut().take();
+    });
+}
+
+struct InitializerGuard {
+    active: bool,
+    cursor: Option<usize>,
+}
+
+impl InitializerGuard {
+    fn assert_sequential_allowed() {
+        assert!(
+            INITIALIZER_STACK.with(|stack| stack
+                .try_borrow()
+                .map(|stack| stack.is_empty())
+                .unwrap_or(false)),
+            "remember initializer re-entered composition; use an explicit keyed helper"
+        );
+    }
+
+    fn enter_sequential() -> (Self, usize) {
+        Self::assert_sequential_allowed();
+        let cursor = COMPOSER.with(|composer| {
+            let mut composer = composer.borrow_mut();
+            let cursor = composer.cursor;
+            composer.cursor = composer.cursor.wrapping_add(1);
+            cursor
+        });
+        let pushed = INITIALIZER_STACK
+            .try_with(|stack| {
+                stack.try_borrow_mut().ok().map(|mut stack| {
+                    stack.push(InitializerKind::Sequential);
+                    true
+                })
+            })
+            .ok()
+            .flatten();
+        if pushed != Some(true) {
+            let _ = COMPOSER.try_with(|composer| {
+                if let Ok(mut composer) = composer.try_borrow_mut() {
+                    composer.cursor = cursor;
+                }
+            });
+            panic!("initializer stack busy");
+        }
+        (
+            Self {
+                active: true,
+                cursor: Some(cursor),
+            },
+            cursor,
+        )
+    }
+
+    fn assert_keyed_allowed() {
+        assert!(
+            INITIALIZER_STACK.with(|stack| stack
+                .try_borrow()
+                .map(|stack| stack.is_empty())
+                .unwrap_or(false)),
+            "remember initializer re-entered composition; use an explicit keyed helper"
+        );
+    }
+
+    fn enter_keyed() -> Self {
+        Self::assert_keyed_allowed();
+        INITIALIZER_STACK.with(|stack| {
+            stack
+                .try_borrow_mut()
+                .expect("initializer stack busy")
+                .push(InitializerKind::Keyed)
+        });
+        Self {
+            active: true,
+            cursor: None,
+        }
+    }
+
+    fn commit(&mut self) {
+        if !self.active {
+            return;
+        }
+        let _ = INITIALIZER_STACK.try_with(|stack| {
+            if let Ok(mut stack) = stack.try_borrow_mut() {
+                stack.pop();
+            }
+        });
+        self.active = false;
+    }
+}
+
+impl Drop for InitializerGuard {
+    fn drop(&mut self) {
+        if !self.active {
+            return;
+        }
+        if let Some(cursor) = self.cursor {
+            let restored = COMPOSER
+                .try_with(|composer| {
+                    composer
+                        .try_borrow_mut()
+                        .ok()
+                        .map(|mut composer| composer.cursor = cursor)
+                })
+                .ok()
+                .flatten();
+            if restored.is_none() {
+                let _ = PENDING_INITIALIZER_CURSOR.try_with(|pending| {
+                    if let Ok(mut pending) = pending.try_borrow_mut() {
+                        *pending = Some(cursor);
+                    }
+                });
+            }
+        }
+        let _ = INITIALIZER_STACK.try_with(|stack| {
+            if let Ok(mut stack) = stack.try_borrow_mut() {
+                stack.pop();
+            }
+        });
+    }
 }
 
 /// Slot-based remember (sequential composition only).
 /// This prevents state aliasing when the composition tree structure changes between frames
 #[track_caller]
 pub fn remember<T: 'static>(init: impl FnOnce() -> T) -> Rc<T> {
-    // Capture BEFORE any closure -> Location::caller() returns the correct
-    // track_caller location only at the function's top level, not inside closures.
+    flush_initializer_cursor();
     let caller = Location::caller();
-    COMPOSER.with(|c| {
+    let (mut initializer, cursor) = InitializerGuard::enter_sequential();
+
+    let existing = COMPOSER.with(|c| {
+        let c = c.borrow();
+        if cursor >= c.slots.len() || c.slot_callers.get(cursor).copied() != Some(caller) {
+            return None;
+        }
+        c.slots[cursor].downcast_ref::<Rc<T>>().cloned()
+    });
+    if let Some(rc) = existing {
+        initializer.commit();
+        return rc;
+    }
+
+    if COMPOSER.with(|c| {
+        let c = c.borrow();
+        cursor < c.slots.len() && c.slot_callers.get(cursor).copied() == Some(caller)
+    }) {
+        log::warn!(
+            "remember: slot {} type changed {}. \
+             Use remember_with_key(key, || ...) for conditional branches.",
+            cursor,
+            std::any::type_name::<T>(),
+        );
+    }
+
+    let rc = Rc::new(init());
+    let old = COMPOSER.with(|c| {
         let mut c = c.borrow_mut();
-        let cursor = c.cursor;
-        c.cursor += 1;
-
-        if cursor >= c.slots.len() {
-            let rc: Rc<T> = Rc::new(init());
-            c.slots.push(Box::new(rc.clone()));
-            c.slot_callers.push(caller);
-            return rc;
-        }
-
-        let stored_caller = c.slot_callers.get(cursor).copied();
-        if stored_caller != Some(caller) {
-            let rc: Rc<T> = Rc::new(init());
-            c.slots[cursor] = Box::new(rc.clone());
-            if cursor < c.slot_callers.len() {
-                c.slot_callers[cursor] = caller;
-            } else {
-                c.slot_callers.push(caller);
-            }
-            return rc;
-        }
-
-        if let Some(rc) = c.slots[cursor].downcast_ref::<Rc<T>>() {
-            rc.clone()
+        let value: Box<dyn Any> = Box::new(rc.clone());
+        let old = if cursor < c.slots.len() {
+            Some(std::mem::replace(&mut c.slots[cursor], value))
         } else {
-            log::warn!(
-                "remember: slot {} type changed {}. \
-                 Use remember_with_key(key, || ...) for conditional branches.",
-                cursor,
-                std::any::type_name::<T>(),
-            );
-            let rc: Rc<T> = Rc::new(init());
-            c.slots[cursor] = Box::new(rc.clone());
-            rc
+            c.slots.push(value);
+            None
+        };
+        if cursor < c.slot_callers.len() {
+            c.slot_callers[cursor] = caller;
+        } else {
+            c.slot_callers.push(caller);
         }
-    })
+        old
+    });
+    initializer.commit();
+    drop(old);
+    rc
 }
 
 /// Key-based remember.
 pub fn remember_with_key<T: 'static>(key: impl Into<String>, init: impl FnOnce() -> T) -> Rc<T> {
-    let owner = current_scope_key_for_remember().unwrap_or_default();
-    COMPOSER.with(|c| {
-        let mut c = c.borrow_mut();
-        let key = key.into();
+    flush_initializer_cursor();
+    InitializerGuard::assert_keyed_allowed();
+    let key = key.into();
+    let scope = current_scope_key_for_remember();
+    let owner = scope_owner_token(scope.as_deref());
+    let existing = COMPOSER.with(|composer| {
+        let composer = composer.borrow();
+        composer
+            .keyed_slots
+            .get(&key)
+            .and_then(|value| value.downcast_ref::<Rc<T>>().cloned())
+    });
+    if let Some(existing) = existing {
+        let old_owner = COMPOSER.with(|composer| {
+            let mut composer = composer.borrow_mut();
+            let old_owner = composer.keyed_owner.insert(key.clone(), owner.clone());
+            composer
+                .keyed_owners
+                .entry(key.clone())
+                .or_default()
+                .insert(owner.clone());
+            composer.live_keyed_owners.insert(owner);
+            old_owner
+        });
+        drop(old_owner);
+        return existing;
+    }
 
-        if let Some(existing) = c.keyed_slots.get(&key) {
-            if let Some(rc) = existing.downcast_ref::<Rc<T>>() {
-                let rc = rc.clone();
-                c.keyed_owner.insert(key.clone(), owner.clone());
-                c.live_keyed_owners.insert(owner);
-                return rc;
-            } else {
-                log::warn!(
-                    "remember_with_key: key '{}' reused with a different type; replacing.",
-                    key
-                );
-            }
-        }
-
-        if cfg!(debug_assertions) && c.keyed_slots.len() > 10_000 {
+    let has_wrong_type = COMPOSER.with(|composer| {
+        let composer = composer.borrow();
+        if composer.keyed_slots.contains_key(&key) {
             log::warn!(
-                "remember_with_key: more than 10k keys stored; \
-                are you generating unbounded dynamic keys (e.g., using timestamps)?"
+                "remember_with_key: key '{}' reused with a different type; replacing.",
+                key
             );
         }
+        cfg!(debug_assertions) && composer.keyed_slots.len() > 10_000
+    });
+    if has_wrong_type {
+        log::warn!(
+            "remember_with_key: more than 10k keys stored; are you generating unbounded dynamic keys?"
+        );
+    }
 
-        let rc: Rc<T> = Rc::new(init());
-        c.keyed_slots.insert(key.clone(), Box::new(rc.clone()));
-        c.keyed_owner.insert(key, owner.clone());
-        c.live_keyed_owners.insert(owner);
-        rc
-    })
+    let mut initializer = InitializerGuard::enter_keyed();
+    let value = Rc::new(init());
+    let (result, old) = COMPOSER.with(|composer| {
+        let mut composer = composer.borrow_mut();
+        if let Some(existing) = composer.keyed_slots.get(&key)
+            && let Some(existing) = existing.downcast_ref::<Rc<T>>()
+        {
+            let existing = existing.clone();
+            composer.keyed_owner.insert(key.clone(), owner.clone());
+            composer
+                .keyed_owners
+                .entry(key.clone())
+                .or_default()
+                .insert(owner.clone());
+            composer.live_keyed_owners.insert(owner);
+            return (existing, None);
+        }
+        let old = composer
+            .keyed_slots
+            .insert(key.clone(), Box::new(value.clone()));
+        composer.keyed_owner.insert(key.clone(), owner.clone());
+        composer
+            .keyed_owners
+            .entry(key)
+            .or_default()
+            .insert(owner.clone());
+        (value, old)
+    });
+    initializer.commit();
+    drop(old);
+    result
 }
 
 /// Raw slot state (`Rc<RefCell<T>>`). Writes via `borrow_mut()` don't request a
@@ -868,6 +1378,13 @@ impl Scheduler {
     pub fn ids_used_since(&self, prev_id: u64) -> u32 {
         (self.next_id - prev_id) as u32
     }
+
+    pub fn gc_scope_state(&mut self, live_keys: &rustc_hash::FxHashSet<String>) {
+        self.scope_key_to_id
+            .retain(|key, _| live_keys.contains(key));
+        self.scope_local_counters
+            .retain(|key, _| live_keys.contains(key));
+    }
 }
 
 /// RAII guard from [`Scheduler::scope_guard`]. Pops the scope on drop.
@@ -927,12 +1444,16 @@ impl Scheduler {
 
         let focus_chain: Vec<u64> = hits.iter().filter(|h| h.focusable).map(|h| h.id).collect();
 
-        Frame {
+        let live_scope_keys = guard.live_scope_keys();
+        let frame = Frame {
             scene,
             hit_regions: hits,
             semantics_nodes: sem,
             focus_chain,
-        }
+        };
+        drop(guard);
+        self.gc_scope_state(&live_scope_keys);
+        frame
     }
 }
 

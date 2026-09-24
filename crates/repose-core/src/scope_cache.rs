@@ -1,277 +1,601 @@
-use rustc_hash::{FxHashMap, FxHashSet};
 use std::cell::RefCell;
+
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::View;
 
-thread_local! {
-    /// Stack of scope keys currently being composed (set by `scope!`).
-    /// A stack (not a single slot) so nested scopes attribute signal reads
-    /// to every ancestor: otherwise an outer scope stays `clean` while an
-    /// inner scope is dirty, and the outer cache short-circuits the inner
-    /// re-execution, swallowing the update.
-    static CURRENT_SCOPE_STACK: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
-    /// Legacy alias kept for the single-key fast path.
-    static CURRENT_SCOPE_KEY: RefCell<Option<String>> =
-        const { RefCell::new(None) };
-
-    /// signal_id -> set of scope keys that read it during composition.
-    /// Cleaned up when a scope re-executes (old deps are replaced) or when
-    /// the app disposes. Set semantics prevent duplicate keys per signal.
-    static SCOPE_SIGNAL_DEPS: RefCell<FxHashMap<usize, FxHashSet<String>>> =
-        RefCell::new(FxHashMap::default());
-
-    /// scope key -> set of signal ids it read. Reverse map so clearing a
-    /// scope's deps is O(deps) instead of a full-map scan.
-    static SCOPE_TO_SIGNALS: RefCell<FxHashMap<String, FxHashSet<usize>>> =
-        RefCell::new(FxHashMap::default());
+struct ScopeFrame {
+    key: String,
+    children: FxHashSet<String>,
+    locals: FxHashMap<usize, u64>,
+    animations: FxHashSet<String>,
 }
 
-/// Record that the current composition scope (if any) depends on `signal_id`.
-/// Called from `reactive::register_signal_read`.
-/// Records against every scope on the stack so ancestor scopes are dirtied
-/// when a signal read only inside a nested scope changes.
-pub fn record_scope_signal_dep(signal_id: usize) {
-    let stack: Vec<String> = CURRENT_SCOPE_STACK.with(|s| s.borrow().clone());
-    let stack = if stack.is_empty() {
-        match CURRENT_SCOPE_KEY.with(|k| k.borrow().clone()) {
-            Some(k) => vec![k],
-            None => Vec::new(),
-        }
+thread_local! {
+    static CURRENT_SCOPE_STACK: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    static CURRENT_SCOPE_KEY: RefCell<Option<String>> = const { RefCell::new(None) };
+    static SCOPE_SIGNAL_DEPS: RefCell<FxHashMap<usize, FxHashSet<String>>> =
+        RefCell::new(FxHashMap::default());
+    static SCOPE_TO_SIGNALS: RefCell<FxHashMap<String, FxHashSet<usize>>> =
+        RefCell::new(FxHashMap::default());
+    static SCOPE_DIRTY_EPOCHS: RefCell<FxHashMap<String, u64>> =
+        RefCell::new(FxHashMap::default());
+    static SCOPE_PENDING_DIRTY: RefCell<FxHashSet<String>> =
+        RefCell::new(FxHashSet::default());
+    static SCOPE_CACHE_CHILDREN: RefCell<FxHashMap<String, FxHashSet<String>>> =
+        RefCell::new(FxHashMap::default());
+    static SCOPE_CACHE_LOCALS: RefCell<FxHashMap<String, FxHashMap<usize, u64>>> =
+        RefCell::new(FxHashMap::default());
+    static SCOPE_CACHE_ANIMATIONS: RefCell<FxHashMap<String, FxHashSet<String>>> =
+        RefCell::new(FxHashMap::default());
+    static SCOPE_LAST_CHILDREN: RefCell<FxHashMap<String, FxHashSet<String>>> =
+        RefCell::new(FxHashMap::default());
+    static SCOPE_LAST_LOCALS: RefCell<FxHashMap<String, FxHashMap<usize, u64>>> =
+        RefCell::new(FxHashMap::default());
+    static SCOPE_LAST_ANIMATIONS: RefCell<FxHashMap<String, FxHashSet<String>>> =
+        RefCell::new(FxHashMap::default());
+    static SCOPE_RUN_EPOCHS: RefCell<FxHashMap<String, u64>> =
+        RefCell::new(FxHashMap::default());
+    static SCOPE_FRAMES: RefCell<Vec<ScopeFrame>> = const { RefCell::new(Vec::new()) };
+}
+
+fn current_scope_stack() -> Vec<String> {
+    let stack = CURRENT_SCOPE_STACK.with(|stack| stack.borrow().clone());
+    if stack.is_empty() {
+        CURRENT_SCOPE_KEY
+            .with(|key| key.borrow().clone())
+            .into_iter()
+            .collect()
     } else {
         stack
-    };
+    }
+}
+
+pub fn record_scope_signal_dep(signal: usize) {
+    let stack = current_scope_stack();
     if stack.is_empty() {
         return;
     }
     SCOPE_SIGNAL_DEPS.with(|deps| {
         let mut deps = deps.borrow_mut();
         for key in &stack {
-            deps.entry(signal_id).or_default().insert(key.clone());
+            deps.entry(signal).or_default().insert(key.clone());
         }
     });
-    SCOPE_TO_SIGNALS.with(|m| {
-        let mut m = m.borrow_mut();
+    SCOPE_TO_SIGNALS.with(|map| {
+        let mut map = map.borrow_mut();
         for key in &stack {
-            m.entry(key.clone()).or_default().insert(signal_id);
+            map.entry(key.clone()).or_default().insert(signal);
         }
     });
 }
 
-/// Mark all scopes that depend on `signal_id` as dirty.
-/// Called from `reactive::signal_changed`.
-pub fn mark_scope_deps_dirty(signal_id: usize) {
-    let keys = SCOPE_SIGNAL_DEPS.with(|deps| deps.borrow().get(&signal_id).cloned());
+fn mark_dirty(key: &str) {
+    SCOPE_DIRTY_EPOCHS.with(|epochs| {
+        let mut epochs = epochs.borrow_mut();
+        let epoch = epochs.entry(key.to_string()).or_insert(0);
+        *epoch = epoch.wrapping_add(1);
+    });
+    let marked = crate::runtime::COMPOSER
+        .try_with(|composer| {
+            composer
+                .try_borrow_mut()
+                .ok()
+                .map(|mut composer| {
+                    if let Some(cache) = composer.scope_caches.get_mut(key) {
+                        cache.clean = false;
+                    }
+                })
+                .is_some()
+        })
+        .unwrap_or(false);
+    if !marked {
+        let queued = SCOPE_PENDING_DIRTY.try_with(|pending| {
+            if let Ok(mut pending) = pending.try_borrow_mut() {
+                pending.insert(key.to_string());
+                true
+            } else {
+                false
+            }
+        });
+        if !matches!(queued, Ok(true)) {
+            crate::request_frame();
+        }
+        crate::request_frame();
+    }
+}
+
+pub fn mark_current_scope_dirty() {
+    for key in current_scope_stack() {
+        mark_dirty(&key);
+    }
+}
+
+pub fn mark_current_scope_dirty_for_signal(signal: usize) {
+    let current = current_scope_stack();
+    let dependent = SCOPE_SIGNAL_DEPS.with(|deps| deps.borrow().get(&signal).cloned());
+    for key in current {
+        if !dependent.as_ref().is_some_and(|keys| keys.contains(&key)) {
+            mark_dirty(&key);
+        }
+    }
+}
+
+pub fn mark_scope_dirty(key: &str) {
+    mark_dirty(key);
+}
+
+pub fn mark_scope_deps_dirty(signal: usize) {
+    let keys = SCOPE_SIGNAL_DEPS.with(|deps| deps.borrow().get(&signal).cloned());
     if let Some(keys) = keys {
         for key in keys {
-            crate::runtime::COMPOSER.with(|c| {
-                let mut c = c.borrow_mut();
-                if let Some(cache) = c.scope_caches.get_mut(&key) {
-                    cache.clean = false;
+            mark_dirty(&key);
+        }
+    }
+}
+
+pub fn with_scope_key<R>(key: &str, function: impl FnOnce() -> R) -> R {
+    struct Guard {
+        key: String,
+    }
+
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            let frame = SCOPE_FRAMES
+                .try_with(|frames| match frames.try_borrow_mut() {
+                    Ok(mut frames) => frames
+                        .iter()
+                        .rposition(|frame| frame.key == self.key)
+                        .map(|index| frames.remove(index)),
+                    Err(_) => None,
+                })
+                .ok()
+                .flatten();
+            if let Some(frame) = frame {
+                let _ = SCOPE_LAST_CHILDREN.try_with(|map| {
+                    if let Ok(mut map) = map.try_borrow_mut() {
+                        map.insert(self.key.clone(), frame.children);
+                    }
+                });
+                let _ = SCOPE_LAST_LOCALS.try_with(|map| {
+                    if let Ok(mut map) = map.try_borrow_mut() {
+                        map.insert(self.key.clone(), frame.locals);
+                    }
+                });
+                let _ = SCOPE_LAST_ANIMATIONS.try_with(|map| {
+                    if let Ok(mut map) = map.try_borrow_mut() {
+                        map.insert(self.key.clone(), frame.animations);
+                    }
+                });
+            }
+            let _ = CURRENT_SCOPE_STACK.try_with(|stack| {
+                if let Ok(mut stack) = stack.try_borrow_mut()
+                    && stack.last() == Some(&self.key)
+                {
+                    stack.pop();
+                }
+            });
+            let top = CURRENT_SCOPE_STACK
+                .try_with(|stack| {
+                    stack
+                        .try_borrow()
+                        .ok()
+                        .and_then(|stack| stack.last().cloned())
+                })
+                .ok()
+                .flatten();
+            let _ = CURRENT_SCOPE_KEY.try_with(|current| {
+                if let Ok(mut current) = current.try_borrow_mut() {
+                    *current = top;
                 }
             });
         }
     }
-}
 
-/// Run `f` with the given scope key tracking any signal reads inside.
-/// Panic-safe: the scope stack is restored via a Drop guard.
-pub fn with_scope_key<R>(key: &str, f: impl FnOnce() -> R) -> R {
-    struct Guard;
-    impl Drop for Guard {
-        fn drop(&mut self) {
-            if CURRENT_SCOPE_STACK
-                .try_with(|s| {
-                    if let Ok(mut s) = s.try_borrow_mut() {
-                        s.pop();
-                    } else {
-                        log::error!(
-                            "scope_cache: scope stack busy during scope exit; scope entry leaked"
-                        );
-                    }
-                })
-                .is_err()
+    let key = key.to_string();
+    let parent = CURRENT_SCOPE_STACK.with(|stack| stack.borrow().last().cloned());
+    if let Some(parent) = parent {
+        let _ = SCOPE_FRAMES.try_with(|frames| {
+            if let Ok(mut frames) = frames.try_borrow_mut()
+                && let Some(frame) = frames.last_mut()
+                && frame.key == parent
             {
-                log::error!(
-                    "scope_cache: scope stack unavailable during scope exit (thread teardown?)"
-                );
+                frame.children.insert(key.clone());
             }
-            let top = CURRENT_SCOPE_STACK
-                .try_with(|s| s.try_borrow().ok().and_then(|s| s.last().cloned()))
-                .ok()
-                .flatten();
-            if CURRENT_SCOPE_KEY
-                .try_with(|k| {
-                    if let Ok(mut k) = k.try_borrow_mut() {
-                        *k = top;
-                    } else {
-                        log::error!(
-                            "scope_cache: current scope key busy during scope exit; stale scope key retained"
-                        );
-                    }
-                })
-                .is_err()
-            {
-                log::error!(
-                    "scope_cache: current scope key unavailable during scope exit (thread teardown?)"
-                );
-            }
-        }
+        });
     }
-    CURRENT_SCOPE_STACK.with(|s| s.borrow_mut().push(key.to_string()));
-    CURRENT_SCOPE_KEY.with(|k| *k.borrow_mut() = Some(key.to_string()));
-    let _guard = Guard;
-    let result = f();
-    drop(_guard);
-    result
+    CURRENT_SCOPE_STACK.with(|stack| stack.borrow_mut().push(key.clone()));
+    CURRENT_SCOPE_KEY.with(|current| *current.borrow_mut() = Some(key.clone()));
+    SCOPE_FRAMES.with(|frames| {
+        frames.borrow_mut().push(ScopeFrame {
+            key: key.clone(),
+            children: FxHashSet::default(),
+            locals: FxHashMap::default(),
+            animations: FxHashSet::default(),
+        })
+    });
+    let _guard = Guard { key };
+    function()
 }
 
-/// Clear all signal->scope tracking for the given scope key.
-/// Called after the scope body executes, so old deps from a previous run are
-/// replaced by the new deps registered during the just-completed run.
+pub fn record_scope_local_read(local: usize, value: u64) {
+    let _ = SCOPE_FRAMES.try_with(|frames| {
+        if let Ok(mut frames) = frames.try_borrow_mut()
+            && let Some(frame) = frames.last_mut()
+        {
+            frame.locals.insert(local, value);
+        }
+    });
+}
+
+pub fn record_scope_animation_key(key: &str) {
+    let _ = SCOPE_FRAMES.try_with(|frames| {
+        if let Ok(mut frames) = frames.try_borrow_mut()
+            && let Some(frame) = frames.last_mut()
+        {
+            frame.animations.insert(key.to_string());
+        }
+    });
+}
+
 pub fn clear_scope_deps(key: &str) {
-    let signals = SCOPE_TO_SIGNALS.with(|m| m.borrow_mut().remove(key));
+    let signals = SCOPE_TO_SIGNALS.with(|map| map.borrow_mut().remove(key));
     if let Some(signals) = signals {
         SCOPE_SIGNAL_DEPS.with(|deps| {
             let mut deps = deps.borrow_mut();
-            for signal_id in signals {
-                if let Some(scopes) = deps.get_mut(&signal_id) {
+            for signal in signals {
+                if let Some(scopes) = deps.get_mut(&signal) {
                     scopes.remove(key);
                     if scopes.is_empty() {
-                        deps.remove(&signal_id);
+                        deps.remove(&signal);
                     }
                 }
             }
         });
     }
+    let epoch = SCOPE_DIRTY_EPOCHS.with(|epochs| epochs.borrow().get(key).copied().unwrap_or(0));
+    SCOPE_RUN_EPOCHS.with(|epochs| epochs.borrow_mut().insert(key.to_string(), epoch));
 }
 
-/// Cached state for a single `scope!` invocation.
 pub struct ScopeCache {
-    /// Combined hash of all scope inputs from the last execution.
     pub input_hash: u64,
-    /// The cached View tree produced by the last execution.
     pub view: View,
-    /// How many `remember` slots the body consumed.
     pub slot_delta: usize,
-    /// `true` if cached output is valid (no signal deps invalidated, inputs unchanged).
     pub clean: bool,
 }
 
-/// Check whether a scope should re-execute.
+fn collect_view_scope_keys(view: &View, keys: &mut FxHashSet<String>) {
+    if let Some(key) = &view.scope_key {
+        keys.insert(key.clone());
+    }
+    for child in &view.children {
+        collect_view_scope_keys(child, keys);
+    }
+}
+
+fn cached_scope_children(key: &str) -> FxHashSet<String> {
+    let mut children =
+        SCOPE_CACHE_CHILDREN.with(|map| map.borrow().get(key).cloned().unwrap_or_default());
+    if children.is_empty() {
+        let _ = crate::runtime::COMPOSER.try_with(|composer| {
+            if let Ok(composer) = composer.try_borrow()
+                && let Some(cache) = composer.scope_caches.get(key)
+            {
+                let mut keys = FxHashSet::default();
+                collect_view_scope_keys(&cache.view, &mut keys);
+                keys.remove(key);
+                children.extend(keys);
+            }
+        });
+    }
+    children
+}
+
+fn cached_locals_changed(key: &str) -> bool {
+    let values = SCOPE_CACHE_LOCALS.with(|map| map.borrow().get(key).cloned());
+    values.is_some_and(|values| {
+        values
+            .iter()
+            .any(|(local, value)| crate::locals::local_fingerprint(*local) != *value)
+    })
+}
+
 pub fn should_run(key: &str, input_hash: u64) -> bool {
-    crate::runtime::COMPOSER.with(|c| {
-        let c = c.borrow();
-        match c.scope_caches.get(key) {
-            Some(cache) => !cache.clean || cache.input_hash != input_hash,
+    if SCOPE_PENDING_DIRTY.with(|pending| pending.borrow().contains(key)) {
+        return true;
+    }
+    if !cached_scope_children(key).is_empty() {
+        return true;
+    }
+    let locals_changed = cached_locals_changed(key);
+    crate::runtime::COMPOSER.with(|composer| {
+        let composer = composer.borrow();
+        match composer.scope_caches.get(key) {
+            Some(cache) => !cache.clean || cache.input_hash != input_hash || locals_changed,
             None => true,
         }
     })
 }
 
-/// Current innermost `scope!` key, if any. Used to attribute keyed
-/// remembers to their owning scope for GC.
 pub fn current_scope_key() -> Option<String> {
-    CURRENT_SCOPE_KEY.with(|k| k.borrow().clone())
+    CURRENT_SCOPE_KEY.with(|key| key.borrow().clone())
 }
 
-/// Retrieve the cached View for a scope being skipped, advancing the remember-slot
-/// cursor so sibling scopes remain consistent. IDs are self-contained in the cached
-/// View (packed scope-local IDs), so no global ID advance is needed.
-pub fn get_cached(key: &str, _s: &mut crate::runtime::Scheduler) -> View {
-    crate::runtime::COMPOSER.with(|c| {
-        let mut c = c.borrow_mut();
-        let (slot_delta, view) = {
-            let cache = c
-                .scope_caches
-                .get(key)
-                .expect("scope_cache::get_cached called but no cache entry found");
-            (cache.slot_delta, cache.view.clone())
-        };
-
-        c.cursor += slot_delta;
-        c.live_scope_keys.insert(key.to_string());
-        c.live_keyed_owners.insert(key.to_string());
-        view
-    })
+pub fn validate_scope_key(key: &str) {
+    assert!(!key.is_empty(), "scope keys must not be empty");
+    assert!(
+        crate::runtime::scope_owner_token(Some(key)) != crate::runtime::scope_owner_token(None),
+        "scope keys must not use the private root owner sentinel"
+    );
 }
 
-/// Store a new or updated cache entry after executing the scope body.
+fn record_cached_child(key: &str) {
+    let _ = SCOPE_FRAMES.try_with(|frames| {
+        if let Ok(mut frames) = frames.try_borrow_mut()
+            && let Some(frame) = frames.last_mut()
+        {
+            frame.children.insert(key.to_string());
+        }
+    });
+}
+
+fn restore_cached_deps(key: &str) {
+    fn visit(key: &str, ancestors: &[String], seen: &mut FxHashSet<String>) {
+        if !seen.insert(key.to_string()) {
+            return;
+        }
+        let mut path = ancestors.to_vec();
+        if !path.iter().any(|entry| entry == key) {
+            path.push(key.to_string());
+        }
+        let signals = SCOPE_TO_SIGNALS.with(|map| map.borrow().get(key).cloned());
+        if let Some(signals) = signals {
+            for signal in signals {
+                record_signal_for_keys(signal, &path);
+            }
+        }
+        for child in cached_scope_children(key) {
+            visit(&child, &path, seen);
+        }
+    }
+
+    fn record_signal_for_keys(signal: usize, keys: &[String]) {
+        SCOPE_SIGNAL_DEPS.with(|deps| {
+            let mut deps = deps.borrow_mut();
+            for key in keys {
+                deps.entry(signal).or_default().insert(key.clone());
+            }
+        });
+        SCOPE_TO_SIGNALS.with(|map| {
+            let mut map = map.borrow_mut();
+            for key in keys {
+                map.entry(key.clone()).or_default().insert(signal);
+            }
+        });
+    }
+
+    let ancestors = current_scope_stack();
+    visit(key, &ancestors, &mut FxHashSet::default());
+}
+
+fn mark_scope_live(key: &str) {
+    let mut pending = vec![key.to_string()];
+    let mut seen = FxHashSet::default();
+    while let Some(current) = pending.pop() {
+        if !seen.insert(current.clone()) {
+            continue;
+        }
+        let children = cached_scope_children(&current);
+        let exists = crate::runtime::COMPOSER.with(|composer| {
+            let mut composer = composer.borrow_mut();
+            let exists = composer.scope_caches.contains_key(&current);
+            if exists {
+                composer.live_scope_keys.insert(current.clone());
+                composer
+                    .live_keyed_owners
+                    .insert(crate::runtime::scope_owner_token(Some(&current)));
+            }
+            exists
+        });
+        if exists {
+            let animations = SCOPE_CACHE_ANIMATIONS
+                .with(|map| map.borrow().get(&current).cloned().unwrap_or_default());
+            for animation in animations {
+                crate::animation_driver::touch_cached(&animation, &current);
+            }
+            pending.extend(children);
+        }
+    }
+}
+
+pub fn get_cached(key: &str, _scheduler: &mut crate::runtime::Scheduler) -> View {
+    let (slot_delta, view) = crate::runtime::COMPOSER.with(|composer| {
+        let composer = composer.borrow();
+        let cache = composer
+            .scope_caches
+            .get(key)
+            .expect("scope_cache::get_cached called but no cache entry found");
+        (cache.slot_delta, cache.view.clone())
+    });
+    crate::runtime::COMPOSER.with(|composer| composer.borrow_mut().cursor += slot_delta);
+    record_cached_child(key);
+    restore_cached_deps(key);
+    mark_scope_live(key);
+    view
+}
+
 pub fn set_cache(key: &str, input_hash: u64, view: View, slot_delta: usize) {
-    crate::runtime::COMPOSER.with(|c| {
-        let mut c = c.borrow_mut();
-        c.scope_caches.insert(
+    let dirty_before = SCOPE_RUN_EPOCHS.with(|epochs| epochs.borrow().get(key).copied());
+    let clean = dirty_before.is_none_or(|before| dirty_generation(key) == before);
+    set_cache_inner(key, input_hash, view, slot_delta, clean);
+}
+
+pub fn dirty_generation(key: &str) -> u64 {
+    SCOPE_DIRTY_EPOCHS.with(|epochs| epochs.borrow().get(key).copied().unwrap_or(0))
+}
+
+pub fn set_cache_preserving_dirty(
+    key: &str,
+    input_hash: u64,
+    view: View,
+    slot_delta: usize,
+    dirty_before: u64,
+) {
+    let clean = dirty_generation(key) == dirty_before;
+    set_cache_inner(key, input_hash, view, slot_delta, clean);
+}
+
+fn set_cache_inner(key: &str, input_hash: u64, view: View, slot_delta: usize, clean: bool) {
+    let children = SCOPE_LAST_CHILDREN
+        .with(|map| map.borrow_mut().remove(key))
+        .unwrap_or_default();
+    let locals = SCOPE_LAST_LOCALS
+        .with(|map| map.borrow_mut().remove(key))
+        .unwrap_or_default();
+    let animations = SCOPE_LAST_ANIMATIONS
+        .with(|map| map.borrow_mut().remove(key))
+        .unwrap_or_default();
+    let old_cache = crate::runtime::COMPOSER.with(|composer| {
+        let mut composer = composer.borrow_mut();
+        composer.scope_caches.insert(
             key.to_string(),
             ScopeCache {
                 input_hash,
                 view,
                 slot_delta,
-                clean: true,
+                clean,
             },
-        );
-        c.live_scope_keys.insert(key.to_string());
-        c.live_keyed_owners.insert(key.to_string());
+        )
     });
+    drop(old_cache);
+    SCOPE_CACHE_CHILDREN.with(|map| {
+        map.borrow_mut().insert(key.to_string(), children);
+    });
+    SCOPE_CACHE_LOCALS.with(|map| {
+        map.borrow_mut().insert(key.to_string(), locals);
+    });
+    SCOPE_CACHE_ANIMATIONS.with(|map| {
+        map.borrow_mut().insert(key.to_string(), animations);
+    });
+    SCOPE_RUN_EPOCHS.with(|epochs| {
+        epochs.borrow_mut().remove(key);
+    });
+    SCOPE_PENDING_DIRTY.with(|pending| {
+        pending.borrow_mut().remove(key);
+    });
+    mark_scope_live(key);
 }
 
-/// Remove scope caches (and their keyed remembers) that were not composed
-/// this frame. Called at the end of composition from `ComposeGuard::Drop`.
 pub fn gc_dead_scopes() {
-    crate::runtime::COMPOSER.with(|c| {
-        let mut c = c.borrow_mut();
-        if c.live_scope_keys.is_empty() && c.live_keyed_owners.len() <= 1 {
-            return;
-        }
-        let dead_scopes: Vec<String> = c
+    let (dead_scopes, dead_keyed, removed_caches) = crate::runtime::COMPOSER.with(|composer| {
+        let mut composer = composer.borrow_mut();
+        let dead_scopes: Vec<String> = composer
             .scope_caches
             .keys()
-            .filter(|k| !c.live_scope_keys.contains(*k))
+            .filter(|key| !composer.live_scope_keys.contains(*key))
             .cloned()
             .collect();
-        for key in dead_scopes {
-            c.scope_caches.remove(&key);
-            clear_scope_deps_locked(&key);
+        let mut dead_keyed = crate::runtime::take_dead_keyed_slots(&mut composer);
+        dead_keyed
+            .sort_by_key(|(key, _)| std::cmp::Reverse(crate::runtime::keyed_disposer_order(key)));
+        let mut removed_caches = Vec::with_capacity(dead_scopes.len());
+        for key in &dead_scopes {
+            if let Some(cache) = composer.scope_caches.remove(key) {
+                removed_caches.push(cache);
+            }
         }
-        let dead_keyed: Vec<String> = c
-            .keyed_owner
-            .iter()
-            .filter(|(_, owner)| !c.live_keyed_owners.contains(*owner))
-            .map(|(k, _)| k.clone())
-            .collect();
-        for key in dead_keyed {
-            c.keyed_slots.remove(&key);
-            c.keyed_owner.remove(&key);
-        }
-        c.live_scope_keys.clear();
-        c.live_keyed_owners.clear();
-        c.live_scope_keys.insert(String::new());
-        c.live_keyed_owners.insert(String::new());
+        composer.live_scope_keys.clear();
+        composer.live_keyed_owners.clear();
+        composer.live_scope_keys.insert(String::new());
+        composer
+            .live_keyed_owners
+            .insert(crate::runtime::scope_owner_token(None));
+        (dead_scopes, dead_keyed, removed_caches)
     });
+
+    drop(removed_caches);
+
+    for key in dead_scopes {
+        clear_scope_deps(&key);
+        SCOPE_DIRTY_EPOCHS.with(|epochs| {
+            epochs.borrow_mut().remove(&key);
+        });
+        SCOPE_PENDING_DIRTY.with(|pending| {
+            pending.borrow_mut().remove(&key);
+        });
+        SCOPE_CACHE_CHILDREN.with(|map| {
+            map.borrow_mut().remove(&key);
+        });
+        SCOPE_CACHE_LOCALS.with(|map| {
+            map.borrow_mut().remove(&key);
+        });
+        SCOPE_CACHE_ANIMATIONS.with(|map| {
+            map.borrow_mut().remove(&key);
+        });
+        SCOPE_LAST_CHILDREN.with(|map| {
+            map.borrow_mut().remove(&key);
+        });
+        SCOPE_LAST_LOCALS.with(|map| {
+            map.borrow_mut().remove(&key);
+        });
+        SCOPE_LAST_ANIMATIONS.with(|map| {
+            map.borrow_mut().remove(&key);
+        });
+        crate::animation_driver::release_scope(&key);
+    }
+
+    for (key, _slot) in &dead_keyed {
+        clear_scope_deps(key);
+        if let Some(disposer) = crate::runtime::take_keyed_disposer(key) {
+            crate::runtime::run_keyed_disposer(disposer);
+        }
+    }
+    drop(dead_keyed);
 }
 
-fn clear_scope_deps_locked(key: &str) {
-    SCOPE_TO_SIGNALS.with(|m| {
-        let signals = m.borrow_mut().remove(key);
-        if let Some(signals) = signals {
-            SCOPE_SIGNAL_DEPS.with(|deps| {
-                let mut deps = deps.borrow_mut();
-                for signal_id in signals {
-                    if let Some(scopes) = deps.get_mut(&signal_id) {
-                        scopes.remove(key);
-                        if scopes.is_empty() {
-                            deps.remove(&signal_id);
-                        }
-                    }
-                }
-            });
+pub fn touch_live_cached_animations() {
+    let live = crate::runtime::COMPOSER
+        .try_with(|composer| {
+            composer
+                .try_borrow()
+                .ok()
+                .map(|composer| composer.live_scope_keys.clone())
+        })
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    for key in live {
+        for animation in cached_animation_keys(&key) {
+            crate::animation_driver::touch_cached(&animation, &key);
         }
-    });
+    }
+}
+
+pub fn cached_animation_keys(key: &str) -> Vec<String> {
+    SCOPE_CACHE_ANIMATIONS
+        .with(|map| {
+            map.borrow()
+                .get(key)
+                .map(|keys| keys.iter().cloned().collect())
+        })
+        .unwrap_or_default()
 }
 
 pub fn clear_all_scope_deps() {
-    SCOPE_SIGNAL_DEPS.with(|d| d.borrow_mut().clear());
-    SCOPE_TO_SIGNALS.with(|d| d.borrow_mut().clear());
-    CURRENT_SCOPE_STACK.with(|s| s.borrow_mut().clear());
-    CURRENT_SCOPE_KEY.with(|k| *k.borrow_mut() = None);
+    SCOPE_SIGNAL_DEPS.with(|map| map.borrow_mut().clear());
+    SCOPE_TO_SIGNALS.with(|map| map.borrow_mut().clear());
+    SCOPE_DIRTY_EPOCHS.with(|map| map.borrow_mut().clear());
+    SCOPE_PENDING_DIRTY.with(|map| map.borrow_mut().clear());
+    SCOPE_CACHE_CHILDREN.with(|map| map.borrow_mut().clear());
+    SCOPE_CACHE_LOCALS.with(|map| map.borrow_mut().clear());
+    SCOPE_CACHE_ANIMATIONS.with(|map| map.borrow_mut().clear());
+    SCOPE_LAST_CHILDREN.with(|map| map.borrow_mut().clear());
+    SCOPE_LAST_LOCALS.with(|map| map.borrow_mut().clear());
+    SCOPE_LAST_ANIMATIONS.with(|map| map.borrow_mut().clear());
+    SCOPE_RUN_EPOCHS.with(|map| map.borrow_mut().clear());
+    SCOPE_FRAMES.with(|frames| frames.borrow_mut().clear());
+    CURRENT_SCOPE_STACK.with(|stack| stack.borrow_mut().clear());
+    CURRENT_SCOPE_KEY.with(|key| *key.borrow_mut() = None);
 }
 
 #[cfg(test)]
@@ -280,70 +604,38 @@ mod tests {
     use crate::signal::signal;
 
     fn reset_maps() {
-        SCOPE_SIGNAL_DEPS.with(|d| d.borrow_mut().clear());
-        SCOPE_TO_SIGNALS.with(|d| d.borrow_mut().clear());
+        SCOPE_SIGNAL_DEPS.with(|map| map.borrow_mut().clear());
+        SCOPE_TO_SIGNALS.with(|map| map.borrow_mut().clear());
+        SCOPE_DIRTY_EPOCHS.with(|map| map.borrow_mut().clear());
+        SCOPE_PENDING_DIRTY.with(|map| map.borrow_mut().clear());
     }
 
     #[test]
     fn scope_deps_deduplicate_keys() {
         reset_maps();
-        let sig = signal(0);
-
-        // Reading the same signal twice inside one scope registers one dep.
+        let signal = signal(0);
         with_scope_key("dedupe_scope", || {
-            let _ = sig.get();
-            let _ = sig.get();
+            let _ = signal.get();
+            let _ = signal.get();
         });
-
-        SCOPE_SIGNAL_DEPS.with(|d| {
-            let d = d.borrow();
-            assert_eq!(
-                d.get(&sig.id()).map(|s| s.len()),
-                Some(1),
-                "duplicate signal reads must collapse to a single scope dep"
-            );
+        SCOPE_SIGNAL_DEPS.with(|deps| {
+            assert_eq!(deps.borrow().get(&signal.id()).map(FxHashSet::len), Some(1));
         });
-        SCOPE_TO_SIGNALS.with(|d| {
-            let d = d.borrow();
-            assert_eq!(d.get("dedupe_scope").map(|s| s.len()), Some(1));
-        });
-
-        // Clearing the scope removes both the reverse entry and the forward entry.
         clear_scope_deps("dedupe_scope");
-        SCOPE_TO_SIGNALS.with(|d| assert!(d.borrow().is_empty()));
-        SCOPE_SIGNAL_DEPS.with(|d| assert!(d.borrow().is_empty()));
+        SCOPE_SIGNAL_DEPS.with(|deps| assert!(deps.borrow().is_empty()));
     }
 
     #[test]
-    fn scope_deps_multiple_scopes_share_signal() {
+    fn nested_scope_reads_dirty_ancestors() {
         reset_maps();
-        let sig = signal(0);
-
-        with_scope_key("scope_a", || {
-            let _ = sig.get();
+        let signal = signal(0);
+        with_scope_key("outer", || {
+            with_scope_key("inner", || {
+                let _ = signal.get();
+            });
         });
-        with_scope_key("scope_b", || {
-            let _ = sig.get();
-        });
-
-        SCOPE_SIGNAL_DEPS.with(|d| {
-            let d = d.borrow();
-            let scopes = d.get(&sig.id()).unwrap();
-            assert!(scopes.contains("scope_a"));
-            assert!(scopes.contains("scope_b"));
-        });
-
-        // Clearing only scope_a leaves scope_b intact.
-        clear_scope_deps("scope_a");
-        SCOPE_SIGNAL_DEPS.with(|d| {
-            let d = d.borrow();
-            let scopes = d.get(&sig.id()).unwrap();
-            assert!(!scopes.contains("scope_a"));
-            assert!(scopes.contains("scope_b"));
-        });
-        SCOPE_TO_SIGNALS.with(|d| {
-            assert!(d.borrow().get("scope_a").is_none());
-            assert!(d.borrow().get("scope_b").is_some());
-        });
+        signal.set(1);
+        assert_eq!(dirty_generation("outer"), 1);
+        assert_eq!(dirty_generation("inner"), 1);
     }
 }

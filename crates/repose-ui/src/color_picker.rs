@@ -264,6 +264,10 @@ pub fn ColorPicker(color: Color, on_change: impl Fn(Color) + 'static) -> View {
                 .on_pointer_up({
                     let f = make_drag_end.clone();
                     move |pe| f(pe)
+                })
+                .on_pointer_cancel({
+                    let f = make_drag_end.clone();
+                    move |pe| f(pe)
                 }),
         );
 
@@ -291,6 +295,10 @@ pub fn ColorPicker(color: Color, on_change: impl Fn(Color) + 'static) -> View {
                 .on_pointer_up({
                     let f = make_drag_end.clone();
                     move |pe| f(pe)
+                })
+                .on_pointer_cancel({
+                    let f = make_drag_end.clone();
+                    move |pe| f(pe)
                 }),
         );
 
@@ -316,6 +324,10 @@ pub fn ColorPicker(color: Color, on_change: impl Fn(Color) + 'static) -> View {
                     move |pe| f(pe)
                 })
                 .on_pointer_up({
+                    let f = make_drag_end.clone();
+                    move |pe| f(pe)
+                })
+                .on_pointer_cancel({
                     let f = make_drag_end.clone();
                     move |pe| f(pe)
                 }),

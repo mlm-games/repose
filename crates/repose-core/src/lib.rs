@@ -235,7 +235,9 @@ pub use repose_macros::View;
 macro_rules! scope {
     // With explicit inputs
     ($key:expr, $s:expr, [$($input:expr),+ $(,)?], $body:block) => {{
-        let _key: &str = $key;
+        let _key = $key.to_string();
+        let _key: &str = &_key;
+        $crate::scope_cache::validate_scope_key(_key);
 
         let _input_hash = {
             use std::hash::{Hash, Hasher};
@@ -249,6 +251,7 @@ macro_rules! scope {
         if !$crate::scope_cache::should_run(_key, _input_hash) {
             $crate::scope_cache::get_cached(_key, $s)
         } else {
+            let _dirty_before = $crate::scope_cache::dirty_generation(_key);
             $crate::scope_cache::clear_scope_deps(_key);
 
             let _prev_cursor = $crate::runtime::COMPOSER.with(|c| c.borrow().cursor);
@@ -262,7 +265,13 @@ macro_rules! scope {
 
             let _slot_delta = $crate::runtime::COMPOSER.with(|c| c.borrow().cursor) - _prev_cursor;
 
-            $crate::scope_cache::set_cache(_key, _input_hash, _result.clone(), _slot_delta);
+            $crate::scope_cache::set_cache_preserving_dirty(
+                _key,
+                _input_hash,
+                _result.clone(),
+                _slot_delta,
+                _dirty_before,
+            );
 
             _result
         }
@@ -270,12 +279,15 @@ macro_rules! scope {
 
     // Without explicit inputs -> skip Hash import
     ($key:expr, $s:expr, [], $body:block) => {{
-        let _key: &str = $key;
+        let _key = $key.to_string();
+        let _key: &str = &_key;
+        $crate::scope_cache::validate_scope_key(_key);
         let _input_hash: u64 = 0;
 
         if !$crate::scope_cache::should_run(_key, _input_hash) {
             $crate::scope_cache::get_cached(_key, $s)
         } else {
+            let _dirty_before = $crate::scope_cache::dirty_generation(_key);
             $crate::scope_cache::clear_scope_deps(_key);
 
             let _prev_cursor = $crate::runtime::COMPOSER.with(|c| c.borrow().cursor);
@@ -289,7 +301,13 @@ macro_rules! scope {
 
             let _slot_delta = $crate::runtime::COMPOSER.with(|c| c.borrow().cursor) - _prev_cursor;
 
-            $crate::scope_cache::set_cache(_key, _input_hash, _result.clone(), _slot_delta);
+            $crate::scope_cache::set_cache_preserving_dirty(
+                _key,
+                _input_hash,
+                _result.clone(),
+                _slot_delta,
+                _dirty_before,
+            );
 
             _result
         }
@@ -317,7 +335,14 @@ macro_rules! scope_auto {
 macro_rules! scope_keyed {
     ($s:expr, $id:expr, [$($input:expr),* $(,)?], $body:block) => {{
         $crate::scope!(
-            concat!(module_path!(), ":", file!(), ":", line!(), ":", column!(), ":", $id),
+            format!(
+                "{}:{}:{}:{}:{}",
+                module_path!(),
+                file!(),
+                line!(),
+                column!(),
+                $id
+            ),
             $s,
             [$($input),*],
             $body

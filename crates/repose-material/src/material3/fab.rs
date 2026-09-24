@@ -93,24 +93,44 @@ fn fab_impl(icon: View, on_click: impl Fn() + 'static, config: FABConfig) -> Vie
 }
 
 /// M3 Floating Action Button (regular, 56dp).
-pub fn FAB(icon: View, on_click: impl Fn() + 'static, mut config: FABConfig) -> View {
-    config.size = FABDefaults::SIZE;
-    config.shape_radius = FABDefaults::SHAPE_RADIUS;
+pub fn FAB(icon: View, on_click: impl Fn() + 'static, config: FABConfig) -> View {
     fab_impl(icon, on_click, config)
+}
+
+fn variant_config(mut config: FABConfig, default_size: Dp, default_shape_radius: Dp) -> FABConfig {
+    if config.size == FABDefaults::SIZE {
+        config.size = default_size;
+    }
+    if config.shape_radius == FABDefaults::SHAPE_RADIUS {
+        config.shape_radius = default_shape_radius;
+    }
+    config
 }
 
 /// M3 Small FAB (40dp).
-pub fn SmallFAB(icon: View, on_click: impl Fn() + 'static, mut config: FABConfig) -> View {
-    config.size = FABDefaults::SMALL_SIZE;
-    config.shape_radius = FABDefaults::SMALL_SHAPE_RADIUS;
-    fab_impl(icon, on_click, config)
+pub fn SmallFAB(icon: View, on_click: impl Fn() + 'static, config: FABConfig) -> View {
+    fab_impl(
+        icon,
+        on_click,
+        variant_config(
+            config,
+            FABDefaults::SMALL_SIZE,
+            FABDefaults::SMALL_SHAPE_RADIUS,
+        ),
+    )
 }
 
 /// M3 Large FAB (96dp).
-pub fn LargeFAB(icon: View, on_click: impl Fn() + 'static, mut config: FABConfig) -> View {
-    config.size = FABDefaults::LARGE_SIZE;
-    config.shape_radius = FABDefaults::LARGE_SHAPE_RADIUS;
-    fab_impl(icon, on_click, config)
+pub fn LargeFAB(icon: View, on_click: impl Fn() + 'static, config: FABConfig) -> View {
+    fab_impl(
+        icon,
+        on_click,
+        variant_config(
+            config,
+            FABDefaults::LARGE_SIZE,
+            FABDefaults::LARGE_SHAPE_RADIUS,
+        ),
+    )
 }
 
 /// M3 Extended FAB - FAB with icon + label.
@@ -156,8 +176,8 @@ pub fn ExtendedFAB(
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
 
     let mut m = Modifier::new()
-        .height(Dp(56.0))
-        .min_width(Dp(80.0))
+        .height(config.size)
+        .min_width(config.size.max(Dp(80.0)))
         .background(bg)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
@@ -168,7 +188,7 @@ pub fn ExtendedFAB(
             disabled: theme().on_surface.with_alpha_f32(0.12),
         })
         .state_elevation(elev)
-        .clip_rounded(FABDefaults::SHAPE_RADIUS)
+        .clip_rounded(config.shape_radius)
         .padding_values(PaddingValues {
             left: Dp(16.0),
             right: Dp(20.0),

@@ -1,6 +1,6 @@
 #![allow(non_snake_case)]
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use repose_core::animation::AnimationSpec;
@@ -58,33 +58,72 @@ pub fn BottomSheet(
     config: BottomSheetConfig,
 ) -> View {
     let th = theme();
-    let id = remember(unique_component_id);
+    let instance_id = remember(unique_component_id);
+    let identity = match modifier.key {
+        Some(key) => format!("bottom-sheet:key:{key}"),
+        None => format!("bottom-sheet:instance:{instance_id}"),
+    };
 
     let opacity = animate_f32_from(
-        format!("bs_opacity_{id}"),
+        format!("{identity}:opacity"),
         if visible { 0.0 } else { 1.0 },
         if visible { 1.0 } else { 0.0 },
         th.motion.layout,
     );
 
-    let keep = visible || opacity > 0.01;
-    if !keep {
+    if !visible && opacity <= 0.01 {
         return Box(Modifier::new());
     }
-    Column(Modifier::new().fill_max_width()).child((
-        Box(modifier
-            .alpha(opacity)
-            .background(config.container_color)
-            .clip_rounded(config.shape_radius))
-        .child(with_content_color(config.content_color, move || content)),
+    let sheet = Box(modifier
+        .fill_max_width()
+        .max_width(config.max_width)
+        .min_height(config.peek_height)
+        .alpha(opacity)
+        .background(config.container_color)
+        .state_elevation(StateElevation {
+            default: config.tonal_elevation,
+            hovered: config.tonal_elevation,
+            focused: config.tonal_elevation,
+            pressed: config.tonal_elevation,
+            dragged: config.tonal_elevation,
+            disabled: Dp::ZERO,
+        })
+        .shadow(config.shadow_elevation, Dp::ZERO)
+        .clip_rounded(config.shape_radius))
+    .child(
+        Column(Modifier::new().fill_max_width()).child((
+            Box(Modifier::new()
+                .align_self(AlignSelf::CENTER)
+                .width(config.drag_handle_width)
+                .height(config.drag_handle_height)
+                .background(config.drag_handle_color)
+                .clip_rounded(config.drag_handle_height * 0.5)),
+            with_content_color(config.content_color, move || content),
+        )),
+    );
+
+    let dismiss_target = if config.gestures_enabled {
         Box(Modifier::new()
-            .width(Dp(1.0))
-            .height(Dp(0.0))
-            .fill_max_width()
+            .fill_max_size()
+            .background(config.scrim_color)
             .alpha(opacity)
-            .hit_passthrough()
-            .on_pointer_down(move |_| on_dismiss())),
-    ))
+            .input_blocker()
+            .focusable(false)
+            .on_scroll(|_| Vec2::default())
+            .on_click(move || on_dismiss()))
+    } else {
+        Box(Modifier::new())
+    };
+
+    ZStack(Modifier::new().fill_max_size())
+        .child(dismiss_target)
+        .child(
+            Box(Modifier::new()
+                .fill_max_size()
+                .justify_content(JustifyContent::FLEX_END)
+                .align_items(AlignItems::CENTER))
+            .child(sheet),
+        )
 }
 
 /// State for `ModalBottomSheet` - manages visibility and drag offset.
@@ -94,6 +133,7 @@ pub struct SheetState {
     drag_offset: Signal<f32>,
     /// Peek height in [`Dp`] magnitudes.
     peek_height: Signal<f32>,
+    id: u64,
 }
 
 impl SheetState {
@@ -102,7 +142,12 @@ impl SheetState {
             visible: signal(false),
             drag_offset: signal(0.0),
             peek_height: signal(peek_height.0),
+            id: unique_component_id(),
         }
+    }
+
+    pub fn key(&self, suffix: &str) -> String {
+        format!("sheet_{}_{}", self.id, suffix)
     }
 
     pub fn is_visible(&self) -> bool {
@@ -110,16 +155,16 @@ impl SheetState {
     }
 
     pub fn show(&self) {
-        self.visible.set(true);
+        self.visible.set_neq(true);
     }
 
     pub fn dismiss(&self) {
-        self.visible.set(false);
-        self.drag_offset.set(0.0);
+        self.visible.set_neq(false);
+        self.drag_offset.set_neq(0.0);
     }
 
     pub fn set_peek_height(&self, h: Dp) {
-        self.peek_height.set(h.0);
+        self.peek_height.set_neq(h.0);
     }
 }
 
@@ -137,9 +182,16 @@ pub fn ModalBottomSheet(
     let th = theme();
     // Peek heights are Dp; the slide animation runs in px (pointer space).
     let peek_h = Dp(state.peek_height.get().max(config.peek_height.0));
-    let anim_distance = peek_h.max(Dp(48.0)).max(Dp(400.0));
-    let anim_distance_px = anim_distance.to_px().0;
-    let mbs_id = remember(unique_component_id);
+    let mbs_id = state.key("modal");
+    let sheet_height: Rc<Cell<f32>> =
+        remember_with_key(format!("mbs_height_{mbs_id}"), || Cell::new(0.0));
+    let viewport_height = repose_core::locals::get_window_container_height().max(0.0);
+    let measured_height = sheet_height.get().max(0.0);
+    let anim_distance = Dp(peek_h.0.max(viewport_height).max(measured_height) + 1.0);
+    let anim_distance_px = remember_with_key(format!("mbs_distance_{mbs_id}"), || {
+        Cell::new(anim_distance.to_px().0)
+    });
+    anim_distance_px.set(anim_distance.to_px().0);
     let overlay_guard = remember_with_key(format!("mbs_oguard_{mbs_id}"), || {
         RefCell::new(None::<OverlayGuard>)
     });
@@ -169,13 +221,13 @@ pub fn ModalBottomSheet(
 
     // Animated offset: anim_distance_px (off-screen) -> 0px (visible)
     let anim = remember_state_with_key(format!("mbs_anim_{mbs_id}"), || {
-        AnimatedValue::new(anim_distance_px, theme().motion.spring)
+        AnimatedValue::new(anim_distance_px.get(), theme().motion.spring)
     });
     let last_target = remember_state_with_key(format!("mbs_anim_target_{mbs_id}"), || f32::NAN);
     let anim_target = if state.is_visible() {
         0.0
     } else {
-        anim_distance_px
+        anim_distance_px.get()
     };
 
     {
@@ -198,7 +250,7 @@ pub fn ModalBottomSheet(
     }
 
     let offset = *anim.borrow().get();
-    let sheet_visible = state.is_visible() || offset < anim_distance_px - 10.0;
+    let sheet_visible = state.is_visible() || offset < anim_distance_px.get() - 10.0;
 
     if sheet_visible {
         if overlay_guard.borrow().is_none()
@@ -207,6 +259,8 @@ pub fn ModalBottomSheet(
             let builder: Rc<dyn Fn() -> View> = Rc::new({
                 let state = state.clone();
                 let anim = anim.clone();
+                let anim_distance_px = anim_distance_px.clone();
+                let sheet_height = sheet_height.clone();
                 let current_modifier = current_modifier.clone();
                 let current_content = current_content.clone();
                 let current_config = current_config.clone();
@@ -219,6 +273,7 @@ pub fn ModalBottomSheet(
                     let config = current_config.borrow().clone();
                     let off = *anim.borrow().get();
                     let content = current_content.borrow().clone();
+                    let sheet_peek_height = Dp(state.peek_height.get().max(config.peek_height.0));
 
                     let mut sheet_mod = modifier
                         .clone()
@@ -226,9 +281,52 @@ pub fn ModalBottomSheet(
                         .max_width(config.max_width)
                         .translate(0.0, off)
                         .background(config.container_color)
-                        .clip_rounded(config.shape_radius);
+                        .state_elevation(StateElevation {
+                            default: config.tonal_elevation,
+                            hovered: config.tonal_elevation,
+                            focused: config.tonal_elevation,
+                            pressed: config.tonal_elevation,
+                            dragged: config.tonal_elevation,
+                            disabled: Dp::ZERO,
+                        })
+                        .shadow(config.shadow_elevation, Dp::ZERO)
+                        .clip_rounded(config.shape_radius)
+                        .on_size_changed({
+                            let sheet_height = sheet_height.clone();
+                            let anim = anim.clone();
+                            let anim_distance_px = anim_distance_px.clone();
+                            let state = state.clone();
+                            let viewport_height = Dp(viewport_height);
+                            let sheet_peek_height = sheet_peek_height;
+                            move |size| {
+                                if size.y.is_finite() {
+                                    let height = size.y.max(0.0);
+                                    if (sheet_height.get() - height).abs() > f32::EPSILON {
+                                        sheet_height.set(height);
+                                        let distance = Dp(height
+                                            .max(viewport_height.0)
+                                            .max(sheet_peek_height.0)
+                                            + 1.0)
+                                        .to_px()
+                                        .0;
+                                        anim_distance_px.set(distance);
+                                        if !state.is_visible() {
+                                            anim.borrow_mut().snap_to(distance);
+                                        }
+                                        request_frame();
+                                    }
+                                }
+                            }
+                        })
+                        .focus_group()
+                        .semantics(Semantics {
+                            role: Role::Container,
+                            label: Some("Bottom sheet".into()),
+                            ..Default::default()
+                        });
 
                     if config.gestures_enabled {
+                        let drag_distance = anim_distance_px.clone();
                         sheet_mod = sheet_mod
                             .on_pointer_down({
                                 let anim = anim.clone();
@@ -261,12 +359,14 @@ pub fn ModalBottomSheet(
                                 let anim = anim.clone();
                                 let is_dragging = is_dragging.clone();
                                 let state = state.clone();
+                                let anim_distance_px = drag_distance.clone();
                                 move |_| {
                                     *is_dragging.borrow_mut() = false;
                                     let current_off = *anim.borrow().get();
-                                    let threshold = anim_distance_px * 0.3;
+                                    let distance = anim_distance_px.get();
+                                    let threshold = distance * 0.3;
                                     if current_off > threshold {
-                                        anim.borrow_mut().set_target(anim_distance_px);
+                                        anim.borrow_mut().set_target(distance);
                                         state.dismiss();
                                     } else {
                                         anim.borrow_mut().set_target(0.0);
@@ -293,7 +393,7 @@ pub fn ModalBottomSheet(
                                     ..Default::default()
                                 }))
                                 .on_pointer_down(|_| {}))),
-                            content,
+                            with_content_color(config.content_color, move || content),
                         )),
                     );
 
@@ -306,13 +406,14 @@ pub fn ModalBottomSheet(
                     let scrim_alpha = if state.is_visible() {
                         config.scrim_color.3
                     } else {
-                        let t = (off / anim_distance_px).clamp(0.0, 1.0);
+                        let t = (off / anim_distance_px.get()).clamp(0.0, 1.0);
                         (config.scrim_color.3 as f32 * (1.0 - t)) as u8
                     };
                     let scrim = Box(Modifier::new()
                         .fill_max_size()
                         .background(config.scrim_color.with_alpha(scrim_alpha))
                         .input_blocker()
+                        .focusable(false)
                         .on_scroll(|_| Vec2::default())
                         .on_pointer_down({
                             let s = state.clone();
@@ -323,7 +424,7 @@ pub fn ModalBottomSheet(
                 }
             });
 
-            *overlay_guard.borrow_mut() = Some(overlay.show_guard(builder, 900.0, false));
+            *overlay_guard.borrow_mut() = Some(overlay.show_guard(builder, 800.0, false));
         }
     } else {
         *overlay_guard.borrow_mut() = None;

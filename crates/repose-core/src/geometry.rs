@@ -451,7 +451,7 @@ fn decompose_linear(m: [f32; 4]) -> Option<(f32, f32, f32, f32, f32)> {
     let g = b * b + d * d;
     let det_p = (e * g - f * f).max(0.0);
     let s = (e + g + 2.0 * det_p.sqrt()).sqrt();
-    if !(s > 1e-12) {
+    if s.is_nan() || s <= 1e-12 {
         return None;
     }
     let root_det = det_p.sqrt();

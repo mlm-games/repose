@@ -40,7 +40,12 @@ fn vs_main(
     );
     let p = positions[v];
     let half = 0.5 * xywh.zw;
-    let quad_half = half + pad;
+    let pad_px = pad * G.ndc_to_px.x;
+    let pad_ndc = vec2<f32>(
+        pad_px / max(G.ndc_to_px.x, 1.0),
+        pad_px / max(G.ndc_to_px.y, 1.0),
+    );
+    let quad_half = half + pad_ndc;
     let corner = (p * 2.0 - 1.0) * quad_half;
     let rotated = vec2(
         fwd_mat.x * corner.x + fwd_mat.y * corner.y,

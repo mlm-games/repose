@@ -95,7 +95,11 @@ pub fn screen() -> View {
             };
             let t = animate_f32("demo_scale", if visible.get() { 1.0 } else { 0.75 }, spec);
             Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child((
-                Row(Modifier::new().align_items(AlignItems::CENTER).gap(sp::SM)).child((
+                FlowRow(
+                    Modifier::new().fill_max_width().align_items(AlignItems::CENTER).gap(sp::SM),
+                    FlowRowConfig::default(),
+                )
+                .child((
                     TextButton(Modifier::new(), { let m = mode.clone(); move || m.set(SpringMode::Gentle) }, ButtonConfig::default(), || Text("Gentle")),
                     TextButton(Modifier::new(), { let m = mode.clone(); move || m.set(SpringMode::Bouncy) }, ButtonConfig::default(), || Text("Bouncy")),
                     ElevatedButton(Modifier::new(), { let m = mode.clone(); move || m.set(SpringMode::Crit) }, ButtonConfig::default(), || Text("Crit")),
@@ -103,7 +107,9 @@ pub fn screen() -> View {
                     TextButton(Modifier::new(), { let v = visible.clone(); move || v.update(|x| *x = !*x) }, ButtonConfig::default(), || Text("Toggle")),
                 )),
                 Box(Modifier::new().padding(sp::SM)).child(Box(Modifier::new()
-                    .size(Dp(220.0), Dp(120.0))
+                    .fill_max_width()
+                    .max_width(Dp(220.0))
+                    .height(Dp(120.0))
                     .scale(t).alpha(t)
                     .background(theme().primary)
                     .clip_rounded(Dp(16.0)))),
@@ -116,7 +122,9 @@ pub fn screen() -> View {
                     let c = cross.clone();
                     move || c.update(|x| *x = match x { CrossfadeState::A => CrossfadeState::B, CrossfadeState::B => CrossfadeState::A })
                 }, ButtonConfig::default(), || Text("Toggle")),
-                Box(Modifier::new().size(Dp(200.0), Dp(80.0))).child(
+                Box(Modifier::new().fill_max_width()
+                    .max_width(Dp(200.0))
+                    .height(Dp(80.0))).child(
                     Crossfade(cross.get(), CrossfadeConfig {
                         key: "cross_demo".into(),
                         spec: AnimationSpec::tween(Duration::from_millis(400), Easing::EaseInOut),
@@ -173,7 +181,11 @@ pub fn screen() -> View {
             };
 
             Column(Modifier::new().padding(sp::MD).gap(sp::MD)).child((
-                Row(Modifier::new().align_items(AlignItems::CENTER).gap(sp::SM)).child((
+                FlowRow(
+                    Modifier::new().fill_max_width().align_items(AlignItems::CENTER).gap(sp::SM),
+                    FlowRowConfig::default(),
+                )
+                .child((
                     TextButton(Modifier::new(), { let t = transition_kind.clone(); move || t.set(0) }, ButtonConfig::default(), || Text("Fade")),
                     TextButton(Modifier::new(), { let t = transition_kind.clone(); move || t.set(1) }, ButtonConfig::default(), || Text("Slide")),
                     TextButton(Modifier::new(), { let t = transition_kind.clone(); move || t.set(2) }, ButtonConfig::default(), || Text("Scale")),
@@ -186,7 +198,9 @@ pub fn screen() -> View {
                         })
                     }}, ButtonConfig::default(), || Text("Next")),
                 )),
-                Box(Modifier::new().size(Dp(300.0), Dp(100.0))).child(
+                Box(Modifier::new().fill_max_width()
+                    .max_width(Dp(300.0))
+                    .height(Dp(100.0))).child(
                     AnimatedContent(content_state.get(), |s| match s {
                         ContentState::First => state_face("First", theme().primary, theme().on_primary),
                         ContentState::Second => state_face("Second", theme().tertiary, theme().on_tertiary),
@@ -211,7 +225,11 @@ pub fn screen() -> View {
             let colors = [theme().primary, theme().tertiary, theme().secondary, theme().error];
 
             Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child((
-                Row(Modifier::new().align_items(AlignItems::CENTER).gap(Dp(6.0))).child((
+                FlowRow(
+                    Modifier::new().fill_max_width().align_items(AlignItems::CENTER).gap(Dp(6.0)),
+                    FlowRowConfig::default(),
+                )
+                .child((
                     Button(Modifier::new(), {
                         let li = list_items.clone();
                         let nid = next_id.clone();
@@ -233,7 +251,11 @@ pub fn screen() -> View {
                     }, ButtonConfig::default(), || Text("Pop Last")),
                     Spacer(),
                 )),
-                Row(Modifier::new().align_items(AlignItems::CENTER).gap(Dp(6.0))).child((
+                FlowRow(
+                    Modifier::new().fill_max_width().align_items(AlignItems::CENTER).gap(Dp(6.0)),
+                    FlowRowConfig::default(),
+                )
+                .child((
                     TextButton(Modifier::new(), { let s = list_anim_spec.clone(); move || s.set(0) }, ButtonConfig::default(), || Text("Fast")),
                     TextButton(Modifier::new(), { let s = list_anim_spec.clone(); move || s.set(1) }, ButtonConfig::default(), || Text("Tween")),
                     TextButton(Modifier::new(), { let s = list_anim_spec.clone(); move || s.set(2) }, ButtonConfig::default(), || Text("Spring")),
@@ -242,6 +264,7 @@ pub fn screen() -> View {
                     Text(items.len().to_string()).size(Sp(13.0)).color(theme().on_surface),
                 )),
                 Box(Modifier::new()
+                    .fill_max_width()
                     .max_width(Dp(600.0))
                     .max_height(Dp(220.0))
                     .border(Dp(1.0), theme().outline_variant, Dp(8.0))

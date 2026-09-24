@@ -252,7 +252,7 @@ fn radial_border_center_matches_start_color() {
 }
 
 #[test]
-fn sweep_arc_renders_without_panic() {
+fn zero_arc_is_empty() {
     use repose_core::{StrokeCap, Vec2};
     let Some(mut off) = try_offscreen(16, 16) else {
         return;
@@ -267,7 +267,7 @@ fn sweep_arc_renders_without_panic() {
                 h: 12.0,
             },
             start_angle: 0.0,
-            sweep_angle: std::f32::consts::TAU,
+            sweep_angle: 0.0,
             stroke_width: Px(2.0),
             brush: Brush::Sweep {
                 center: Vec2 { x: 6.0, y: 6.0 },
@@ -278,7 +278,7 @@ fn sweep_arc_renders_without_panic() {
         }],
     };
     let px = off.render_rgba(&scene, None).expect("render");
-    assert!(px.iter().any(|&b| b != 0), "sweep arc should paint pixels");
+    assert!(px.chunks_exact(4).all(|pixel| pixel[3] == 0));
 }
 
 #[test]
@@ -343,7 +343,12 @@ fn sweep_rect_fill_paints_pixels() {
         }],
     };
     let px = off.render_rgba(&scene, None).expect("render");
-    assert!(px.iter().any(|&b| b != 0), "sweep rect should paint pixels");
+    let i = (8 * 16 + 8) * 4;
+    assert!(px[i + 3] > 200, "sweep rect centre should be opaque");
+    assert!(
+        px[i] > 20 && px[i + 2] > 20,
+        "sweep rect centre should contain gradient color"
+    );
 }
 
 #[test]

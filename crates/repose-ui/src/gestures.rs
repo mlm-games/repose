@@ -184,6 +184,15 @@ impl GestureDetector {
 
                 self.poll_long_press();
             }
+            PointerEventKind::Cancel => {
+                self.last_tap = None;
+                self.press_start = None;
+                self.drag_start = None;
+                self.last_position = None;
+                self.last_move_time = None;
+                self.drag_past_slop = false;
+                self.long_press_fired = false;
+            }
             _ => {}
         }
     }

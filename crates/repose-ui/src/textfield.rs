@@ -41,54 +41,153 @@ use repose_core::*;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::ops::Range;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use unicode_segmentation::UnicodeSegmentation;
 use web_time::Duration;
 use web_time::Instant;
 
 use crate::layout::mul_alpha_color;
 
+static NEXT_TEXTFIELD_TRANSFORM_ID: AtomicU64 = AtomicU64::new(1);
+
 thread_local! {
-    static TEXTFIELD_STATES: RefCell<HashMap<u64, Rc<RefCell<TextFieldState>>>> = RefCell::new(HashMap::new());
+    static TEXTFIELD_STATES: RefCell<HashMap<u64, Weak<RefCell<TextFieldState>>>> =
+        RefCell::new(HashMap::new());
+    static TEXTFIELD_TRANSFORMS: RefCell<HashMap<u64, TextFieldTransformEntry>> =
+        RefCell::new(HashMap::new());
+    static TEXTFIELD_TRANSFORM_MARKERS: RefCell<HashMap<u64, u64>> =
+        RefCell::new(HashMap::new());
+}
+
+#[derive(Clone)]
+struct TextFieldTransforms {
+    visual: Option<Rc<dyn VisualTransformation>>,
+    input: Option<Rc<dyn InputTransformation>>,
+    output: Option<Rc<dyn OutputTransformation>>,
+    codepoint: Option<Rc<CodepointTransformation>>,
+}
+
+struct TextFieldTransformEntry {
+    transforms: TextFieldTransforms,
+    marker: Weak<TextFieldTransformMarker>,
+}
+
+#[derive(Debug)]
+struct TextFieldTransformMarker(u64);
+
+impl VisualTransformation for TextFieldTransformMarker {
+    fn filter(&self, text: &AnnotatedString) -> TransformedText {
+        let transforms = TEXTFIELD_TRANSFORMS.with(|all| {
+            all.borrow()
+                .get(&self.0)
+                .map(|entry| entry.transforms.clone())
+        });
+        let Some(transforms) = transforms else {
+            return TransformedText::new(text.clone(), Box::new(IdentityOffsetMapping));
+        };
+        let mut transformed = transforms.visual.as_ref().map_or_else(
+            || TransformedText::new(text.clone(), Box::new(IdentityOffsetMapping)),
+            |visual| visual.filter(text),
+        );
+        if let Some(output) = &transforms.output {
+            let before = transformed.text.text.clone();
+            let mut buffer = TransformationBuffer::new(before.clone(), 0..before.len());
+            output.transform_output(&mut buffer);
+            let after = buffer.text;
+            let stage = CodepointOffsetMapping::new(&before, &after);
+            transformed.offset_mapping = Box::new(ComposedOffsetMapping {
+                first: transformed.offset_mapping,
+                second: Box::new(stage),
+            });
+            transformed.text.text = after;
+        }
+        if let Some(codepoint) = &transforms.codepoint {
+            let before = transformed.text.text.clone();
+            let after = before
+                .chars()
+                .enumerate()
+                .map(|(index, ch)| codepoint.transform(index, ch))
+                .collect::<String>();
+            let stage = CodepointOffsetMapping::new(&before, &after);
+            transformed.offset_mapping = Box::new(ComposedOffsetMapping {
+                first: transformed.offset_mapping,
+                second: Box::new(stage),
+            });
+            transformed.text.text = after;
+        }
+        transformed
+    }
 }
 
 pub fn set_textfield_state(key: u64, state: Rc<RefCell<TextFieldState>>) {
-    TEXTFIELD_STATES.with(|m| m.borrow_mut().insert(key, state));
+    TEXTFIELD_STATES.with(|states| {
+        states.borrow_mut().insert(key, Rc::downgrade(&state));
+    });
 }
 
 pub fn get_textfield_state(key: u64) -> Option<Rc<RefCell<TextFieldState>>> {
-    TEXTFIELD_STATES.with(|m| m.borrow().get(&key).cloned())
+    TEXTFIELD_STATES.with(|states| states.borrow().get(&key).and_then(Weak::upgrade))
+}
+
+pub(crate) fn prune_textfield_registries() {
+    TEXTFIELD_STATES.with(|states| {
+        states
+            .borrow_mut()
+            .retain(|_, state| state.strong_count() != 0);
+    });
+    let live: std::collections::HashSet<u64> = TEXTFIELD_TRANSFORMS.with(|transforms| {
+        transforms
+            .borrow()
+            .iter()
+            .filter(|(_, entry)| entry.marker.strong_count() != 0)
+            .map(|(id, _)| *id)
+            .collect()
+    });
+    TEXTFIELD_TRANSFORMS.with(|transforms| {
+        transforms.borrow_mut().retain(|id, _| live.contains(id));
+    });
+    TEXTFIELD_TRANSFORM_MARKERS.with(|markers| {
+        markers.borrow_mut().retain(|_, id| live.contains(id));
+    });
 }
 
 pub fn ensure_caret_visible(state: &mut TextFieldState, multiline: bool) {
-    let font_px = TF_FONT_SP.to_px().0;
-    let wrap_width = state.inner_width;
-    if multiline {
-        let (cx, cy, _) = crate::textfield::caret_xy_for_byte(
-            &state.text,
-            font_px,
-            wrap_width,
-            state.caret_index(),
-        );
-        let iw = state.inner_width;
-        let ih = state.inner_height;
-        state.ensure_caret_visible_xy(cx, cy, iw, ih, Dp(2.0).to_px().0);
+    let metrics = TextFieldMetrics::default();
+    ensure_caret_visible_with_metrics(state, multiline, &metrics);
+}
+
+pub fn ensure_caret_visible_with_metrics(
+    state: &mut TextFieldState,
+    multiline: bool,
+    metrics: &TextFieldMetrics,
+) {
+    let caret = state.caret_index();
+    let (display, display_caret) = if let Some(transformation) = &state.visual_transformation {
+        let annotated = repose_core::AnnotatedString::new(state.text.clone(), vec![]);
+        let transformed = transformation.filter(&annotated);
+        let offset = transformed.offset_mapping.original_to_transformed(caret);
+        (transformed.text.text, offset)
     } else {
-        let caret_idx = state.caret_index();
-        let (display, caret_display_off) = if let Some(vt) = &state.visual_transformation {
-            let annotated = repose_core::AnnotatedString::new(state.text.clone(), vec![]);
-            let tfmd = vt.filter(&annotated);
-            let off =
-                repose_core::original_offset_to_display(&state.text, tfmd.text.as_str(), caret_idx);
-            (tfmd.text.text, off)
-        } else {
-            (state.text.clone(), caret_idx)
-        };
-        let m = crate::textfield::measure_text(&display, font_px, TextMeasureConfig::default());
-        let caret_x = m
+        (state.text.clone(), caret)
+    };
+    let wrap_width = state.inner_width.max(1.0);
+    if multiline {
+        let (cx, cy, _) =
+            caret_xy_for_byte_with_metrics(&display, wrap_width, display_caret, metrics);
+        state.ensure_caret_visible_xy(
+            cx,
+            cy,
+            state.inner_width,
+            state.inner_height,
+            Dp(2.0).to_px().0,
+        );
+    } else {
+        let measured = measure_text(&display, metrics.font_px, metrics.measure_config());
+        let caret_x = measured
             .positions
-            .get(byte_to_char_index(&m, caret_display_off))
+            .get(byte_to_char_index(&measured, display_caret))
             .copied()
             .unwrap_or(0.0);
         state.ensure_caret_visible(caret_x, wrap_width, Dp(2.0).to_px().0);
@@ -306,6 +405,618 @@ impl Default for TextMeasureConfig {
             font_variation_settings: None,
         }
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct TextFieldMetrics {
+    pub font_px: f32,
+    pub font_family: Option<&'static str>,
+    pub font_weight: u16,
+    pub font_style: u8,
+    pub letter_spacing_px: f32,
+    pub font_variation_settings: Option<String>,
+    pub line_height_px: f32,
+}
+
+impl Default for TextFieldMetrics {
+    fn default() -> Self {
+        let font_px = TF_FONT_SP.to_px().0;
+        Self {
+            font_px,
+            font_family: None,
+            font_weight: 400,
+            font_style: 0,
+            letter_spacing_px: 0.0,
+            font_variation_settings: None,
+            line_height_px: font_px,
+        }
+    }
+}
+
+impl TextFieldMetrics {
+    pub(crate) fn from_config(config: &TextInputConfig) -> Self {
+        let style = config.text_style.clone().unwrap_or_default();
+        let font_px = if style.font_size == Sp::ZERO {
+            TF_FONT_SP.to_px().0
+        } else {
+            style.font_size.to_px().0
+        };
+        Self {
+            font_px,
+            font_family: style.font_family,
+            font_weight: style.font_weight.unwrap_or(400),
+            font_style: style.font_style.unwrap_or(0),
+            letter_spacing_px: style.letter_spacing.to_px().0,
+            font_variation_settings: style.font_variation_settings.clone(),
+            line_height_px: if style.line_height == Sp::ZERO {
+                font_px
+            } else {
+                style.line_height.to_px().0
+            },
+        }
+    }
+
+    pub fn measure_config(&self) -> TextMeasureConfig {
+        TextMeasureConfig {
+            font_family: self.font_family,
+            font_weight: self.font_weight,
+            font_style: self.font_style,
+            letter_spacing: self.letter_spacing_px,
+            font_variation_settings: self.font_variation_settings.clone(),
+        }
+    }
+}
+
+struct TransformationBuffer {
+    text: String,
+    selection: Range<usize>,
+    original_text: String,
+    original_selection: Range<usize>,
+}
+
+impl TransformationBuffer {
+    fn new(text: String, selection: Range<usize>) -> Self {
+        let selection = clamp_range(&text, selection);
+        Self {
+            original_text: text.clone(),
+            original_selection: selection.clone(),
+            text,
+            selection,
+        }
+    }
+
+    fn normalized(&mut self) {
+        self.selection = clamp_range(&self.text, self.selection.clone());
+    }
+}
+
+impl TextFieldBuffer for TransformationBuffer {
+    fn text(&self) -> &str {
+        &self.text
+    }
+
+    fn set_text(&mut self, text: &str) {
+        self.text = text.to_string();
+        self.normalized();
+    }
+
+    fn selection(&self) -> TextRange {
+        TextRange::new(self.selection.start, self.selection.end)
+    }
+
+    fn set_selection(&mut self, selection: TextRange) {
+        self.selection = clamp_range(
+            &self.text,
+            selection.start.min(selection.end)..selection.start.max(selection.end),
+        );
+    }
+
+    fn length(&self) -> usize {
+        self.text.chars().count()
+    }
+
+    fn replace(&mut self, start: usize, end: usize, text: &str) {
+        let start = byte_for_char(&self.text, start);
+        let end = byte_for_char(&self.text, end);
+        self.text.replace_range(start..end.max(start), text);
+        self.selection = clamp_range(&self.text, start..start + text.len());
+    }
+
+    fn insert(&mut self, index: usize, text: &str) {
+        let start = byte_for_char(&self.text, index);
+        self.text.insert_str(start, text);
+        self.selection = clamp_range(&self.text, start..start + text.len());
+    }
+
+    fn delete(&mut self, start: usize, end: usize) {
+        let start = byte_for_char(&self.text, start);
+        let end = byte_for_char(&self.text, end);
+        self.text.replace_range(start..end.max(start), "");
+        self.selection = clamp_range(&self.text, start..start);
+    }
+
+    fn place_cursor_before_char_at(&mut self, index: usize) {
+        let start = byte_for_char(&self.text, index);
+        self.selection = clamp_range(&self.text, start..start);
+    }
+
+    fn place_cursor_at_end(&mut self) {
+        let end = self.text.len();
+        self.selection = end..end;
+    }
+
+    fn select_all(&mut self) {
+        self.selection = 0..self.text.len();
+    }
+
+    fn revert_all_changes(&mut self) {
+        self.text = self.original_text.clone();
+        self.selection = self.original_selection.clone();
+    }
+
+    fn original_text(&self) -> &str {
+        &self.original_text
+    }
+
+    fn original_selection(&self) -> TextRange {
+        TextRange::new(self.original_selection.start, self.original_selection.end)
+    }
+
+    fn has_selection(&self) -> bool {
+        self.selection.start != self.selection.end
+    }
+}
+
+fn byte_for_char(text: &str, index: usize) -> usize {
+    text.char_indices().nth(index).map_or(text.len(), |v| v.0)
+}
+
+fn clamp_range(text: &str, range: Range<usize>) -> Range<usize> {
+    let mut start = range.start.min(text.len());
+    let mut end = range.end.min(text.len());
+    while start > 0 && !text.is_char_boundary(start) {
+        start -= 1;
+    }
+    while end > 0 && !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    start..end
+}
+
+#[derive(Debug)]
+struct CodepointOffsetMapping {
+    original: Vec<usize>,
+    transformed: Vec<usize>,
+}
+
+impl CodepointOffsetMapping {
+    fn new(original: &str, transformed: &str) -> Self {
+        let original_offsets: Vec<usize> = original
+            .char_indices()
+            .map(|(index, _)| index)
+            .chain(std::iter::once(original.len()))
+            .collect();
+        let transformed_offsets: Vec<usize> = transformed
+            .char_indices()
+            .map(|(index, _)| index)
+            .chain(std::iter::once(transformed.len()))
+            .collect();
+        if original_offsets.len() == transformed_offsets.len() {
+            Self {
+                original: original_offsets,
+                transformed: transformed_offsets,
+            }
+        } else {
+            Self {
+                original: vec![0, original.len()],
+                transformed: vec![0, transformed.len()],
+            }
+        }
+    }
+
+    fn map(offsets: &[usize], value: usize) -> usize {
+        let index = match offsets.binary_search(&value) {
+            Ok(index) => index,
+            Err(index) => index.saturating_sub(1),
+        };
+        offsets
+            .get(index)
+            .copied()
+            .or_else(|| offsets.last().copied())
+            .unwrap_or(0)
+    }
+}
+
+impl OffsetMapping for CodepointOffsetMapping {
+    fn original_to_transformed(&self, offset: usize) -> usize {
+        Self::map(&self.original, offset)
+    }
+
+    fn transformed_to_original(&self, offset: usize) -> usize {
+        Self::map(&self.transformed, offset)
+    }
+
+    fn clone_box(&self) -> Box<dyn OffsetMapping> {
+        Box::new(Self {
+            original: self.original.clone(),
+            transformed: self.transformed.clone(),
+        })
+    }
+}
+
+#[derive(Debug)]
+struct ComposedOffsetMapping {
+    first: Box<dyn OffsetMapping>,
+    second: Box<dyn OffsetMapping>,
+}
+
+impl OffsetMapping for ComposedOffsetMapping {
+    fn original_to_transformed(&self, offset: usize) -> usize {
+        self.second
+            .original_to_transformed(self.first.original_to_transformed(offset))
+    }
+
+    fn transformed_to_original(&self, offset: usize) -> usize {
+        self.first
+            .transformed_to_original(self.second.transformed_to_original(offset))
+    }
+
+    fn clone_box(&self) -> Box<dyn OffsetMapping> {
+        Box::new(Self {
+            first: self.first.clone_box(),
+            second: self.second.clone_box(),
+        })
+    }
+}
+
+fn install_textfield_transforms(
+    visual: Option<Rc<dyn VisualTransformation>>,
+    input: Option<Rc<dyn InputTransformation>>,
+    output: Option<Rc<dyn OutputTransformation>>,
+    codepoint: Option<CodepointTransformation>,
+) -> Option<Rc<dyn VisualTransformation>> {
+    if visual.is_none() && input.is_none() && output.is_none() && codepoint.is_none() {
+        return None;
+    }
+    let id = NEXT_TEXTFIELD_TRANSFORM_ID.fetch_add(1, Ordering::Relaxed);
+    let marker = Rc::new(TextFieldTransformMarker(id));
+    let pointer = Rc::as_ptr(&marker) as u64;
+    let visual_marker: Rc<dyn VisualTransformation> = marker.clone();
+    TEXTFIELD_TRANSFORMS.with(|all| {
+        all.borrow_mut().insert(
+            id,
+            TextFieldTransformEntry {
+                transforms: TextFieldTransforms {
+                    visual,
+                    input,
+                    output,
+                    codepoint: codepoint.map(Rc::new),
+                },
+                marker: Rc::downgrade(&marker),
+            },
+        );
+    });
+    TEXTFIELD_TRANSFORM_MARKERS.with(|markers| {
+        markers.borrow_mut().insert(pointer, id);
+    });
+    Some(visual_marker)
+}
+
+pub(crate) fn textfield_transform_id(transformation: &Rc<dyn VisualTransformation>) -> Option<u64> {
+    let pointer = Rc::as_ptr(transformation) as *const () as u64;
+    TEXTFIELD_TRANSFORM_MARKERS.with(|markers| markers.borrow().get(&pointer).copied())
+}
+
+fn apply_textfield_input_transformation_id(id: Option<u64>, state: &mut TextFieldState) {
+    let Some(id) = id else {
+        return;
+    };
+    let input = TEXTFIELD_TRANSFORMS.with(|all| {
+        all.borrow()
+            .get(&id)
+            .and_then(|entry| entry.transforms.input.clone())
+    });
+    let Some(input) = input else {
+        return;
+    };
+    let before = state.text.clone();
+    let composition = state.composition.clone();
+    let mut buffer = TransformationBuffer::new(state.text.clone(), state.selection.clone());
+    input.transform_input(&mut buffer);
+    state.text = buffer.text;
+    state.selection = buffer.selection;
+    if let Some(composition) = composition {
+        state.composition = Some(remap_text_range(&before, &state.text, composition));
+    }
+}
+
+fn remap_text_range(before: &str, after: &str, range: Range<usize>) -> Range<usize> {
+    if before == after {
+        return range;
+    }
+    let mut prefix = before
+        .as_bytes()
+        .iter()
+        .zip(after.as_bytes())
+        .take_while(|(left, right)| left == right)
+        .count();
+    while prefix > 0 && (!before.is_char_boundary(prefix) || !after.is_char_boundary(prefix)) {
+        prefix -= 1;
+    }
+    let max_suffix = (before.len() - prefix).min(after.len() - prefix);
+    let mut suffix = before[before.len() - max_suffix..]
+        .bytes()
+        .rev()
+        .zip(after[after.len() - max_suffix..].bytes().rev())
+        .take_while(|(left, right)| left == right)
+        .count();
+    while suffix > 0
+        && (!before.is_char_boundary(before.len() - suffix)
+            || !after.is_char_boundary(after.len() - suffix))
+    {
+        suffix -= 1;
+    }
+    let new_end = after.len() - suffix;
+    let old_start = prefix.min(range.start.min(before.len()));
+    let old_range_end = range.end.min(before.len()).max(old_start);
+    let map = |offset: usize| {
+        let offset = offset.clamp(old_start, old_range_end);
+        if offset == old_start {
+            prefix
+        } else if offset == old_range_end {
+            new_end
+        } else {
+            let relative = offset - old_start;
+            let changed_len = new_end.saturating_sub(prefix);
+            prefix + relative.min(changed_len)
+        }
+    };
+    let start = map(old_start);
+    let end = map(old_range_end);
+    clamp_range(after, start.min(end)..start.max(end))
+}
+
+pub fn apply_textfield_input_transformation(hit: &HitRegion, state: &mut TextFieldState) {
+    apply_textfield_input_transformation_id(crate::hit_testing::textfield_transform_id(hit), state);
+}
+
+pub fn dispatch_textfield_keyboard_action(
+    hit: &HitRegion,
+    action: repose_core::ImeAction,
+    default: &dyn Fn(),
+) -> bool {
+    crate::hit_testing::dispatch_keyboard_action(hit, action, default)
+}
+
+pub fn textfield_metrics(hit: &HitRegion) -> TextFieldMetrics {
+    crate::hit_testing::textfield_metrics(hit)
+}
+
+pub fn insert_text_with_input_transformation(
+    hit: &HitRegion,
+    state: &mut TextFieldState,
+    text: &str,
+    atomic: bool,
+) -> bool {
+    perform_input_edit(
+        crate::hit_testing::textfield_transform_id(hit),
+        state,
+        |state| {
+            if atomic {
+                state.insert_text_atomic(text);
+            } else {
+                state.insert_text(text);
+            }
+        },
+    )
+    .1
+}
+
+pub fn delete_backward_with_input_transformation(
+    hit: &HitRegion,
+    state: &mut TextFieldState,
+) -> bool {
+    perform_input_edit(
+        crate::hit_testing::textfield_transform_id(hit),
+        state,
+        TextFieldState::delete_backward,
+    )
+    .1
+}
+
+pub fn delete_forward_with_input_transformation(
+    hit: &HitRegion,
+    state: &mut TextFieldState,
+) -> bool {
+    perform_input_edit(
+        crate::hit_testing::textfield_transform_id(hit),
+        state,
+        TextFieldState::delete_forward,
+    )
+    .1
+}
+
+pub fn cut_with_input_transformation(
+    hit: &HitRegion,
+    state: &mut TextFieldState,
+) -> Option<String> {
+    let selected = state.selected_text();
+    if selected.is_empty() {
+        return None;
+    }
+    let changed = perform_input_edit(
+        crate::hit_testing::textfield_transform_id(hit),
+        state,
+        |state| state.insert_text_atomic(""),
+    )
+    .1;
+    changed.then_some(selected)
+}
+
+pub fn commit_composition_with_input_transformation(
+    hit: &HitRegion,
+    state: &mut TextFieldState,
+    text: String,
+) {
+    perform_input_edit(
+        crate::hit_testing::textfield_transform_id(hit),
+        state,
+        |state| state.commit_composition(text),
+    );
+}
+
+pub fn undo_with_input_transformation(_hit: &HitRegion, state: &mut TextFieldState) -> bool {
+    state.undo()
+}
+
+pub fn redo_with_input_transformation(_hit: &HitRegion, state: &mut TextFieldState) -> bool {
+    state.redo()
+}
+
+pub(crate) fn insert_text_with_input_transformation_config(
+    config: &TextInputConfig,
+    state: &mut TextFieldState,
+    text: &str,
+    atomic: bool,
+) -> bool {
+    let transform_id = config
+        .visual_transformation
+        .as_ref()
+        .and_then(textfield_transform_id);
+    perform_input_edit(transform_id, state, |state| {
+        if atomic {
+            state.insert_text_atomic(text);
+        } else {
+            state.insert_text(text);
+        }
+    })
+    .1
+}
+
+pub(crate) fn cut_with_input_transformation_config(
+    config: &TextInputConfig,
+    state: &mut TextFieldState,
+) -> Option<String> {
+    let selected = state.selected_text();
+    if selected.is_empty() {
+        return None;
+    }
+    let transform_id = config
+        .visual_transformation
+        .as_ref()
+        .and_then(textfield_transform_id);
+    perform_input_edit(transform_id, state, |state| state.insert_text_atomic(""))
+        .1
+        .then_some(selected)
+}
+
+pub(crate) fn undo_with_input_transformation_config(
+    _config: &TextInputConfig,
+    state: &mut TextFieldState,
+) -> bool {
+    state.undo()
+}
+
+pub(crate) fn redo_with_input_transformation_config(
+    _config: &TextInputConfig,
+    state: &mut TextFieldState,
+) -> bool {
+    state.redo()
+}
+
+fn perform_input_edit<T>(
+    transform_id: Option<u64>,
+    state: &mut TextFieldState,
+    edit: impl FnOnce(&mut TextFieldState) -> T,
+) -> (T, bool) {
+    let before = state.text.clone();
+    let before_selection = state.selection.clone();
+    let previous = state.staging_undo.take();
+    let redo = std::mem::take(&mut state.redo_stack);
+    let output = edit(state);
+    let Some(latest) = state.staging_undo.take() else {
+        state.staging_undo = previous;
+        state.redo_stack = redo;
+        return (output, false);
+    };
+    apply_textfield_input_transformation_id(transform_id, state);
+    let canonical = canonical_edit(
+        &before,
+        before_selection,
+        state,
+        latest.time,
+        latest.can_merge,
+    );
+    state.staging_undo = previous;
+    let Some(canonical) = canonical else {
+        state.redo_stack = redo;
+        return (output, false);
+    };
+    state.record_edit(canonical);
+    (output, true)
+}
+
+fn canonical_edit(
+    before: &str,
+    before_selection: Range<usize>,
+    state: &TextFieldState,
+    time: Instant,
+    can_merge: bool,
+) -> Option<TextUndoOp> {
+    canonical_edit_between(
+        before,
+        before_selection,
+        &state.text,
+        state.selection.clone(),
+        time,
+        can_merge,
+    )
+}
+
+fn canonical_edit_between(
+    before: &str,
+    before_selection: Range<usize>,
+    after: &str,
+    after_selection: Range<usize>,
+    time: Instant,
+    can_merge: bool,
+) -> Option<TextUndoOp> {
+    if before == after {
+        return None;
+    }
+    let mut prefix = before
+        .as_bytes()
+        .iter()
+        .zip(after.as_bytes())
+        .take_while(|(left, right)| left == right)
+        .count();
+    while prefix > 0 && (!before.is_char_boundary(prefix) || !after.is_char_boundary(prefix)) {
+        prefix -= 1;
+    }
+    let max_suffix = (before.len() - prefix).min(after.len() - prefix);
+    let mut suffix = before[before.len() - max_suffix..]
+        .bytes()
+        .rev()
+        .zip(after[after.len() - max_suffix..].bytes().rev())
+        .take_while(|(left, right)| left == right)
+        .count();
+    while suffix > 0
+        && (!before.is_char_boundary(before.len() - suffix)
+            || !after.is_char_boundary(after.len() - suffix))
+    {
+        suffix -= 1;
+    }
+    let pre_end = before.len() - suffix;
+    let post_end = after.len() - suffix;
+    Some(TextUndoOp {
+        index: prefix,
+        pre_text: before[prefix..pre_end].to_string(),
+        post_text: after[prefix..post_end].to_string(),
+        pre_selection: before_selection,
+        post_selection: after_selection,
+        time,
+        can_merge,
+    })
 }
 
 /// Measure caret positions for a single-line textfield using shaping.
@@ -623,6 +1334,7 @@ impl TextFieldState {
     /// previous staging operation. Flushes staging to the undo stack when
     /// merge is not possible.
     fn record_edit(&mut self, op: TextUndoOp) {
+        self.redo_stack.clear();
         if let Some(staging) = self.staging_undo.take() {
             if let Some(merged) = staging.try_merge(&op) {
                 self.staging_undo = Some(merged);
@@ -630,7 +1342,6 @@ impl TextFieldState {
             }
             // Can't merge: flush staging to undo stack
             self.undo_stack.push(staging);
-            self.redo_stack.clear();
             // Enforce capacity: drop oldest entries
             while self.undo_stack.len() + 1 > TEXT_UNDO_CAPACITY {
                 self.undo_stack.remove(0);
@@ -1375,47 +2086,62 @@ pub fn BasicTextField(
     };
 
     let ka = if let Some(ref handler) = config.on_keyboard_action {
-        let handler = handler.clone();
+        let default_submit = config.on_submit.clone();
+        let default_state = state.clone();
+        let make_action = move |handler: Rc<dyn repose_core::KeyboardActionHandler>| {
+            let default_submit = default_submit.clone();
+            let default_state = default_state.clone();
+            Rc::new(move |_: &dyn repose_core::KeyboardActionScope| {
+                handler.on_keyboard_action(&|| {
+                    if let Some(callback) = &default_submit {
+                        let text = default_state.borrow().text.clone();
+                        callback(text);
+                    }
+                });
+            }) as Rc<dyn Fn(&dyn repose_core::KeyboardActionScope)>
+        };
         repose_core::KeyboardActions {
-            on_done: Some({
-                let h = handler.clone();
-                Rc::new(move |_: &dyn repose_core::KeyboardActionScope| {
-                    h.on_keyboard_action(&|| {})
-                })
-            }),
-            on_go: Some({
-                let h = handler.clone();
-                Rc::new(move |_: &dyn repose_core::KeyboardActionScope| {
-                    h.on_keyboard_action(&|| {})
-                })
-            }),
-            on_next: Some({
-                let h = handler.clone();
-                Rc::new(move |_: &dyn repose_core::KeyboardActionScope| {
-                    h.on_keyboard_action(&|| {})
-                })
-            }),
-            on_previous: Some({
-                let h = handler.clone();
-                Rc::new(move |_: &dyn repose_core::KeyboardActionScope| {
-                    h.on_keyboard_action(&|| {})
-                })
-            }),
-            on_search: Some({
-                let h = handler.clone();
-                Rc::new(move |_: &dyn repose_core::KeyboardActionScope| {
-                    h.on_keyboard_action(&|| {})
-                })
-            }),
-            on_send: Some({
-                Rc::new(move |_: &dyn repose_core::KeyboardActionScope| {
-                    handler.on_keyboard_action(&|| {})
-                })
-            }),
+            on_done: Some(make_action(handler.clone())),
+            on_go: Some(make_action(handler.clone())),
+            on_next: Some(make_action(handler.clone())),
+            on_previous: Some(make_action(handler.clone())),
+            on_search: Some(make_action(handler.clone())),
+            on_send: Some(make_action(handler.clone())),
         }
     } else {
         repose_core::KeyboardActions::default()
     };
+
+    let transform_cache_key = format!(
+        "textfield-transforms:{:x}:{:?}:{:x}:{:x}:{:x}:{}",
+        Rc::as_ptr(&state) as usize,
+        modifier.key,
+        config
+            .visual_transformation
+            .as_ref()
+            .map(|value| Rc::as_ptr(value) as *const () as usize)
+            .unwrap_or(0),
+        config
+            .input_transformation
+            .as_ref()
+            .map(|value| Rc::as_ptr(value) as *const () as usize)
+            .unwrap_or(0),
+        config
+            .output_transformation
+            .as_ref()
+            .map(|value| Rc::as_ptr(value) as *const () as usize)
+            .unwrap_or(0),
+        config.codepoint_transformation.is_some(),
+    );
+    let visual_transformation = remember_with_key(transform_cache_key, || {
+        install_textfield_transforms(
+            config.visual_transformation,
+            config.input_transformation,
+            config.output_transformation,
+            config.codepoint_transformation,
+        )
+    });
+    let visual_transformation = visual_transformation.as_ref().clone();
 
     let decoration_box = config
         .decorator
@@ -1456,7 +2182,7 @@ pub fn BasicTextField(
         !single_line,
         merged_on_change,
         config.on_submit,
-        config.visual_transformation,
+        visual_transformation,
         config.keyboard_options.keyboard_type,
         config.keyboard_options.capitalization,
         config.keyboard_options.ime_action,
@@ -1472,10 +2198,7 @@ pub fn BasicTextField(
         config.interaction_source,
         config.focus_tracker,
         Some(config.line_limits),
-        config.input_transformation,
-        config.output_transformation,
         decoration_box,
-        config.codepoint_transformation,
     )
 }
 
@@ -1517,25 +2240,43 @@ pub fn layout_text_area(
     letter_spacing: f32,
     font_variation_settings: Option<&str>,
 ) -> TextAreaLayout {
-    let line_h = font_px;
+    layout_text_area_with_metrics(
+        text,
+        wrap_w_px,
+        &TextFieldMetrics {
+            font_px,
+            font_weight,
+            font_style,
+            letter_spacing_px: letter_spacing,
+            font_variation_settings: font_variation_settings.map(str::to_string),
+            line_height_px: font_px,
+            ..TextFieldMetrics::default()
+        },
+    )
+}
+
+pub fn layout_text_area_with_metrics(
+    text: &str,
+    wrap_w_px: f32,
+    metrics: &TextFieldMetrics,
+) -> TextAreaLayout {
     let (ranges, _) = repose_text::wrap_line_ranges(
         text,
-        font_px,
+        metrics.font_px,
         wrap_w_px.max(1.0),
         None,
         true,
-        font_weight,
-        font_style,
-        letter_spacing,
-        font_variation_settings,
+        metrics.font_weight,
+        metrics.font_style,
+        metrics.letter_spacing_px,
+        metrics.font_variation_settings.as_deref(),
     );
     TextAreaLayout {
         ranges,
-        line_h_px: line_h,
+        line_h_px: metrics.line_height_px,
     }
 }
 
-/// Return (line_index, local_byte, global_byte) for a global byte index.
 fn locate_byte_in_ranges(ranges: &[(usize, usize)], b: usize) -> (usize, usize, usize) {
     if ranges.is_empty() {
         return (0, 0, b);
@@ -1554,7 +2295,7 @@ fn locate_byte_in_ranges(ranges: &[(usize, usize)], b: usize) -> (usize, usize, 
             return (i, local, *s + local);
         }
         if b == *e {
-            if let Some((ns, _ne)) = ranges.get(i + 1)
+            if let Some((ns, _)) = ranges.get(i + 1)
                 && *ns == b
             {
                 return (i + 1, 0, b);
@@ -1568,62 +2309,141 @@ fn locate_byte_in_ranges(ranges: &[(usize, usize)], b: usize) -> (usize, usize, 
     (ranges.len() - 1, local, ls + local)
 }
 
-/// Compute caret (x, y) in px relative to the top-left of the inner content (not scrolled).
 pub fn caret_xy_for_byte(
     text: &str,
     font_px: f32,
     wrap_w_px: f32,
     byte: usize,
 ) -> (f32, f32, usize) {
-    let layout = layout_text_area(text, font_px, wrap_w_px, 400, 0, 0.0, None);
+    caret_xy_for_byte_with_metrics(
+        text,
+        wrap_w_px,
+        byte,
+        &TextFieldMetrics {
+            font_px,
+            line_height_px: font_px,
+            ..TextFieldMetrics::default()
+        },
+    )
+}
+
+pub fn caret_xy_for_byte_with_metrics(
+    text: &str,
+    wrap_w_px: f32,
+    byte: usize,
+    metrics: &TextFieldMetrics,
+) -> (f32, f32, usize) {
+    let layout = layout_text_area_with_metrics(text, wrap_w_px, metrics);
     let (ranges, line_h) = (&layout.ranges, layout.line_h_px);
     let (li, local, _) = locate_byte_in_ranges(ranges, byte);
     let (s, e) = ranges.get(li).copied().unwrap_or((0, 0));
     let line = &text[s..e];
-    let m = measure_text(line, font_px, TextMeasureConfig::default());
-    let ci = byte_to_char_index(&m, local);
-    // local is a byte offset within the line; ci maps it to char index.
-    let x = m.positions.get(ci).copied().unwrap_or(0.0);
-    let y = (li as f32) * line_h;
-    (x, y, li)
+    let measured = measure_text(line, metrics.font_px, metrics.measure_config());
+    let ci = byte_to_char_index(&measured, local);
+    let x = measured.positions.get(ci).copied().unwrap_or(0.0);
+    (x, li as f32 * line_h, li)
 }
 
-/// Given x/y (px) relative to inner content (not scrolled), return nearest grapheme boundary byte index.
+pub fn index_for_x_bytes_with_config(
+    text: &str,
+    font_px: f32,
+    x_px: f32,
+    config: TextMeasureConfig,
+) -> usize {
+    let measured = measure_text(text, font_px, config);
+    let mut best_i = 0;
+    let mut best_d = f32::INFINITY;
+    for (index, position) in measured.positions.iter().enumerate() {
+        let distance = (position - x_px).abs();
+        if distance < best_d {
+            best_d = distance;
+            best_i = index;
+        }
+    }
+    measured.byte_offsets[best_i]
+}
+
 pub fn index_for_xy_bytes(text: &str, font_px: f32, wrap_w_px: f32, x_px: f32, y_px: f32) -> usize {
-    let layout = layout_text_area(text, font_px, wrap_w_px, 400, 0, 0.0, None);
-    let li = ((y_px / layout.line_h_px).floor() as isize).max(0) as usize;
-    let li = li.min(layout.ranges.len().saturating_sub(1));
-    let (s, e) = layout.ranges.get(li).copied().unwrap_or((0, 0));
-    let line = &text[s..e];
-    let local = index_for_x_bytes(line, font_px, x_px.max(0.0), 400, 0);
-    (s + local).min(text.len())
+    index_for_xy_bytes_with_metrics(
+        text,
+        wrap_w_px,
+        x_px,
+        y_px,
+        &TextFieldMetrics {
+            font_px,
+            line_height_px: font_px,
+            ..TextFieldMetrics::default()
+        },
+    )
 }
 
-/// Move caret up/down in wrapped multiline text, keeping a preferred x column.
+pub fn index_for_xy_bytes_with_metrics(
+    text: &str,
+    wrap_w_px: f32,
+    x_px: f32,
+    y_px: f32,
+    metrics: &TextFieldMetrics,
+) -> usize {
+    let layout = layout_text_area_with_metrics(text, wrap_w_px, metrics);
+    let line = ((y_px / layout.line_h_px).floor() as isize).max(0) as usize;
+    let line = line.min(layout.ranges.len().saturating_sub(1));
+    let (start, end) = layout.ranges.get(line).copied().unwrap_or((0, 0));
+    let local = index_for_x_bytes_with_config(
+        &text[start..end],
+        metrics.font_px,
+        x_px.max(0.0),
+        metrics.measure_config(),
+    );
+    (start + local).min(text.len())
+}
+
 pub fn move_caret_vertical(
     text: &str,
     font_px: f32,
     wrap_w_px: f32,
     cur_byte: usize,
-    dir: i32, // -1 up, +1 down
+    dir: i32,
     preferred_x: Option<f32>,
 ) -> (usize, f32) {
-    let layout = layout_text_area(text, font_px, wrap_w_px, 400, 0, 0.0, None);
+    move_caret_vertical_with_metrics(
+        text,
+        wrap_w_px,
+        cur_byte,
+        dir,
+        preferred_x,
+        &TextFieldMetrics {
+            font_px,
+            line_height_px: font_px,
+            ..TextFieldMetrics::default()
+        },
+    )
+}
+
+pub fn move_caret_vertical_with_metrics(
+    text: &str,
+    wrap_w_px: f32,
+    cur_byte: usize,
+    dir: i32,
+    preferred_x: Option<f32>,
+    metrics: &TextFieldMetrics,
+) -> (usize, f32) {
+    let layout = layout_text_area_with_metrics(text, wrap_w_px, metrics);
     if layout.ranges.is_empty() {
         return (cur_byte, preferred_x.unwrap_or(0.0));
     }
-    let (x, _y, li) = caret_xy_for_byte(text, font_px, wrap_w_px, cur_byte);
-    let px = preferred_x.unwrap_or(x);
-    let mut nli = li as i32 + dir;
-    nli = nli.clamp(0, (layout.ranges.len().saturating_sub(1)) as i32);
-    let nli = nli as usize;
-    let (s, e) = layout.ranges[nli];
-    let line = &text[s..e];
-    let local = index_for_x_bytes(line, font_px, px.max(0.0), 400, 0);
-    ((s + local).min(text.len()), px)
+    let (x, _, line) = caret_xy_for_byte_with_metrics(text, wrap_w_px, cur_byte, metrics);
+    let x = preferred_x.unwrap_or(x);
+    let line = (line as i32 + dir).clamp(0, layout.ranges.len().saturating_sub(1) as i32) as usize;
+    let (start, end) = layout.ranges[line];
+    let local = index_for_x_bytes_with_config(
+        &text[start..end],
+        metrics.font_px,
+        x.max(0.0),
+        metrics.measure_config(),
+    );
+    ((start + local).min(text.len()), x)
 }
 
-/// Move to start/end of current visual line.
 pub fn line_home_end(
     text: &str,
     font_px: f32,
@@ -1631,10 +2451,30 @@ pub fn line_home_end(
     cur_byte: usize,
     to_end: bool,
 ) -> usize {
-    let layout = layout_text_area(text, font_px, wrap_w_px, 400, 0, 0.0, None);
-    let (li, _local, _) = locate_byte_in_ranges(&layout.ranges, cur_byte);
-    let (s, e) = layout.ranges.get(li).copied().unwrap_or((0, 0));
-    if to_end { e } else { s }
+    line_home_end_with_metrics(
+        text,
+        wrap_w_px,
+        cur_byte,
+        to_end,
+        &TextFieldMetrics {
+            font_px,
+            line_height_px: font_px,
+            ..TextFieldMetrics::default()
+        },
+    )
+}
+
+pub fn line_home_end_with_metrics(
+    text: &str,
+    wrap_w_px: f32,
+    cur_byte: usize,
+    to_end: bool,
+    metrics: &TextFieldMetrics,
+) -> usize {
+    let layout = layout_text_area_with_metrics(text, wrap_w_px, metrics);
+    let (line, _, _) = locate_byte_in_ranges(&layout.ranges, cur_byte);
+    let (start, end) = layout.ranges.get(line).copied().unwrap_or((0, 0));
+    if to_end { end } else { start }
 }
 
 /// Clamp to a valid cursor position: a grapheme-cluster boundary (which
@@ -1652,14 +2492,6 @@ fn clamp_to_char_boundary(s: &str, i: usize) -> usize {
         return j;
     }
     prev_grapheme_boundary(s, j)
-}
-
-fn char_to_byte(s: &str, ci: usize) -> usize {
-    if ci == 0 {
-        0
-    } else {
-        s.char_indices().nth(ci).map(|(i, _)| i).unwrap_or(s.len())
-    }
 }
 
 /// Paint a text field into the scene. Called by layout.rs when
@@ -1683,18 +2515,12 @@ pub(crate) fn paint_text_field(
     alpha_accum: f32,
 ) {
     let ts = text_input.text_style.clone().unwrap_or_default();
-    let font_size_sp = if ts.font_size != Sp::ZERO {
-        ts.font_size
+    let metrics = TextFieldMetrics::from_config(text_input);
+    let font_val = metrics.font_px;
+    let line_h = if text_input.multiline {
+        metrics.line_height_px
     } else {
-        TF_FONT_SP
-    };
-    let font_val = font_size_sp.to_px().0;
-    let line_h = if ts.line_height != Sp::ZERO {
-        ts.line_height.to_px().0
-    } else if text_input.multiline {
-        0.0 // sentinel -> renderer uses Normal line height (font-metric-based)
-    } else {
-        font_val // single-line needs tp use font em-size for correct cursor–text alignment
+        font_val
     };
     let text_off_y = (rect.h - line_h.max(font_val)) / 2.0;
 
@@ -1729,27 +2555,27 @@ pub(crate) fn paint_text_field(
                 st.text.clone()
             };
             let has_vt = text_input.visual_transformation.is_some();
-            let m = measure_text(
-                &measure_for,
-                font_val,
-                TextMeasureConfig {
-                    font_family: ts.font_family,
-                    font_weight: ts.font_weight.unwrap_or(400),
-                    font_style: ts.font_style.unwrap_or(0),
-                    letter_spacing: ts.letter_spacing.to_px().0,
-                    font_variation_settings: None,
-                },
-            );
+            let m = measure_text(&measure_for, font_val, metrics.measure_config());
 
             // Selection highlight
             if show_selection && st.selection.start != st.selection.end {
                 let start_off = if has_vt {
-                    original_offset_to_display(&st.text, &measure_for, st.selection.start)
+                    original_offset_to_display_with_mapping(
+                        &st.text,
+                        &measure_for,
+                        st.selection.start,
+                        st.offset_map.as_deref(),
+                    )
                 } else {
                     st.selection.start
                 };
                 let end_off = if has_vt {
-                    original_offset_to_display(&st.text, &measure_for, st.selection.end)
+                    original_offset_to_display_with_mapping(
+                        &st.text,
+                        &measure_for,
+                        st.selection.end,
+                        st.offset_map.as_deref(),
+                    )
                 } else {
                     st.selection.end
                 };
@@ -1783,12 +2609,22 @@ pub(crate) fn paint_text_field(
             // IME composition underline (visual feedback for an active preedit).
             if let Some(comp) = st.composition.clone() {
                 let cs = if has_vt {
-                    original_offset_to_display(&st.text, &measure_for, comp.start)
+                    original_offset_to_display_with_mapping(
+                        &st.text,
+                        &measure_for,
+                        comp.start,
+                        st.offset_map.as_deref(),
+                    )
                 } else {
                     comp.start
                 };
                 let ce = if has_vt {
-                    original_offset_to_display(&st.text, &measure_for, comp.end)
+                    original_offset_to_display_with_mapping(
+                        &st.text,
+                        &measure_for,
+                        comp.end,
+                        st.offset_map.as_deref(),
+                    )
                 } else {
                     comp.end
                 };
@@ -1843,19 +2679,19 @@ pub(crate) fn paint_text_field(
                 text: Arc::from(render_txt),
                 color: mul_alpha_color(txt_col, alpha_accum),
                 size: Px(font_val),
-                font_family: ts.font_family,
+                font_family: metrics.font_family,
                 text_align: ts.text_align,
-                font_weight: FontWeight(ts.font_weight.unwrap_or(400)),
-                font_style: match ts.font_style.unwrap_or(0) {
+                font_weight: FontWeight(metrics.font_weight),
+                font_style: match metrics.font_style {
                     1 => FontStyle::Italic,
                     _ => FontStyle::Normal,
                 },
                 text_decoration: ts.text_decoration.unwrap_or_default(),
-                letter_spacing: ts.letter_spacing.to_px(),
-                line_height: ts.line_height.to_px(),
+                letter_spacing: Px(metrics.letter_spacing_px),
+                line_height: Px(metrics.line_height_px),
                 extra_style: Default::default(),
                 url: None,
-                font_variation_settings: None,
+                font_variation_settings: metrics.font_variation_settings.clone().map(Arc::from),
             });
 
             // Caret (only when enabled && !readOnly)
@@ -1865,7 +2701,12 @@ pub(crate) fn paint_text_field(
                 && st.caret_visible()
             {
                 let caret_off = if has_vt {
-                    original_offset_to_display(&st.text, &measure_for, st.selection.end)
+                    original_offset_to_display_with_mapping(
+                        &st.text,
+                        &measure_for,
+                        st.selection.end,
+                        st.offset_map.as_deref(),
+                    )
                 } else {
                     st.selection.end
                 };
@@ -1897,15 +2738,7 @@ pub(crate) fn paint_text_field(
             } else {
                 st.text.clone()
             };
-            let layout = layout_text_area(
-                &render_text,
-                font_val,
-                rect.w.max(1.0),
-                400,
-                0,
-                ts.letter_spacing.to_px().0,
-                None,
-            );
+            let layout = layout_text_area_with_metrics(&render_text, rect.w.max(1.0), &metrics);
             let lh = layout.line_h_px;
             let max_line_count = text_input.max_lines.unwrap_or(usize::MAX);
 
@@ -1921,19 +2754,19 @@ pub(crate) fn paint_text_field(
                     text: Arc::from(text_input.hint.clone()),
                     color: mul_alpha_color(ts.color.unwrap_or(th.on_surface_variant), alpha_accum),
                     size: Px(font_val),
-                    font_family: ts.font_family,
+                    font_family: metrics.font_family,
                     text_align: ts.text_align,
-                    font_weight: FontWeight(ts.font_weight.unwrap_or(400)),
-                    font_style: match ts.font_style.unwrap_or(0) {
+                    font_weight: FontWeight(metrics.font_weight),
+                    font_style: match metrics.font_style {
                         1 => FontStyle::Italic,
                         _ => FontStyle::Normal,
                     },
                     text_decoration: ts.text_decoration.unwrap_or_default(),
-                    letter_spacing: ts.letter_spacing.to_px(),
-                    line_height: ts.line_height.to_px(),
+                    letter_spacing: Px(metrics.letter_spacing_px),
+                    line_height: Px(metrics.line_height_px),
                     extra_style: Default::default(),
                     url: None,
-                    font_variation_settings: None,
+                    font_variation_settings: metrics.font_variation_settings.clone().map(Arc::from),
                 });
             } else {
                 for (i, (s, e)) in layout.ranges.iter().copied().enumerate() {
@@ -1955,19 +2788,22 @@ pub(crate) fn paint_text_field(
                         text: Arc::<str>::from(ln),
                         color: mul_alpha_color(ts.color.unwrap_or(th.on_surface), alpha_accum),
                         size: Px(font_val),
-                        font_family: ts.font_family,
+                        font_family: metrics.font_family,
                         text_align: ts.text_align,
-                        font_weight: FontWeight(ts.font_weight.unwrap_or(400)),
-                        font_style: match ts.font_style.unwrap_or(0) {
+                        font_weight: FontWeight(metrics.font_weight),
+                        font_style: match metrics.font_style {
                             1 => FontStyle::Italic,
                             _ => FontStyle::Normal,
                         },
                         text_decoration: ts.text_decoration.unwrap_or_default(),
-                        letter_spacing: ts.letter_spacing.to_px(),
-                        line_height: ts.line_height.to_px(),
+                        letter_spacing: Px(metrics.letter_spacing_px),
+                        line_height: Px(metrics.line_height_px),
                         extra_style: Default::default(),
                         url: None,
-                        font_variation_settings: None,
+                        font_variation_settings: metrics
+                            .font_variation_settings
+                            .clone()
+                            .map(Arc::from),
                     });
                 }
             }
@@ -1978,12 +2814,22 @@ pub(crate) fn paint_text_field(
                 let sel_b_orig: usize = st.selection.start.max(st.selection.end);
                 let has_vt = text_input.visual_transformation.is_some();
                 let sel_a = if has_vt {
-                    original_offset_to_display(&st.text, &render_text, sel_a_orig)
+                    original_offset_to_display_with_mapping(
+                        &st.text,
+                        &render_text,
+                        sel_a_orig,
+                        st.offset_map.as_deref(),
+                    )
                 } else {
                     sel_a_orig
                 };
                 let sel_b = if has_vt {
-                    original_offset_to_display(&st.text, &render_text, sel_b_orig)
+                    original_offset_to_display_with_mapping(
+                        &st.text,
+                        &render_text,
+                        sel_b_orig,
+                        st.offset_map.as_deref(),
+                    )
                 } else {
                     sel_b_orig
                 };
@@ -1998,17 +2844,7 @@ pub(crate) fn paint_text_field(
                         continue;
                     }
                     let ln = &render_text[s..e];
-                    let m = measure_text(
-                        ln,
-                        font_val,
-                        TextMeasureConfig {
-                            font_family: ts.font_family,
-                            font_weight: ts.font_weight.unwrap_or(400),
-                            font_style: ts.font_style.unwrap_or(0),
-                            letter_spacing: ts.letter_spacing.to_px().0,
-                            font_variation_settings: None,
-                        },
-                    );
+                    let m = measure_text(ln, font_val, metrics.measure_config());
                     let ls = os - s;
                     let le = oe - s;
                     let sx = m
@@ -2046,12 +2882,22 @@ pub(crate) fn paint_text_field(
             if let Some(comp) = st.composition.clone() {
                 let has_vt = text_input.visual_transformation.is_some();
                 let comp_a = if has_vt {
-                    original_offset_to_display(&st.text, &render_text, comp.start)
+                    original_offset_to_display_with_mapping(
+                        &st.text,
+                        &render_text,
+                        comp.start,
+                        st.offset_map.as_deref(),
+                    )
                 } else {
                     comp.start
                 };
                 let comp_b = if has_vt {
-                    original_offset_to_display(&st.text, &render_text, comp.end)
+                    original_offset_to_display_with_mapping(
+                        &st.text,
+                        &render_text,
+                        comp.end,
+                        st.offset_map.as_deref(),
+                    )
                 } else {
                     comp.end
                 };
@@ -2065,17 +2911,7 @@ pub(crate) fn paint_text_field(
                         continue;
                     }
                     let ln = &render_text[s..e];
-                    let m = measure_text(
-                        ln,
-                        font_val,
-                        TextMeasureConfig {
-                            font_family: ts.font_family,
-                            font_weight: ts.font_weight.unwrap_or(400),
-                            font_style: ts.font_style.unwrap_or(0),
-                            letter_spacing: ts.letter_spacing.to_px().0,
-                            font_variation_settings: None,
-                        },
-                    );
+                    let m = measure_text(ln, font_val, metrics.measure_config());
                     let ls = os - s;
                     let le = oe - s;
                     let sx = m
@@ -2111,12 +2947,17 @@ pub(crate) fn paint_text_field(
                 let caret_orig = st.selection.end.min(st.text.len());
                 let has_vt = text_input.visual_transformation.is_some();
                 let caret = if has_vt {
-                    original_offset_to_display(&st.text, &render_text, caret_orig)
+                    original_offset_to_display_with_mapping(
+                        &st.text,
+                        &render_text,
+                        caret_orig,
+                        st.offset_map.as_deref(),
+                    )
                 } else {
                     caret_orig
                 };
                 let (cx, cy, _li) =
-                    caret_xy_for_byte(&render_text, font_val, rect.w.max(1.0), caret);
+                    caret_xy_for_byte_with_metrics(&render_text, rect.w.max(1.0), caret, &metrics);
                 let draw_x = rect.x + cx;
                 let draw_y = rect.y + cy - st.scroll_offset_y;
                 scene.nodes.push(SceneNode::Rect {
@@ -2149,16 +2990,20 @@ pub(crate) fn paint_text_field(
                 text: Arc::from(text_input.hint.clone()),
                 color: mul_alpha_color(th.on_surface_variant, alpha_accum),
                 size: Px(font_val),
-                font_family: None,
+                font_family: metrics.font_family,
                 text_align: TextAlign::Unspecified,
-                font_weight: FontWeight::NORMAL,
-                font_style: FontStyle::Normal,
+                font_weight: FontWeight(metrics.font_weight),
+                font_style: if metrics.font_style == 1 {
+                    FontStyle::Italic
+                } else {
+                    FontStyle::Normal
+                },
                 text_decoration: ts.text_decoration.unwrap_or_default(),
-                letter_spacing: Px::ZERO,
-                line_height: Px::ZERO,
+                letter_spacing: Px(metrics.letter_spacing_px),
+                line_height: Px(metrics.line_height_px),
                 extra_style: Default::default(),
                 url: None,
-                font_variation_settings: None,
+                font_variation_settings: metrics.font_variation_settings.clone().map(Arc::from),
             });
         } else if text_input.multiline {
             let render_text = if text_input.value.is_empty() {
@@ -2169,15 +3014,7 @@ pub(crate) fn paint_text_field(
             } else {
                 text_input.value.clone()
             };
-            let layout = layout_text_area(
-                &render_text,
-                font_val,
-                rect.w.max(1.0),
-                400,
-                0,
-                ts.letter_spacing.to_px().0,
-                None,
-            );
+            let layout = layout_text_area_with_metrics(&render_text, rect.w.max(1.0), &metrics);
             let lh = layout.line_h_px;
             for (i, (s, e)) in layout.ranges.iter().copied().enumerate() {
                 let ln = render_text[s..e].to_string();
@@ -2195,16 +3032,20 @@ pub(crate) fn paint_text_field(
                     text: Arc::<str>::from(ln),
                     color: mul_alpha_color(th.on_surface, alpha_accum),
                     size: Px(font_val),
-                    font_family: None,
+                    font_family: metrics.font_family,
                     text_align: TextAlign::Unspecified,
-                    font_weight: FontWeight::NORMAL,
-                    font_style: FontStyle::Normal,
+                    font_weight: FontWeight(metrics.font_weight),
+                    font_style: if metrics.font_style == 1 {
+                        FontStyle::Italic
+                    } else {
+                        FontStyle::Normal
+                    },
                     text_decoration: ts.text_decoration.unwrap_or_default(),
-                    letter_spacing: Px::ZERO,
-                    line_height: Px::ZERO,
+                    letter_spacing: Px(metrics.letter_spacing_px),
+                    line_height: Px(metrics.line_height_px),
                     extra_style: Default::default(),
                     url: None,
-                    font_variation_settings: None,
+                    font_variation_settings: metrics.font_variation_settings.clone().map(Arc::from),
                 });
             }
         } else {
@@ -2218,16 +3059,20 @@ pub(crate) fn paint_text_field(
                 text: Arc::from(rendered_by_vt(&text_input.value)),
                 color: mul_alpha_color(th.on_surface, alpha_accum),
                 size: Px(font_val),
-                font_family: None,
+                font_family: metrics.font_family,
                 text_align: TextAlign::Unspecified,
-                font_weight: FontWeight::NORMAL,
-                font_style: FontStyle::Normal,
+                font_weight: FontWeight(metrics.font_weight),
+                font_style: if metrics.font_style == 1 {
+                    FontStyle::Italic
+                } else {
+                    FontStyle::Normal
+                },
                 text_decoration: ts.text_decoration.unwrap_or_default(),
-                letter_spacing: Px::ZERO,
-                line_height: Px::ZERO,
+                letter_spacing: Px(metrics.letter_spacing_px),
+                line_height: Px(metrics.line_height_px),
                 extra_style: Default::default(),
                 url: None,
-                font_variation_settings: None,
+                font_variation_settings: metrics.font_variation_settings.clone().map(Arc::from),
             });
         }
     }
@@ -2254,15 +3099,7 @@ pub(crate) fn paint_text_field(
                 st.text.clone()
             };
             if text_input.multiline {
-                let l = layout_text_area(
-                    &display,
-                    font_val,
-                    rect.w.max(1.0),
-                    400,
-                    0,
-                    ts.letter_spacing.to_px().0,
-                    None,
-                );
+                let l = layout_text_area_with_metrics(&display, rect.w.max(1.0), &metrics);
                 let lc = l.ranges.len();
                 let cw = rect.w.max(0.0);
                 let ch = (lc as f32 * l.line_h_px).max(0.0);
@@ -2274,7 +3111,7 @@ pub(crate) fn paint_text_field(
                         let top = i as f32 * l.line_h_px;
                         let bottom = top + l.line_h_px;
                         let line_text = &display[s..e];
-                        let m = measure_text(line_text, font_val, TextMeasureConfig::default());
+                        let m = measure_text(line_text, font_val, metrics.measure_config());
                         let line_w = m.positions.last().copied().unwrap_or(0.0);
                         TextLineInfo {
                             start: s,
@@ -2292,7 +3129,7 @@ pub(crate) fn paint_text_field(
                 let lb = line_infos.last().map(|l| l.baseline).unwrap_or(0.0);
                 (lc, cw, ch, fb, lb, cw > rect.w, ch > rect.h, line_infos)
             } else {
-                let m = measure_text(&display, font_val, TextMeasureConfig::default());
+                let m = measure_text(&display, font_val, metrics.measure_config());
                 let w = m.positions.last().copied().unwrap_or(0.0);
                 let top = 0.0;
                 let bottom = line_h.max(font_val);
@@ -2362,10 +3199,7 @@ fn text_field_view(
     interaction_source: Option<repose_core::MutableInteractionSource>,
     focus_tracker: Option<Rc<Cell<bool>>>,
     line_limits: Option<repose_core::TextFieldLineLimits>,
-    _input_transformation: Option<Rc<dyn repose_core::InputTransformation>>,
-    _output_transformation: Option<Rc<dyn repose_core::OutputTransformation>>,
     decoration_box: Option<Rc<dyn Fn(repose_core::View) -> repose_core::View>>,
-    _codepoint_transformation: Option<repose_core::CodepointTransformation>,
 ) -> View {
     let mut modif = modifier.text_input(TextInputConfig {
         hint,
@@ -2418,13 +3252,23 @@ fn text_field_view(
 /// Ensure caret visibility for a TextFieldState inside a given rect (px).
 /// Extracted from `repose-platform::tf_ensure_visible_in_rect` for better layering.
 pub fn tf_ensure_visible_in_rect(state: &mut TextFieldState, inner_rect: repose_core::Rect) {
-    use crate::textfield::{TF_FONT_SP, TF_PADDING_X, TextMeasureConfig, measure_text};
-    let font_px = TF_FONT_SP.to_px().0;
-    let m = measure_text(&state.text, font_px, TextMeasureConfig::default());
-    // caret_index() is a BYTE offset; map to char index first.
-    let caret_x_px = m
+    use crate::textfield::{TF_PADDING_X, TextFieldMetrics};
+    let metrics = TextFieldMetrics::default();
+    let caret = state.caret_index();
+    let (display, display_caret) = if let Some(transformation) = &state.visual_transformation {
+        let annotated = repose_core::AnnotatedString::new(state.text.clone(), vec![]);
+        let transformed = transformation.filter(&annotated);
+        (
+            transformed.text.text,
+            transformed.offset_mapping.original_to_transformed(caret),
+        )
+    } else {
+        (state.text.clone(), caret)
+    };
+    let measured = measure_text(&display, metrics.font_px, metrics.measure_config());
+    let caret_x_px = measured
         .positions
-        .get(byte_to_char_index(&m, state.caret_index()))
+        .get(byte_to_char_index(&measured, display_caret))
         .copied()
         .unwrap_or(0.0);
     state.ensure_caret_visible(

@@ -78,16 +78,30 @@ fn produce_state_inner<T: Clone + 'static>(
         let out_cell_c = out_cell.clone();
         let producer_c = producer.clone();
         let obs_id = reactive::new_observer(move || {
-            let v = producer_c();
-            if let Some(out) = out_cell_c.borrow().as_ref() {
-                write(out.clone(), v);
+            let value = producer_c();
+            let output = {
+                let cell = out_cell_c.borrow();
+                cell.as_ref().cloned()
+            };
+            if let Some(output) = output {
+                write(output, value);
             } else {
-                *out_cell_c.borrow_mut() = Some(Signal::new(v));
+                let old = {
+                    let mut cell = out_cell_c.borrow_mut();
+                    cell.replace(Signal::new(value))
+                };
+                drop(old);
             }
         });
 
-        reactive::run_observer_now(obs_id);
-
+        if let Err(payload) = reactive::try_run_observer_now(obs_id) {
+            reactive::remove_observer(obs_id);
+            std::panic::resume_unwind(payload);
+        }
+        let initialized = out_cell.borrow().is_some();
+        if !initialized {
+            reactive::remove_observer(obs_id);
+        }
         let out = out_cell
             .borrow()
             .as_ref()
@@ -96,24 +110,33 @@ fn produce_state_inner<T: Clone + 'static>(
         (out, ProduceHandle { obs: obs_id })
     });
     if let Some(scope) = crate::scope::current_scope() {
-        let obs = rc.1.obs;
-        scope.memo(&format!("produce-cleanup:{full_key}"), || {
-            let fk = full_key.clone();
-            scope.add_disposer(move || {
-                reactive::remove_observer(obs);
-                crate::runtime::COMPOSER.with(|c| match c.try_borrow_mut() {
-                    Ok(mut c) => {
-                        c.keyed_slots.remove(&fk);
-                    }
-                    Err(_) => {
-                        log::error!(
-                            "produce_state: composer busy during unmount cleanup for '{fk}'; observer removed but slot retained"
-                        );
-                    }
-                });
+        let owner =
+            crate::runtime::scope_owner_token(crate::scope_cache::current_scope_key().as_deref());
+        let installed = crate::remember_with_key(
+            format!("produce-cleanup-installed:{full_key}:{owner}"),
+            || RefCell::new(false),
+        );
+        if !*installed.borrow() {
+            *installed.borrow_mut() = true;
+            let key = full_key.clone();
+            let cleanup_owner = owner.clone();
+            let cleanup = crate::Dispose::new(move || {
+                let (_released, removed) =
+                    crate::runtime::release_keyed_owner(&key, &cleanup_owner);
+                drop(removed);
             });
-            ()
-        });
+            let registered = cleanup.clone();
+            crate::runtime::register_keyed_disposer_for_owner(
+                full_key.clone(),
+                registered.clone(),
+                owner.clone(),
+            );
+            let key = full_key.clone();
+            let scope_owner = owner;
+            scope.add_disposer(move || {
+                crate::runtime::remove_keyed_disposer_for_owner(&key, &registered, &scope_owner);
+            });
+        }
     }
     Rc::new(rc.0.clone())
 }
@@ -125,87 +148,104 @@ fn produce_state_inner<T: Clone + 'static>(
 /// timer / layout-callback mutations reliably re-render. Prefer [`Signal`] for
 /// shared/derived state; use `Mutable` for widget-local state that should
 /// always recompose.
-pub struct Mutable<T: 'static>(Rc<RefCell<T>>);
+pub struct Mutable<T: 'static> {
+    value: Rc<RefCell<T>>,
+    dependency: Signal<()>,
+}
 
-// Manual impl: `#[derive(Clone)]` would require `T: Clone`, but `Rc<RefCell<T>>`
-// is unconditionally cloneable and local widget state must not need `T: Clone`.
 impl<T: 'static> Clone for Mutable<T> {
     fn clone(&self) -> Self {
-        Self(self.0.clone())
+        Self {
+            value: self.value.clone(),
+            dependency: self.dependency.clone(),
+        }
     }
 }
 
 impl<T: 'static> Mutable<T> {
     pub fn new(v: T) -> Self {
-        Self(Rc::new(RefCell::new(v)))
+        Self {
+            value: Rc::new(RefCell::new(v)),
+            dependency: Signal::new(()),
+        }
     }
 
-    pub fn get(&self) -> Ref<'_, T> {
-        self.0.borrow()
+    fn track_read(&self) {
+        self.dependency.get();
     }
 
-    /// Read the current value without holding the borrow across the closure.
-    pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> R {
-        f(&*self.0.borrow())
-    }
-
-    pub fn set(&self, v: T) {
-        *self.0.borrow_mut() = v;
+    fn changed(&self) {
+        reactive::signal_changed(self.dependency.id());
         crate::signal_fired();
         request_frame();
     }
 
-    /// Unconditional write + frame request. Prefer `set_neq`/`update_neq` for
-    /// UI state where equality is cheap - `set`/`update` always invalidate.
+    pub fn get(&self) -> Ref<'_, T> {
+        self.track_read();
+        self.value.borrow()
+    }
 
-    /// Like [`set`], but skips the frame request + signal when the value is
-    /// unchanged (`T: PartialEq`).
+    pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> R {
+        self.track_read();
+        let value = self.value.borrow();
+        let result = f(&value);
+        drop(value);
+        result
+    }
+
+    pub fn set(&self, v: T) {
+        let old = {
+            let mut value = self.value.borrow_mut();
+            std::mem::replace(&mut *value, v)
+        };
+        drop(old);
+        self.changed();
+    }
+
     pub fn set_neq(&self, v: T)
     where
         T: PartialEq,
     {
-        {
-            let mut b = self.0.borrow_mut();
-            if *b == v {
+        let old = {
+            let mut value = self.value.borrow_mut();
+            if *value == v {
                 return;
             }
-            *b = v;
-        }
-        crate::signal_fired();
-        request_frame();
+            std::mem::replace(&mut *value, v)
+        };
+        drop(old);
+        self.changed();
     }
 
     pub fn update(&self, f: impl FnOnce(&mut T)) {
-        f(&mut *self.0.borrow_mut());
-        crate::signal_fired();
-        request_frame();
+        {
+            let mut value = self.value.borrow_mut();
+            f(&mut value);
+        }
+        self.changed();
     }
 
-    /// Like [`update`], but only requests a frame + fires the signal when the
-    /// value actually changed (`T: PartialEq + Clone`).
     pub fn update_neq(&self, f: impl FnOnce(&mut T))
     where
         T: PartialEq + Clone,
     {
         let changed = {
-            let mut b = self.0.borrow_mut();
-            let before = (*b).clone();
-            f(&mut *b);
-            *b != before
+            let mut value = self.value.borrow_mut();
+            let before = value.clone();
+            f(&mut value);
+            *value != before
         };
         if changed {
-            crate::signal_fired();
-            request_frame();
+            self.changed();
         }
     }
 
-    /// Escape hatch when batching many writes. Call [`request_frame`] yourself.
     pub fn borrow_mut_silent(&self) -> RefMut<'_, T> {
-        self.0.borrow_mut()
+        self.value.borrow_mut()
     }
 
     pub fn as_rc(&self) -> Rc<RefCell<T>> {
-        self.0.clone()
+        self.value.clone()
     }
 }
 

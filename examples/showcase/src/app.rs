@@ -226,25 +226,27 @@ fn light_theme() -> Theme {
 
 /// Shows the "saved" snackbar. Dismissal (timeout, action tap) is owned by
 /// the controller, so the undo callback only needs its own effect.
-fn show_save_snackbar(snackbar: &SnackbarController) {
+fn show_save_snackbar(snackbar: &SnackbarController, on_undo: Rc<dyn Fn()>) {
     material3::show_simple_snackbar(
         snackbar,
         "Shortcut saved",
         Some("Undo".to_string()),
-        Some(Rc::new(|| log::info!("Snackbar undo"))),
+        Some(on_undo),
         2500,
     );
 }
 
-fn install_save_shortcut(snackbar: SnackbarController, on_fire: Rc<dyn Fn()>) {
+fn install_save_shortcut(
+    snackbar: SnackbarController,
+    on_fire: Rc<dyn Fn()>,
+    on_undo: Rc<dyn Fn()>,
+) {
     let mut map = shortcuts::ShortcutMap::new();
-    let mut mods = Modifiers {
-        command: true,
+    let mods = Modifiers {
+        command: cfg!(target_os = "macos"),
+        ctrl: !cfg!(target_os = "macos"),
         ..Modifiers::default()
     };
-    if !cfg!(target_os = "macos") {
-        mods.ctrl = true;
-    }
     map.insert(
         Key::Character('s'),
         mods,
@@ -255,11 +257,12 @@ fn install_save_shortcut(snackbar: SnackbarController, on_fire: Rc<dyn Fn()>) {
         let map_scope = shortcuts::InstallShortcutMap(map.clone());
         let snackbar = snackbar.clone();
         let on_fire = on_fire.clone();
+        let on_undo = on_undo.clone();
         let handler_scope = shortcuts::InstallShortcutHandler(Rc::new(move |action| {
             log::info!("Shortcut action: {:?}", action);
             if matches!(action, shortcuts::Action::Custom(key) if key.as_ref() == "showcase.save") {
                 on_fire();
-                show_save_snackbar(&snackbar);
+                show_save_snackbar(&snackbar, on_undo.clone());
                 true
             } else {
                 false
@@ -345,8 +348,21 @@ pub fn app(_s: &mut Scheduler) -> View {
         NavDisplay(stack.clone(), render, None, NavTransition::default()),
     );
 
-    let shortcut_note = remember(|| signal("Press Ctrl+S to trigger".to_string()));
+    let shortcut_hint = if cfg!(target_os = "macos") {
+        "Press ⌘S to trigger"
+    } else {
+        "Press Ctrl+S to trigger"
+    };
+    let shortcut_note = remember(|| signal(shortcut_hint.to_string()));
     let shortcut_fired = remember(|| signal(false));
+    let undo_shortcut = Rc::new({
+        let note = shortcut_note.clone();
+        let fired = shortcut_fired.clone();
+        move || {
+            note.set(shortcut_hint.to_string());
+            fired.set(false);
+        }
+    });
     install_save_shortcut(
         (*snackbar).clone(),
         Rc::new({
@@ -357,6 +373,7 @@ pub fn app(_s: &mut Scheduler) -> View {
                 fired.set(true);
             }
         }),
+        undo_shortcut,
     );
 
     Column(Modifier::new().fill_max_size()).child((

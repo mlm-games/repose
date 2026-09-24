@@ -1,7 +1,12 @@
 #![allow(non_snake_case)]
 pub mod deeplink;
 
-use std::{any::Any, cell::RefCell, fmt::Debug, rc::Rc};
+use std::{
+    any::{Any, TypeId},
+    cell::RefCell,
+    fmt::Debug,
+    rc::Rc,
+};
 
 use repose_core::*;
 use repose_ui::{Box as VBox, Column, ViewExt, anim::animate_f32_from};
@@ -17,11 +22,41 @@ pub enum TransitionDir {
     Pop,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SavedStateTypeError {
+    key: &'static str,
+    expected: TypeId,
+    actual: TypeId,
+}
+
+impl SavedStateTypeError {
+    pub fn key(&self) -> &'static str {
+        self.key
+    }
+
+    pub fn expected(&self) -> TypeId {
+        self.expected
+    }
+
+    pub fn actual(&self) -> TypeId {
+        self.actual
+    }
+}
+
+impl std::fmt::Display for SavedStateTypeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "saved result {:?} has the wrong type", self.key)
+    }
+}
+
+impl std::error::Error for SavedStateTypeError {}
+
 #[derive(Default)]
 pub struct SavedState {
     map: RefCell<std::collections::HashMap<&'static str, Box<dyn Any>>>,
     results: RefCell<std::collections::HashMap<&'static str, Box<dyn Any>>>,
 }
+
 impl SavedState {
     pub fn remember<T: 'static + Clone>(
         &self,
@@ -37,16 +72,39 @@ impl SavedState {
         self.map.borrow_mut().insert(key, Box::new(rc.clone()));
         rc
     }
+
+    /// Stores a one-shot, in-memory result. A later set for the same slot
+    /// replaces the previous value.
     pub fn set_result<T: 'static>(&self, key: &'static str, val: T) {
         self.results.borrow_mut().insert(key, Box::new(val));
     }
+
+    /// Takes a result only when its type matches. A mismatch reports both
+    /// type IDs and leaves the stored value available for the correct type.
+    pub fn try_take_result<T: 'static>(
+        &self,
+        key: &'static str,
+    ) -> Result<Option<T>, SavedStateTypeError> {
+        let mut results = self.results.borrow_mut();
+        let Some(value) = results.remove(key) else {
+            return Ok(None);
+        };
+        let actual = (*value).type_id();
+        match value.downcast::<T>() {
+            Ok(value) => Ok(Some(*value)),
+            Err(value) => {
+                results.insert(key, value);
+                Err(SavedStateTypeError {
+                    key,
+                    expected: TypeId::of::<T>(),
+                    actual,
+                })
+            }
+        }
+    }
+
     pub fn take_result<T: 'static>(&self, key: &'static str) -> Option<T> {
-        self.results
-            .borrow_mut()
-            .remove(key)?
-            .downcast::<T>()
-            .ok()
-            .map(|b| *b)
+        self.try_take_result(key).ok().flatten()
     }
 }
 
@@ -63,12 +121,14 @@ struct BackState<K: NavKey> {
     entries: Vec<Entry<K>>,
     next_id: u64,
     last_dir: TransitionDir,
+    transition_id: u64,
 }
 
 #[derive(Clone)]
 pub struct NavBackStack<K: NavKey> {
     inner: Rc<RefCell<BackState<K>>>,
     version: Rc<Signal<u64>>,
+    stack_id: u64,
 }
 impl<K: NavKey> NavBackStack<K> {
     pub fn top(&self) -> Option<(u64, K, Rc<SavedState>, Scope)> {
@@ -76,6 +136,18 @@ impl<K: NavKey> NavBackStack<K> {
         s.entries
             .last()
             .map(|e| (e.id, e.key.clone(), e.saved.clone(), e.scope.clone()))
+    }
+    pub fn current(&self) -> Option<(u64, K, Rc<SavedState>, Scope)> {
+        self.top()
+    }
+    pub fn current_id(&self) -> Option<u64> {
+        self.inner.borrow().entries.last().map(|entry| entry.id)
+    }
+    pub fn is_current(&self, entry_id: u64) -> bool {
+        self.current_id() == Some(entry_id)
+    }
+    fn transition_id(&self) -> u64 {
+        self.inner.borrow().transition_id
     }
     pub fn size(&self) -> usize {
         self.inner.borrow().entries.len()
@@ -103,27 +175,72 @@ impl<K: NavKey> NavBackStack<K> {
         let mut s = self.inner.borrow_mut();
         self.fresh_entry(&mut s, key);
         s.last_dir = TransitionDir::Push;
+        s.transition_id = s.transition_id.wrapping_add(1);
     }
 
-    /// Pop the top entry (if any) and dispose its scope.
-    fn pop_inner(&self) -> bool {
-        let entry = {
-            let mut s = self.inner.borrow_mut();
-            match s.entries.pop() {
-                Some(e) => {
-                    s.last_dir = TransitionDir::Pop;
-                    Some(e)
-                }
-                None => None,
-            }
-        };
-
-        if let Some(e) = entry {
-            e.scope.dispose();
-            true
-        } else {
-            false
+    fn pop_entries(&self, count: usize) -> bool {
+        if count == 0 {
+            return false;
         }
+        let entries = {
+            let mut s = self.inner.borrow_mut();
+            let count = count.min(s.entries.len().saturating_sub(1));
+            if count == 0 {
+                return false;
+            }
+            let split_at = s.entries.len() - count;
+            let entries = s.entries.split_off(split_at);
+            s.last_dir = TransitionDir::Pop;
+            s.transition_id = s.transition_id.wrapping_add(1);
+            entries
+        };
+        self.bump();
+        for entry in entries {
+            entry.scope.dispose();
+        }
+        true
+    }
+
+    fn pop_inner(&self) -> bool {
+        self.pop_entries(1)
+    }
+
+    fn pop_with_result_for_entry<T: 'static>(
+        &self,
+        entry_id: u64,
+        slot: &'static str,
+        value: T,
+    ) -> bool {
+        let parent_saved = {
+            let s = self.inner.borrow();
+            if s.entries.len() <= 1 || s.entries.last().map(|entry| entry.id) != Some(entry_id) {
+                return false;
+            }
+            s.entries[s.entries.len() - 2].saved.clone()
+        };
+        parent_saved.set_result(slot, value);
+        self.pop_inner()
+    }
+
+    pub fn pop_with_result<T: 'static>(&self, slot: &'static str, value: T) -> bool {
+        let entry_id = self.inner.borrow().entries.last().map(|entry| entry.id);
+        entry_id.is_some_and(|entry_id| self.pop_with_result_for_entry(entry_id, slot, value))
+    }
+
+    pub fn set_result_for<T: 'static, F: Fn(&K) -> bool>(
+        &self,
+        predicate: F,
+        slot: &'static str,
+        value: T,
+    ) -> bool {
+        let s = self.inner.borrow();
+        let Some(entry) = s.entries.iter().rev().find(|entry| predicate(&entry.key)) else {
+            return false;
+        };
+        entry.saved.set_result(slot, value);
+        drop(s);
+        self.bump();
+        true
     }
 
     /// Replace the top entry with a fresh destination.
@@ -136,13 +253,17 @@ impl<K: NavKey> NavBackStack<K> {
             let old = s.entries.pop();
             self.fresh_entry(&mut s, key);
             s.last_dir = TransitionDir::Push;
+            s.transition_id = s.transition_id.wrapping_add(1);
             old
         };
+        self.bump();
         if let Some(e) = old {
             e.scope.dispose();
         }
     }
 
+    /// Serializes route keys only. `remember_saveable` values and one-shot
+    /// results remain in memory and are intentionally not serialized.
     pub fn to_json(&self) -> String
     where
         K: Serialize,
@@ -177,12 +298,13 @@ impl<K: NavKey> NavBackStack<K> {
                 self.fresh_entry(&mut s, k);
             }
             s.last_dir = TransitionDir::None;
+            s.transition_id = s.transition_id.wrapping_add(1);
             old
         };
+        self.bump();
         for e in old_entries {
             e.scope.dispose();
         }
-        self.bump();
     }
 }
 
@@ -197,18 +319,23 @@ impl<K: NavKey> Navigator<K> {
     }
     pub fn replace(&self, k: K) {
         self.stack.replace_inner(k);
-        self.stack.bump();
     }
     pub fn pop(&self) -> bool {
-        // Don't pop if only one entry is present
         if self.stack.size() <= 1 {
             return false;
         }
-        let ok = self.stack.pop_inner();
-        if ok {
-            self.stack.bump();
-        }
-        ok
+        self.stack.pop_inner()
+    }
+    pub fn pop_with_result<T: 'static>(&self, slot: &'static str, value: T) -> bool {
+        self.stack.pop_with_result(slot, value)
+    }
+    pub fn set_result_for<T: 'static, F: Fn(&K) -> bool>(
+        &self,
+        predicate: F,
+        slot: &'static str,
+        value: T,
+    ) -> bool {
+        self.stack.set_result_for(predicate, slot, value)
     }
     pub fn clear_and_push(&self, k: K) {
         let old_entries = {
@@ -216,12 +343,13 @@ impl<K: NavKey> Navigator<K> {
             let old = std::mem::take(&mut s.entries);
             self.stack.fresh_entry(&mut s, k);
             s.last_dir = TransitionDir::Push;
+            s.transition_id = s.transition_id.wrapping_add(1);
             old
         };
+        self.stack.bump();
         for e in old_entries {
             e.scope.dispose();
         }
-        self.stack.bump();
     }
     pub fn pop_to<F: Fn(&K) -> bool>(&self, pred: F, inclusive: bool) {
         let count = {
@@ -235,12 +363,7 @@ impl<K: NavKey> Navigator<K> {
                 0
             }
         };
-        for _ in 0..count {
-            let _ = self.stack.pop_inner();
-        }
-        if count > 0 {
-            self.stack.bump();
-        }
+        self.stack.pop_entries(count);
     }
 }
 
@@ -275,8 +398,10 @@ pub fn remember_back_stack_with_key<K: NavKey>(
             }],
             next_id: 2,
             last_dir: TransitionDir::None,
+            transition_id: 0,
         })),
         version: std::rc::Rc::new(signal(0)),
+        stack_id: unique_component_id(),
     })
 }
 
@@ -284,6 +409,7 @@ pub struct EntryScope<K: NavKey> {
     id: u64,
     key: K,
     saved: Rc<SavedState>,
+    scope: Scope,
     nav: Navigator<K>,
 }
 impl<K: NavKey> EntryScope<K> {
@@ -293,8 +419,14 @@ impl<K: NavKey> EntryScope<K> {
     pub fn key(&self) -> &K {
         &self.key
     }
+    pub fn is_current(&self) -> bool {
+        self.nav.stack.is_current(self.id)
+    }
     pub fn navigator(&self) -> Navigator<K> {
         self.nav.clone()
+    }
+    pub fn run<R>(&self, f: impl FnOnce() -> R) -> R {
+        self.scope.run(f)
     }
     pub fn remember_saveable<T: 'static + Clone>(
         &self,
@@ -303,11 +435,42 @@ impl<K: NavKey> EntryScope<K> {
     ) -> Rc<RefCell<T>> {
         self.saved.remember(slot, init)
     }
-    pub fn set_result<T: 'static>(&self, slot: &'static str, v: T) {
-        self.saved.set_result(slot, v)
+    pub fn set_result<T: 'static>(&self, slot: &'static str, v: T) -> bool {
+        if !self.is_current() {
+            return false;
+        }
+        self.saved.set_result(slot, v);
+        self.nav.stack.bump();
+        true
+    }
+    pub fn try_take_result<T: 'static>(
+        &self,
+        slot: &'static str,
+    ) -> Result<Option<T>, SavedStateTypeError> {
+        if !self.is_current() {
+            return Ok(None);
+        }
+        let result = self.saved.try_take_result(slot);
+        if matches!(&result, Ok(Some(_))) {
+            self.nav.stack.bump();
+        }
+        result
     }
     pub fn take_result<T: 'static>(&self, slot: &'static str) -> Option<T> {
-        self.saved.take_result(slot)
+        self.try_take_result(slot).ok().flatten()
+    }
+    pub fn pop_with_result<T: 'static>(&self, slot: &'static str, value: T) -> bool {
+        self.nav
+            .stack
+            .pop_with_result_for_entry(self.id, slot, value)
+    }
+    pub fn set_result_for<T: 'static, F: Fn(&K) -> bool>(
+        &self,
+        predicate: F,
+        slot: &'static str,
+        value: T,
+    ) -> bool {
+        self.is_current() && self.nav.set_result_for(predicate, slot, value)
     }
 }
 
@@ -338,8 +501,9 @@ pub fn NavDisplay<K: NavKey>(
     on_back: Option<Rc<dyn Fn()>>,
     transition: NavTransition,
 ) -> View {
-    let _v = stack.version.get(); // join reactive graph
-    let (id, key, saved, entry_scope) = match stack.top() {
+    let _version = stack.version.get();
+    let transition_id = stack.transition_id();
+    let (id, key, saved, entry_scope) = match stack.current() {
         Some(t) => t,
         None => return VBox(Modifier::new()),
     };
@@ -347,6 +511,7 @@ pub fn NavDisplay<K: NavKey>(
         id,
         key,
         saved,
+        scope: entry_scope.clone(),
         nav: Navigator {
             stack: (*stack).clone(),
         },
@@ -363,7 +528,12 @@ pub fn NavDisplay<K: NavKey>(
     } else {
         (1.0, 0.0)
     };
-    let t = animate_f32_from(format!("nav3:{id}:{_v}"), initial, target, transition.spec);
+    let t = animate_f32_from(
+        format!("nav3:{}:{}:{}", stack.stack_id, transition_id, id),
+        initial,
+        target,
+        transition.spec,
+    );
 
     let slide = if dir == TransitionDir::Push {
         1.0 - t
@@ -404,7 +574,15 @@ fn maybe_intercept_back(v: View, on_back: Option<Rc<dyn Fn()>>) -> View {
         Modifier::new()
             .semantics(Semantics::new(Role::Container))
             .on_preview_key_event(move |ke: KeyEvent| {
-                if ke.key == Key::Escape && ke.event_type == KeyEventType::Down {
+                if ke.event_type != KeyEventType::Down || ke.is_repeat {
+                    return false;
+                }
+                let action = repose_core::shortcuts::resolve_action(
+                    repose_core::shortcuts::KeyChord::new(ke.key.clone(), ke.modifiers),
+                );
+                if ke.key == Key::Escape
+                    || matches!(action, Some(repose_core::shortcuts::Action::Back))
+                {
                     on_back();
                     true
                 } else {
@@ -423,39 +601,109 @@ pub mod back {
 
     type Handler = Rc<dyn Fn() -> bool>;
 
+    struct Installed {
+        handler: Handler,
+        owner: String,
+    }
+
+    #[derive(Default)]
+    struct Registry {
+        current: Option<Handler>,
+        installed: Vec<Installed>,
+    }
+
     thread_local! {
-        static H: RefCell<Option<Handler>> = RefCell::new(None);
+        static REGISTRY: RefCell<Registry> = RefCell::new(Registry::default());
     }
 
     pub fn set(handler: Option<Handler>) {
-        let _ = H.try_with(|h| *h.borrow_mut() = handler);
+        let _ = REGISTRY.try_with(|registry| registry.borrow_mut().current = handler);
     }
 
     pub(crate) fn current() -> Option<Handler> {
-        H.try_with(|h| h.borrow().clone()).unwrap_or(None)
+        REGISTRY
+            .try_with(|registry| registry.borrow().current.clone())
+            .unwrap_or(None)
+    }
+
+    fn same_handler(a: &Handler, b: &Handler) -> bool {
+        Rc::ptr_eq(a, b)
+    }
+
+    pub(crate) fn install(handler: Handler, owner: String) -> Option<Handler> {
+        REGISTRY
+            .try_with(|slot| {
+                let mut registry = slot.borrow_mut();
+                let previous = registry.current.clone();
+                registry.installed.retain(|entry| entry.owner != owner);
+                registry.installed.push(Installed {
+                    handler: handler.clone(),
+                    owner,
+                });
+                registry.current = Some(handler);
+                previous
+            })
+            .ok()
+            .flatten()
+    }
+
+    pub(crate) fn restore(handler: &Handler) {
+        let _ = REGISTRY.try_with(|slot| {
+            let mut registry = slot.borrow_mut();
+            let Some(index) = registry
+                .installed
+                .iter()
+                .position(|entry| same_handler(&entry.handler, handler))
+            else {
+                return;
+            };
+            registry.installed.remove(index);
+            if registry
+                .current
+                .as_ref()
+                .is_some_and(|item| same_handler(item, handler))
+            {
+                registry.current = registry.installed.last().map(|entry| entry.handler.clone());
+            }
+        });
     }
 
     pub fn handle() -> bool {
-        H.try_with(|h| {
-            if let Some(handler) = h.borrow().as_ref() {
-                handler()
-            } else {
-                false
-            }
-        })
-        .unwrap_or(false)
+        let handler = current();
+        handler.is_some_and(|handler| handler())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn reset_for_test() {
+        let _ = REGISTRY.try_with(|registry| *registry.borrow_mut() = Registry::default());
     }
 }
 
-/// Install/uninstall the global back handler for the displayed stack.
-/// Restores the previous handler on unmount (supports nesting).
+/// Install/uninstall the global back handler for the displayed stack entry.
+#[track_caller]
 pub fn InstallBackHandler<K: NavKey>(stack: NavBackStack<K>) -> Dispose {
     let nav = Navigator {
         stack: stack.clone(),
     };
-    let prev = back::current();
-    back::set(Some(Rc::new(move || nav.pop())));
-    on_unmount(move || back::set(prev.clone()))
+    let handler: Rc<dyn Fn() -> bool> = Rc::new(move || nav.pop());
+    let handler_for_effect = handler.clone();
+    let owner = format!("navigation-back:{}", stack.stack_id);
+    let key = format!(
+        "navigation-back-effect:{}:{}:{}:{}",
+        file!(),
+        line!(),
+        column!(),
+        owner
+    );
+    let install = move || {
+        back::install(handler_for_effect.clone(), owner.clone());
+        on_unmount(move || back::restore(&handler_for_effect))
+    };
+    if current_scope().is_some() {
+        effect_once_with_key(key, install)
+    } else {
+        install()
+    }
 }
 
 #[cfg(test)]
@@ -481,6 +729,101 @@ mod nav_state_tests {
 
         nav.stack.from_json("[\"only\"]");
         assert_eq!(nav.stack.size(), 1);
+    }
+
+    #[test]
+    fn pop_with_result_reaches_parent() {
+        repose_core::runtime::ComposeGuard::begin();
+        let stack = remember_back_stack("home".to_string());
+        let _hold = repose_core::runtime::ComposeGuard::begin();
+        let nav = Navigator {
+            stack: (*stack).clone(),
+        };
+        nav.push("child".to_string());
+        assert!(nav.pop_with_result("result", 42u32));
+        let (_, _, saved, _) = nav.stack.top().expect("parent");
+        assert!(saved.try_take_result::<String>("result").is_err());
+        assert_eq!(saved.take_result::<u32>("result"), Some(42));
+    }
+
+    #[test]
+    fn stale_entry_scope_cannot_pop_a_new_top() {
+        repose_core::runtime::ComposeGuard::begin();
+        let stack = remember_back_stack("home".to_string());
+        let _hold = repose_core::runtime::ComposeGuard::begin();
+        let nav = Navigator {
+            stack: (*stack).clone(),
+        };
+        nav.push("child".to_string());
+        let (child_id, child_key, child_saved, child_scope) = nav.stack.top().expect("child");
+        let stale = EntryScope {
+            id: child_id,
+            key: child_key,
+            saved: child_saved,
+            scope: child_scope,
+            nav: nav.clone(),
+        };
+        nav.push("new-top".to_string());
+        assert!(!stale.set_result("stale", 2u32));
+        assert!(!stale.pop_with_result("result", 1u32));
+        assert_eq!(nav.stack.size(), 3);
+    }
+
+    #[test]
+    fn result_delivery_invalidates_navigation_observers() {
+        repose_core::runtime::ComposeGuard::begin();
+        let stack = remember_back_stack("home".to_string());
+        let _hold = repose_core::runtime::ComposeGuard::begin();
+        let nav = Navigator {
+            stack: (*stack).clone(),
+        };
+        let before = nav.stack.version.get();
+        assert!(nav.set_result_for(|key| key == "home", "result", 7u32));
+        assert_ne!(nav.stack.version.get(), before);
+        let (_, _, saved, _) = nav.stack.top().expect("home");
+        assert_eq!(saved.take_result::<u32>("result"), Some(7));
+    }
+
+    #[test]
+    fn back_handler_restores_after_out_of_order_cleanup() {
+        back::reset_for_test();
+        let first: Rc<dyn Fn() -> bool> = Rc::new(|| false);
+        let second: Rc<dyn Fn() -> bool> = Rc::new(|| false);
+        let third_called = Rc::new(std::cell::Cell::new(false));
+        let third: Rc<dyn Fn() -> bool> = {
+            let third_called = third_called.clone();
+            Rc::new(move || {
+                third_called.set(true);
+                true
+            })
+        };
+        back::install(first.clone(), "first".into());
+        back::install(second.clone(), "second".into());
+        back::install(third.clone(), "third".into());
+        back::restore(&second);
+        assert!(back::handle());
+        assert!(third_called.get());
+        back::restore(&third);
+        assert!(!back::handle());
+        back::restore(&first);
+        assert!(!back::handle());
+        back::reset_for_test();
+    }
+
+    #[test]
+    fn serialization_restores_routes_without_results() {
+        repose_core::runtime::ComposeGuard::begin();
+        let stack = remember_back_stack("home".to_string());
+        let _hold = repose_core::runtime::ComposeGuard::begin();
+        let nav = Navigator {
+            stack: (*stack).clone(),
+        };
+        nav.push("details".to_string());
+        assert!(nav.set_result_for(|key| key == "home", "result", 9u32));
+        let json = nav.stack.to_json();
+        nav.stack.from_json(&json);
+        let home_saved = nav.stack.inner.borrow().entries[0].saved.clone();
+        assert!(home_saved.take_result::<u32>("result").is_none());
     }
 
     #[test]

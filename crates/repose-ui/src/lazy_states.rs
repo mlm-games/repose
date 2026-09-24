@@ -2,6 +2,32 @@ use repose_core::*;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
+type CacheRevision = Rc<dyn Fn(u64) -> u64>;
+
+fn cache_revision_for(
+    callback: &RefCell<Option<CacheRevision>>,
+    key: u64,
+    value_identity: usize,
+    height: f32,
+    variation: u64,
+) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let revision = callback
+        .borrow()
+        .as_ref()
+        .cloned()
+        .map(|revision| revision(key));
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    key.hash(&mut hasher);
+    height.to_bits().hash(&mut hasher);
+    variation.hash(&mut hasher);
+    match revision {
+        Some(revision) => revision.hash(&mut hasher),
+        None => value_identity.hash(&mut hasher),
+    }
+    hasher.finish()
+}
+
 /// Configuration for [`LazyColumn`].
 #[derive(Clone)]
 pub struct LazyColumnConfig {
@@ -114,6 +140,7 @@ pub struct LazyColumnState {
     pub(crate) content_height: Signal<f32>,
     pub(crate) physics: RefCell<ScrollPhysics>,
     pub(crate) parent_connection: RefCell<Option<NestedScrollConnection>>,
+    cache_revision: RefCell<Option<CacheRevision>>,
 }
 
 impl Default for LazyColumnState {
@@ -130,15 +157,38 @@ impl LazyColumnState {
             content_height: signal(0.0),
             physics: RefCell::new(ScrollPhysics::new(0.90, 5.0, 10.0)),
             parent_connection: RefCell::new(None),
+            cache_revision: RefCell::new(None),
         }
     }
 
     pub fn set_vp_height(&self, h_px: f32) {
-        self.viewport_height.set(h_px.max(0.0));
+        let height = h_px.max(0.0);
+        if (self.viewport_height.get() - height).abs() > 0.5 {
+            self.viewport_height.set(height);
+            request_frame();
+        }
     }
 
     pub fn set_nested_scroll_parent(&self, conn: NestedScrollConnection) {
         *self.parent_connection.borrow_mut() = Some(conn);
+    }
+
+    pub fn set_cache_revision(&self, revision: impl Fn(u64) -> u64 + 'static) {
+        *self.cache_revision.borrow_mut() = Some(Rc::new(revision));
+    }
+
+    pub fn clear_cache_revision(&self) {
+        *self.cache_revision.borrow_mut() = None;
+    }
+
+    pub(crate) fn cache_revision_for_with(
+        &self,
+        key: u64,
+        value_identity: usize,
+        height: f32,
+        variation: u64,
+    ) -> u64 {
+        cache_revision_for(&self.cache_revision, key, value_identity, height, variation)
     }
 
     pub fn set_offset(&self, off: f32, content_height: f32) {
@@ -195,6 +245,7 @@ pub struct LazyGridState {
     pub(crate) content_width: Signal<f32>,
     pub(crate) physics: RefCell<ScrollPhysics>,
     pub(crate) parent_connection: RefCell<Option<NestedScrollConnection>>,
+    cache_revision: RefCell<Option<CacheRevision>>,
 }
 
 impl Default for LazyGridState {
@@ -213,11 +264,34 @@ impl LazyGridState {
             content_width: signal(0.0),
             physics: RefCell::new(ScrollPhysics::new(0.90, 5.0, 10.0)),
             parent_connection: RefCell::new(None),
+            cache_revision: RefCell::new(None),
         }
     }
 
     pub fn set_nested_scroll_parent(&self, conn: NestedScrollConnection) {
         *self.parent_connection.borrow_mut() = Some(conn);
+    }
+
+    pub fn set_cache_revision(&self, revision: impl Fn(u64) -> u64 + 'static) {
+        *self.cache_revision.borrow_mut() = Some(Rc::new(revision));
+    }
+
+    pub fn clear_cache_revision(&self) {
+        *self.cache_revision.borrow_mut() = None;
+    }
+
+    pub(crate) fn cache_revision_for(&self, key: u64, value_identity: usize, height: f32) -> u64 {
+        self.cache_revision_for_with(key, value_identity, height, 0)
+    }
+
+    pub(crate) fn cache_revision_for_with(
+        &self,
+        key: u64,
+        value_identity: usize,
+        height: f32,
+        variation: u64,
+    ) -> u64 {
+        cache_revision_for(&self.cache_revision, key, value_identity, height, variation)
     }
 
     pub fn set_offset(&self, off: f32, content_height: f32) {
@@ -307,6 +381,7 @@ pub struct LazyRowState {
     pub(crate) content_width: Signal<f32>,
     pub(crate) physics: RefCell<ScrollPhysics>,
     pub(crate) parent_connection: RefCell<Option<NestedScrollConnection>>,
+    cache_revision: RefCell<Option<CacheRevision>>,
 }
 
 impl Default for LazyRowState {
@@ -323,11 +398,34 @@ impl LazyRowState {
             content_width: signal(0.0),
             physics: RefCell::new(ScrollPhysics::new(0.90, 5.0, 10.0)),
             parent_connection: RefCell::new(None),
+            cache_revision: RefCell::new(None),
         }
     }
 
     pub fn set_nested_scroll_parent(&self, conn: NestedScrollConnection) {
         *self.parent_connection.borrow_mut() = Some(conn);
+    }
+
+    pub fn set_cache_revision(&self, revision: impl Fn(u64) -> u64 + 'static) {
+        *self.cache_revision.borrow_mut() = Some(Rc::new(revision));
+    }
+
+    pub fn clear_cache_revision(&self) {
+        *self.cache_revision.borrow_mut() = None;
+    }
+
+    pub(crate) fn cache_revision_for(&self, key: u64, value_identity: usize, height: f32) -> u64 {
+        self.cache_revision_for_with(key, value_identity, height, 0)
+    }
+
+    pub(crate) fn cache_revision_for_with(
+        &self,
+        key: u64,
+        value_identity: usize,
+        height: f32,
+        variation: u64,
+    ) -> u64 {
+        cache_revision_for(&self.cache_revision, key, value_identity, height, variation)
     }
 
     pub fn set_offset(&self, off: f32, content_width: f32) {
@@ -377,6 +475,7 @@ pub struct LazyVerticalStaggeredGridState {
     pub(crate) content_height: Signal<f32>,
     pub(crate) physics: RefCell<ScrollPhysics>,
     pub(crate) parent_connection: RefCell<Option<NestedScrollConnection>>,
+    cache_revision: RefCell<Option<CacheRevision>>,
 }
 
 impl Default for LazyVerticalStaggeredGridState {
@@ -393,11 +492,34 @@ impl LazyVerticalStaggeredGridState {
             content_height: signal(0.0),
             physics: RefCell::new(ScrollPhysics::new(0.90, 5.0, 10.0)),
             parent_connection: RefCell::new(None),
+            cache_revision: RefCell::new(None),
         }
     }
 
     pub fn set_nested_scroll_parent(&self, conn: NestedScrollConnection) {
         *self.parent_connection.borrow_mut() = Some(conn);
+    }
+
+    pub fn set_cache_revision(&self, revision: impl Fn(u64) -> u64 + 'static) {
+        *self.cache_revision.borrow_mut() = Some(Rc::new(revision));
+    }
+
+    pub fn clear_cache_revision(&self) {
+        *self.cache_revision.borrow_mut() = None;
+    }
+
+    pub(crate) fn cache_revision_for(&self, key: u64, value_identity: usize, height: f32) -> u64 {
+        self.cache_revision_for_with(key, value_identity, height, 0)
+    }
+
+    pub(crate) fn cache_revision_for_with(
+        &self,
+        key: u64,
+        value_identity: usize,
+        height: f32,
+        variation: u64,
+    ) -> u64 {
+        cache_revision_for(&self.cache_revision, key, value_identity, height, variation)
     }
 
     pub fn set_offset(&self, off: f32, content_height: f32) {

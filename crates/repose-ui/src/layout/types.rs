@@ -6,6 +6,8 @@ use std::sync::Arc;
 
 use repose_core::*;
 use repose_tree::{NodeId, TreeStats, ViewTree};
+
+use crate::hit_testing::HitRegionMetadata;
 use rustc_hash::FxHashMap;
 use taffy::TaffyTree;
 
@@ -169,8 +171,10 @@ pub(crate) struct PaintCacheEntry {
     pub(crate) parent_offset_px: (f32, f32),
     pub(crate) sem_parent: Option<u64>,
     pub(crate) alpha_q: u8,
+    pub(crate) hit_context_key: u64,
     pub(crate) nodes: Rc<Vec<SceneNode>>,
     pub(crate) hits: Rc<Vec<HitRegion>>,
+    pub(crate) hit_metadata: Rc<Vec<Option<HitRegionMetadata>>>,
     pub(crate) sems: Rc<Vec<SemNode>>,
 }
 

@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
     use std::rc::Rc;
 
     use crate::Color;
@@ -665,5 +665,150 @@ mod tests {
             "outer scope must be dirtied by nested signal read"
         );
         assert!(crate::scope_cache::should_run("inner_nest_reg", 0));
+    }
+
+    #[test]
+    fn scope_keyed_accepts_owned_identifiers() {
+        clear_composer();
+        let mut scheduler = crate::runtime::Scheduler::new();
+        let id = String::from("owned");
+        let _guard = ComposeGuard::begin();
+        let _ = crate::scope_keyed!(&mut scheduler, id, [], { View::new(0, ViewKind::Box) });
+    }
+
+    #[test]
+    fn mutable_read_invalidates_cached_scope() {
+        clear_composer();
+        let mutable = remember_mutable(|| 0);
+        let mut scheduler = crate::runtime::Scheduler::new();
+        {
+            let _guard = ComposeGuard::begin();
+            let _ = crate::scope!("mutable_scope_cache", &mut scheduler, [], {
+                let _ = mutable.get();
+                View::new(0, ViewKind::Box)
+            });
+        }
+        assert!(!crate::scope_cache::should_run("mutable_scope_cache", 0));
+        mutable.set(1);
+        assert!(crate::scope_cache::should_run("mutable_scope_cache", 0));
+    }
+
+    #[test]
+    fn first_composition_signal_write_stays_dirty() {
+        clear_composer();
+        let signal = signal(0);
+        let mut scheduler = crate::runtime::Scheduler::new();
+        {
+            let _guard = ComposeGuard::begin();
+            let _ = crate::scope!("first_write_scope", &mut scheduler, [], {
+                let _ = signal.get();
+                signal.set(1);
+                View::new(0, ViewKind::Box)
+            });
+            assert!(crate::scope_cache::should_run("first_write_scope", 0));
+        }
+    }
+
+    #[test]
+    fn parent_scope_rechecks_child_inputs() {
+        clear_composer();
+        let mut scheduler = crate::runtime::Scheduler::new();
+        let child_input = RefCell::new(0);
+        {
+            let _guard = ComposeGuard::begin();
+            let _ = crate::scope!("parent_input_scope", &mut scheduler, [], {
+                let input = *child_input.borrow();
+                let _ = crate::scope!("child_input_scope", &mut scheduler, [input], {
+                    View::new(0, ViewKind::Box)
+                });
+                View::new(0, ViewKind::Box)
+            });
+        }
+        *child_input.borrow_mut() = 1;
+        assert!(crate::scope_cache::should_run("parent_input_scope", 0));
+    }
+
+    #[test]
+    fn keyed_observer_slot_is_collected() {
+        clear_composer();
+        let source = signal(1);
+        let key = "observer_gc_test";
+        {
+            let _guard = ComposeGuard::begin();
+            crate::scope_cache::with_scope_key("observer_gc_scope", || {
+                let source = source.clone();
+                let _ = produce_state(key, move || source.get());
+            });
+        }
+        assert!(!crate::runtime::COMPOSER.with(|composer| {
+            composer
+                .borrow()
+                .keyed_slots
+                .contains_key("produce:observer_gc_test")
+        }));
+        source.set(2);
+    }
+
+    #[test]
+    fn locals_track_only_values_read_by_scope() {
+        clear_composer();
+        crate::locals::set_theme_default(crate::locals::Theme::dark());
+        let mut scheduler = crate::runtime::Scheduler::new();
+        {
+            let _guard = ComposeGuard::begin();
+            let _ = crate::scope!("local_scope_cache", &mut scheduler, [], {
+                let _ = crate::locals::theme();
+                View::new(0, ViewKind::Box)
+            });
+        }
+        crate::locals::set_ui_scale_default(crate::locals::UiScale(2.0));
+        assert!(!crate::scope_cache::should_run("local_scope_cache", 0));
+        crate::locals::set_theme_default(crate::locals::Theme::light());
+        assert!(crate::scope_cache::should_run("local_scope_cache", 0));
+        crate::locals::set_theme_default(crate::locals::Theme::default());
+        crate::locals::set_ui_scale_default(crate::locals::UiScale(1.0));
+    }
+
+    #[test]
+    fn live_animation_invalidates_cached_scope() {
+        clear_composer();
+        let key = "animation_scope_cache_test";
+        let calls = Rc::new(Cell::new(0));
+        let callback_calls = calls.clone();
+        let mut scheduler = crate::runtime::Scheduler::new();
+        {
+            let _guard = ComposeGuard::begin();
+            let _ = crate::scope!("animation_scope", &mut scheduler, [], {
+                crate::animation_driver::touch(key);
+                crate::animation_driver::register(
+                    key.to_string(),
+                    Rc::new(RefCell::new(move || {
+                        let next = callback_calls.get() + 1;
+                        callback_calls.set(next);
+                        next == 1
+                    })),
+                );
+                View::new(0, ViewKind::Box)
+            });
+        }
+        assert!(crate::scope_cache::should_run("animation_scope", 0));
+        assert!(crate::animation_driver::tick());
+        assert!(crate::animation_driver::is_active());
+        crate::animation_driver::touch(key);
+        assert!(!crate::animation_driver::tick());
+        assert!(!crate::animation_driver::is_active());
+        crate::animation_driver::unregister(key);
+    }
+
+    #[test]
+    fn scope_disposers_run_lifo() {
+        let order = Rc::new(RefCell::new(Vec::new()));
+        let scope = Scope::new();
+        for value in 0..3 {
+            let order = order.clone();
+            scope.add_disposer(move || order.borrow_mut().push(value));
+        }
+        scope.dispose();
+        assert_eq!(&*order.borrow(), &[2, 1, 0]);
     }
 }

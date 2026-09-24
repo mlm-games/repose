@@ -1,8 +1,10 @@
 use std::cell::RefCell;
+use std::rc::Rc;
 use web_time::{Duration, Instant};
 
 pub(crate) fn now() -> Instant {
-    CLOCK.with(|c| c.borrow().now())
+    let clock = CLOCK.with(|clock| clock.borrow().clone());
+    clock.now()
 }
 
 /// Physical spring parameters. Duration is emergent (determined by physics), not specified.
@@ -421,7 +423,7 @@ impl MonoSpline {
         );
         if cfg!(debug_assertions) {
             for w in times.windows(2) {
-                if !(w[1] > w[0]) {
+                if w[1] <= w[0] {
                     log::warn!(
                         "MonoSpline: times not strictly ascending; degenerate segments coerce to zero slope"
                     );
@@ -666,6 +668,7 @@ pub struct KeyframesSpec<T: Clone> {
 
 impl<T: Clone + Interpolate> KeyframesSpec<T> {
     pub fn new(keyframes: Vec<(f32, T)>) -> Self {
+        assert!(!keyframes.is_empty(), "KeyframesSpec must not be empty");
         let with_easing = keyframes.into_iter().map(|(t, v)| (t, v, None)).collect();
         Self {
             keyframes: with_easing,
@@ -799,6 +802,52 @@ impl RepeatableSpec {
         self.delay_between = d;
         self
     }
+}
+
+fn same_easing(a: Easing, b: Easing) -> bool {
+    match (a, b) {
+        (Easing::SpringCrit { omega: a }, Easing::SpringCrit { omega: b }) => {
+            a.to_bits() == b.to_bits()
+        }
+        (Easing::Custom(a), Easing::Custom(b)) => {
+            a.p1x.to_bits() == b.p1x.to_bits()
+                && a.p1y.to_bits() == b.p1y.to_bits()
+                && a.p2x.to_bits() == b.p2x.to_bits()
+                && a.p2y.to_bits() == b.p2y.to_bits()
+        }
+        (a, b) => std::mem::discriminant(&a) == std::mem::discriminant(&b),
+    }
+}
+
+fn same_spring(a: SpringSpec, b: SpringSpec) -> bool {
+    a.damping_ratio.to_bits() == b.damping_ratio.to_bits()
+        && a.stiffness.to_bits() == b.stiffness.to_bits()
+        && a.settle_progress.to_bits() == b.settle_progress.to_bits()
+        && a.settle_velocity.to_bits() == b.settle_velocity.to_bits()
+}
+
+fn same_repeat(a: Option<RepeatableSpec>, b: Option<RepeatableSpec>) -> bool {
+    match (a, b) {
+        (None, None) => true,
+        (Some(a), Some(b)) => {
+            a.iterations == b.iterations
+                && a.reverse == b.reverse
+                && a.delay_between == b.delay_between
+        }
+        _ => false,
+    }
+}
+
+fn same_animation_spec(a: &AnimationSpec, b: &AnimationSpec) -> bool {
+    a.duration == b.duration
+        && same_easing(a.easing, b.easing)
+        && a.delay == b.delay
+        && match (a.spring, b.spring) {
+            (None, None) => true,
+            (Some(a), Some(b)) => same_spring(a, b),
+            _ => false,
+        }
+        && same_repeat(a.repeat, b.repeat)
 }
 
 /// Decay animation configuration.
@@ -951,12 +1000,13 @@ impl Clock for SystemClock {
 }
 
 thread_local! {
-    static CLOCK: RefCell<Box<dyn Clock>> = RefCell::new(Box::new(SystemClock) as Box<dyn Clock>);
+    static CLOCK: RefCell<Rc<dyn Clock>> = RefCell::new(Rc::new(SystemClock));
 }
 
 /// Install a per-thread animation clock.
 pub fn set_clock(clock: Box<dyn Clock>) {
-    CLOCK.with(|c| *c.borrow_mut() = clock);
+    let old = CLOCK.with(|slot| std::mem::replace(&mut *slot.borrow_mut(), Rc::from(clock)));
+    drop(old);
 }
 /// Ensure a system clock is installed on this thread (always present since thread_local initializes it).
 pub fn ensure_system_clock() {
@@ -996,6 +1046,9 @@ pub struct AnimatedValue<T: Interpolate + Clone> {
     /// Initial velocity for the current spring segment (carry-over from target changes).
     spring_v0: f32,
     last_update: Option<Instant>,
+    delay_until: Option<Instant>,
+    delay_applied: bool,
+    reverse: bool,
 }
 
 impl<T: Interpolate + Clone> AnimatedValue<T> {
@@ -1012,20 +1065,52 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
             velocity: 0.0,
             spring_v0: 0.0,
             last_update: None,
+            delay_until: None,
+            delay_applied: false,
+            reverse: false,
         }
     }
 
     pub fn set_spec(&mut self, spec: AnimationSpec) {
+        assert!(
+            self.keyframes.is_none() || spec.spring.is_none(),
+            "spring animations cannot use keyframes"
+        );
+        let changed = !same_animation_spec(&self.spec, &spec);
         self.spec = spec;
+        if changed {
+            self.iteration = 0;
+            self.reverse = false;
+            if self.start_time.is_some() || self.delay_until.is_some() {
+                self.start = self.current.clone();
+                self.start_time = Some(now());
+                self.last_update = None;
+                self.delay_until = None;
+                self.delay_applied = false;
+                self.progress = 0.0;
+                self.spring_v0 = self.velocity;
+            }
+        }
     }
 
     /// Set a keyframes spec for multi-stage animation.
     /// When set, `set_target` is ignored and the value is driven by the keyframe sequence.
     pub fn set_keyframes(&mut self, keyframes: KeyframesSpec<T>) {
+        assert!(
+            !keyframes.keyframes.is_empty(),
+            "KeyframesSpec must not be empty"
+        );
+        assert!(
+            self.spec.spring.is_none(),
+            "spring animations cannot use keyframes"
+        );
         self.keyframes = Some(keyframes);
         self.start_time = Some(now());
         self.last_update = None;
+        self.delay_until = None;
+        self.delay_applied = false;
         self.iteration = 0;
+        self.reverse = false;
     }
 
     pub fn set_target(&mut self, target: T) {
@@ -1038,7 +1123,10 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
         self.target = target;
         self.start_time = Some(now());
         self.last_update = None;
+        self.delay_until = None;
+        self.delay_applied = false;
         self.iteration = 0;
+        self.reverse = false;
         if self.spec.spring.is_some() {
             // Spring mode: start progress at 0 (the current value), carry velocity forward
             self.progress = 0.0;
@@ -1057,9 +1145,16 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
         self.velocity = 0.0;
         self.spring_v0 = 0.0;
         self.last_update = None;
+        self.delay_until = None;
+        self.delay_applied = true;
+        self.iteration = 0;
+        self.reverse = false;
     }
 
     pub fn update(&mut self) -> bool {
+        if self.waiting_for_repeat() {
+            return true;
+        }
         let spring_spec = self.spec.spring;
         let mut still = if let Some(spring) = spring_spec {
             self.update_spring(&spring)
@@ -1069,24 +1164,48 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
             self.update_tween()
         };
 
-        if !still && let Some(repeat) = &self.spec.repeat {
+        if !still && let Some(repeat) = self.spec.repeat {
             let maxed = repeat
                 .iterations
                 .is_some_and(|max| self.iteration + 1 >= max);
             if !maxed {
                 self.iteration += 1;
-                if repeat.reverse {
-                    std::mem::swap(&mut self.start, &mut self.target);
-                }
+                self.start_time = None;
+                self.last_update = None;
                 self.progress = 0.0;
                 self.velocity = 0.0;
-                self.start_time = Some(now());
-                self.last_update = None;
+                self.spring_v0 = 0.0;
+                self.delay_applied = true;
+                self.reverse = repeat.reverse && !self.reverse;
+                if self.keyframes.is_none() && repeat.reverse {
+                    std::mem::swap(&mut self.start, &mut self.target);
+                }
+                let start = now();
+                if repeat.delay_between.is_zero() {
+                    self.start_time = Some(start);
+                } else {
+                    self.delay_until = Some(start + repeat.delay_between);
+                }
                 still = true;
             }
         }
 
         still
+    }
+
+    fn waiting_for_repeat(&mut self) -> bool {
+        let Some(until) = self.delay_until else {
+            return false;
+        };
+        let current = now();
+        if current < until {
+            return true;
+        }
+        self.delay_until = None;
+        self.start_time = Some(until);
+        self.delay_applied = true;
+        self.last_update = None;
+        false
     }
 
     fn update_keyframes(&mut self) -> bool {
@@ -1095,13 +1214,19 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
             None => return false,
         };
         let elapsed = now().saturating_duration_since(start);
-        if elapsed < self.spec.delay {
+        let delay = if self.delay_applied {
+            Duration::ZERO
+        } else {
+            self.spec.delay
+        };
+        if elapsed < delay {
             return true;
         }
-        let animation_time = elapsed - self.spec.delay;
-        if animation_time >= self.spec.duration {
+        self.delay_applied = true;
+        let animation_time = elapsed - delay;
+        if animation_time >= self.spec.duration || self.spec.duration.is_zero() {
             if let Some(ref kf) = self.keyframes {
-                self.current = kf.evaluate(1.0);
+                self.current = kf.evaluate(if self.reverse { 0.0 } else { 1.0 });
             }
             self.start_time = None;
             return false;
@@ -1109,7 +1234,8 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
         let t = (animation_time.as_secs_f32() / self.spec.duration.as_secs_f32()).clamp(0.0, 1.0);
         let eased_t = self.spec.easing.interpolate(t);
         if let Some(ref kf) = self.keyframes {
-            self.current = kf.evaluate(eased_t);
+            let sample_t = if self.reverse { 1.0 - eased_t } else { eased_t };
+            self.current = kf.evaluate(sample_t);
         }
         true
     }
@@ -1123,12 +1249,17 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
         let now = now();
         let elapsed = now.saturating_duration_since(start);
 
-        // Still in delay phase
-        if elapsed < self.spec.delay {
+        let delay = if self.delay_applied {
+            Duration::ZERO
+        } else {
+            self.spec.delay
+        };
+        if elapsed < delay {
             return true;
         }
+        self.delay_applied = true;
 
-        let t = elapsed.as_secs_f32().max(0.0);
+        let t = (elapsed - delay).as_secs_f32().max(0.0);
         let (progress, velocity) = spring_analytical(
             spring.damping_ratio,
             spring.stiffness,
@@ -1159,14 +1290,20 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
     fn update_tween(&mut self) -> bool {
         if let Some(start) = self.start_time {
             let elapsed = now().saturating_duration_since(start);
+            let delay = if self.delay_applied {
+                Duration::ZERO
+            } else {
+                self.spec.delay
+            };
 
-            if elapsed < self.spec.delay {
+            if elapsed < delay {
                 return true;
             }
+            self.delay_applied = true;
 
-            let animation_time = elapsed - self.spec.delay;
+            let animation_time = elapsed - delay;
 
-            if animation_time >= self.spec.duration {
+            if animation_time >= self.spec.duration || self.spec.duration.is_zero() {
                 self.current = self.target.clone();
                 self.start_time = None;
                 return false;
@@ -1188,7 +1325,7 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
     }
 
     pub fn is_animating(&self) -> bool {
-        self.start_time.is_some()
+        self.start_time.is_some() || self.delay_until.is_some()
     }
 
     pub fn has_keyframes(&self) -> bool {

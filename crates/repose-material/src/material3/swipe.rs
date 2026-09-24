@@ -1,5 +1,6 @@
 #![allow(non_snake_case)]
 
+use std::cell::Cell;
 use std::rc::Rc;
 
 use repose_core::animation::AnimationSpec;
@@ -53,6 +54,7 @@ pub enum DismissValue {
 /// State for `SwipeToDismiss` - backed by a generic `SwipeableState<DismissValue>`.
 pub struct SwipeToDismissState {
     swipeable: repose_core::SwipeableState<DismissValue>,
+    dismiss_latch: Cell<bool>,
 }
 
 impl Default for SwipeToDismissState {
@@ -88,7 +90,10 @@ impl SwipeToDismissState {
         );
         // Start at the default position (not anchors[0], which may be negative).
         swipeable.snap_to(0.0);
-        Self { swipeable }
+        Self {
+            swipeable,
+            dismiss_latch: Cell::new(false),
+        }
     }
 
     /// Current animated offset in pixels.
@@ -123,6 +128,7 @@ impl SwipeToDismissState {
 
     /// Animate back to origin.
     pub fn reset(&self) {
+        self.dismiss_latch.set(false);
         self.swipeable.animate_to(&DismissValue::Default);
     }
 
@@ -134,8 +140,10 @@ impl SwipeToDismissState {
     ) {
         if !self.swipeable.is_animating() {
             let val = self.swipeable.current_value();
-            if val != DismissValue::Default
-                && let Some(cb) = on_dismiss
+            if val == DismissValue::Default {
+                self.dismiss_latch.set(false);
+            } else if let Some(cb) = on_dismiss
+                && !self.dismiss_latch.replace(true)
             {
                 cb();
             }

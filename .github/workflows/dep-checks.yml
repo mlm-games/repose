@@ -1,17 +1,22 @@
 name: Dep checks
+
 on:
   push:
   pull_request:
   schedule:
     - cron: "0 6 * * 1"
 
+permissions:
+  contents: read
+
 jobs:
   dep-checks:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install cargo-deny
-        run: cargo install cargo-deny --locked
-      - name: cargo-deny advisories + bans + licenses + sources
-        run: cargo deny check advisories bans licenses sources
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Install pinned cargo-deny
+        run: cargo install cargo-deny --version 0.20.2 --locked
+      - name: Fetch locked dependencies
+        run: cargo fetch --locked
+      - name: Check dependency policy
+        run: cargo deny --locked --workspace check advisories bans licenses sources

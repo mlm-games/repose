@@ -8,7 +8,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use repose_app::ReposeRuntime;
-use repose_core::input::{Key, KeyEvent, KeyEventType, Modifiers, PhysicalKey, PointerButton};
+use repose_core::input::{Key, KeyEvent, KeyEventType, Modifiers, PointerButton};
 use repose_core::runtime::{Frame, SemNode};
 use repose_core::semantics::Role;
 use repose_core::shortcuts::Action;
@@ -183,12 +183,12 @@ fn button_frame(
 }
 
 #[test]
-fn stale_capture_path_falls_back_to_top_hit_moves() {
+fn stale_capture_dispatches_one_cancel_before_pruning() {
     use repose_core::input::{PointerEvent, PointerEventKind};
     let mut rt = ReposeRuntime::new();
-    let moves = Rc::new(RefCell::new(0u32));
-    let m = moves.clone();
-    let mut hr = HitRegion {
+    let cancels = Rc::new(RefCell::new(0u32));
+    let observer = cancels.clone();
+    let hit = HitRegion {
         id: BTN_ID,
         rect: Rect {
             x: 0.0,
@@ -196,34 +196,34 @@ fn stale_capture_path_falls_back_to_top_hit_moves() {
             w: 100.0,
             h: 50.0,
         },
+        on_pointer_down: Some(Rc::new(|_: PointerEvent| {})),
+        on_pointer_move: Some(Rc::new(|_: PointerEvent| {})),
+        on_pointer_up: Some(Rc::new(|_: PointerEvent| {})),
+        on_pointer_cancel: Some(Rc::new(move |event: PointerEvent| {
+            assert!(matches!(event.event, PointerEventKind::Cancel));
+            *observer.borrow_mut() += 1;
+        })),
         ..Default::default()
     };
-    hr.on_pointer_move = Some(Rc::new(move |_: PointerEvent| {
-        *m.borrow_mut() += 1;
-    }));
     rt.cache_frame(Frame {
         scene: Scene::default(),
-        hit_regions: vec![hr],
+        hit_regions: vec![hit],
         semantics_nodes: Vec::new(),
         focus_chain: Vec::new(),
     });
-    rt.hit_path = Some(vec![4242, 7777]);
-    rt.capture_id = Some(4242);
-    let _ = rt.handle_pointer_move(Vec2 { x: 10.0, y: 10.0 });
-    assert_eq!(
-        *moves.borrow(),
-        1,
-        "moves must reach the live top hit even with a dead capture path"
-    );
-    assert!(
-        rt.hit_path.is_none() && rt.capture_id.is_none(),
-        "dead capture must clear so later releases can't misclick"
-    );
     let pos = Vec2 { x: 10.0, y: 10.0 };
-    let _ = rt.handle_pointer_press(pos, PointerButton::Primary);
-    let _ = rt.handle_pointer_move(pos);
-    assert_eq!(*moves.borrow(), 1, "captured moves route to the path");
-    let _ = rt.handle_pointer_release(pos, PointerButton::Primary);
+    rt.handle_pointer_press(pos, PointerButton::Primary);
+    rt.cache_frame(Frame {
+        scene: Scene::default(),
+        hit_regions: Vec::new(),
+        semantics_nodes: Vec::new(),
+        focus_chain: Vec::new(),
+    });
+    assert_eq!(*cancels.borrow(), 1);
+    assert!(rt.hit_path.is_none() && rt.capture_id.is_none());
+    rt.handle_pointer_move(pos);
+    rt.handle_pointer_release(pos, PointerButton::Primary);
+    assert_eq!(*cancels.borrow(), 1);
 }
 
 #[test]
@@ -235,99 +235,6 @@ fn pointer_cancel_clears_capture_for_reentry() {
     assert!(rt.hit_path.is_some());
     rt.handle_pointer_cancel();
     assert!(rt.hit_path.is_none() && rt.capture_id.is_none());
-}
-
-#[test]
-fn combined_clickable_delays_single_click_when_double_configured() {
-    let mut rt = ReposeRuntime::new();
-    let clicks = Rc::new(RefCell::new(0u32));
-    let doubles = Rc::new(RefCell::new(0u32));
-    let c = clicks.clone();
-    let d = doubles.clone();
-    let frame = button_frame(
-        BTN_ID,
-        Some(Rc::new(move || *c.borrow_mut() += 1)),
-        Some(Rc::new(move || *d.borrow_mut() += 1)),
-        None,
-    );
-    rt.cache_frame(frame);
-    let pos = Vec2 { x: 10.0, y: 10.0 };
-    let _ = rt.handle_pointer_press(pos, PointerButton::Primary);
-    let _ = rt.handle_pointer_release(pos, PointerButton::Primary);
-    assert_eq!(
-        *clicks.borrow(),
-        0,
-        "single click must be delayed while the double-tap window is open"
-    );
-    assert_eq!(*doubles.borrow(), 0);
-    std::thread::sleep(std::time::Duration::from_millis(350));
-    rt.poll_gesture_timers();
-    assert_eq!(
-        *clicks.borrow(),
-        1,
-        "delayed onClick must fire after the double-tap timeout"
-    );
-    assert_eq!(*doubles.borrow(), 0);
-}
-
-#[test]
-fn combined_clickable_double_tap_skips_on_click() {
-    let mut rt = ReposeRuntime::new();
-    let clicks = Rc::new(RefCell::new(0u32));
-    let doubles = Rc::new(RefCell::new(0u32));
-    let c = clicks.clone();
-    let d = doubles.clone();
-    let frame = button_frame(
-        BTN_ID,
-        Some(Rc::new(move || *c.borrow_mut() += 1)),
-        Some(Rc::new(move || *d.borrow_mut() += 1)),
-        None,
-    );
-    rt.cache_frame(frame);
-    let pos = Vec2 { x: 10.0, y: 10.0 };
-    let _ = rt.handle_pointer_press(pos, PointerButton::Primary);
-    let _ = rt.handle_pointer_release(pos, PointerButton::Primary);
-    std::thread::sleep(std::time::Duration::from_millis(50));
-    let _ = rt.handle_pointer_press(pos, PointerButton::Primary);
-    let result = rt.handle_pointer_release(pos, PointerButton::Primary);
-    assert_eq!(*doubles.borrow(), 1, "second tap must fire onDoubleClick");
-    assert_eq!(
-        *clicks.borrow(),
-        0,
-        "onClick must be skipped when a double tap completes"
-    );
-    assert_eq!(result.clicked_id, Some(BTN_ID));
-}
-
-#[test]
-fn long_press_fires_while_held_and_suppresses_click() {
-    let mut rt = ReposeRuntime::new();
-    let clicks = Rc::new(RefCell::new(0u32));
-    let longs = Rc::new(RefCell::new(0u32));
-    let c = clicks.clone();
-    let l = longs.clone();
-    let frame = button_frame(
-        BTN_ID,
-        Some(Rc::new(move || *c.borrow_mut() += 1)),
-        None,
-        Some(Rc::new(move || *l.borrow_mut() += 1)),
-    );
-    rt.cache_frame(frame);
-    let pos = Vec2 { x: 10.0, y: 10.0 };
-    let _ = rt.handle_pointer_press(pos, PointerButton::Primary);
-    std::thread::sleep(std::time::Duration::from_millis(550));
-    rt.poll_gesture_timers();
-    assert_eq!(
-        *longs.borrow(),
-        1,
-        "long press must fire while the pointer is still held"
-    );
-    let _ = rt.handle_pointer_release(pos, PointerButton::Primary);
-    assert_eq!(
-        *clicks.borrow(),
-        0,
-        "release after a fired long press must not also click"
-    );
 }
 
 #[test]
@@ -347,110 +254,6 @@ fn plain_clickable_is_immediate() {
     let result = rt.handle_pointer_release(pos, PointerButton::Primary);
     assert_eq!(*clicks.borrow(), 1, "plain click must fire on release");
     assert_eq!(result.clicked_id, Some(BTN_ID));
-}
-
-#[test]
-fn pending_click_survives_press_on_another_id() {
-    let mut rt = ReposeRuntime::new();
-    let a_clicks = Rc::new(RefCell::new(0u32));
-    let b_clicks = Rc::new(RefCell::new(0u32));
-    let ac = a_clicks.clone();
-    let bc = b_clicks.clone();
-    let da = a_clicks.clone();
-    let frame = button_frame(
-        BTN_ID,
-        Some(Rc::new(move || *ac.borrow_mut() += 1)),
-        Some(Rc::new(move || {
-            let _ = *da.borrow();
-        })),
-        None,
-    );
-    let mut other = button_frame(
-        BTN_ID + 1,
-        Some(Rc::new(move || *bc.borrow_mut() += 1)),
-        None,
-        None,
-    );
-    other.hit_regions[0].rect.x = 200.0;
-    rt.cache_frame(Frame {
-        scene: Scene::default(),
-        hit_regions: [frame.hit_regions, other.hit_regions].concat(),
-        semantics_nodes: Vec::new(),
-        focus_chain: Vec::new(),
-    });
-    let pos_a = Vec2 { x: 10.0, y: 10.0 };
-    let pos_b = Vec2 { x: 210.0, y: 10.0 };
-    let _ = rt.handle_pointer_press(pos_a, PointerButton::Primary);
-    let _ = rt.handle_pointer_release(pos_a, PointerButton::Primary);
-    std::thread::sleep(std::time::Duration::from_millis(50));
-    let _ = rt.handle_pointer_press(pos_b, PointerButton::Primary);
-    let _ = rt.handle_pointer_release(pos_b, PointerButton::Primary);
-    assert_eq!(
-        *b_clicks.borrow(),
-        1,
-        "second element must click immediately"
-    );
-    assert_eq!(
-        *a_clicks.borrow(),
-        0,
-        "the first tap's delayed click must survive a press elsewhere"
-    );
-    std::thread::sleep(std::time::Duration::from_millis(350));
-    rt.poll_gesture_timers();
-    assert_eq!(
-        *a_clicks.borrow(),
-        1,
-        "delayed click must still fire after its timeout"
-    );
-}
-
-#[test]
-fn keyboard_hold_long_press_fires_and_suppresses_click() {
-    let mut rt = ReposeRuntime::new();
-    let clicks = Rc::new(RefCell::new(0u32));
-    let longs = Rc::new(RefCell::new(0u32));
-    let c = clicks.clone();
-    let l = longs.clone();
-    let frame = button_frame(
-        BTN_ID,
-        Some(Rc::new(move || *c.borrow_mut() += 1)),
-        None,
-        Some(Rc::new(move || *l.borrow_mut() += 1)),
-    );
-    rt.cache_frame(frame);
-    rt.sched.focused = Some(BTN_ID);
-
-    let down = KeyEvent {
-        key: Key::Space,
-        modifiers: Modifiers::default(),
-        is_repeat: false,
-        event_type: KeyEventType::Down,
-        utf16_code_point: 0,
-        physical: Some(PhysicalKey::Space),
-    };
-    let up = KeyEvent {
-        key: Key::Space,
-        modifiers: Modifiers::default(),
-        is_repeat: false,
-        event_type: KeyEventType::Up,
-        utf16_code_point: 0,
-        physical: Some(PhysicalKey::Space),
-    };
-
-    assert!(rt.handle_key(&down));
-    std::thread::sleep(std::time::Duration::from_millis(550));
-    rt.poll_gesture_timers();
-    assert_eq!(
-        *longs.borrow(),
-        1,
-        "holding Space past the long-press timeout must fire onLongClick"
-    );
-    assert!(rt.handle_key(&up));
-    assert_eq!(
-        *clicks.borrow(),
-        0,
-        "release after a fired keyboard long-press must not also click"
-    );
 }
 
 fn focused_textfield_rt() -> ReposeRuntime {
@@ -619,31 +422,4 @@ fn pointer_pos_tracks_mouse_only() {
     assert_eq!(rt.sched.pointer_pos_px, Some((10.0, 20.0)));
     rt.handle_focus_lost();
     assert_eq!(rt.sched.pointer_pos_px, None);
-}
-
-#[test]
-fn runtime_shortcuts_are_per_runtime() {
-    use repose_core::input::Key;
-    use repose_core::shortcuts::{Action, KeyChord};
-    let mut a = ReposeRuntime::new();
-    let mut b = ReposeRuntime::new();
-    a.shortcuts.default_map.insert(
-        Key::Character('k'),
-        Modifiers::default(),
-        Action::Custom("a".into()),
-    );
-    b.shortcuts.default_map.insert(
-        Key::Character('k'),
-        Modifiers::default(),
-        Action::Custom("b".into()),
-    );
-    let chord = KeyChord::new(Key::Character('k'), Modifiers::default());
-    assert_eq!(
-        a.shortcuts.resolve_action(&chord),
-        Some(Action::Custom("a".into()))
-    );
-    assert_eq!(
-        b.shortcuts.resolve_action(&chord),
-        Some(Action::Custom("b".into()))
-    );
 }

@@ -9,10 +9,17 @@ impl Dispose {
         Self(Rc::new(RefCell::new(Some(Box::new(f)))))
     }
 
-    /// Runs at most once (safe to call multiple times).
+    pub(crate) fn ptr_eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
+    }
+
     pub fn run(&self) {
-        if let Some(f) = self.0.borrow_mut().take() {
-            f()
+        let function = {
+            let mut function = self.0.borrow_mut();
+            function.take()
+        };
+        if let Some(function) = function {
+            function();
         }
     }
 }
@@ -46,14 +53,61 @@ where
 #[track_caller]
 pub fn effect_once(f: impl FnOnce() -> Dispose + 'static) -> Dispose {
     let loc = std::panic::Location::caller();
-    let key = format!("effect:{}:{}:{}", loc.file(), loc.line(), loc.column());
-    let slot = crate::remember_with_key(key, || RefCell::new(None::<Dispose>));
-    if let Some(d) = slot.borrow().as_ref() {
-        return d.clone();
+    effect_once_with_key(
+        format!("effect:{}:{}:{}", loc.file(), loc.line(), loc.column()),
+        f,
+    )
+}
+
+pub fn effect_once_with_key(
+    key: impl Into<String>,
+    f: impl FnOnce() -> Dispose + 'static,
+) -> Dispose {
+    let key = key.into();
+    let slot = crate::remember_with_key(key.clone(), || RefCell::new(None::<Dispose>));
+    let existing = {
+        let slot = slot.borrow();
+        slot.as_ref().cloned()
+    };
+    if let Some(existing) = existing {
+        return register_scope_owner(&key, &existing);
     }
-    let d = effect(f);
-    *slot.borrow_mut() = Some(d.clone());
-    d
+
+    let disposer = f();
+    let old = {
+        let mut slot = slot.borrow_mut();
+        slot.replace(disposer.clone())
+    };
+    drop(old);
+    register_scope_owner(&key, &disposer)
+}
+
+fn register_scope_owner(key: &str, disposer: &Dispose) -> Dispose {
+    let Some(scope) = crate::scope::current_scope() else {
+        crate::runtime::register_keyed_disposer(key.to_string(), disposer.clone());
+        return disposer.clone();
+    };
+    let owner =
+        crate::runtime::scope_owner_token(crate::scope_cache::current_scope_key().as_deref());
+    let token_key = key.to_string();
+    let token_disposer = disposer.clone();
+    let token_owner = owner.clone();
+    if !crate::runtime::keyed_disposer_has_owner(&token_key, &token_disposer, &owner) {
+        crate::runtime::register_keyed_disposer_for_owner(
+            token_key.clone(),
+            token_disposer.clone(),
+            owner.clone(),
+        );
+        let registered = token_disposer.clone();
+        let scope_key = token_key.clone();
+        let scope_owner = owner.clone();
+        scope.add_disposer(move || {
+            crate::runtime::remove_keyed_disposer_for_owner(&scope_key, &registered, &scope_owner);
+        });
+    }
+    Dispose::new(move || {
+        crate::runtime::remove_keyed_disposer_for_owner(&token_key, &token_disposer, &token_owner);
+    })
 }
 /// Helper to register cleanup inside effect.
 pub fn on_unmount(f: impl FnOnce() + 'static) -> Dispose {

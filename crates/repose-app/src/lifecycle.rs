@@ -1,6 +1,8 @@
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::{
-    Mutex,
-    atomic::{AtomicU8, Ordering},
+    Arc, Mutex,
+    atomic::{AtomicU8, AtomicU64, Ordering},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -9,223 +11,399 @@ pub enum AppLifecycle {
     Background,
 }
 
-static CURRENT_LIFECYCLE: AtomicU8 = AtomicU8::new(0);
-static LIFECYCLE_CB: Mutex<Option<Box<dyn Fn(AppLifecycle) + Send>>> = Mutex::new(None);
-static PENDING_LIFECYCLE: Mutex<Vec<AppLifecycle>> = Mutex::new(Vec::new());
-static LIFECYCLE_LISTENERS: Mutex<Vec<(u64, Box<dyn Fn(AppLifecycle) + Send>)>> =
-    Mutex::new(Vec::new());
-static NEXT_LISTENER_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+type LifecycleCallback = Box<dyn Fn(AppLifecycle) + Send>;
+type DeeplinkCallback = Box<dyn Fn(Vec<u8>) + Send>;
 
-static DEEPLINK_CB: Mutex<Option<Box<dyn Fn(Vec<u8>) + Send>>> = Mutex::new(None);
-static PENDING_DEEPLINKS: Mutex<Vec<Vec<u8>>> = Mutex::new(Vec::new());
-static DEEPLINK_LISTENERS: Mutex<Vec<(u64, Box<dyn Fn(Vec<u8>) + Send>)>> = Mutex::new(Vec::new());
+struct LifecycleSlot {
+    callback: Mutex<Option<LifecycleCallback>>,
+}
+
+struct DeeplinkSlot {
+    callback: Mutex<Option<DeeplinkCallback>>,
+}
+
+#[derive(Clone)]
+struct LifecycleEntry {
+    id: u64,
+    slot: Arc<LifecycleSlot>,
+}
+
+#[derive(Clone)]
+struct DeeplinkEntry {
+    id: u64,
+    slot: Arc<DeeplinkSlot>,
+}
+
+pub struct LifecycleDispatcher {
+    current: AtomicU8,
+    primary: Mutex<Option<Arc<LifecycleSlot>>>,
+    pending: Mutex<Vec<AppLifecycle>>,
+    listeners: Mutex<Vec<LifecycleEntry>>,
+    next_id: AtomicU64,
+    processing: Mutex<()>,
+}
+
+impl LifecycleDispatcher {
+    const fn new() -> Self {
+        Self {
+            current: AtomicU8::new(0),
+            primary: Mutex::new(None),
+            pending: Mutex::new(Vec::new()),
+            listeners: Mutex::new(Vec::new()),
+            next_id: AtomicU64::new(1),
+            processing: Mutex::new(()),
+        }
+    }
+
+    pub fn set_callback(&self, callback: Box<dyn Fn(AppLifecycle) + Send>) {
+        *lock(&self.primary) = Some(Arc::new(LifecycleSlot {
+            callback: Mutex::new(Some(callback)),
+        }));
+    }
+
+    pub fn add_listener(&self, callback: Box<dyn Fn(AppLifecycle) + Send>) -> u64 {
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        lock(&self.listeners).push(LifecycleEntry {
+            id,
+            slot: Arc::new(LifecycleSlot {
+                callback: Mutex::new(Some(callback)),
+            }),
+        });
+        id
+    }
+
+    pub fn remove_listener(&self, id: u64) -> bool {
+        let mut listeners = lock(&self.listeners);
+        let before = listeners.len();
+        listeners.retain(|entry| entry.id != id);
+        listeners.len() != before
+    }
+
+    pub fn current(&self) -> Option<AppLifecycle> {
+        lifecycle_from_code(self.current.load(Ordering::Relaxed))
+    }
+
+    pub fn push(&self, state: AppLifecycle) {
+        self.current.store(lifecycle_code(state), Ordering::Relaxed);
+        lock(&self.pending).push(state);
+    }
+
+    pub fn process(&self) {
+        let _processing = match self.processing.try_lock() {
+            Ok(guard) => guard,
+            Err(std::sync::TryLockError::Poisoned(error)) => error.into_inner(),
+            Err(std::sync::TryLockError::WouldBlock) => return,
+        };
+        let batch = std::mem::take(&mut *lock(&self.pending));
+        if batch.is_empty() {
+            return;
+        }
+        let mut retained = Vec::new();
+        for state in batch {
+            let primary = lock(&self.primary).clone();
+            let mut handled = primary.as_ref().is_some_and(|slot| {
+                invoke_lifecycle(slot, state, || {
+                    lock(&self.primary)
+                        .as_ref()
+                        .is_some_and(|current| Arc::ptr_eq(current, slot))
+                })
+            });
+            let listeners = lock(&self.listeners).clone();
+            for entry in &listeners {
+                if lifecycle_listener_is_current(&self.listeners, entry.id, &entry.slot)
+                    && invoke_lifecycle(&entry.slot, state, || {
+                        lifecycle_listener_is_current(&self.listeners, entry.id, &entry.slot)
+                    })
+                {
+                    handled = true;
+                }
+            }
+            if !handled {
+                retained.push(state);
+            }
+        }
+        if !retained.is_empty() {
+            lock(&self.pending).splice(0..0, retained);
+        }
+    }
+}
+
+impl Default for LifecycleDispatcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+pub struct DeeplinkDispatcher {
+    primary: Mutex<Option<Arc<DeeplinkSlot>>>,
+    pending: Mutex<Vec<Vec<u8>>>,
+    listeners: Mutex<Vec<DeeplinkEntry>>,
+    next_id: AtomicU64,
+    processing: Mutex<()>,
+}
+
+impl DeeplinkDispatcher {
+    const fn new() -> Self {
+        Self {
+            primary: Mutex::new(None),
+            pending: Mutex::new(Vec::new()),
+            listeners: Mutex::new(Vec::new()),
+            next_id: AtomicU64::new(1),
+            processing: Mutex::new(()),
+        }
+    }
+
+    pub fn set_callback(&self, callback: Box<dyn Fn(Vec<u8>) + Send>) {
+        *lock(&self.primary) = Some(Arc::new(DeeplinkSlot {
+            callback: Mutex::new(Some(callback)),
+        }));
+    }
+
+    pub fn add_listener(&self, callback: Box<dyn Fn(Vec<u8>) + Send>) -> u64 {
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        lock(&self.listeners).push(DeeplinkEntry {
+            id,
+            slot: Arc::new(DeeplinkSlot {
+                callback: Mutex::new(Some(callback)),
+            }),
+        });
+        id
+    }
+
+    pub fn remove_listener(&self, id: u64) -> bool {
+        let mut listeners = lock(&self.listeners);
+        let before = listeners.len();
+        listeners.retain(|entry| entry.id != id);
+        listeners.len() != before
+    }
+
+    pub fn push(&self, data: Vec<u8>) {
+        lock(&self.pending).push(data);
+    }
+
+    pub fn process(&self) {
+        let _processing = match self.processing.try_lock() {
+            Ok(guard) => guard,
+            Err(std::sync::TryLockError::Poisoned(error)) => error.into_inner(),
+            Err(std::sync::TryLockError::WouldBlock) => return,
+        };
+        let batch = std::mem::take(&mut *lock(&self.pending));
+        if batch.is_empty() {
+            return;
+        }
+        let mut retained = Vec::new();
+        for data in batch {
+            let primary = lock(&self.primary).clone();
+            let mut handled = primary.as_ref().is_some_and(|slot| {
+                invoke_deeplink(slot, &data, || {
+                    lock(&self.primary)
+                        .as_ref()
+                        .is_some_and(|current| Arc::ptr_eq(current, slot))
+                })
+            });
+            let listeners = lock(&self.listeners).clone();
+            for entry in &listeners {
+                if deeplink_listener_is_current(&self.listeners, entry.id, &entry.slot)
+                    && invoke_deeplink(&entry.slot, &data, || {
+                        deeplink_listener_is_current(&self.listeners, entry.id, &entry.slot)
+                    })
+                {
+                    handled = true;
+                }
+            }
+            if !handled {
+                retained.push(data);
+            }
+        }
+        if !retained.is_empty() {
+            lock(&self.pending).splice(0..0, retained);
+        }
+    }
+}
+
+impl Default for DeeplinkDispatcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+static LIFECYCLE_DISPATCHER: LifecycleDispatcher = LifecycleDispatcher::new();
+static DEEPLINK_DISPATCHER: DeeplinkDispatcher = DeeplinkDispatcher::new();
 
 thread_local! {
-    static PRE_REDRAW: std::cell::RefCell<Option<Box<dyn FnMut(&repose_core::RenderContext)>>> =
-        const { std::cell::RefCell::new(None) };
+    static PRE_REDRAW: RefCell<Option<Rc<RefCell<Option<Box<dyn FnMut(&repose_core::RenderContext)>>>>>> =
+        const { RefCell::new(None) };
 }
 
 pub fn set_pre_redraw(cb: Option<Box<dyn FnMut(&repose_core::RenderContext)>>) {
-    PRE_REDRAW.with(|c| *c.borrow_mut() = cb);
+    PRE_REDRAW.with(|current| {
+        *current.borrow_mut() = cb.map(|callback| Rc::new(RefCell::new(Some(callback))));
+    });
 }
 
 pub fn run_pre_redraw(ctx: &repose_core::RenderContext) {
-    PRE_REDRAW.with(|c| {
-        if let Some(cb) = c.borrow_mut().as_mut() {
-            cb(ctx);
+    PRE_REDRAW.with(|current| {
+        let Some(slot) = current.borrow().clone() else {
+            return;
+        };
+        let callback = slot.borrow_mut().take();
+        let Some(mut callback) = callback else {
+            return;
+        };
+        callback(ctx);
+        let still_current = current
+            .borrow()
+            .as_ref()
+            .is_some_and(|active| Rc::ptr_eq(active, &slot));
+        if still_current && slot.borrow().is_none() {
+            *slot.borrow_mut() = Some(callback);
         }
     });
 }
 
 pub fn set_on_lifecycle(callback: Box<dyn Fn(AppLifecycle) + Send>) {
-    *LIFECYCLE_CB.lock().unwrap_or_else(|e| e.into_inner()) = Some(callback);
+    LIFECYCLE_DISPATCHER.set_callback(callback);
 }
 
-/// Register an additional lifecycle listener alongside the single
-/// `set_on_lifecycle` callback. Returns an id for `remove_lifecycle_listener`.
 pub fn add_lifecycle_listener(callback: Box<dyn Fn(AppLifecycle) + Send>) -> u64 {
-    let id = NEXT_LISTENER_ID.fetch_add(1, Ordering::Relaxed);
-    LIFECYCLE_LISTENERS
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .push((id, callback));
-    id
+    LIFECYCLE_DISPATCHER.add_listener(callback)
 }
 
 pub fn remove_lifecycle_listener(id: u64) -> bool {
-    let mut listeners = LIFECYCLE_LISTENERS
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    let before = listeners.len();
-    listeners.retain(|(lid, _)| *lid != id);
-    listeners.len() != before
-}
-
-fn has_lifecycle_listener() -> bool {
-    if LIFECYCLE_CB
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .is_some()
-    {
-        return true;
-    }
-    !LIFECYCLE_LISTENERS
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .is_empty()
+    LIFECYCLE_DISPATCHER.remove_listener(id)
 }
 
 pub fn current_lifecycle() -> Option<AppLifecycle> {
-    match CURRENT_LIFECYCLE.load(Ordering::Relaxed) {
+    LIFECYCLE_DISPATCHER.current()
+}
+
+pub fn push_lifecycle(state: AppLifecycle) {
+    LIFECYCLE_DISPATCHER.push(state);
+}
+
+pub fn process_lifecycle() {
+    LIFECYCLE_DISPATCHER.process();
+}
+
+pub fn set_on_deeplink(callback: Box<dyn Fn(Vec<u8>) + Send>) {
+    DEEPLINK_DISPATCHER.set_callback(callback);
+}
+
+pub fn add_deeplink_listener(callback: Box<dyn Fn(Vec<u8>) + Send>) -> u64 {
+    DEEPLINK_DISPATCHER.add_listener(callback)
+}
+
+pub fn remove_deeplink_listener(id: u64) -> bool {
+    DEEPLINK_DISPATCHER.remove_listener(id)
+}
+
+pub fn push_deeplink(data: Vec<u8>) {
+    DEEPLINK_DISPATCHER.push(data);
+}
+
+pub fn process_deeplinks() {
+    DEEPLINK_DISPATCHER.process();
+}
+
+fn lifecycle_code(state: AppLifecycle) -> u8 {
+    match state {
+        AppLifecycle::Foreground => 1,
+        AppLifecycle::Background => 2,
+    }
+}
+
+fn lifecycle_from_code(code: u8) -> Option<AppLifecycle> {
+    match code {
         1 => Some(AppLifecycle::Foreground),
         2 => Some(AppLifecycle::Background),
         _ => None,
     }
 }
 
-pub fn push_lifecycle(state: AppLifecycle) {
-    let code = match state {
-        AppLifecycle::Foreground => 1,
-        AppLifecycle::Background => 2,
+fn lifecycle_listener_is_current(
+    listeners: &Mutex<Vec<LifecycleEntry>>,
+    id: u64,
+    slot: &Arc<LifecycleSlot>,
+) -> bool {
+    lock(listeners)
+        .iter()
+        .any(|entry| entry.id == id && Arc::ptr_eq(&entry.slot, slot))
+}
+
+fn deeplink_listener_is_current(
+    listeners: &Mutex<Vec<DeeplinkEntry>>,
+    id: u64,
+    slot: &Arc<DeeplinkSlot>,
+) -> bool {
+    lock(listeners)
+        .iter()
+        .any(|entry| entry.id == id && Arc::ptr_eq(&entry.slot, slot))
+}
+
+fn invoke_lifecycle(slot: &LifecycleSlot, state: AppLifecycle, restore: impl Fn() -> bool) -> bool {
+    let callback = slot
+        .callback
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .take();
+    let Some(callback) = callback else {
+        return false;
     };
-    CURRENT_LIFECYCLE.store(code, Ordering::Relaxed);
-    PENDING_LIFECYCLE
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .push(state);
-}
-
-pub fn process_lifecycle() {
-    if !has_lifecycle_listener() {
-        return;
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| callback(state)));
+    if let Err(error) = result {
+        log::error!("lifecycle callback panicked: {}", panic_message(&error));
     }
-    let batch = std::mem::take(&mut *PENDING_LIFECYCLE.lock().unwrap_or_else(|e| e.into_inner()));
-    if batch.is_empty() {
-        return;
-    }
-    for state in batch {
-        if let Some(cb) = LIFECYCLE_CB
+    if restore()
+        && slot
+            .callback
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .as_ref()
-        {
-            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| cb(state)));
-            if let Err(e) = res {
-                log::error!(
-                    "lifecycle callback panicked: {}",
-                    e.downcast_ref::<String>()
-                        .map(|s| s.as_str())
-                        .or_else(|| e.downcast_ref::<&str>().copied())
-                        .unwrap_or("unknown")
-                );
-            }
-        }
-        let listeners = std::mem::take(
-            &mut *LIFECYCLE_LISTENERS
-                .lock()
-                .unwrap_or_else(|e| e.into_inner()),
-        );
-        for (_, cb) in &listeners {
-            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| cb(state)));
-            if let Err(e) = res {
-                log::error!(
-                    "lifecycle listener panicked: {}",
-                    e.downcast_ref::<String>()
-                        .map(|s| s.as_str())
-                        .or_else(|| e.downcast_ref::<&str>().copied())
-                        .unwrap_or("unknown")
-                );
-            }
-        }
-        *LIFECYCLE_LISTENERS
-            .lock()
-            .unwrap_or_else(|e| e.into_inner()) = listeners;
-    }
-}
-
-pub fn set_on_deeplink(callback: Box<dyn Fn(Vec<u8>) + Send>) {
-    *DEEPLINK_CB.lock().unwrap_or_else(|e| e.into_inner()) = Some(callback);
-}
-
-/// Register an additional deeplink listener. Returns an id for removal.
-pub fn add_deeplink_listener(callback: Box<dyn Fn(Vec<u8>) + Send>) -> u64 {
-    let id = NEXT_LISTENER_ID.fetch_add(1, Ordering::Relaxed);
-    DEEPLINK_LISTENERS
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .push((id, callback));
-    id
-}
-
-pub fn remove_deeplink_listener(id: u64) -> bool {
-    let mut listeners = DEEPLINK_LISTENERS.lock().unwrap_or_else(|e| e.into_inner());
-    let before = listeners.len();
-    listeners.retain(|(lid, _)| *lid != id);
-    listeners.len() != before
-}
-
-fn has_deeplink_listener() -> bool {
-    if DEEPLINK_CB
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .is_some()
+            .unwrap_or_else(|error| error.into_inner())
+            .is_none()
     {
-        return true;
-    }
-    !DEEPLINK_LISTENERS
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .is_empty()
-}
-
-pub fn push_deeplink(data: Vec<u8>) {
-    PENDING_DEEPLINKS
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .push(data);
-}
-
-pub fn process_deeplinks() {
-    if !has_deeplink_listener() {
-        return;
-    }
-    let mut queue = PENDING_DEEPLINKS.lock().unwrap_or_else(|e| e.into_inner());
-    if queue.is_empty() {
-        return;
-    }
-    let batch = std::mem::take(&mut *queue);
-    drop(queue);
-    for data in batch {
-        if let Some(cb) = DEEPLINK_CB
+        *slot
+            .callback
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .as_ref()
-        {
-            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| cb(data.clone())));
-            if let Err(e) = res {
-                log::error!(
-                    "deeplink callback panicked: {}",
-                    e.downcast_ref::<String>()
-                        .map(|s| s.as_str())
-                        .or_else(|| e.downcast_ref::<&str>().copied())
-                        .unwrap_or("unknown")
-                );
-            }
-        }
-        let listeners =
-            std::mem::take(&mut *DEEPLINK_LISTENERS.lock().unwrap_or_else(|e| e.into_inner()));
-        for (_, cb) in &listeners {
-            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| cb(data.clone())));
-            if let Err(e) = res {
-                log::error!(
-                    "deeplink listener panicked: {}",
-                    e.downcast_ref::<String>()
-                        .map(|s| s.as_str())
-                        .or_else(|| e.downcast_ref::<&str>().copied())
-                        .unwrap_or("unknown")
-                );
-            }
-        }
-        *DEEPLINK_LISTENERS.lock().unwrap_or_else(|e| e.into_inner()) = listeners;
+            .unwrap_or_else(|error| error.into_inner()) = Some(callback);
     }
+    true
+}
+
+fn invoke_deeplink(slot: &DeeplinkSlot, data: &[u8], restore: impl Fn() -> bool) -> bool {
+    let callback = slot
+        .callback
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .take();
+    let Some(callback) = callback else {
+        return false;
+    };
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| callback(data.to_vec())));
+    if let Err(error) = result {
+        log::error!("deeplink callback panicked: {}", panic_message(&error));
+    }
+    if restore()
+        && slot
+            .callback
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .is_none()
+    {
+        *slot
+            .callback
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = Some(callback);
+    }
+    true
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|error| error.into_inner())
+}
+
+fn panic_message(error: &Box<dyn std::any::Any + Send>) -> &str {
+    error
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .or_else(|| error.downcast_ref::<&str>().copied())
+        .unwrap_or("unknown")
 }

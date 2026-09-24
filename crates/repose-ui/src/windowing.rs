@@ -926,6 +926,7 @@ fn modifier_has_hit(modifier: &Modifier) -> bool {
         || modifier.on_pointer_down.is_some()
         || modifier.on_pointer_move.is_some()
         || modifier.on_pointer_up.is_some()
+        || modifier.on_pointer_cancel.is_some()
         || modifier.on_pointer_enter.is_some()
         || modifier.on_pointer_leave.is_some()
         || modifier.on_drag_start.is_some()

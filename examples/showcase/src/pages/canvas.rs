@@ -22,7 +22,9 @@ pub fn screen() -> View {
                 Hint("Filled and stroked rects, circles, and text recorded into SceneNodes."),
                 Canvas(
                     Modifier::new()
-                        .size(Dp(560.0), Dp(200.0))
+                        .fill_max_width()
+                        .max_width(Dp(560.0))
+                        .height(Dp(200.0))
                         .background(theme().surface)
                         .border(Dp(1.0), theme().outline, Dp(16.0))
                         .clip_rounded(Dp(16.0)),
@@ -65,7 +67,9 @@ pub fn screen() -> View {
                 Hint("Gradient fills, brush borders, lines, and arcs share the Compose DrawScope model."),
                 Canvas(
                     Modifier::new()
-                        .size(Dp(560.0), Dp(200.0))
+                        .fill_max_width()
+                        .max_width(Dp(560.0))
+                        .height(Dp(200.0))
                         .background(theme().surface)
                         .border(Dp(1.0), theme().outline, Dp(16.0))
                         .clip_rounded(Dp(16.0)),
@@ -139,7 +143,9 @@ pub fn screen() -> View {
                 ),
                 Canvas(
                     Modifier::new()
-                        .size(Dp(560.0), Dp(220.0))
+                        .fill_max_width()
+                        .max_width(Dp(560.0))
+                        .height(Dp(220.0))
                         .background(theme().surface_container_low)
                         .border(Dp(1.0), theme().outline_variant, Dp(16.0))
                         .clip_rounded(Dp(16.0)),

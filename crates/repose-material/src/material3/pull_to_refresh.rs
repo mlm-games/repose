@@ -41,6 +41,7 @@ pub struct PullToRefreshState {
     scroll_state: RefCell<Option<Rc<repose_ui::scroll::ScrollState>>>,
     threshold: f32,
     triggered: Cell<bool>,
+    id: u64,
 }
 
 impl Default for PullToRefreshState {
@@ -56,7 +57,12 @@ impl PullToRefreshState {
             scroll_state: RefCell::new(None),
             threshold: 64.0,
             triggered: Cell::new(false),
+            id: unique_component_id(),
         }
+    }
+
+    pub fn key(&self, suffix: &str) -> String {
+        format!("pull:{}_{}", self.id, suffix)
     }
 
     /// Connect this PullToRefresh state to a scroll state.
@@ -75,7 +81,7 @@ impl PullToRefreshState {
     }
 
     pub fn set_refreshing(&self, v: bool) {
-        self.refreshing.set(v);
+        self.refreshing.set_neq(v);
         if !v && let Some(sc) = self.scroll_state.borrow().as_ref() {
             sc.set_overscroll(0.0);
         }
@@ -89,6 +95,13 @@ impl PullToRefreshState {
         } else {
             0.0
         }
+    }
+}
+
+impl Drop for PullToRefreshState {
+    fn drop(&mut self) {
+        repose_core::animation_driver::unregister(&format!("anim:f32:{}", self.key("fraction")));
+        repose_core::animation_driver::unregister(&format!("anim:f32:{}", self.key("spin")));
     }
 }
 
@@ -117,11 +130,11 @@ pub fn PullToRefresh(
 
     if !refreshing && !state.triggered.get() && pull >= threshold {
         state.triggered.set(true);
-        state.refreshing.set(true);
+        state.refreshing.set_neq(true);
         (on_refresh)();
     }
 
-    let frac_key = format!("ptr_frac_{}", Rc::as_ptr(&state) as u64);
+    let frac_key = state.key("fraction");
     let raw_frac = if refreshing {
         1.0
     } else if pull > 0.0 {
@@ -149,7 +162,7 @@ pub fn PullToRefresh(
     };
     let rotation = if refreshing {
         animate_f32_from(
-            "ptr_spin",
+            state.key("spin"),
             0.0,
             std::f32::consts::TAU,
             AnimationSpec::tween(Duration::from_millis(1000), Easing::Linear)

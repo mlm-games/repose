@@ -37,6 +37,9 @@ static APP_WINDOW: OnceLock<Arc<Window>> = OnceLock::new();
 static WINDOW_VISIBLE: AtomicBool = AtomicBool::new(true);
 
 #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
+static WINDOW_OCCLUDED: AtomicBool = AtomicBool::new(false);
+
+#[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 static CLOSE_TO_TRAY: AtomicBool = AtomicBool::new(false);
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -72,15 +75,19 @@ pub fn push_lifecycle(state: AppLifecycle) {
     wake_event_loop();
 }
 
-/// Desktop visibility policy: hidden windows report `Background`, visible
-/// windows report `Foreground`. Call from focus/occluded handlers.
+/// Desktop visibility policy: hidden or occluded windows report `Background`,
+/// visible windows report `Foreground`.
 #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 pub fn push_window_lifecycle(visible: bool) {
-    push_lifecycle(if visible {
+    let foreground = visible && !WINDOW_OCCLUDED.load(Ordering::Relaxed);
+    let state = if foreground {
         AppLifecycle::Foreground
     } else {
         AppLifecycle::Background
-    });
+    };
+    if current_lifecycle() != Some(state) {
+        push_lifecycle(state);
+    }
 }
 
 /// Push a deeplink payload and wake the UI loop. Thin wrapper over `repose_app`.
@@ -132,6 +139,7 @@ pub fn show_app_window() {
         #[allow(deprecated)]
         w.focus_window();
     }
+    push_window_lifecycle(true);
     repose_core::frame_clock::request_frame();
     wake_event_loop();
 }
@@ -143,6 +151,7 @@ pub fn hide_app_window() {
         log::info!("hide_app_window: calling set_visible(false)");
         w.set_visible(false);
     }
+    push_window_lifecycle(false);
     repose_core::frame_clock::request_frame();
     wake_event_loop();
 }
@@ -252,6 +261,9 @@ pub fn run_desktop_app_with_config(
 
         last_redraw: Instant,
         pending_redraw: bool,
+        occluded: bool,
+        os_focused: bool,
+        ime_output_allowed: bool,
 
         // Tracks whether a redraw was requested by app code
         redraw_requested: Cell<bool>,
@@ -341,6 +353,9 @@ pub fn run_desktop_app_with_config(
 
                 last_redraw: Instant::now(),
                 pending_redraw: false,
+                occluded: false,
+                os_focused: true,
+                ime_output_allowed: false,
                 last_window_theme: None,
                 custom_cursor: None,
                 last_cursor_key: None,
@@ -357,17 +372,73 @@ pub fn run_desktop_app_with_config(
             rc::request_redraw(&self.window);
         }
 
+        fn ime_allowed_for_frame(&self, frame: &repose_core::runtime::Frame) -> bool {
+            WINDOW_VISIBLE.load(Ordering::Relaxed)
+                && !WINDOW_OCCLUDED.load(Ordering::Relaxed)
+                && self.ime_output_allowed
+                && self.rt.sched.window_focused
+                && self
+                    .rt
+                    .sched
+                    .focused
+                    .is_some_and(|id| rc::is_editable_textfield_hit(frame, id))
+        }
+
+        fn ime_allowed_for_output(
+            &self,
+            hits: &[repose_core::HitRegion],
+            semantics: &[repose_core::runtime::SemNode],
+            output_allowed: bool,
+        ) -> bool {
+            WINDOW_VISIBLE.load(Ordering::Relaxed)
+                && !WINDOW_OCCLUDED.load(Ordering::Relaxed)
+                && output_allowed
+                && self.rt.sched.window_focused
+                && self
+                    .rt
+                    .sched
+                    .focused
+                    .is_some_and(|id| rc::editable_textfield_hit(hits, semantics, id).is_some())
+        }
+
+        fn sync_ime_for_focus(&mut self) {
+            let Some(window) = self.window.clone() else {
+                return;
+            };
+            let allowed = self
+                .rt
+                .frame_cache
+                .as_ref()
+                .is_some_and(|frame| self.ime_allowed_for_frame(frame));
+            if allowed {
+                let hit = self.rt.frame_cache.as_ref().and_then(|frame| {
+                    self.rt.sched.focused.and_then(|id| {
+                        rc::editable_textfield_hit(&frame.hit_regions, &frame.semantics_nodes, id)
+                    })
+                });
+                if let Some(hit) = hit {
+                    rc::set_ime_for_textfield_ex(
+                        &window,
+                        true,
+                        hit.keyboard_type.ime_purpose_hint(),
+                        hit.auto_correct.unwrap_or(true),
+                        hit.capitalization,
+                    );
+                    let scale = window.scale_factor();
+                    window.set_ime_cursor_area(
+                        LogicalPosition::new(hit.rect.x as f64 / scale, hit.rect.y as f64 / scale),
+                        LogicalSize::new(hit.rect.w as f64 / scale, hit.rect.h as f64 / scale),
+                    );
+                    return;
+                }
+            }
+            rc::set_ime_for_textfield(&window, false);
+            self.rt.finish_compositions();
+        }
+
         fn dispatch_action(&mut self, action: repose_core::shortcuts::Action) -> bool {
             if self.rt.dispatch_action(action) {
-                if let Some(win) = &self.window {
-                    rc::set_ime_for_textfield(
-                        win,
-                        self.rt
-                            .sched
-                            .focused
-                            .is_some_and(|id| self.rt.is_textfield(id)),
-                    );
-                }
+                self.sync_ime_for_focus();
                 return true;
             }
             false
@@ -508,6 +579,42 @@ pub fn run_desktop_app_with_config(
             win.set_cursor(map_cursor(c));
         }
 
+        fn clear_input_state(&mut self) {
+            let active_touches = self
+                .touch_gestures
+                .active_touches()
+                .iter()
+                .map(|(id, pos)| (*id, *pos))
+                .collect::<Vec<_>>();
+            for (touch_id, pos) in active_touches {
+                self.touch_gestures
+                    .touch_ended(&mut self.rt, touch_id, pos, true);
+                self.touch_gestures.contact_up(touch_id);
+            }
+            self.touch_gestures = rc::TouchGestureState::default();
+            self.rt.handle_focus_lost();
+            self.rt.touch_paths.clear();
+            self.rt.scroll_capture_id = None;
+            self.rt.hover_id = None;
+            self.rt.hover_ancestors.clear();
+            self.rt.last_focus = None;
+            self.rt.sched.pointer_pos_px = None;
+            self.rt.ime_preedit = false;
+            self.rt.modifiers = Default::default();
+            self.rt.sched.window_focused = false;
+            self.rt.sched.held_keys.clear();
+            self.rt.sched.mouse_primary = false;
+            self.rt.sched.mouse_secondary = false;
+            self.rt.sched.mouse_middle = false;
+            self.rt.pressed_ids.clear();
+            self.rt.key_pressed_active = None;
+            self.external_file_drag = false;
+            self.hovered_files.clear();
+            if let Some(window) = &self.window {
+                rc::set_ime_for_textfield(window, false);
+            }
+        }
+
         fn reset_pointer_state(&mut self) {
             self.rt.capture_id = None;
             self.rt.pressed_ids.clear();
@@ -517,6 +624,9 @@ pub fn run_desktop_app_with_config(
 
     impl ApplicationHandler<()> for App {
         fn resumed(&mut self, el: &winit::event_loop::ActiveEventLoop) {
+            self.occluded = false;
+            WINDOW_OCCLUDED.store(false, Ordering::Relaxed);
+            self.rt.sched.window_focused = self.os_focused;
             self.clipboard = rc::setup_clipboard();
 
             if self.window.is_none() {
@@ -583,6 +693,9 @@ pub fn run_desktop_app_with_config(
                     }
                 }
             }
+            if self.window.is_some() {
+                crate::push_window_lifecycle(WINDOW_VISIBLE.load(Ordering::Relaxed));
+            }
         }
 
         fn window_event(
@@ -605,29 +718,38 @@ pub fn run_desktop_app_with_config(
                             w.set_visible(false);
                         }
                         WINDOW_VISIBLE.store(false, Ordering::Relaxed);
+                        crate::push_window_lifecycle(false);
                     } else {
                         el.exit();
                     }
                 }
 
                 WindowEvent::Focused(focused) => {
+                    self.os_focused = focused;
+                    let focused = focused && !self.occluded;
                     self.rt.sched.window_focused = focused;
-                    crate::push_window_lifecycle(focused);
                     if !focused {
-                        self.rt.handle_focus_lost();
-                        self.rt.sched.held_keys.clear();
-                        self.rt.sched.mouse_primary = false;
-                        self.rt.sched.mouse_secondary = false;
-                        self.rt.sched.mouse_middle = false;
-                        self.external_file_drag = false;
-                        self.hovered_files.clear();
-
-                        if let Some(w) = &self.window {
-                            rc::set_ime_for_textfield(w, false);
-                        }
-
-                        self.request_redraw();
+                        self.clear_input_state();
+                    } else {
+                        self.sync_ime_for_focus();
                     }
+                    self.request_redraw();
+                }
+
+                WindowEvent::Occluded(occluded) => {
+                    self.occluded = occluded;
+                    WINDOW_OCCLUDED.store(occluded, Ordering::Relaxed);
+                    if occluded {
+                        self.rt.sched.window_focused = false;
+                        self.clear_input_state();
+                    } else {
+                        self.rt.sched.window_focused = self.os_focused;
+                        if self.os_focused {
+                            self.sync_ime_for_focus();
+                        }
+                    }
+                    crate::push_window_lifecycle(WINDOW_VISIBLE.load(Ordering::Relaxed));
+                    self.request_redraw();
                 }
 
                 WindowEvent::CursorLeft { .. } => {
@@ -694,6 +816,16 @@ pub fn run_desktop_app_with_config(
                             dp_h as i32
                         );
                     }
+                    self.request_redraw();
+                }
+
+                WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                    let size = self
+                        .window
+                        .as_ref()
+                        .map(|w| w.inner_size())
+                        .unwrap_or_else(|| PhysicalSize::new(0, 0));
+                    rc::sync_viewport(&mut self.rt, &mut self.backend, size, scale_factor as f32);
                     self.request_redraw();
                 }
 
@@ -794,37 +926,9 @@ pub fn run_desktop_app_with_config(
                         ElementState::Pressed => {
                             let result = self.rt.handle_pointer_press(pos, mapped);
 
-                            // Platform-specific IME setup for focused textfields
-                            if let Some(fid) = result.focused
-                                && let Some(win) = &self.window
-                                && let Some(f) = &self.rt.frame_cache
-                                && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
-                            {
-                                let sf = win.scale_factor();
-                                rc::set_ime_for_textfield_ex(
-                                    win,
-                                    true,
-                                    hit.keyboard_type.ime_purpose_hint(),
-                                    hit.auto_correct.unwrap_or(true),
-                                    hit.capitalization,
-                                );
-                                win.set_ime_cursor_area(
-                                    LogicalPosition::new(
-                                        hit.rect.x as f64 / sf,
-                                        hit.rect.y as f64 / sf,
-                                    ),
-                                    LogicalSize::new(
-                                        hit.rect.w as f64 / sf,
-                                        hit.rect.h as f64 / sf,
-                                    ),
-                                );
-                            }
+                            self.sync_ime_for_focus();
 
-                            // Click outside - no focus result from runtime, drop IME
-                            if result.focused.is_none() && self.rt.ime_preedit {
-                                if let Some(win) = &self.window {
-                                    rc::set_ime_for_textfield(win, false);
-                                }
+                            if result.focused.is_none() {
                                 self.rt.ime_preedit = false;
                             }
 
@@ -837,7 +941,8 @@ pub fn run_desktop_app_with_config(
                                 && let Some(f) = &self.rt.frame_cache
                                 && let Some(cid) = self.rt.capture_id
                                 && let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid)
-                                && self.rt.is_textfield(hit.id)
+                                && self.rt.sched.window_focused
+                                && rc::is_editable_textfield_hit(f, hit.id)
                                 && let Some(txt) = self.paste_from_primary()
                             {
                                 self.rt.paste_into_focused(&txt);
@@ -906,6 +1011,12 @@ pub fn run_desktop_app_with_config(
                         &t,
                         scale,
                     );
+                    if matches!(
+                        t.phase,
+                        winit::event::TouchPhase::Started | winit::event::TouchPhase::Ended
+                    ) {
+                        self.sync_ime_for_focus();
+                    }
                     let mut dirty = r.dirty;
                     if let Some((delta_scale, center)) = r.pinch
                         && self.dispatch_action(repose_core::shortcuts::Action::Gesture(
@@ -965,19 +1076,18 @@ pub fn run_desktop_app_with_config(
                         return;
                     }
 
-                    // Escape / BrowserBack: when the runtime didn't cancel a
-                    // drag / dispatch focus, fall back to navigation back.
-                    if key_event.state == ElementState::Pressed && !key_event.repeat {
-                        match key_event.physical_key {
-                            PhysicalKey::Code(KeyCode::BrowserBack)
-                            | PhysicalKey::Code(KeyCode::Escape) => {
-                                use repose_navigation::back;
-                                if !back::handle() {
-                                    // el.exit();
-                                }
-                                return;
-                            }
-                            _ => {}
+                    if key_event.state == ElementState::Pressed
+                        && !key_event.repeat
+                        && (rc::is_back_key(&key_event) || rc::is_escape_key(&key_event))
+                    {
+                        use repose_navigation::back;
+                        if back::handle() {
+                            self.request_redraw();
+                            return;
+                        }
+                        if rc::is_back_key(&key_event) {
+                            el.exit();
+                            return;
                         }
                     }
 
@@ -1057,7 +1167,6 @@ pub fn run_desktop_app_with_config(
                     let t0 = Instant::now();
                     let scale = win.scale_factor() as f32;
                     self.rt.scale = scale;
-                    let focused = self.rt.sched.focused;
 
                     let output = self.rt.frame(&mut self.root, &self.render);
 
@@ -1083,8 +1192,13 @@ pub fn run_desktop_app_with_config(
                         self.last_window_theme = Some(dark);
                     }
 
-                    // Apply IME keyboard hints
-                    if output.platform.ime_allowed {
+                    self.ime_output_allowed = output.platform.ime_allowed;
+                    let ime_allowed = self.ime_allowed_for_output(
+                        &output.hit_regions,
+                        &output.semantics_nodes,
+                        output.platform.ime_allowed,
+                    );
+                    if ime_allowed {
                         rc::set_ime_for_textfield_ex(
                             win,
                             true,
@@ -1098,25 +1212,9 @@ pub fn run_desktop_app_with_config(
                                 LogicalSize::new(w, h),
                             );
                         }
-                    } else if self.rt.ime_preedit {
-                        rc::set_ime_for_textfield_ex(
-                            win,
-                            false,
-                            repose_core::ImePurposeHint::Normal,
-                            true,
-                            repose_core::KeyboardCapitalization::Unspecified,
-                        );
-                        self.rt.ime_preedit = false;
-                    }
-
-                    // Apply IME state based on wants_keyboard
-                    if !output.wants_keyboard
-                        && focused.is_some()
-                        && self.rt.sched.focused.is_none()
-                        && self.rt.ime_preedit
-                    {
+                    } else {
                         rc::set_ime_for_textfield(win, false);
-                        self.rt.ime_preedit = false;
+                        self.rt.finish_compositions();
                     }
 
                     let frame = output.into_frame();
@@ -1247,6 +1345,7 @@ pub fn run_desktop_app_with_config(
 
             #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
             if WINDOW_VISIBLE.load(Ordering::Relaxed)
+                && !WINDOW_OCCLUDED.load(Ordering::Relaxed)
                 && self.backend.is_none()
                 && let Some(w) = &self.window
             {
@@ -1256,12 +1355,18 @@ pub fn run_desktop_app_with_config(
                     self.msaa_samples,
                     self.present_mode,
                 ) {
-                    Ok(b) => {
+                    Ok(mut b) => {
+                        let size = w.inner_size();
+                        let scale = w.scale_factor() as f32;
+                        b.set_pixels_per_point(scale);
+                        self.rt
+                            .set_viewport_and_scale(size.width, size.height, scale);
                         repose_render_wgpu::offscreen::set_shared_device(
                             b.device.clone(),
                             b.queue.clone(),
                         );
-                        self.backend = Some(b)
+                        self.backend = Some(b);
+                        self.request_redraw();
                     }
                     Err(e) => log::error!("about_to_wait: failed to recreate backend: {e:?}"),
                 }

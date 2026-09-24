@@ -12,7 +12,7 @@
 //!     fn prepare(&self, device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, screen: &repose_render_wgpu::ScreenDescriptor, resources: &mut CallbackResources) {
 //!         // resources.get_or_insert_with::<Pipelines>() -> update uniform buffer with self.angle
 //!     }
-//!     fn paint(&self, info: PaintCallbackInfo, rpass: &mut wgpu::RenderPass, resources: &CallbackResources) {
+//!     fn paint(&self, info: PaintCallbackInfo, rpass: &mut repose_render_wgpu::CallbackRenderPass<'_>, resources: &CallbackResources) {
 //!         // info.viewport is layout rect (physical px), renderer already set viewport -> info.viewport
 //!         // resources.get::<Pipelines>().unwrap().paint(rpass)
 //!     }
@@ -127,6 +127,18 @@ impl CallbackResources {
     pub fn contains<T: 'static>(&self) -> bool {
         self.map.contains_key(&TypeId::of::<T>())
     }
+
+    pub fn len(&self) -> usize {
+        self.map.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.map.is_empty()
+    }
+
+    pub fn clear(&mut self) {
+        self.map.clear();
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -137,6 +149,84 @@ pub struct ScreenDescriptor {
     pub target_format: wgpu::TextureFormat,
     /// MSAA sample count of the surface render pass (1 or 4).
     pub sample_count: u32,
+}
+
+pub struct CallbackRenderPass<'pass, 'encoder> {
+    pass: &'pass mut wgpu::RenderPass<'encoder>,
+    target_format: wgpu::TextureFormat,
+    sample_count: u32,
+}
+
+impl<'pass, 'encoder> CallbackRenderPass<'pass, 'encoder> {
+    pub(crate) fn new(
+        pass: &'pass mut wgpu::RenderPass<'encoder>,
+        target_format: wgpu::TextureFormat,
+        sample_count: u32,
+    ) -> Self {
+        Self {
+            pass,
+            target_format,
+            sample_count,
+        }
+    }
+
+    pub fn target_format(&self) -> wgpu::TextureFormat {
+        self.target_format
+    }
+
+    pub fn sample_count(&self) -> u32 {
+        self.sample_count
+    }
+
+    pub fn set_pipeline(&mut self, pipeline: &wgpu::RenderPipeline) {
+        self.pass.set_pipeline(pipeline);
+    }
+
+    pub fn set_bind_group(&mut self, index: u32, bind_group: &wgpu::BindGroup, offsets: &[u32]) {
+        self.pass.set_bind_group(index, bind_group, offsets);
+    }
+
+    pub fn set_vertex_buffer(&mut self, slot: u32, buffer: wgpu::BufferSlice<'_>) {
+        self.pass.set_vertex_buffer(slot, buffer);
+    }
+
+    pub fn set_index_buffer(&mut self, buffer: wgpu::BufferSlice<'_>, format: wgpu::IndexFormat) {
+        self.pass.set_index_buffer(buffer, format);
+    }
+
+    pub fn set_viewport(
+        &mut self,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        min_depth: f32,
+        max_depth: f32,
+    ) {
+        self.pass
+            .set_viewport(x, y, width, height, min_depth, max_depth);
+    }
+
+    pub fn set_scissor_rect(&mut self, x: u32, y: u32, width: u32, height: u32) {
+        self.pass.set_scissor_rect(x, y, width, height);
+    }
+
+    pub fn set_stencil_reference(&mut self, reference: u32) {
+        self.pass.set_stencil_reference(reference);
+    }
+
+    pub fn draw(&mut self, vertices: std::ops::Range<u32>, instances: std::ops::Range<u32>) {
+        self.pass.draw(vertices, instances);
+    }
+
+    pub fn draw_indexed(
+        &mut self,
+        indices: std::ops::Range<u32>,
+        base_vertex: i32,
+        instances: std::ops::Range<u32>,
+    ) {
+        self.pass.draw_indexed(indices, base_vertex, instances);
+    }
 }
 
 /// Trait for custom wgpu rendering inside a `repose` layout rect.
@@ -169,7 +259,7 @@ pub trait WgpuCallback: Send + Sync + 'static {
     fn paint(
         &self,
         info: PaintCallbackInfo,
-        render_pass: &mut wgpu::RenderPass<'static>,
+        render_pass: &mut CallbackRenderPass<'_, '_>,
         resources: &CallbackResources,
     );
 }

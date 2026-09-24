@@ -6,27 +6,55 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-fn scope_key(state_id: usize, key: u64) -> String {
-    format!("lazy_{:x}_{}", state_id, key)
+fn item_scope_key(state_id: usize, key: u64) -> String {
+    format!("lazy_{:x}_item_{}", state_id, key)
 }
 
-fn scope_item(mut view: View, key: u64, state_id: usize) -> View {
-    view.scope_key = Some(scope_key(state_id, key));
-    view.modifier.key = Some(key);
+fn exit_scope_key(state_id: usize, key: u64, version: u64) -> String {
+    format!("lazy_{:x}_exit_{}_{}", state_id, key, version)
+}
+
+fn scoped_item_with_key<F>(full_key: String, item_key: u64, revision: u64, build: F) -> View
+where
+    F: FnOnce() -> View,
+{
+    if !repose_core::scope_cache::should_run(&full_key, revision) {
+        let mut scheduler = repose_core::runtime::Scheduler::new();
+        return repose_core::scope_cache::get_cached(&full_key, &mut scheduler);
+    }
+    repose_core::scope_cache::clear_scope_deps(&full_key);
+    let previous = repose_core::runtime::COMPOSER.with(|composer| composer.borrow().cursor);
+    let mut view = repose_core::scope_cache::with_scope_key(&full_key, build);
+    let next = repose_core::runtime::COMPOSER.with(|composer| composer.borrow().cursor);
+    view.scope_key = Some(full_key.clone());
+    view.modifier.key = Some(item_key);
     view.modifier.repaint_boundary = true;
+    let slot_delta = next - previous;
+    repose_core::scope_cache::set_cache(&full_key, revision, view.clone(), slot_delta);
     view
 }
 
-fn scope_item_static(mut view: View, key: u64, state_id: usize) -> View {
-    view.scope_key = Some(scope_key(state_id, key));
-    view.modifier.key = Some(key);
-    view
+fn scoped_item<F>(key: u64, state_id: usize, revision: u64, build: F) -> View
+where
+    F: FnOnce() -> View,
+{
+    scoped_item_with_key(item_scope_key(state_id, key), key, revision, build)
+}
+
+struct ExitingItem<T> {
+    key: u64,
+    item: T,
+    data_index: usize,
+    version: u64,
+    top_px: f32,
+    height_px: f32,
 }
 
 struct AnimState<T> {
     prev_keys: Vec<u64>,
-    exiting: Vec<(u64, usize, T, u64, f32)>,
-    item_cache: HashMap<u64, T>,
+    item_cache: HashMap<u64, (T, usize, f32, f32)>,
+    exiting: Vec<ExitingItem<T>>,
+    next_exit_version: u64,
 }
 
 /// Virtualized list - only renders visible items.
@@ -139,6 +167,136 @@ where
     let last_with_buffer = (last_visible + buffer).min(items.len());
 
     let mut combined_children: Vec<View> = Vec::new();
+    let mut exit_views: Vec<View> = Vec::new();
+    let mut exit_extent_px = 0.0_f32;
+    let state_id = Rc::as_ptr(&state) as usize;
+    let current_keys: Vec<u64> = items.iter().map(&get_key).collect();
+    let current_key_set: std::collections::HashSet<u64> = current_keys.iter().copied().collect();
+    let current_geometry: Vec<(f32, f32)> = items
+        .iter()
+        .enumerate()
+        .map(|(index, item)| {
+            (
+                padding_top_px + cumulative_px[index],
+                Dp(item_height.get(item).max(1.0)).to_px().0,
+            )
+        })
+        .collect();
+    let mut entering = std::collections::HashSet::new();
+    let animation_id = state_id as u64;
+    let animation_spec = animate_spec;
+
+    let animation_slot = animation_spec.map(|_| {
+        remember(|| {
+            RefCell::new(AnimState::<T> {
+                prev_keys: Vec::new(),
+                item_cache: HashMap::new(),
+                exiting: Vec::new(),
+                next_exit_version: 1,
+            })
+        })
+    });
+    if let (Some(state_slot), Some(spec)) = (&animation_slot, animation_spec) {
+        let mut animation = state_slot.borrow_mut();
+        let had_prev = !animation.prev_keys.is_empty();
+        for (index, item) in items.iter().enumerate() {
+            animation.item_cache.insert(
+                get_key(item),
+                (
+                    item.clone(),
+                    to_data_idx(index),
+                    current_geometry[index].0,
+                    current_geometry[index].1,
+                ),
+            );
+        }
+        if had_prev {
+            entering.extend(
+                current_keys
+                    .iter()
+                    .filter(|key| !animation.prev_keys.contains(key))
+                    .copied(),
+            );
+            let previous_keys = animation.prev_keys.clone();
+            for key in &previous_keys {
+                if current_key_set.contains(key) {
+                    continue;
+                }
+                let Some((item, data_index, top_px, height_px)) =
+                    animation.item_cache.get(key).cloned()
+                else {
+                    continue;
+                };
+                let version = animation.next_exit_version;
+                animation.next_exit_version = animation.next_exit_version.wrapping_add(1);
+                animation.exiting.push(ExitingItem {
+                    key: *key,
+                    item,
+                    data_index,
+                    version,
+                    top_px,
+                    height_px,
+                });
+            }
+        }
+
+        let mut still_exiting = Vec::new();
+        for exit in animation.exiting.drain(..) {
+            if current_key_set.contains(&exit.key) {
+                continue;
+            }
+            let alpha = animate_f32_from(
+                format!("_lz_x:{animation_id}:{}:v{}", exit.key, exit.version),
+                1.0,
+                0.0,
+                spec,
+            );
+            if alpha <= 0.005 {
+                continue;
+            }
+            exit_extent_px = exit_extent_px.max(exit.top_px + exit.height_px);
+            let visible = exit.top_px + exit.height_px > scroll_offset_px
+                && exit.top_px < scroll_offset_px + viewport_height_px;
+            if visible {
+                let revision = state.cache_revision_for_with(
+                    exit.key,
+                    &exit.item as *const T as usize,
+                    exit.height_px,
+                    alpha.to_bits() as u64,
+                );
+                let full_key = exit_scope_key(state_id, exit.key, exit.version);
+                let top = Px(exit.top_px).to_dp().0.max(0.0);
+                let height = Px(exit.height_px).to_dp().0.max(0.0);
+                let exiting_item = &exit.item;
+                let data_index = exit.data_index;
+                let item_builder_ref = &item_builder;
+                exit_views.push(scoped_item_with_key(
+                    full_key,
+                    exit.key,
+                    revision,
+                    move || {
+                        crate::Box(
+                            Modifier::new()
+                                .absolute()
+                                .offset(Some(Dp::ZERO), Some(Dp(top)), None, None)
+                                .fill_max_width()
+                                .height(Dp(height))
+                                .alpha(alpha),
+                        )
+                        .child(item_builder_ref(exiting_item.clone(), data_index))
+                    },
+                ));
+            }
+            still_exiting.push(exit);
+        }
+        animation.exiting = still_exiting;
+        let active_exit_keys: std::collections::HashSet<u64> =
+            animation.exiting.iter().map(|exit| exit.key).collect();
+        animation
+            .item_cache
+            .retain(|key, _| current_key_set.contains(key) || active_exit_keys.contains(key));
+        animation.prev_keys = current_keys;
+    }
 
     let top_padding_dp = Px(padding_top_px).to_dp().0.max(0.0);
     if top_padding_dp > 0.0 {
@@ -146,7 +304,6 @@ where
             Modifier::new().fill_max_width().height(Dp(top_padding_dp)),
         ));
     }
-
     if first_with_buffer > 0 {
         let top_spacer_px = cumulative_px[first_with_buffer];
         if top_spacer_px > 0.0 {
@@ -157,180 +314,58 @@ where
             ));
         }
     }
-
-    let total_slots: usize;
-    if let Some(spec) = animate_spec {
-        let inst = remember(|| std::cell::Cell::new(0u64));
-        if inst.get() == 0 {
-            static CTR: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
-            inst.set(CTR.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
-        }
-        let aid = inst.get();
-
-        let state_slot: Rc<RefCell<AnimState<T>>> = remember(|| {
-            RefCell::new(AnimState {
-                prev_keys: Vec::new(),
-                exiting: Vec::new(),
-                item_cache: HashMap::new(),
-            })
-        });
-
-        let mut s = state_slot.borrow_mut();
-
-        let curr_keys: Vec<u64> = items.iter().map(&get_key).collect();
-
-        let added: Vec<u64> = curr_keys
-            .iter()
-            .filter(|k| !s.prev_keys.contains(k))
-            .copied()
-            .collect();
-        let removed: Vec<(usize, u64)> = s
-            .prev_keys
-            .iter()
-            .enumerate()
-            .filter(|(_, k)| !curr_keys.contains(k))
-            .map(|(i, k)| (i, *k))
-            .collect();
-
-        let had_prev = !s.prev_keys.is_empty();
-
-        if had_prev && !removed.is_empty() {
-            for (old_idx, key) in &removed {
-                if let Some(old_item) = s.item_cache.get(key) {
-                    let v = s.exiting.len() as u64;
-                    let h_dp = item_height.get(old_item).max(1.0);
-                    let cloned = old_item.clone();
-                    s.exiting.push((*key, *old_idx, cloned, v, h_dp));
-                }
-            }
-        }
-
-        for item in &items {
-            s.item_cache.insert(get_key(item), item.clone());
-        }
-
-        let mut still_exiting: Vec<(u64, usize, T, u64, f32)> = Vec::new();
-        for (key, old_idx, old_item, version, h_dp) in s.exiting.iter() {
-            let exit_key = format!("_lz_x:{aid}:{key}:v{version}");
-            let alpha = animate_f32_from(exit_key, 1.0, 0.0, spec);
-            if alpha > 0.005 {
-                still_exiting.push((*key, *old_idx, old_item.clone(), *version, *h_dp));
-            }
-        }
-
-        let max_exit_slot = still_exiting
-            .iter()
-            .map(|(_, i, _, _, _)| *i)
-            .max()
-            .unwrap_or(0);
-        let vis_end = last_with_buffer.max(max_exit_slot + 1 + buffer);
-        total_slots = items.len().max(max_exit_slot + 1);
-
-        let state_id = Rc::as_ptr(&state) as usize;
-        let avg_item_px = if total_slots > 0 {
-            (content_height_px - padding_top_px - padding_bottom_px).max(0.0)
-                / total_slots.max(1) as f32
-        } else {
-            0.0
+    for visual_index in first_with_buffer..last_with_buffer {
+        let Some(item) = items.get(visual_index) else {
+            continue;
         };
-        for visual_i in first_with_buffer..vis_end {
-            let entry = still_exiting
-                .iter()
-                .find(|(_, oi, _, _, _)| *oi == visual_i);
-            if let Some((key, old_idx, old_item, version, exit_h_dp)) = entry {
-                let ek = format!("_lz_x:{aid}:{key}:v{version}");
-                let alpha = animate_f32_from(ek, 1.0, 0.0, spec);
-                let exit_top_px = cumulative_px
-                    .get(*old_idx)
-                    .copied()
-                    .unwrap_or(*old_idx as f32 * avg_item_px);
-                let exit_bottom_px = exit_top_px + Dp(*exit_h_dp).to_px().0;
-                let in_view =
-                    exit_bottom_px > padded_visible_start && exit_top_px < padded_visible_end;
-                if in_view {
-                    let exit_view = item_builder(old_item.clone(), *old_idx);
-                    combined_children.push(scope_item(
-                        crate::Box(
-                            Modifier::new()
-                                .fill_max_width()
-                                .height(Dp(*exit_h_dp))
-                                .alpha(alpha),
-                        )
-                        .child(exit_view),
-                        *key,
-                        state_id,
-                    ));
-                }
-            }
-            if visual_i < items.len()
-                && let Some(item) = items.get(visual_i)
-            {
-                let key = get_key(item);
-                let h_dp = item_height.get(item).max(1.0);
-                let data_i = to_data_idx(visual_i);
-                if had_prev && added.contains(&key) {
-                    let enter_key = format!("_lz_n:{aid}:{key}");
-                    let alpha = animate_f32_from(enter_key, 0.0, 1.0, spec);
-                    combined_children.push(scope_item(
-                        crate::Box(
-                            Modifier::new()
-                                .fill_max_width()
-                                .height(Dp(h_dp))
-                                .alpha(alpha),
-                        )
-                        .child(item_builder(item.clone(), data_i)),
-                        key,
-                        state_id,
-                    ));
-                } else {
-                    combined_children.push(scope_item(
-                        crate::Box(Modifier::new().fill_max_width().height(Dp(h_dp)))
-                            .child(item_builder(item.clone(), data_i)),
-                        key,
-                        state_id,
-                    ));
-                }
-            }
-        }
-
-        s.exiting = still_exiting;
-        s.prev_keys = curr_keys;
-    } else {
-        let state_id = Rc::as_ptr(&state) as usize;
-        for i in first_with_buffer..last_with_buffer {
-            if let Some(item) = items.get(i) {
-                let h_dp = item_height.get(item).max(1.0);
-                let key = get_key(item);
-                combined_children.push(scope_item_static(
-                    crate::Box(Modifier::new().fill_max_width().height(Dp(h_dp)))
-                        .child(item_builder(item.clone(), to_data_idx(i))),
-                    key,
-                    state_id,
-                ));
-            }
-        }
-        total_slots = items.len();
-    }
-
-    let rendered_items = combined_children.len()
-        - (if first_with_buffer > 0 { 1 } else { 0 })
-        - (if top_padding_dp > 0.0 { 1 } else { 0 });
-    if first_with_buffer + rendered_items < total_slots {
-        let end_px = cumulative_px
-            .get(first_with_buffer + rendered_items)
-            .copied()
-            .unwrap_or(content_height_px - padding_top_px - padding_bottom_px);
-        let remaining_px =
-            (content_height_px - padding_top_px - padding_bottom_px - end_px).max(0.0);
-        if remaining_px > 0.0 {
-            combined_children.push(crate::Box(
-                Modifier::new()
-                    .fill_max_width()
-                    .height(Dp(Px(remaining_px).to_dp().0.max(0.0))),
-            ));
+        let key = get_key(item);
+        let height_dp = item_height.get(item).max(1.0);
+        let data_index = to_data_idx(visual_index);
+        let is_entering = entering.contains(&key);
+        let alpha = if is_entering {
+            animation_spec.map_or(1.0, |spec| {
+                animate_f32_from(format!("_lz_n:{animation_id}:{key}"), 0.0, 1.0, spec)
+            })
+        } else {
+            1.0
+        };
+        let variation = is_entering.then_some(alpha.to_bits() as u64).unwrap_or(0);
+        let revision = state.cache_revision_for_with(
+            key,
+            item as *const T as usize,
+            Dp(height_dp).to_px().0,
+            variation,
+        );
+        let item_builder_ref = &item_builder;
+        if is_entering {
+            combined_children.push(scoped_item(key, state_id, revision, move || {
+                crate::Box(
+                    Modifier::new()
+                        .fill_max_width()
+                        .height(Dp(height_dp))
+                        .alpha(alpha),
+                )
+                .child(item_builder_ref(item.clone(), data_index))
+            }));
+        } else {
+            combined_children.push(scoped_item(key, state_id, revision, move || {
+                crate::Box(Modifier::new().fill_max_width().height(Dp(height_dp)))
+                    .child(item_builder_ref(item.clone(), data_index))
+            }));
         }
     }
-
+    let bottom_start_px = cumulative_px
+        .get(last_with_buffer)
+        .copied()
+        .unwrap_or_else(|| cumulative_px.last().copied().unwrap_or(0.0));
+    let remaining_px = (cumulative_px.last().copied().unwrap_or(0.0) - bottom_start_px).max(0.0);
+    if remaining_px > 0.0 {
+        combined_children.push(crate::Box(
+            Modifier::new()
+                .fill_max_width()
+                .height(Dp(Px(remaining_px).to_dp().0.max(0.0))),
+        ));
+    }
     let bottom_padding_dp = Px(padding_bottom_px).to_dp().0.max(0.0);
     if bottom_padding_dp > 0.0 {
         combined_children.push(crate::Box(
@@ -339,8 +374,24 @@ where
                 .height(Dp(bottom_padding_dp)),
         ));
     }
+    let extra_exit_px = (exit_extent_px - content_height_px).max(0.0);
+    if extra_exit_px > 0.0 {
+        combined_children.push(crate::Box(
+            Modifier::new()
+                .fill_max_width()
+                .height(Dp(Px(extra_exit_px).to_dp().0.max(0.0))),
+        ));
+    }
 
     let content = crate::View::new(0, ViewKind::Column).with_children(combined_children);
+    let content = if exit_views.is_empty() {
+        content
+    } else {
+        crate::View::new(0, ViewKind::ZStack)
+            .modifier(Modifier::new().fill_max_width())
+            .child(content)
+            .with_children(exit_views)
+    };
 
     let on_scroll = {
         let st = state.clone();
@@ -363,6 +414,7 @@ where
             let h = h_px.max(0.0);
             if (st.viewport_height.get() - h).abs() > 0.5 {
                 st.viewport_height.set(h);
+                repose_core::request_frame();
             }
         })
     };
@@ -387,6 +439,7 @@ where
             if (st.content_height.get() - h_px).abs() > 0.5 {
                 st.content_height.set(h_px);
                 st.set_offset(st.scroll_offset.get(), h_px);
+                repose_core::request_frame();
             }
         })
     };
@@ -422,7 +475,7 @@ where
             set_content_main: Some(Rc::new(move |h| measured_h_px(h))),
             get_offset_main: Some(get_scroll),
             set_offset_main: Some(set_scroll),
-            show_scrollbar: true,
+            show_scrollbar: user_scroll_enabled,
             tick: tick_scroll,
             set_nested_scroll_parent: Some(set_nested_scroll_parent),
         }))
@@ -547,11 +600,12 @@ where
                 } else {
                     visual_i
                 };
-                scope_item(
-                    item_builder(items[data_i].clone(), data_i),
-                    data_i as u64,
-                    state_id,
-                )
+                let item = &items[data_i];
+                let revision =
+                    state.cache_revision_for(data_i as u64, item as *const T as usize, item_h_px);
+                scoped_item(data_i as u64, state_id, revision, || {
+                    item_builder(items[data_i].clone(), data_i)
+                })
             })
             .collect();
 
@@ -595,7 +649,13 @@ where
 
     let set_viewport = {
         let st = state.clone();
-        Rc::new(move |h: f32| st.viewport_height.set(h.max(0.0)))
+        Rc::new(move |h: f32| {
+            let h = h.max(0.0);
+            if (st.viewport_height.get() - h).abs() > 0.5 {
+                st.viewport_height.set(h);
+                repose_core::request_frame();
+            }
+        })
     };
 
     let get_scroll = {
@@ -617,6 +677,7 @@ where
             if (st.content_height.get() - h).abs() > 0.5 {
                 st.content_height.set(h);
                 st.set_offset(st.scroll_offset.get(), h);
+                repose_core::request_frame();
             }
         })
     };
@@ -654,7 +715,7 @@ where
             set_content_main: Some(Rc::new(move |h| measured_h(h))),
             get_offset_main: Some(get_scroll),
             set_offset_main: Some(set_scroll),
-            show_scrollbar: true,
+            show_scrollbar: user_scroll_enabled,
             tick: tick_scroll,
             set_nested_scroll_parent: Some(set_nested_scroll_parent),
         }))
@@ -753,6 +814,7 @@ where
         let visible_count = last_item - first_item;
         let total_chunks = visible_count.div_ceil(rows);
         let state_id = Rc::as_ptr(&state) as usize;
+        let state = &state;
         let n = items.len();
         let chunked: Vec<Vec<View>> = (0..total_chunks)
             .map(|ci| {
@@ -765,11 +827,15 @@ where
                         } else {
                             visual_i
                         };
-                        scope_item(
-                            item_builder(items[data_i].clone(), data_i),
+                        let item = &items[data_i];
+                        let revision = state.cache_revision_for(
                             data_i as u64,
-                            state_id,
-                        )
+                            item as *const T as usize,
+                            item_w_px,
+                        );
+                        scoped_item(data_i as u64, state_id, revision, || {
+                            item_builder(items[data_i].clone(), data_i)
+                        })
                     })
                     .collect()
             })
@@ -832,6 +898,7 @@ where
             let w = w_px.max(0.0);
             if (st.viewport_width.get() - w).abs() > 0.5 {
                 st.viewport_width.set(w);
+                repose_core::request_frame();
             }
         })
     };
@@ -842,18 +909,19 @@ where
             if (st.content_width.get() - w).abs() > 0.5 {
                 st.content_width.set(w);
                 st.set_offset_x(st.scroll_offset.get(), w);
+                repose_core::request_frame();
             }
         })
     };
 
     let get_scroll = {
         let st = state.clone();
-        Rc::new(move || -> (f32, f32) { (st.scroll_offset.get(), 0.0) })
+        Rc::new(move || -> f32 { st.scroll_offset.get() })
     };
 
     let set_scroll = {
         let st = state.clone();
-        Rc::new(move |x: f32, _y: f32| {
+        Rc::new(move |x: f32| {
             let cw = st.content_width.get();
             st.set_offset_x(x, if cw > 0.0 { cw } else { content_width_px });
         })
@@ -887,15 +955,13 @@ where
         Rc::new(move |conn| st.set_nested_scroll_parent(conn))
     };
     View::new(0, ViewKind::Box)
-        .modifier(modifier.scrollable(ScrollBothBinding {
+        .modifier(modifier.horizontal_scroll(ScrollAxisBinding {
             on_scroll,
-            set_viewport_width: Some(set_viewport_w),
-            set_viewport_height: None,
-            set_content_width: Some(set_content_w),
-            set_content_height: None,
-            get_offset_xy: Some(get_scroll),
-            set_offset_xy: Some(set_scroll),
-            show_scrollbar: true,
+            set_viewport_main: Some(set_viewport_w),
+            set_content_main: Some(set_content_w),
+            get_offset_main: Some(get_scroll),
+            set_offset_main: Some(set_scroll),
+            show_scrollbar: user_scroll_enabled,
             tick: tick_scroll,
             set_nested_scroll_parent: Some(set_nested_scroll_parent),
         }))
@@ -990,11 +1056,11 @@ where
         }
         let data_i = to_data_idx(i);
         if let Some(item) = items.get(data_i) {
-            children.push(scope_item(
-                item_builder(item.clone(), data_i),
-                data_i as u64,
-                state_id,
-            ));
+            let revision =
+                state.cache_revision_for(data_i as u64, item as *const T as usize, item_w_px);
+            children.push(scoped_item(data_i as u64, state_id, revision, || {
+                item_builder(item.clone(), data_i)
+            }));
         }
     }
 
@@ -1036,6 +1102,7 @@ where
             let w = w_px.max(0.0);
             if (st.viewport_width.get() - w).abs() > 0.5 {
                 st.viewport_width.set(w);
+                repose_core::request_frame();
             }
         })
     };
@@ -1046,18 +1113,19 @@ where
             if (st.content_width.get() - w).abs() > 0.5 {
                 st.content_width.set(w);
                 st.set_offset(st.scroll_offset.get(), w);
+                repose_core::request_frame();
             }
         })
     };
 
     let get_scroll = {
         let st = state.clone();
-        Rc::new(move || -> (f32, f32) { (st.scroll_offset.get(), 0.0) })
+        Rc::new(move || -> f32 { st.scroll_offset.get() })
     };
 
     let set_scroll = {
         let st = state.clone();
-        Rc::new(move |x: f32, _y: f32| {
+        Rc::new(move |x: f32| {
             let cw = st.content_width.get();
             st.set_offset(x, if cw > 0.0 { cw } else { content_width_px });
         })
@@ -1091,15 +1159,13 @@ where
         Rc::new(move |conn| st.set_nested_scroll_parent(conn))
     };
     View::new(0, ViewKind::Box)
-        .modifier(modifier.scrollable(ScrollBothBinding {
+        .modifier(modifier.horizontal_scroll(ScrollAxisBinding {
             on_scroll,
-            set_viewport_width: Some(set_viewport_w),
-            set_viewport_height: None,
-            set_content_width: Some(set_content_w),
-            set_content_height: None,
-            get_offset_xy: Some(get_scroll),
-            set_offset_xy: Some(set_scroll),
-            show_scrollbar: true,
+            set_viewport_main: Some(set_viewport_w),
+            set_content_main: Some(set_content_w),
+            get_offset_main: Some(get_scroll),
+            set_offset_main: Some(set_scroll),
+            show_scrollbar: user_scroll_enabled,
             tick: tick_scroll,
             set_nested_scroll_parent: Some(set_nested_scroll_parent),
         }))
@@ -1274,12 +1340,12 @@ where
                     vis_bot > scroll_offset_px && vis_top < scroll_offset_px + viewport_height_px;
                 let data_i = to_data_idx(i);
                 if in_view {
-                    col_child.push(scope_item(
+                    let revision =
+                        state.cache_revision_for(data_i as u64, item as *const T as usize, p.h_px);
+                    col_child.push(scoped_item(data_i as u64, state_id, revision, || {
                         crate::Box(Modifier::new().fill_max_width().height(Dp(h_dp)))
-                            .child(item_builder(item.clone(), data_i)),
-                        data_i as u64,
-                        state_id,
-                    ));
+                            .child(item_builder(item.clone(), data_i))
+                    }));
                 } else {
                     col_child.push(crate::Box(
                         Modifier::new().fill_max_width().height(Dp(h_dp)),
@@ -1336,6 +1402,7 @@ where
             let h = h_px.max(0.0);
             if (st.viewport_height.get() - h).abs() > 0.5 {
                 st.viewport_height.set(h);
+                repose_core::request_frame();
             }
         })
     };
@@ -1359,6 +1426,7 @@ where
             if (st.content_height.get() - h).abs() > 0.5 {
                 st.content_height.set(h);
                 st.set_offset(st.scroll_offset.get(), h);
+                repose_core::request_frame();
             }
         })
     };
@@ -1395,7 +1463,7 @@ where
             set_content_main: Some(Rc::new(move |h| measured_h(h))),
             get_offset_main: Some(get_scroll),
             set_offset_main: Some(set_scroll),
-            show_scrollbar: true,
+            show_scrollbar: user_scroll_enabled,
             tick: tick_scroll,
             set_nested_scroll_parent: Some(set_nested_scroll_parent),
         }))

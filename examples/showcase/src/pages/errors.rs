@@ -12,7 +12,11 @@ pub fn screen() -> View {
         Column(Modifier::new().padding(sp::MD).gap(sp::MD)).child((
             // Controls always composed - never inside the failing leaf, so Reset
             // survives the trip.
-            Row(Modifier::new().gap(sp::MD)).child((
+            FlowRow(
+                Modifier::new().fill_max_width().gap(sp::MD),
+                FlowRowConfig::default(),
+            )
+            .child((
                 TextButton(
                     Modifier::new(),
                     {
@@ -60,11 +64,8 @@ pub fn screen() -> View {
                             // WASM-safe trip (panic unwinding is unreliable on web);
                             // native catch_unwind remains as a backup path.
                             throw_boundary("Boom from demo component!");
-                            // Unreachable placeholder.
-                            Text("Hi")
-                        } else {
-                            Text("Press Throw to trip the boundary.")
                         }
+                        Text("Press Throw to trip the boundary.")
                     }
                 },
             ),

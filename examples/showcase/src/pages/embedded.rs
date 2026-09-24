@@ -1,7 +1,9 @@
 use repose_canvas::Embedded;
 use repose_core::PaintCallbackInfo;
 use repose_core::prelude::*;
-use repose_render_wgpu::{Callback, CallbackResources, ScreenDescriptor, WgpuCallback};
+use repose_render_wgpu::{
+    Callback, CallbackRenderPass, CallbackResources, ScreenDescriptor, WgpuCallback,
+};
 use repose_ui::*;
 
 use crate::ui::{Hint, Page, Section, sp};
@@ -200,7 +202,7 @@ impl WgpuCallback for DemoTriangle {
     fn paint(
         &self,
         _info: PaintCallbackInfo,
-        rpass: &mut wgpu::RenderPass<'static>,
+        rpass: &mut CallbackRenderPass<'_, '_>,
         resources: &CallbackResources,
     ) {
         if let Some(res) = resources.get::<TriangleResources>() {
@@ -229,7 +231,7 @@ pub fn screen() -> View {
                 Hint("Drag in any direction (directly scooped from egui, though bottom-up rotation wouldn't work as intended for the same reason) horizontal = yaw, vertical = pitch. prepare uploads vec2 uniform, paint draws with perspective + per-vertex gradient. Viewport = layout rect.")
                     .color(theme().on_surface_variant)
                     .size(Sp(12.0)),
-                Row(Modifier::new().gap(sp::SM)).child((
+                FlowRow(Modifier::new().fill_max_width().gap(sp::SM), FlowRowConfig::default()).child((
                     Text(format!("yaw {:.2} pitch {:.2} rad", angle.get().x, angle.get().y)),
                     Text(format!("drag ({:.0}, {:.0})", drag_pos.get().x, drag_pos.get().y))
                         .color(theme().on_surface_variant)
@@ -237,7 +239,9 @@ pub fn screen() -> View {
                 )),
                 Embedded(
                     Modifier::new()
-                        .size(Dp(560.0), Dp(220.0))
+                        .fill_max_width()
+                        .max_width(Dp(560.0))
+                        .height(Dp(220.0))
                         .background(theme().surface_container_low)
                         .border(Dp(1.0), theme().outline_variant, Dp(16.0))
                         .clip_rounded(Dp(16.0))
@@ -251,6 +255,12 @@ pub fn screen() -> View {
                             }
                         })
                         .on_pointer_up({
+                            let is_dragging = is_dragging.clone();
+                            move |_ev: PointerEvent| {
+                                is_dragging.set(false);
+                            }
+                        })
+                        .on_pointer_cancel({
                             let is_dragging = is_dragging.clone();
                             move |_ev: PointerEvent| {
                                 is_dragging.set(false);

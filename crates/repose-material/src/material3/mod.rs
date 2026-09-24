@@ -96,12 +96,13 @@ pub(crate) fn alert_dialog_body(
     text: View,
     confirm_button: View,
     dismiss_button: Option<View>,
+    horizontal_padding: Dp,
 ) -> View {
     Column(
         Modifier::new()
             .padding_values(PaddingValues {
-                left: Dp(24.0),
-                right: Dp(24.0),
+                left: horizontal_padding,
+                right: horizontal_padding,
                 top: Dp(24.0),
                 bottom: Dp(24.0),
             })

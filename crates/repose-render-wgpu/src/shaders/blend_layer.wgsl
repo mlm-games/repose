@@ -56,8 +56,10 @@ fn vs_main(
 @group(2) @binding(1) var dst_samp: sampler;
 
 fn unpremult(c: vec4<f32>) -> vec4<f32> {
-    let a = max(c.a, 1e-6);
-    return vec4(c.rgb / a, c.a);
+    if (c.a <= 0.0) {
+        return vec4<f32>(0.0);
+    }
+    return vec4<f32>(c.rgb / c.a, c.a);
 }
 
 fn lum(c: vec3<f32>) -> f32 {
@@ -122,8 +124,23 @@ fn overlay_channel(s: f32, d: f32) -> f32 {
 
 fn blend_channel(mode: u32, s: f32, d: f32) -> f32 {
     switch (mode) {
+        case 1u: { // Add
+            return s + d;
+        }
+        case 2u: { // Multiply
+            return s * d;
+        }
+        case 3u: { // Screen
+            return s + d - s * d;
+        }
         case 4u: { // Overlay
             return overlay_channel(s, d);
+        }
+        case 5u: { // Darken
+            return min(s, d);
+        }
+        case 6u: { // Lighten
+            return max(s, d);
         }
         case 7u: { // ColorDodge
             if (d <= 0.0) {
@@ -229,9 +246,11 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
     } else {
         blended = blend_separable(in.mode, src.rgb, dst.rgb);
     }
-    // Composite the blended color with the source alpha (CSS: the blend
-    // result replaces the source, then composites source-over).
-    let mixed = mix(dst.rgb, blended, src.a);
-    let out_a = src.a + dst.a * (1.0 - src.a);
-    return vec4(mixed * out_a, out_a);
+    let src_a = src.a;
+    let dst_a = dst.a;
+    let out_a = src_a + dst_a * (1.0 - src_a);
+    let composited = src.rgb * (src_a * (1.0 - dst_a))
+        + blended * (src_a * dst_a)
+        + dst.rgb * ((1.0 - src_a) * dst_a);
+    return vec4(composited, out_a);
 }

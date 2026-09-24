@@ -10,6 +10,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use slotmap::Key;
 use slotmap::SlotMap;
 use smallvec::SmallVec;
+use std::rc::Rc;
 use std::sync::Arc;
 
 /// A persistent view tree that supports incremental updates.
@@ -22,6 +23,8 @@ pub struct ViewTree {
 
     /// Nodes that need re-layout.
     dirty: FxHashSet<NodeId>,
+
+    paint_dirty: FxHashSet<NodeId>,
 
     /// Current generation (frame counter).
     generation: u64,
@@ -47,13 +50,259 @@ pub struct ViewTree {
     subcompose_cache: FxHashMap<NodeId, (SubcomposeScope, Vec<(u64, View)>)>,
     /// Per-frame re-invocation counts for oscillation damping
     /// (node -> (generation, count)).
-    subcompose_runs: FxHashMap<NodeId, (u64, u8)>,
+    subcompose_runs: FxHashMap<NodeId, (u64, u8, SubcomposeScope)>,
 }
 
 impl Default for ViewTree {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn rc_identity_changed<T: ?Sized>(old: &Option<Rc<T>>, new: &Option<Rc<T>>) -> bool {
+    match (old, new) {
+        (Some(old), Some(new)) => !Rc::ptr_eq(old, new),
+        (None, None) => false,
+        _ => true,
+    }
+}
+
+fn arc_identity_changed<T: ?Sized>(old: &Option<Arc<T>>, new: &Option<Arc<T>>) -> bool {
+    match (old, new) {
+        (Some(old), Some(new)) => !Arc::ptr_eq(old, new),
+        (None, None) => false,
+        _ => true,
+    }
+}
+
+#[derive(Clone, Copy, Default)]
+struct IdentityChange {
+    paint: bool,
+    layout: bool,
+    subcompose: bool,
+}
+
+impl IdentityChange {
+    fn merge(&mut self, other: Self) {
+        self.paint |= other.paint;
+        self.layout |= other.layout;
+        self.subcompose |= other.subcompose;
+    }
+}
+
+fn focus_requester_changed(
+    old: &Option<repose_core::FocusRequester>,
+    new: &Option<repose_core::FocusRequester>,
+) -> bool {
+    match (old, new) {
+        (Some(old), Some(new)) => !Rc::ptr_eq(&old.target, &new.target),
+        (None, None) => false,
+        _ => true,
+    }
+}
+
+fn interaction_source_changed(
+    old: &Option<repose_core::InteractionSource>,
+    new: &Option<repose_core::InteractionSource>,
+) -> bool {
+    match (old, new) {
+        (Some(old), Some(new)) => old.stable_id() != new.stable_id(),
+        (None, None) => false,
+        _ => true,
+    }
+}
+
+fn scroll_axis_identity_changed(
+    old: &repose_core::scroll::ScrollAxisBinding,
+    new: &repose_core::scroll::ScrollAxisBinding,
+) -> bool {
+    rc_identity_changed(&old.on_scroll, &new.on_scroll)
+        || rc_identity_changed(&old.set_viewport_main, &new.set_viewport_main)
+        || rc_identity_changed(&old.set_content_main, &new.set_content_main)
+        || rc_identity_changed(&old.get_offset_main, &new.get_offset_main)
+        || rc_identity_changed(&old.set_offset_main, &new.set_offset_main)
+        || rc_identity_changed(&old.tick, &new.tick)
+        || rc_identity_changed(&old.set_nested_scroll_parent, &new.set_nested_scroll_parent)
+}
+
+fn scroll_identity_changed(
+    old: &Option<repose_core::ScrollBinding>,
+    new: &Option<repose_core::ScrollBinding>,
+) -> bool {
+    match (old, new) {
+        (
+            Some(repose_core::ScrollBinding::Vertical(old)),
+            Some(repose_core::ScrollBinding::Vertical(new)),
+        ) => scroll_axis_identity_changed(old, new),
+        (
+            Some(repose_core::ScrollBinding::Horizontal(old)),
+            Some(repose_core::ScrollBinding::Horizontal(new)),
+        ) => scroll_axis_identity_changed(old, new),
+        (
+            Some(repose_core::ScrollBinding::Both(old)),
+            Some(repose_core::ScrollBinding::Both(new)),
+        ) => {
+            rc_identity_changed(&old.on_scroll, &new.on_scroll)
+                || rc_identity_changed(&old.set_viewport_width, &new.set_viewport_width)
+                || rc_identity_changed(&old.set_viewport_height, &new.set_viewport_height)
+                || rc_identity_changed(&old.set_content_width, &new.set_content_width)
+                || rc_identity_changed(&old.set_content_height, &new.set_content_height)
+                || rc_identity_changed(&old.get_offset_xy, &new.get_offset_xy)
+                || rc_identity_changed(&old.set_offset_xy, &new.set_offset_xy)
+                || rc_identity_changed(&old.tick, &new.tick)
+                || rc_identity_changed(&old.set_nested_scroll_parent, &new.set_nested_scroll_parent)
+        }
+        (None, None) => false,
+        _ => true,
+    }
+}
+
+fn cursor_identity_changed(
+    old: &Option<repose_core::CursorIcon>,
+    new: &Option<repose_core::CursorIcon>,
+) -> bool {
+    match (old, new) {
+        (
+            Some(repose_core::CursorIcon::Custom(old)),
+            Some(repose_core::CursorIcon::Custom(new)),
+        ) => !std::sync::Arc::ptr_eq(old, new) || old != new,
+        (None, None) => false,
+        _ => true,
+    }
+}
+
+fn text_input_identity_change(
+    old: Option<&repose_core::TextInputConfig>,
+    new: Option<&repose_core::TextInputConfig>,
+) -> IdentityChange {
+    let (Some(old), Some(new)) = (old, new) else {
+        return IdentityChange {
+            paint: old.is_some() != new.is_some(),
+            layout: old.is_some() != new.is_some(),
+            subcompose: false,
+        };
+    };
+    let mut change = IdentityChange::default();
+    if rc_identity_changed(&old.on_change, &new.on_change)
+        || rc_identity_changed(&old.on_submit, &new.on_submit)
+        || rc_identity_changed(&old.on_text_layout, &new.on_text_layout)
+        || rc_identity_changed(&old.focus_tracker, &new.focus_tracker)
+        || interaction_source_changed(&old.interaction_source, &new.interaction_source)
+    {
+        change.paint = true;
+    }
+    if rc_identity_changed(&old.visual_transformation, &new.visual_transformation) {
+        change.paint = true;
+        change.layout = true;
+    }
+    match (&old.keyboard_actions, &new.keyboard_actions) {
+        (Some(old), Some(new)) => {
+            if rc_identity_changed(&old.on_done, &new.on_done)
+                || rc_identity_changed(&old.on_go, &new.on_go)
+                || rc_identity_changed(&old.on_next, &new.on_next)
+                || rc_identity_changed(&old.on_previous, &new.on_previous)
+                || rc_identity_changed(&old.on_search, &new.on_search)
+                || rc_identity_changed(&old.on_send, &new.on_send)
+            {
+                change.paint = true;
+            }
+        }
+        (None, None) => {}
+        _ => change.paint = true,
+    }
+    change
+}
+
+fn modifier_identity_change(old: &Modifier, new: &Modifier) -> IdentityChange {
+    let mut change = IdentityChange::default();
+    macro_rules! paint_changed {
+        ($($field:ident),+ $(,)?) => {
+            if false $(|| rc_identity_changed(&old.$field, &new.$field))+ {
+                change.paint = true;
+            }
+        };
+    }
+    macro_rules! layout_changed {
+        ($($field:ident),+ $(,)?) => {
+            if false $(|| rc_identity_changed(&old.$field, &new.$field))+ {
+                change.layout = true;
+            }
+        };
+    }
+    paint_changed!(
+        on_scroll,
+        on_pointer_down,
+        on_pointer_move,
+        on_pointer_up,
+        on_pointer_cancel,
+        on_pointer_enter,
+        on_pointer_leave,
+        on_click,
+        on_double_click,
+        on_long_click,
+        on_globally_positioned,
+        on_size_changed,
+        on_key_event,
+        on_preview_key_event,
+        on_drag_start,
+        on_drag_end,
+        on_drag_enter,
+        on_drag_over,
+        on_drag_leave,
+        on_drop,
+        on_action,
+        painter,
+        indication,
+        drag_preview,
+        on_focus_changed,
+    );
+    layout_changed!(layout);
+    if arc_identity_changed(&old.paint_callback, &new.paint_callback) {
+        change.paint = true;
+    }
+    if focus_requester_changed(&old.focus_requester, &new.focus_requester)
+        || interaction_source_changed(&old.interaction_source, &new.interaction_source)
+    {
+        change.paint = true;
+    }
+    change.merge(text_input_identity_change(
+        old.text_input.as_ref(),
+        new.text_input.as_ref(),
+    ));
+    match (&old.nested_scroll_connection, &new.nested_scroll_connection) {
+        (Some(old), Some(new)) => {
+            if rc_identity_changed(&old.on_pre_scroll, &new.on_pre_scroll)
+                || rc_identity_changed(&old.on_post_scroll, &new.on_post_scroll)
+                || rc_identity_changed(&old.on_pre_fling, &new.on_pre_fling)
+                || rc_identity_changed(&old.on_post_fling, &new.on_post_fling)
+            {
+                change.paint = true;
+            }
+        }
+        (None, None) => {}
+        _ => change.paint = true,
+    }
+    if scroll_identity_changed(&old.scroll, &new.scroll)
+        || cursor_identity_changed(&old.cursor, &new.cursor)
+    {
+        change.paint = true;
+    }
+    change
+}
+
+fn view_identity_change(node: &TreeNode, view: &View) -> IdentityChange {
+    let mut change = modifier_identity_change(&node.modifier, &view.modifier);
+    if let (
+        ViewKind::SubcomposeLayout { content: old },
+        ViewKind::SubcomposeLayout { content: new },
+    ) = (&node.kind, &view.kind)
+        && !Arc::ptr_eq(old, new)
+    {
+        change.paint = true;
+        change.layout = true;
+        change.subcompose = true;
+    }
+    change
 }
 
 impl ViewTree {
@@ -63,6 +312,7 @@ impl ViewTree {
             nodes: SlotMap::with_key(),
             root: None,
             dirty: FxHashSet::default(),
+            paint_dirty: FxHashSet::default(),
             generation: 0,
             view_id_map: FxHashMap::default(),
             stats: TreeStats::default(),
@@ -79,7 +329,12 @@ impl ViewTree {
     /// you need different scopes at different depths, the closure itself is
     /// responsible for narrowing the values it receives.
     pub fn set_subcompose_scope(&mut self, scope: SubcomposeScope) {
-        self.subcompose_scope = scope;
+        self.subcompose_scope = SubcomposeScope::new(
+            scope.min_width,
+            scope.max_width,
+            scope.min_height,
+            scope.max_height,
+        );
     }
 
     /// Get the currently-set subcompose scope.
@@ -101,33 +356,50 @@ impl ViewTree {
         node_id: NodeId,
         content: &Arc<dyn Fn(&SubcomposeScope) -> Vec<(u64, View)>>,
     ) -> Vec<(u64, View)> {
-        let scope = self.compute_scope_for_node(node_id);
-        if let Some((cached_scope, cached_slots)) = self.subcompose_cache.get(&node_id)
-            && *cached_scope == scope
-        {
-            self.subcompose_runs.remove(&node_id);
-            return cached_slots.clone();
-        }
-        if self.subcompose_cache.contains_key(&node_id) {
+        let raw_scope = self.compute_scope_for_node(node_id);
+        let scope = SubcomposeScope::new(
+            raw_scope.min_width,
+            raw_scope.max_width,
+            raw_scope.min_height,
+            raw_scope.max_height,
+        );
+        let cached = self
+            .subcompose_cache
+            .get(&node_id)
+            .map(|(cached_scope, cached_slots)| (*cached_scope, cached_slots.clone()));
+        if let Some((cached_scope, cached_slots)) = cached {
+            let previous_scope = self
+                .subcompose_runs
+                .get(&node_id)
+                .map(|(_, _, previous_scope)| *previous_scope);
+            let scope_changed =
+                previous_scope.is_some_and(|previous_scope| previous_scope != scope);
+            if cached_scope == scope && !scope_changed {
+                self.subcompose_runs.remove(&node_id);
+                return cached_slots;
+            }
             let cur_gen = self.generation;
             let streak = match self.subcompose_runs.get(&node_id) {
-                Some((last_gen, count)) if *last_gen == cur_gen => count.saturating_add(1),
-                Some((last_gen, count)) if *last_gen + 1 == cur_gen => count.saturating_add(1),
+                Some((last_gen, count, _)) if *last_gen == cur_gen => count.saturating_add(1),
+                Some((last_gen, count, _)) if last_gen.wrapping_add(1) == cur_gen => {
+                    count.saturating_add(1)
+                }
                 _ => 1,
             };
+            self.subcompose_runs
+                .insert(node_id, (cur_gen, streak, scope));
             if streak >= 4 {
-                log::warn!(
-                    "SubcomposeLayout {:?} oscillating; holding last scope this frame",
-                    node_id
-                );
-                self.subcompose_runs.insert(node_id, (cur_gen, streak));
-                return self
-                    .subcompose_cache
-                    .get(&node_id)
-                    .map(|(_, slots)| slots.clone())
-                    .unwrap_or_default();
+                if streak == 4 {
+                    log::warn!(
+                        "SubcomposeLayout {:?} oscillating; holding cached result",
+                        node_id
+                    );
+                }
+                return cached_slots;
             }
-            self.subcompose_runs.insert(node_id, (cur_gen, streak));
+            if cached_scope == scope {
+                return cached_slots;
+            }
         } else {
             self.subcompose_runs.remove(&node_id);
         }
@@ -138,8 +410,10 @@ impl ViewTree {
             view.scope_key = Some(scope_key.clone());
             view.modifier.repaint_boundary = true;
         }
-        self.subcompose_cache
+        let old_cache = self
+            .subcompose_cache
             .insert(node_id, (scope, slots.clone()));
+        drop(old_cache);
         slots
     }
 
@@ -167,11 +441,11 @@ impl ViewTree {
                 scope = intersect_scope_with_modifier(scope, &node.modifier);
                 if let Some(cache) = &node.layout_cache {
                     let w = cache.rect.w;
-                    if w > 0.0 && w.is_finite() {
+                    if w >= 0.0 && w.is_finite() {
                         scope.max_width = scope.max_width.min(repose_core::Dp(w));
                     }
                     let h = cache.rect.h;
-                    if h > 0.0 && h.is_finite() {
+                    if h >= 0.0 && h.is_finite() {
                         scope.max_height = scope.max_height.min(repose_core::Dp(h));
                     }
                 }
@@ -184,14 +458,16 @@ impl ViewTree {
     /// `SubcomposeLayout`'s modifier or identity changes so the next
     /// reconciliation re-invokes the closure.
     pub fn invalidate_subcompose_cache(&mut self, node_id: NodeId) {
-        self.subcompose_cache.remove(&node_id);
+        let removed = self.subcompose_cache.remove(&node_id);
+        drop(removed);
         self.subcompose_runs.remove(&node_id);
     }
 
     /// Recursively drop cached subcomposed views for a subtree rooted at
     /// `node_id`. Called when the node is being removed.
     fn collect_subcompose_cache(&mut self, node_id: &NodeId) {
-        self.subcompose_cache.remove(node_id);
+        let removed = self.subcompose_cache.remove(node_id);
+        drop(removed);
         self.subcompose_runs.remove(node_id);
         let children: Vec<NodeId> = self
             .nodes
@@ -255,6 +531,22 @@ impl ViewTree {
         self.dirty.clear();
     }
 
+    pub fn paint_dirty_nodes(&self) -> &FxHashSet<NodeId> {
+        &self.paint_dirty
+    }
+
+    pub fn clear_paint_dirty(&mut self) {
+        self.paint_dirty.clear();
+    }
+
+    fn mark_paint_dirty(&mut self, node_id: NodeId) {
+        let mut current = Some(node_id);
+        while let Some(id) = current {
+            self.paint_dirty.insert(id);
+            current = self.nodes.get(id).and_then(|node| node.parent);
+        }
+    }
+
     /// Mark a node as needing re-layout.
     pub fn mark_dirty(&mut self, id: NodeId) {
         self.dirty.insert(id);
@@ -301,7 +593,8 @@ impl ViewTree {
     /// Update the tree from a new View, performing incremental reconciliation.
     /// Returns the root NodeId.
     pub fn update(&mut self, new_root: &View) -> NodeId {
-        self.removed_ids.clear(); // Clear previous frame's removals
+        self.removed_ids.clear();
+        self.paint_dirty.clear();
 
         self.generation += 1;
         self.stats = TreeStats::default();
@@ -340,20 +633,22 @@ impl ViewTree {
     ) -> NodeId {
         let content_hash = hash_view_content(view);
 
-        let old_hash = match self.nodes.get(node_id) {
-            Some(n) => n.content_hash,
+        let (old_hash, identity) = match self.nodes.get(node_id) {
+            Some(n) => (n.content_hash, view_identity_change(n, view)),
             None => {
                 log::error!(
                     "reconcile_node: node {:?} not found (GC race) - creating fresh",
                     node_id
                 );
-                // Fallback: treat as new node
                 return self.create_node(view, parent, depth, index_in_parent, ctx);
             }
         };
         let content_changed = old_hash != content_hash;
+        let layout_changed = content_changed || identity.layout;
 
-        if content_changed {
+        if identity.subcompose
+            || (content_changed && matches!(view.kind, ViewKind::SubcomposeLayout { .. }))
+        {
             self.invalidate_subcompose_cache(node_id);
         }
 
@@ -375,6 +670,7 @@ impl ViewTree {
             .unwrap_or(view_id);
 
         let subtree_changed;
+        let replaced_values;
         {
             let Some(node) = self.nodes.get_mut(node_id) else {
                 log::error!("reconcile_node: node {:?} vanished mid-reconcile", node_id);
@@ -385,36 +681,53 @@ impl ViewTree {
             node.depth = depth;
             node.generation = self.generation;
 
-            // NOTE: fields like on_pointer_down aren't part of the content hash, so can't rely on content_changed to keep them in sync.
-            node.kind = view.kind.clone();
-            node.modifier = view.modifier.clone();
+            let old_kind = std::mem::replace(&mut node.kind, view.kind.clone());
+            let old_modifier = std::mem::replace(&mut node.modifier, view.modifier.clone());
+            let old_scope_key = std::mem::replace(&mut node.scope_key, view.scope_key.clone());
+            let old_layout = if layout_changed {
+                node.layout_cache.take()
+            } else {
+                None
+            };
+            replaced_values = (old_kind, old_modifier, old_scope_key, old_layout);
             node.content_hash = content_hash;
             node.user_key = view.modifier.key;
-            node.scope_key = view.scope_key.clone();
 
-            if content_changed {
-                node.invalidate_layout();
+            if content_changed || identity.paint || identity.layout || identity.subcompose {
                 ctx.reconciled += 1;
             }
 
-            // Update subtree hash
-            subtree_changed = node.subtree_hash != new_subtree_hash;
+            subtree_changed = node.subtree_hash != new_subtree_hash || identity.subcompose;
             if subtree_changed {
                 node.subtree_hash = new_subtree_hash;
-            } else if !content_changed {
+            } else if !content_changed && !identity.paint && !identity.layout {
                 ctx.skipped += 1;
             }
 
             node.view_id = view_id;
-        } // Mutable borrow of node ends here
+        }
+        drop(replaced_values);
 
-        if subtree_changed {
+        if identity.paint {
+            self.mark_paint_dirty(node_id);
+        }
+        if subtree_changed || identity.layout {
             self.mark_dirty(node_id);
         }
         if old_view_id != view_id && self.view_id_map.get(&old_view_id).copied() == Some(node_id) {
             self.view_id_map.remove(&old_view_id);
         }
-        self.view_id_map.insert(view_id, node_id);
+        if let Some(existing) = self.view_id_map.get(&view_id).copied()
+            && existing != node_id
+        {
+            log::error!(
+                "reconcile_node: duplicate View.id {}; keeping the first node {:?}",
+                view_id,
+                existing
+            );
+        } else {
+            self.view_id_map.insert(view_id, node_id);
+        }
 
         node_id
     }
@@ -695,7 +1008,17 @@ impl ViewTree {
         node.subtree_hash = subtree_hash;
         node.view_id = view_id;
 
-        self.view_id_map.insert(view_id, node_id);
+        if let Some(existing) = self.view_id_map.get(&view_id).copied()
+            && existing != node_id
+        {
+            log::error!(
+                "create_node: duplicate View.id {}; keeping the first node {:?}",
+                view_id,
+                existing
+            );
+        } else {
+            self.view_id_map.insert(view_id, node_id);
+        }
         self.dirty.insert(node_id);
 
         node_id
@@ -740,8 +1063,11 @@ impl ViewTree {
                 None => return,
             }
         };
-        self.view_id_map.remove(&view_id);
-        self.subcompose_cache.remove(&node_id);
+        if self.view_id_map.get(&view_id).copied() == Some(node_id) {
+            self.view_id_map.remove(&view_id);
+        }
+        let removed_cache = self.subcompose_cache.remove(&node_id);
+        drop(removed_cache);
         self.subcompose_runs.remove(&node_id);
         for child_id in children.iter() {
             self.collect_subcompose_cache(child_id);
@@ -757,6 +1083,13 @@ impl ViewTree {
     }
 
     /// Remove nodes that weren't updated this generation.
+    fn rebuild_view_id_map(&mut self) {
+        self.view_id_map.clear();
+        for (node_id, node) in self.nodes.iter() {
+            self.view_id_map.entry(node.view_id).or_insert(node_id);
+        }
+    }
+
     fn collect_garbage(&mut self) {
         let current_gen = self.generation;
 
@@ -769,9 +1102,12 @@ impl ViewTree {
 
         for id in to_remove {
             if let Some(node) = self.nodes.remove(id) {
-                self.view_id_map.remove(&node.view_id);
+                if self.view_id_map.get(&node.view_id).copied() == Some(id) {
+                    self.view_id_map.remove(&node.view_id);
+                }
                 self.dirty.remove(&id);
-                self.subcompose_cache.remove(&id);
+                let removed_cache = self.subcompose_cache.remove(&id);
+                drop(removed_cache);
                 self.subcompose_runs.remove(&id);
 
                 self.removed_ids.push(id);
@@ -779,6 +1115,10 @@ impl ViewTree {
         }
         self.subcompose_runs
             .retain(|id, _| self.nodes.contains_key(*id));
+        self.subcompose_cache
+            .retain(|id, _| self.nodes.contains_key(*id));
+        self.dirty.retain(|id| self.nodes.contains_key(*id));
+        self.rebuild_view_id_map();
     }
 
     /// Set cached layout for a node.
@@ -894,6 +1234,36 @@ fn intersect_scope_with_modifier(scope: SubcomposeScope, modifier: &Modifier) ->
         s.min_height = (s.min_height - v_total).max(repose_core::Dp::ZERO);
         s.max_height = (s.max_height - v_total).max(repose_core::Dp::ZERO);
     }
+    if let Some(required) = modifier.required_size {
+        s.min_width = required.width.max(repose_core::Dp::ZERO);
+        s.max_width = s.min_width;
+        s.min_height = required.height.max(repose_core::Dp::ZERO);
+        s.max_height = s.min_height;
+    }
+    if let Some(value) = modifier.required_min_width {
+        s.min_width = value.max(repose_core::Dp::ZERO);
+        if s.min_width > s.max_width {
+            s.max_width = s.min_width;
+        }
+    }
+    if let Some(value) = modifier.required_max_width {
+        s.max_width = value.max(repose_core::Dp::ZERO);
+        if s.min_width > s.max_width {
+            s.min_width = s.max_width;
+        }
+    }
+    if let Some(value) = modifier.required_min_height {
+        s.min_height = value.max(repose_core::Dp::ZERO);
+        if s.min_height > s.max_height {
+            s.max_height = s.min_height;
+        }
+    }
+    if let Some(value) = modifier.required_max_height {
+        s.max_height = value.max(repose_core::Dp::ZERO);
+        if s.min_height > s.max_height {
+            s.min_height = s.max_height;
+        }
+    }
     if s.min_width > s.max_width {
         let coerced = s.max_width.max(repose_core::Dp::ZERO);
         s.min_width = coerced;
@@ -904,7 +1274,7 @@ fn intersect_scope_with_modifier(scope: SubcomposeScope, modifier: &Modifier) ->
         s.min_height = coerced;
         s.max_height = coerced;
     }
-    s
+    SubcomposeScope::new(s.min_width, s.max_width, s.min_height, s.max_height)
 }
 
 #[cfg(test)]
@@ -914,6 +1284,7 @@ mod tests {
         Color, Dp, DrawStyle, FontStyle, FontWeight, Modifier, Sp, SubcomposeScope, TextAlign,
         TextDecoration, UnitExt, View, ViewKind,
     };
+    use std::rc::Rc;
     use std::sync::Arc;
 
     fn text_view(text: &str) -> View {
@@ -989,6 +1360,23 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_explicit_ids_keep_first_lookup_stable() {
+        let mut tree = ViewTree::new();
+        let mut first = text_view("first").modifier(Modifier::new().key(1));
+        let mut second = text_view("second").modifier(Modifier::new().key(2));
+        first.id = 42;
+        second.id = 42;
+        let root = box_view().with_children(vec![first.clone(), second.clone()]);
+        let root_id = tree.update(&root);
+        let first_id = tree.children(root_id).unwrap()[0];
+        assert_eq!(tree.get_by_view_id(42).map(|node| node.id), Some(first_id));
+        let root = box_view().with_children(vec![second]);
+        tree.update(&root);
+        let second_id = tree.children(tree.root().unwrap()).unwrap()[0];
+        assert_eq!(tree.get_by_view_id(42).map(|node| node.id), Some(second_id));
+    }
+
+    #[test]
     fn test_keyed_children_stable() {
         let mut tree = ViewTree::new();
 
@@ -1039,6 +1427,66 @@ mod tests {
     }
 
     #[test]
+    fn callback_identity_updates_handlers_without_layout_reset() {
+        let mut tree = ViewTree::new();
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let content_calls = calls.clone();
+        let content: Arc<dyn Fn(&SubcomposeScope) -> Vec<(u64, View)>> = Arc::new(move |_| {
+            content_calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            vec![(0, text_view("callback"))]
+        });
+        let make = |callback: Rc<dyn Fn()>| {
+            let callback = callback.clone();
+            View {
+                id: 0,
+                kind: ViewKind::SubcomposeLayout {
+                    content: content.clone(),
+                },
+                modifier: Modifier::new().on_click(move || callback()),
+                children: Vec::new(),
+                scope_key: None,
+                semantics: None,
+            }
+        };
+        let root = make(Rc::new(|| {}));
+        let root_id = tree.update(&root);
+        tree.set_layout(
+            root_id,
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 100.0,
+                h: 100.0,
+            },
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 100.0,
+                h: 100.0,
+            },
+            crate::LayoutConstraints::default(),
+        );
+        let root = make(Rc::new(|| {}));
+        tree.update(&root);
+        let calls_before = calls.load(std::sync::atomic::Ordering::SeqCst);
+        tree.update(&root);
+        assert!(tree.get(root_id).unwrap().has_valid_layout());
+        assert_eq!(
+            calls.load(std::sync::atomic::Ordering::SeqCst),
+            calls_before
+        );
+        let calls_before = calls.load(std::sync::atomic::Ordering::SeqCst);
+        let root = make(Rc::new(|| {}));
+        tree.update(&root);
+        assert!(tree.get(root_id).unwrap().has_valid_layout());
+        assert_eq!(
+            calls.load(std::sync::atomic::Ordering::SeqCst),
+            calls_before
+        );
+        assert!(tree.paint_dirty_nodes().contains(&root_id));
+    }
+
+    #[test]
     fn test_subcompose_invokes_content() {
         let mut tree = ViewTree::new();
         let counter = Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -1074,6 +1522,24 @@ mod tests {
         assert_eq!(observed.max_height, Dp(640.0));
         assert_eq!(observed.min_width, Dp(0.0));
         assert_eq!(observed.min_height, Dp(0.0));
+    }
+
+    #[test]
+    fn zero_subcompose_bounds_are_real() {
+        let mut tree = ViewTree::new();
+        let captured = Arc::new(std::sync::Mutex::new(None));
+        let captured2 = captured.clone();
+        let root = box_view().with_children(vec![subcompose_view(move |scope| {
+            *captured2.lock().unwrap() = Some(*scope);
+            text_view("zero")
+        })]);
+        tree.set_subcompose_scope(SubcomposeScope::new(Dp(0.0), Dp(0.0), Dp(0.0), Dp(0.0)));
+        tree.update(&root);
+        let scope = captured.lock().unwrap().unwrap();
+        assert_eq!(scope.min_width, Dp(0.0));
+        assert_eq!(scope.max_width, Dp(0.0));
+        assert_eq!(scope.min_height, Dp(0.0));
+        assert_eq!(scope.max_height, Dp(0.0));
     }
 
     #[test]

@@ -13,9 +13,30 @@ use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
 
 use crate::Interactions;
 use crate::anim::{animate_color, animate_f32};
-use crate::textfield::{TF_FONT_SP, TextFieldState, TextMeasureConfig, measure_text};
+use crate::hit_testing::{HitContext, register_hit, restore_metadata};
+use crate::textfield::{TextFieldState, TextMeasureConfig, measure_text};
 
 use super::*;
+
+pub(crate) struct DeferredPaint {
+    node_id: NodeId,
+    parent_offset_px: (f32, f32),
+    alpha_accum: f32,
+    sem_parent: Option<u64>,
+    interaction_source: Option<u64>,
+    focus_group_stack: Vec<u64>,
+    hit_context: HitContext,
+    z: f32,
+    order: usize,
+}
+
+struct PaintedDeferred {
+    z: f32,
+    order: usize,
+    scene: Scene,
+    hits: Vec<HitRegion>,
+    sems: Vec<SemNode>,
+}
 
 impl LayoutEngine {
     pub(crate) fn walk_tick(&self, root_id: NodeId) {
@@ -44,13 +65,14 @@ impl LayoutEngine {
         focused: Option<u64>,
         font_px: &dyn Fn(Sp) -> f32,
     ) -> (Scene, Vec<HitRegion>, Vec<SemNode>) {
+        crate::hit_testing::begin_hit_metadata_frame();
         let mut scene = Scene {
             clear_color: locals::theme().background,
             nodes: vec![],
         };
         let mut hits = Vec::new();
         let mut sems = Vec::new();
-        let mut deferred: Vec<(NodeId, (f32, f32), f32, Option<u64>, f32)> = Vec::new();
+        let mut deferred: Vec<DeferredPaint> = Vec::new();
 
         self.walk_paint(
             root_id,
@@ -63,39 +85,101 @@ impl LayoutEngine {
             (0.0, 0.0),
             1.0,
             None,
-            None, // interaction_source
+            None,
+            &HitContext::root(),
             font_px,
             true,
             &mut deferred,
-            false, // Allow deferral in first pass
+            false,
+            None,
         );
 
-        deferred.sort_by(|a, b| a.4.partial_cmp(&b.4).unwrap_or(Ordering::Equal));
-        for (node_id, parent_offset_px, alpha_accum, sem_parent, z) in deferred.iter().copied() {
-            let hits_before = hits.len();
+        let focus_stack_before_replay = self.focus_group_stack.clone();
+        let mut pending = std::mem::take(&mut deferred);
+        let mut next_order = pending.len();
+        let mut painted = Vec::new();
+        while !pending.is_empty() {
+            pending.sort_by(|a, b| {
+                a.z.partial_cmp(&b.z)
+                    .unwrap_or(Ordering::Equal)
+                    .then_with(|| a.order.cmp(&b.order))
+            });
+            let item = pending.remove(0);
+            self.focus_group_stack = item.focus_group_stack.clone();
+            let mut nested = Vec::new();
+            let mut local_scene = Scene {
+                clear_color: scene.clear_color,
+                nodes: Vec::new(),
+            };
+            let mut local_hits = Vec::new();
+            let mut local_sems = Vec::new();
             self.walk_paint(
-                node_id,
-                &mut scene,
-                &mut hits,
-                &mut sems,
+                item.node_id,
+                &mut local_scene,
+                &mut local_hits,
+                &mut local_sems,
                 textfield_states,
                 interactions,
                 focused,
-                parent_offset_px,
-                alpha_accum,
-                sem_parent,
-                None, // interaction_source
+                item.parent_offset_px,
+                item.alpha_accum,
+                item.sem_parent,
+                item.interaction_source,
+                &item.hit_context,
                 font_px,
                 true,
-                &mut Vec::new(), // No further deferral in second pass
-                true,            // Skip defer check
+                &mut nested,
+                false,
+                Some(item.node_id),
             );
-            let z_boost = z.max(0.0);
-            for h in hits[hits_before..].iter_mut() {
-                h.z_index = h.z_index.max(z_boost);
+            for h in &mut local_hits {
+                h.z_index += item.z;
+            }
+            painted.push(PaintedDeferred {
+                z: item.z,
+                order: item.order,
+                scene: local_scene,
+                hits: local_hits,
+                sems: local_sems,
+            });
+            for mut nested_item in nested {
+                nested_item.order = next_order;
+                next_order += 1;
+                pending.push(nested_item);
             }
         }
-        deferred.clear();
+        self.focus_group_stack = focus_stack_before_replay;
+        painted.sort_by(|a, b| {
+            a.z.partial_cmp(&b.z)
+                .unwrap_or(Ordering::Equal)
+                .then_with(|| a.order.cmp(&b.order))
+        });
+
+        let base_nodes = std::mem::take(&mut scene.nodes);
+        let mut before_nodes = Vec::new();
+        let mut after_nodes = Vec::new();
+        let mut before_hits = Vec::new();
+        let mut after_hits = Vec::new();
+        let mut before_sems = Vec::new();
+        let mut after_sems = Vec::new();
+        for item in painted {
+            if item.z < 0.0 {
+                before_nodes.extend(item.scene.nodes);
+                before_hits.extend(item.hits);
+                before_sems.extend(item.sems);
+            } else {
+                after_nodes.extend(item.scene.nodes);
+                after_hits.extend(item.hits);
+                after_sems.extend(item.sems);
+            }
+        }
+        scene.nodes = before_nodes;
+        scene.nodes.extend(base_nodes);
+        scene.nodes.extend(after_nodes);
+        hits.extend(before_hits);
+        hits.extend(after_hits);
+        sems.extend(before_sems);
+        sems.extend(after_sems);
 
         hits.sort_by(|a, b| a.z_index.partial_cmp(&b.z_index).unwrap_or(Ordering::Equal));
 
@@ -115,6 +199,7 @@ impl LayoutEngine {
             }
             let hit_ids: FxHashSet<u64> = hits.iter().map(|h| h.id).collect();
             for h in hits.iter_mut() {
+                h.parent = None;
                 let mut cur = h.id;
                 while let Some(p) = parent_view.get(&cur).copied().flatten() {
                     if hit_ids.contains(&p) {
@@ -126,6 +211,7 @@ impl LayoutEngine {
             }
         }
 
+        crate::hit_testing::prune_hit_metadata();
         (scene, hits, sems)
     }
 
@@ -139,6 +225,10 @@ impl LayoutEngine {
         alpha_accum: f32,
     ) -> u64 {
         let mut h = FxHasher::default();
+        format!("{:?}", locals::theme()).hash(&mut h);
+        let mut hover_ancestors: Vec<u64> = interactions.hover_ancestors.iter().copied().collect();
+        hover_ancestors.sort_unstable();
+        hover_ancestors.hash(&mut h);
         sem_parent.hash(&mut h);
         let alpha_q: u8 = (alpha_accum.clamp(0.0, 1.0) * 255.0).round() as u8;
         alpha_q.hash(&mut h);
@@ -158,6 +248,8 @@ impl LayoutEngine {
             let mut cur = self.tree.get(root).and_then(|n| n.parent);
             while let Some(pid) = cur {
                 if let Some(pnode) = self.tree.get(pid) {
+                    format!("{:?}", pnode.kind).hash(&mut h);
+                    format!("{:?}", pnode.modifier).hash(&mut h);
                     if let Some(tf) = &pnode.modifier.transform {
                         tf.scale_x.to_bits().hash(&mut h);
                         tf.scale_y.to_bits().hash(&mut h);
@@ -189,21 +281,98 @@ impl LayoutEngine {
         stack.push(root);
         while let Some(id) = stack.pop() {
             let Some(n) = self.tree.get(id) else { continue };
+            n.scope_key.hash(&mut h);
+            self.view_ids.get(&id).copied().hash(&mut h);
+            format!("{:?}", n.kind).hash(&mut h);
+            format!("{:?}", n.modifier).hash(&mut h);
+            if let repose_core::ViewKind::SubcomposeLayout { content } = &n.kind {
+                (Arc::as_ptr(content) as *const () as usize).hash(&mut h);
+            }
+            macro_rules! callback_id {
+                ($callback:expr) => {
+                    $callback
+                        .as_ref()
+                        .map(|callback| Rc::as_ptr(callback) as *const () as usize)
+                        .hash(&mut h);
+                };
+            }
+            callback_id!(n.modifier.on_pointer_down);
+            callback_id!(n.modifier.on_pointer_move);
+            callback_id!(n.modifier.on_pointer_up);
+            callback_id!(n.modifier.on_pointer_cancel);
+            callback_id!(n.modifier.on_pointer_enter);
+            callback_id!(n.modifier.on_pointer_leave);
+            callback_id!(n.modifier.on_click);
+            callback_id!(n.modifier.on_double_click);
+            callback_id!(n.modifier.on_long_click);
+            callback_id!(n.modifier.on_action);
+            callback_id!(n.modifier.on_key_event);
+            callback_id!(n.modifier.on_preview_key_event);
+            callback_id!(n.modifier.on_globally_positioned);
+            callback_id!(n.modifier.on_size_changed);
+            callback_id!(n.modifier.on_focus_changed);
+            callback_id!(n.modifier.painter);
+            callback_id!(n.modifier.on_drag_start);
+            callback_id!(n.modifier.on_drag_end);
+            callback_id!(n.modifier.on_drag_enter);
+            callback_id!(n.modifier.on_drag_over);
+            callback_id!(n.modifier.on_drag_leave);
+            callback_id!(n.modifier.on_drop);
+            callback_id!(n.modifier.drag_preview);
+            if let Some(requester) = &n.modifier.focus_requester {
+                (Rc::as_ptr(&requester.target) as *const () as usize).hash(&mut h);
+            }
+            if let Some(input) = &n.modifier.text_input {
+                format!("{:?}", input).hash(&mut h);
+                format!("{:?}", input.text_style).hash(&mut h);
+                callback_id!(input.on_change);
+                callback_id!(input.on_submit);
+                callback_id!(input.on_text_layout);
+                callback_id!(input.visual_transformation);
+                if let Some(actions) = &input.keyboard_actions {
+                    callback_id!(actions.on_done);
+                    callback_id!(actions.on_go);
+                    callback_id!(actions.on_next);
+                    callback_id!(actions.on_previous);
+                    callback_id!(actions.on_search);
+                    callback_id!(actions.on_send);
+                }
+            }
             if let Some(s) = &n.modifier.scroll {
                 match s {
                     ScrollBinding::Vertical(b) => {
+                        callback_id!(b.on_scroll);
+                        callback_id!(b.set_viewport_main);
+                        callback_id!(b.set_content_main);
+                        callback_id!(b.get_offset_main);
+                        callback_id!(b.set_offset_main);
+                        callback_id!(b.tick);
                         if let Some(get) = &b.get_offset_main {
                             let q = (get() * 8.0) as i32;
                             q.hash(&mut h);
                         }
                     }
                     ScrollBinding::Horizontal(b) => {
+                        callback_id!(b.on_scroll);
+                        callback_id!(b.set_viewport_main);
+                        callback_id!(b.set_content_main);
+                        callback_id!(b.get_offset_main);
+                        callback_id!(b.set_offset_main);
+                        callback_id!(b.tick);
                         if let Some(get) = &b.get_offset_main {
                             let q = (get() * 8.0) as i32;
                             q.hash(&mut h);
                         }
                     }
                     ScrollBinding::Both(b) => {
+                        callback_id!(b.on_scroll);
+                        callback_id!(b.set_viewport_width);
+                        callback_id!(b.set_viewport_height);
+                        callback_id!(b.set_content_width);
+                        callback_id!(b.set_content_height);
+                        callback_id!(b.get_offset_xy);
+                        callback_id!(b.set_offset_xy);
+                        callback_id!(b.tick);
                         if let Some(get) = &b.get_offset_xy {
                             let (x, y) = get();
                             ((x * 8.0) as i32).hash(&mut h);
@@ -215,7 +384,9 @@ impl LayoutEngine {
             if n.modifier.text_input.is_some() {
                 let vid = *self.view_ids.get(&id).unwrap_or(&0);
                 let tf_key = vid;
-                if let Some(st_rc) = textfield_states.get(&tf_key) {
+                let state = textfield_states.get(&tf_key);
+                state.is_some().hash(&mut h);
+                if let Some(st_rc) = state {
                     let st = st_rc.borrow();
                     let mut th = FxHasher::default();
                     st.text.hash(&mut th);
@@ -232,6 +403,13 @@ impl LayoutEngine {
                     ((st.scroll_offset * 8.0) as i32).hash(&mut h);
                     ((st.scroll_offset_y * 8.0) as i32).hash(&mut h);
                     st.caret_visible().hash(&mut h);
+                    st.inner_width.to_bits().hash(&mut h);
+                    st.inner_height.to_bits().hash(&mut h);
+                    st.visual_transformation
+                        .as_ref()
+                        .map(|transformation| Rc::as_ptr(transformation) as *const () as usize)
+                        .hash(&mut h);
+                    st.offset_map.is_some().hash(&mut h);
                 }
             }
             if let Some(ref src) = n.modifier.interaction_source {
@@ -265,6 +443,40 @@ impl LayoutEngine {
         }
     }
 
+    fn subtree_has_deferred_render_z(&self, node_id: NodeId) -> bool {
+        let Some(node) = self.tree.get(node_id) else {
+            return false;
+        };
+        let mut stack = node.children.clone();
+        while let Some(id) = stack.pop() {
+            let Some(child) = self.tree.get(id) else {
+                continue;
+            };
+            if child.modifier.render_z_index.is_some_and(|z| z != 0.0) {
+                return true;
+            }
+            stack.extend(child.children.iter().copied());
+        }
+        false
+    }
+
+    fn descendants_have_transform_or_layer(&self, node_id: NodeId) -> bool {
+        let Some(node) = self.tree.get(node_id) else {
+            return false;
+        };
+        let mut stack = node.children.clone();
+        while let Some(id) = stack.pop() {
+            let Some(child) = self.tree.get(id) else {
+                continue;
+            };
+            if child.modifier.transform.is_some() || child.modifier.graphics_layer.is_some() {
+                return true;
+            }
+            stack.extend(child.children.iter().copied());
+        }
+        false
+    }
+
     pub(crate) fn walk_paint(
         &mut self,
         node_id: NodeId,
@@ -278,10 +490,12 @@ impl LayoutEngine {
         alpha_accum: f32,
         sem_parent: Option<u64>,
         interaction_source: Option<u64>,
+        hit_context: &HitContext,
         font_px: &dyn Fn(Sp) -> f32,
         allow_cache: bool,
-        deferred: &mut Vec<(NodeId, (f32, f32), f32, Option<u64>, f32)>,
+        deferred: &mut Vec<DeferredPaint>,
         skip_defer: bool,
+        defer_except: Option<NodeId>,
     ) {
         let (subtree_hash, modifier, kind, children) = {
             let n = self.tree.get(node_id).unwrap();
@@ -297,11 +511,22 @@ impl LayoutEngine {
 
         // Check if this node should be deferred for later painting
         if !skip_defer
+            && hit_context.can_defer()
+            && defer_except != Some(node_id)
             && let Some(render_z) = modifier.render_z_index
-            && (!deferred.is_empty() || render_z != 0.0)
+            && render_z != 0.0
         {
-            // Defer this node - it will be painted later based on render_z_index
-            deferred.push((node_id, parent_offset_px, alpha_accum, sem_parent, render_z));
+            deferred.push(DeferredPaint {
+                node_id,
+                parent_offset_px,
+                alpha_accum,
+                sem_parent,
+                interaction_source,
+                focus_group_stack: self.focus_group_stack.clone(),
+                hit_context: hit_context.clone(),
+                z: render_z,
+                order: deferred.len(),
+            });
             return;
         }
         debug_assert!(view_id != 0);
@@ -347,6 +572,7 @@ impl LayoutEngine {
         let has_pointer = modifier.on_pointer_down.is_some()
             || modifier.on_pointer_move.is_some()
             || modifier.on_pointer_up.is_some()
+            || modifier.on_pointer_cancel.is_some()
             || modifier.on_pointer_enter.is_some()
             || modifier.on_pointer_leave.is_some()
             || modifier.on_double_click.is_some()
@@ -422,8 +648,17 @@ impl LayoutEngine {
 
         let alpha_q: u8 = (alpha_accum * 255.0).round() as u8;
 
+        let hit_context_key = {
+            let mut hasher = rustc_hash::FxHasher::default();
+            hit_context.cache_key().hash(&mut hasher);
+            self.focus_group_stack.hash(&mut hasher);
+            interaction_source.hash(&mut hasher);
+            hasher.finish()
+        };
+
         // Repaint Boundary
-        if allow_cache && modifier.repaint_boundary {
+        if allow_cache && modifier.repaint_boundary && !self.subtree_has_deferred_render_z(node_id)
+        {
             let stamp = self.paint_stamp_hash(
                 node_id,
                 interactions,
@@ -439,8 +674,72 @@ impl LayoutEngine {
                 && entry.parent_offset_px == parent_offset_px
                 && entry.sem_parent == sem_parent
                 && entry.alpha_q == alpha_q
+                && entry.hit_context_key == hit_context_key
             {
                 self.stats.paint_cache_hits += 1;
+                for (hit, metadata) in entry.hits.iter().zip(entry.hit_metadata.iter()) {
+                    if let Some(metadata) = metadata {
+                        restore_metadata(hit.id, metadata.clone());
+                    }
+                }
+                for hit in entry.hits.iter() {
+                    if let Some(source) = &hit.interaction_source {
+                        let mutable = source.to_mutable();
+                        let hovered = interactions.hover == Some(hit.id)
+                            || interactions.hover_ancestors.contains(&hit.id);
+                        if source.collect_is_hovered() != hovered {
+                            mutable.emit(if hovered {
+                                Interaction::HoverEnter
+                            } else {
+                                Interaction::HoverLeave
+                            });
+                        }
+                        if source.collect_is_pressed() && !interactions.pressed.contains(&hit.id) {
+                            let press_id = source.collect_last_press_id().unwrap_or(0);
+                            mutable.emit(Interaction::Cancel(press_id));
+                        }
+                        let focused_hit = focused == Some(hit.id);
+                        if source.collect_is_focused() != focused_hit {
+                            mutable.emit(if focused_hit {
+                                Interaction::Focus
+                            } else {
+                                Interaction::Unfocus
+                            });
+                        }
+                        self.focus_interaction_sources
+                            .insert(hit.id, source.clone());
+                    }
+                }
+                if modifier.on_globally_positioned.is_some() || modifier.on_size_changed.is_some() {
+                    let observed = repose_core::Rect {
+                        x: px_to_dp(Px(rect.x)).0,
+                        y: px_to_dp(Px(rect.y)).0,
+                        w: px_to_dp(Px(rect.w)).0,
+                        h: px_to_dp(Px(rect.h)).0,
+                    };
+                    if let Some(callback) = &modifier.on_globally_positioned
+                        && self.prev_observed_rects.get(&view_id).copied() != Some(observed)
+                    {
+                        callback(observed);
+                    }
+                    if let Some(callback) = &modifier.on_size_changed
+                        && self
+                            .prev_observed_rects
+                            .get(&view_id)
+                            .map(|previous| (previous.w, previous.h))
+                            != Some((observed.w, observed.h))
+                    {
+                        callback(Vec2 {
+                            x: observed.w,
+                            y: observed.h,
+                        });
+                    }
+                    self.prev_observed_rects.insert(view_id, observed);
+                }
+                if let Some(callback) = &modifier.on_focus_changed {
+                    self.focus_callbacks.insert(view_id, callback.clone());
+                }
+                set_focus_requester(&modifier, view_id);
                 scene.nodes.extend(entry.nodes.iter().cloned());
                 hits.extend(entry.hits.iter().cloned());
                 sems.extend(entry.sems.iter().cloned());
@@ -465,10 +764,12 @@ impl LayoutEngine {
                 alpha_accum / this_alpha.max(1e-6),
                 sem_parent,
                 interaction_source,
+                hit_context,
                 font_px,
                 false,
-                &mut Vec::new(), // Don't defer within repaint boundary
-                true,            // Skip defer check in repaint boundary
+                &mut Vec::new(),
+                true,
+                Some(node_id),
             );
 
             let entry = PaintCacheEntry {
@@ -478,8 +779,15 @@ impl LayoutEngine {
                 parent_offset_px,
                 sem_parent,
                 alpha_q,
+                hit_context_key,
                 nodes: Rc::new(local_scene.nodes.clone()),
                 hits: Rc::new(local_hits.clone()),
+                hit_metadata: Rc::new(
+                    local_hits
+                        .iter()
+                        .map(crate::hit_testing::metadata_for)
+                        .collect(),
+                ),
                 sems: Rc::new(local_sems.clone()),
             };
             self.paint_cache.insert(node_id, entry);
@@ -568,15 +876,10 @@ impl LayoutEngine {
             content_rect.h = (content_rect.h - dh).max(0.0);
         }
 
+        let mut node_hit_context = hit_context.clone();
         if let Some(tf) = modifier.transform {
-            let mut adjusted = tf;
-            let pivot_x = rect.x + rect.w * tf.origin_x;
-            let pivot_y = rect.y + rect.h * tf.origin_y;
-            let lm = tf.linear();
-            adjusted.translate_x += pivot_x - (lm[0] * pivot_x + lm[1] * pivot_y);
-            adjusted.translate_y += pivot_y - (lm[2] * pivot_x + lm[3] * pivot_y);
-            adjusted.origin_x = 0.0;
-            adjusted.origin_y = 0.0;
+            let adjusted = resolved_transform(rect, tf);
+            node_hit_context = hit_context.with_transform(adjusted);
             scene.nodes.push(SceneNode::PushTransform {
                 transform: adjusted,
             });
@@ -585,6 +888,7 @@ impl LayoutEngine {
             .overflow
             .is_none_or(|o| o == repose_core::Overflow::Clip);
         if push_round_clip && overflow_clip {
+            node_hit_context = node_hit_context.with_clip(rect, ClipOp::Intersect);
             scene.nodes.push(SceneNode::PushClip {
                 rect,
                 radius: round_clip_px,
@@ -594,13 +898,15 @@ impl LayoutEngine {
         if let Some(cr) = modifier.clip_rect
             && overflow_clip
         {
+            let clip_rect = repose_core::Rect {
+                x: rect.x + cr.left.to_px().0,
+                y: rect.y + cr.top.to_px().0,
+                w: (cr.right.to_px().0 - cr.left.to_px().0).max(0.0),
+                h: (cr.bottom.to_px().0 - cr.top.to_px().0).max(0.0),
+            };
+            node_hit_context = node_hit_context.with_clip(clip_rect, cr.op);
             scene.nodes.push(SceneNode::PushClip {
-                rect: repose_core::Rect {
-                    x: rect.x + cr.left.to_px().0,
-                    y: rect.y + cr.top.to_px().0,
-                    w: (cr.right.to_px().0 - cr.left.to_px().0).max(0.0),
-                    h: (cr.bottom.to_px().0 - cr.top.to_px().0).max(0.0),
-                },
+                rect: clip_rect,
                 radius: [Px::ZERO; 4],
                 op: cr.op,
             });
@@ -612,6 +918,7 @@ impl LayoutEngine {
             && modifier.clip_rect.is_none()
             && (rect.w > 0.0 || rect.h > 0.0);
         if push_bounds_clip {
+            node_hit_context = node_hit_context.with_clip(rect, ClipOp::Intersect);
             scene.nodes.push(SceneNode::PushClip {
                 rect,
                 radius: [Px::ZERO; 4],
@@ -619,6 +926,83 @@ impl LayoutEngine {
             });
         }
 
+        let has_blur = modifier
+            .blur
+            .is_some_and(|b| b.radius_x.0 > 0.0 || b.radius_y.0 > 0.0);
+        let layer_id = if modifier.graphics_layer.is_some() || has_blur {
+            let id = self.layer_id_counter;
+            self.layer_id_counter = self.layer_id_counter.wrapping_add(1);
+            let blur_style = modifier.blur.unwrap_or(BlurStyle {
+                radius_x: Dp::ZERO,
+                radius_y: Dp::ZERO,
+                edge_treatment: BlurredEdgeTreatment::Rectangle,
+            });
+            let blur_radius_x = blur_style.radius_x.to_px();
+            let blur_radius_y = blur_style.radius_y.to_px();
+            let alpha = modifier.graphics_layer.unwrap_or(1.0);
+            // Snap the layer rect to whole pixels so the composite quad exactly
+            // matches the offscreen texture (avoids fractional 1:1 sampling blur
+            // on text/graphics inside the layer). The content transform below
+            // must use the same snapped origin, or content shifts by <1px.
+            let layer_rect = repose_core::Rect {
+                x: rect.x.round(),
+                y: rect.y.round(),
+                w: rect.w.round().max(1.0),
+                h: rect.h.round().max(1.0),
+            };
+            scene.nodes.push(SceneNode::BeginLayer {
+                rect: layer_rect,
+                layer_id: id,
+                alpha,
+                blur_radius_x,
+                blur_radius_y,
+                rectangle_edge: matches!(
+                    blur_style.edge_treatment,
+                    BlurredEdgeTreatment::Rectangle
+                ),
+            });
+            let (shift_x, shift_y) = match modifier
+                .transform
+                .as_ref()
+                .and_then(|tf| tf.inverse_linear())
+            {
+                Some(inv) => (
+                    inv[0] * -layer_rect.x + inv[1] * -layer_rect.y,
+                    inv[2] * -layer_rect.x + inv[3] * -layer_rect.y,
+                ),
+                None => (-layer_rect.x, -layer_rect.y),
+            };
+            let layer_transform = Transform {
+                translate_x: shift_x,
+                translate_y: shift_y,
+                scale_x: 1.0,
+                scale_y: 1.0,
+                rotate: 0.0,
+                shear_x: 0.0,
+                shear_y: 0.0,
+                origin_x: 0.0,
+                origin_y: 0.0,
+                perspective: [0.0, 0.0, 1.0],
+            };
+            scene.nodes.push(SceneNode::PushTransform {
+                transform: layer_transform,
+            });
+            node_hit_context = node_hit_context
+                .with_transform(layer_transform)
+                .with_clip(
+                    repose_core::Rect {
+                        x: 0.0,
+                        y: 0.0,
+                        w: layer_rect.w,
+                        h: layer_rect.h,
+                    },
+                    ClipOp::Intersect,
+                )
+                .with_layer();
+            Some(id)
+        } else {
+            None
+        };
         // rendered behind the component
         if let Some(se) = &modifier.state_elevation {
             let target = if modifier.disabled {
@@ -727,9 +1111,9 @@ impl LayoutEngine {
                 st.set_inner_height(content_rect.h);
                 st.tick_scroll_animation();
                 if let Some(vt) = ti.visual_transformation.as_ref() {
-                    let empty = repose_core::AnnotatedString::new(String::new(), vec![]);
-                    let tfmd = vt.filter(&empty);
-                    st.offset_map = Some(tfmd.offset_mapping.clone_box());
+                    let annotated = repose_core::AnnotatedString::new(st.text.clone(), vec![]);
+                    let transformed = vt.filter(&annotated);
+                    st.offset_map = Some(transformed.offset_mapping.clone_box());
                     st.visual_transformation = Some(vt.clone());
                 } else {
                     st.offset_map = None;
@@ -906,6 +1290,7 @@ impl LayoutEngine {
                 }
             }
 
+            register_hit(&mut hit, &node_hit_context, modifier.text_input.as_ref());
             hits.push(hit);
         }
 
@@ -981,6 +1366,7 @@ impl LayoutEngine {
 
                 let need_clip =
                     *overflow != TextOverflow::Visible && (need_v_clip || content_rect.w > 0.0);
+                let mut text_hit_context = node_hit_context.clone();
                 if need_clip {
                     let clip_rect = repose_core::Rect {
                         x: content_rect.x,
@@ -988,6 +1374,8 @@ impl LayoutEngine {
                         w: content_rect.w,
                         h: content_rect.h + 3.0,
                     };
+                    text_hit_context =
+                        text_hit_context.with_clip(clip_rect, crate::ClipOp::Intersect);
                     scene.nodes.push(SceneNode::PushClip {
                         rect: clip_rect,
                         radius: [Px::ZERO; 4],
@@ -1274,7 +1662,7 @@ impl LayoutEngine {
                                 link_hash ^= link_hash >> 29;
                                 let link_id = if link_hash == 0 { 1 } else { link_hash };
                                 let link_url = url.clone();
-                                hits.push(HitRegion {
+                                let mut link_hit = HitRegion {
                                     id: link_id,
                                     rect: seg_rect,
                                     cursor: Some(CursorIcon::Pointer),
@@ -1282,7 +1670,9 @@ impl LayoutEngine {
                                         open_url(&link_url);
                                     })),
                                     ..Default::default()
-                                });
+                                };
+                                register_hit(&mut link_hit, &text_hit_context, None);
+                                hits.push(link_hit);
                             }
                             seg_x += info.w;
                         }
@@ -1354,7 +1744,7 @@ impl LayoutEngine {
                         if let Some(link_url) = url {
                             let link_id = view_id ^ 0x8000_0000_0000_0000;
                             let lu = link_url.clone();
-                            hits.push(HitRegion {
+                            let mut link_hit = HitRegion {
                                 id: link_id,
                                 rect: seg_rect,
                                 cursor: Some(CursorIcon::Pointer),
@@ -1362,7 +1752,9 @@ impl LayoutEngine {
                                     open_url(&lu);
                                 })),
                                 ..Default::default()
-                            });
+                            };
+                            register_hit(&mut link_hit, &text_hit_context, None);
+                            hits.push(link_hit);
                         }
                     }
                 }
@@ -1415,20 +1807,29 @@ impl LayoutEngine {
                 }
 
                 // Scroll wheel support for multiline text areas
+                let scroll_metrics = crate::textfield::TextFieldMetrics::from_config(ti);
                 let on_scroll = if multiline {
                     let key = tf_key;
                     let h = rect.h;
-                    let font_val = font_px(TF_FONT_SP);
                     let wrap_w = rect.w.max(1.0);
                     let states = textfield_states.get(&key).cloned();
+                    let metrics = scroll_metrics.clone();
                     Some(Rc::new(move |d: Vec2| -> Vec2 {
                         let Some(st_rc) = states.as_ref() else {
                             return d;
                         };
                         let mut st = st_rc.borrow_mut();
                         st.set_inner_height(h);
-                        let layout = crate::textfield::layout_text_area(
-                            &st.text, font_val, wrap_w, 400, 0, 0.0, None,
+                        let display = st.visual_transformation.as_ref().map_or_else(
+                            || st.text.clone(),
+                            |transformation| {
+                                let annotated =
+                                    repose_core::AnnotatedString::new(st.text.clone(), vec![]);
+                                transformation.filter(&annotated).text.text
+                            },
+                        );
+                        let layout = crate::textfield::layout_text_area_with_metrics(
+                            &display, wrap_w, &metrics,
                         );
                         let content_h = layout.ranges.len().max(1) as f32 * layout.line_h_px;
                         let max_y = (content_h - st.inner_height).max(0.0);
@@ -1447,18 +1848,26 @@ impl LayoutEngine {
                     // Single-line horizontal scroll (mouse wheel or trackpad)
                     let key = tf_key;
                     let inner_w = rect.w.max(1.0);
-                    let font_val = font_px(TF_FONT_SP);
                     let states = textfield_states.get(&key).cloned();
+                    let metrics = scroll_metrics;
                     Some(Rc::new(move |d: Vec2| -> Vec2 {
                         let Some(st_rc) = states.as_ref() else {
                             return d;
                         };
                         let mut st = st_rc.borrow_mut();
                         st.set_inner_width(inner_w);
+                        let display = st.visual_transformation.as_ref().map_or_else(
+                            || st.text.clone(),
+                            |transformation| {
+                                let annotated =
+                                    repose_core::AnnotatedString::new(st.text.clone(), vec![]);
+                                transformation.filter(&annotated).text.text
+                            },
+                        );
                         let m = crate::textfield::measure_text(
-                            &st.text,
-                            font_val,
-                            TextMeasureConfig::default(),
+                            &display,
+                            metrics.font_px,
+                            metrics.measure_config(),
                         );
                         let content_w = m.positions.last().copied().unwrap_or(0.0);
                         let max_x = (content_w - st.inner_width).max(0.0);
@@ -1469,8 +1878,8 @@ impl LayoutEngine {
 
                         let consumed = before - target;
                         Vec2 {
-                            x: d.x,
-                            y: d.y - consumed,
+                            x: d.x - consumed,
+                            y: d.y,
                         }
                     }) as Rc<dyn Fn(Vec2) -> Vec2>)
                 };
@@ -1479,96 +1888,150 @@ impl LayoutEngine {
                     let user_on_action = modifier.on_action.clone();
                     let change_cb = on_change.clone();
                     let is_multiline = multiline;
+                    let can_edit = ti.enabled && !ti.read_only;
+                    let text_config = ti.clone();
+                    let action_state = textfield_states.get(&tf_key).cloned();
+                    let action_metrics = crate::textfield::TextFieldMetrics::from_config(ti);
                     let tf_on_action: Option<Rc<dyn Fn(repose_core::shortcuts::Action) -> bool>> =
                         Some(Rc::new(move |action| {
                             use repose_core::shortcuts::Action;
-                            let Some(st) = crate::textfield::get_textfield_state(tf_key) else {
+                            if !can_edit
+                                && matches!(
+                                    &action,
+                                    repose_core::shortcuts::Action::Cut
+                                        | repose_core::shortcuts::Action::Paste
+                                        | repose_core::shortcuts::Action::Undo
+                                        | repose_core::shortcuts::Action::Redo
+                                )
+                            {
+                                return true;
+                            }
+                            let Some(st) = action_state.clone() else {
                                 return false;
                             };
-                            let mut s = st.borrow_mut();
-                            let mut handled = false;
                             match action {
                                 Action::Copy => {
-                                    let txt = s.selected_text();
-                                    if !txt.is_empty() {
-                                        repose_core::clipboard::copy_to_clipboard(&txt);
-                                        handled = true;
+                                    let text = st.borrow().selected_text();
+                                    if text.is_empty() {
+                                        return false;
                                     }
+                                    repose_core::clipboard::copy_to_clipboard(&text);
+                                    true
                                 }
                                 Action::Cut => {
-                                    let txt = s.selected_text();
-                                    if !txt.is_empty() {
-                                        repose_core::clipboard::copy_to_clipboard(&txt);
-                                        s.insert_text_atomic("");
-                                        crate::textfield::ensure_caret_visible(
-                                            &mut s,
-                                            is_multiline,
-                                        );
-                                        let text = s.text.clone();
-                                        drop(s);
-                                        if let Some(cb) = &change_cb {
-                                            cb(text);
-                                        }
-                                        handled = true;
+                                    let mut edited = st.borrow().clone();
+                                    let Some(text) =
+                                        crate::textfield::cut_with_input_transformation_config(
+                                            &text_config,
+                                            &mut edited,
+                                        )
+                                    else {
+                                        return false;
+                                    };
+                                    crate::textfield::ensure_caret_visible_with_metrics(
+                                        &mut edited,
+                                        is_multiline,
+                                        &action_metrics,
+                                    );
+                                    let value = edited.text.clone();
+                                    *st.borrow_mut() = edited;
+                                    repose_core::clipboard::copy_to_clipboard(&text);
+                                    if let Some(cb) = &change_cb {
+                                        cb(value);
                                     }
+                                    true
                                 }
                                 Action::Paste => {
-                                    let Some(mut txt) = repose_core::clipboard::paste_text() else {
+                                    let Some(mut text) = repose_core::clipboard::paste_text()
+                                    else {
                                         return false;
                                     };
                                     if is_multiline {
-                                        txt.retain(|c| c == '\n' || (!c.is_control() && c != '\r'));
+                                        text.retain(|c| {
+                                            c == '\n' || (!c.is_control() && c != '\r')
+                                        });
                                     } else {
-                                        txt.retain(|c| !c.is_control() && c != '\n' && c != '\r');
+                                        text.retain(|c| !c.is_control() && c != '\n' && c != '\r');
                                     }
-                                    if txt.is_empty() {
+                                    if text.is_empty() {
                                         return false;
                                     }
-                                    s.insert_text_atomic(&txt);
-                                    crate::textfield::ensure_caret_visible(&mut s, is_multiline);
-                                    let text = s.text.clone();
-                                    drop(s);
+                                    let mut edited = st.borrow().clone();
+                                    crate::textfield::insert_text_with_input_transformation_config(
+                                        &text_config,
+                                        &mut edited,
+                                        &text,
+                                        true,
+                                    );
+                                    crate::textfield::ensure_caret_visible_with_metrics(
+                                        &mut edited,
+                                        is_multiline,
+                                        &action_metrics,
+                                    );
+                                    let value = edited.text.clone();
+                                    *st.borrow_mut() = edited;
                                     if let Some(cb) = &change_cb {
-                                        cb(text);
+                                        cb(value);
                                     }
-                                    handled = true;
+                                    true
                                 }
                                 Action::SelectAll => {
-                                    s.selection = 0..s.text.len();
-                                    crate::textfield::ensure_caret_visible(&mut s, is_multiline);
-                                    if !s.text.is_empty() {
-                                        repose_core::clipboard::set_primary_selection(&s.text);
+                                    let mut edited = st.borrow().clone();
+                                    edited.selection = 0..edited.text.len();
+                                    crate::textfield::ensure_caret_visible_with_metrics(
+                                        &mut edited,
+                                        is_multiline,
+                                        &action_metrics,
+                                    );
+                                    let text = edited.text.clone();
+                                    *st.borrow_mut() = edited;
+                                    if !text.is_empty() {
+                                        repose_core::clipboard::set_primary_selection(&text);
                                     }
-                                    handled = true;
+                                    true
                                 }
                                 Action::Undo => {
-                                    if s.can_undo() {
-                                        s.undo();
-                                        crate::textfield::ensure_caret_visible(
-                                            &mut s,
-                                            is_multiline,
-                                        );
-                                        let text = s.text.clone();
-                                        drop(s);
-                                        if let Some(cb) = &change_cb {
-                                            cb(text);
-                                        }
-                                        handled = true;
+                                    let mut edited = st.borrow().clone();
+                                    if !crate::textfield::undo_with_input_transformation_config(
+                                        &text_config,
+                                        &mut edited,
+                                    ) {
+                                        return false;
                                     }
-                                }
-                                Action::Redo if s.can_redo() => {
-                                    s.redo();
-                                    crate::textfield::ensure_caret_visible(&mut s, is_multiline);
-                                    let text = s.text.clone();
-                                    drop(s);
+                                    crate::textfield::ensure_caret_visible_with_metrics(
+                                        &mut edited,
+                                        is_multiline,
+                                        &action_metrics,
+                                    );
+                                    let value = edited.text.clone();
+                                    *st.borrow_mut() = edited;
                                     if let Some(cb) = &change_cb {
-                                        cb(text);
+                                        cb(value);
                                     }
-                                    handled = true;
+                                    true
                                 }
-                                _ => {}
+                                Action::Redo => {
+                                    let mut edited = st.borrow().clone();
+                                    if !crate::textfield::redo_with_input_transformation_config(
+                                        &text_config,
+                                        &mut edited,
+                                    ) {
+                                        return false;
+                                    }
+                                    crate::textfield::ensure_caret_visible_with_metrics(
+                                        &mut edited,
+                                        is_multiline,
+                                        &action_metrics,
+                                    );
+                                    let value = edited.text.clone();
+                                    *st.borrow_mut() = edited;
+                                    if let Some(cb) = &change_cb {
+                                        cb(value);
+                                    }
+                                    true
+                                }
+                                _ => false,
                             }
-                            handled
                         }));
 
                     let combined: Option<Rc<dyn Fn(repose_core::shortcuts::Action) -> bool>> =
@@ -1585,7 +2048,7 @@ impl LayoutEngine {
                         .map(|ts| ts.font_size)
                         .filter(|&v| v != Sp::ZERO)
                         .unwrap_or(crate::textfield::TF_FONT_SP);
-                    hits.push(HitRegion {
+                    let mut text_hit = HitRegion {
                         id: view_id,
                         rect,
                         on_scroll,
@@ -1623,7 +2086,9 @@ impl LayoutEngine {
                             self.focus_group_stack.last().copied()
                         },
                         ..HitRegion::from_modifier(view_id, rect, &modifier)
-                    });
+                    };
+                    register_hit(&mut text_hit, &node_hit_context, Some(ti));
+                    hits.push(text_hit);
                 }
 
                 sems.push(SemNode {
@@ -1688,70 +2153,6 @@ impl LayoutEngine {
 
         // Children
         let child_offset_px = base_px;
-        let has_blur = modifier
-            .blur
-            .is_some_and(|b| b.radius_x.0 > 0.0 || b.radius_y.0 > 0.0);
-        let layer_id = if modifier.graphics_layer.is_some() || has_blur {
-            let id = self.layer_id_counter;
-            self.layer_id_counter = self.layer_id_counter.wrapping_add(1);
-            let blur_style = modifier.blur.unwrap_or(BlurStyle {
-                radius_x: Dp::ZERO,
-                radius_y: Dp::ZERO,
-                edge_treatment: BlurredEdgeTreatment::Rectangle,
-            });
-            let blur_radius_x = blur_style.radius_x.to_px();
-            let blur_radius_y = blur_style.radius_y.to_px();
-            let alpha = modifier.graphics_layer.unwrap_or(1.0);
-            // Snap the layer rect to whole pixels so the composite quad exactly
-            // matches the offscreen texture (avoids fractional 1:1 sampling blur
-            // on text/graphics inside the layer). The content transform below
-            // must use the same snapped origin, or content shifts by <1px.
-            let layer_rect = repose_core::Rect {
-                x: rect.x.round(),
-                y: rect.y.round(),
-                w: rect.w.round().max(1.0),
-                h: rect.h.round().max(1.0),
-            };
-            scene.nodes.push(SceneNode::BeginLayer {
-                rect: layer_rect,
-                layer_id: id,
-                alpha,
-                blur_radius_x,
-                blur_radius_y,
-                rectangle_edge: matches!(
-                    blur_style.edge_treatment,
-                    BlurredEdgeTreatment::Rectangle
-                ),
-            });
-            let (shift_x, shift_y) = match modifier
-                .transform
-                .as_ref()
-                .and_then(|tf| tf.inverse_linear())
-            {
-                Some(inv) => (
-                    inv[0] * -layer_rect.x + inv[1] * -layer_rect.y,
-                    inv[2] * -layer_rect.x + inv[3] * -layer_rect.y,
-                ),
-                None => (-layer_rect.x, -layer_rect.y),
-            };
-            scene.nodes.push(SceneNode::PushTransform {
-                transform: Transform {
-                    translate_x: shift_x,
-                    translate_y: shift_y,
-                    scale_x: 1.0,
-                    scale_y: 1.0,
-                    rotate: 0.0,
-                    shear_x: 0.0,
-                    shear_y: 0.0,
-                    origin_x: 0.0,
-                    origin_y: 0.0,
-                    perspective: [0.0, 0.0, 1.0],
-                },
-            });
-            Some(id)
-        } else {
-            None
-        };
         // Handle modifier-based scroll containers.
         // This runs before the match on kind, so modifier scroll takes priority.
         if let Some(scroll) = &modifier.scroll {
@@ -1762,14 +2163,18 @@ impl LayoutEngine {
                     {
                         set_parent(conn);
                     }
-                    hits.push(HitRegion {
-                        id: view_id,
-                        rect,
-                        on_scroll: b.on_scroll.clone(),
-                        focusable: false,
-                        z_index: modifier.z_index,
-                        ..HitRegion::from_modifier(view_id, rect, &modifier)
-                    });
+                    if !modifier.hit_passthrough {
+                        let mut scroll_hit = HitRegion {
+                            id: view_id,
+                            rect,
+                            on_scroll: b.on_scroll.clone(),
+                            focusable: false,
+                            z_index: modifier.z_index,
+                            ..HitRegion::from_modifier(view_id, rect, &modifier)
+                        };
+                        register_hit(&mut scroll_hit, &node_hit_context, None);
+                        hits.push(scroll_hit);
+                    }
                     let vp = content_rect;
                     if let Some(s) = &b.set_viewport_main {
                         s(vp.h.max(0.0));
@@ -1794,7 +2199,8 @@ impl LayoutEngine {
                         op: crate::ClipOp::Intersect,
                     });
 
-                    let hits_start = hits.len();
+                    let scroll_hit_context = node_hit_context.with_clip(vp, ClipOp::Intersect);
+                    let cull_viewport = node_hit_context.project_rect(vp);
                     let scrolled_offset = (child_offset_px.0, child_offset_px.1 - off);
 
                     for &child_id in &children {
@@ -1805,7 +2211,18 @@ impl LayoutEngine {
                             w: l.size.width,
                             h: l.size.height,
                         };
-                        if intersect_rect(child_rect, vp).is_none() {
+                        let cull_context = self
+                            .tree
+                            .get(child_id)
+                            .and_then(|node| node.modifier.transform)
+                            .map(|transform| {
+                                scroll_hit_context
+                                    .with_transform(resolved_transform(child_rect, transform))
+                            })
+                            .unwrap_or_else(|| scroll_hit_context.clone());
+                        if !self.descendants_have_transform_or_layer(child_id)
+                            && !cull_context.intersects(child_rect, cull_viewport)
+                        {
                             self.stats.paint_culled += 1;
                             continue;
                         }
@@ -1821,14 +2238,14 @@ impl LayoutEngine {
                             alpha_accum,
                             next_sem_parent,
                             child_interaction_source,
+                            &scroll_hit_context,
                             font_px,
                             allow_cache,
                             deferred,
                             skip_defer,
+                            defer_except,
                         );
                     }
-
-                    clip_hits_to_viewport(hits, hits_start, vp);
 
                     if b.show_scrollbar {
                         push_scrollbar(
@@ -1842,6 +2259,7 @@ impl LayoutEngine {
                             modifier.z_index,
                             ScrollbarAxis::V,
                             b.set_offset_main.clone(),
+                            &scroll_hit_context,
                         );
                     }
 
@@ -1853,14 +2271,18 @@ impl LayoutEngine {
                     {
                         set_parent(conn);
                     }
-                    hits.push(HitRegion {
-                        id: view_id,
-                        rect,
-                        on_scroll: b.on_scroll.clone(),
-                        focusable: false,
-                        z_index: modifier.z_index,
-                        ..HitRegion::from_modifier(view_id, rect, &modifier)
-                    });
+                    if !modifier.hit_passthrough {
+                        let mut scroll_hit = HitRegion {
+                            id: view_id,
+                            rect,
+                            on_scroll: b.on_scroll.clone(),
+                            focusable: false,
+                            z_index: modifier.z_index,
+                            ..HitRegion::from_modifier(view_id, rect, &modifier)
+                        };
+                        register_hit(&mut scroll_hit, &node_hit_context, None);
+                        hits.push(scroll_hit);
+                    }
                     let vp = content_rect;
                     if let Some(s) = &b.set_viewport_main {
                         s(vp.w.max(0.0));
@@ -1883,7 +2305,8 @@ impl LayoutEngine {
                         op: crate::ClipOp::Intersect,
                     });
 
-                    let hits_start = hits.len();
+                    let scroll_hit_context = node_hit_context.with_clip(vp, ClipOp::Intersect);
+                    let cull_viewport = node_hit_context.project_rect(vp);
                     let scrolled_offset = (child_offset_px.0 - off, child_offset_px.1);
 
                     for &child_id in &children {
@@ -1894,7 +2317,18 @@ impl LayoutEngine {
                             w: l.size.width,
                             h: l.size.height,
                         };
-                        if intersect_rect(child_rect, vp).is_none() {
+                        let cull_context = self
+                            .tree
+                            .get(child_id)
+                            .and_then(|node| node.modifier.transform)
+                            .map(|transform| {
+                                scroll_hit_context
+                                    .with_transform(resolved_transform(child_rect, transform))
+                            })
+                            .unwrap_or_else(|| scroll_hit_context.clone());
+                        if !self.descendants_have_transform_or_layer(child_id)
+                            && !cull_context.intersects(child_rect, cull_viewport)
+                        {
                             self.stats.paint_culled += 1;
                             continue;
                         }
@@ -1910,14 +2344,14 @@ impl LayoutEngine {
                             alpha_accum,
                             next_sem_parent,
                             child_interaction_source,
+                            &scroll_hit_context,
                             font_px,
                             allow_cache,
                             deferred,
                             skip_defer,
+                            defer_except,
                         );
                     }
-
-                    clip_hits_to_viewport(hits, hits_start, vp);
 
                     if b.show_scrollbar {
                         push_scrollbar(
@@ -1931,6 +2365,7 @@ impl LayoutEngine {
                             modifier.z_index,
                             ScrollbarAxis::H,
                             b.set_offset_main.clone(),
+                            &scroll_hit_context,
                         );
                     }
 
@@ -1942,14 +2377,18 @@ impl LayoutEngine {
                     {
                         set_parent(conn);
                     }
-                    hits.push(HitRegion {
-                        id: view_id,
-                        rect,
-                        on_scroll: b.on_scroll.clone(),
-                        focusable: false,
-                        z_index: modifier.z_index,
-                        ..HitRegion::from_modifier(view_id, rect, &modifier)
-                    });
+                    if !modifier.hit_passthrough {
+                        let mut scroll_hit = HitRegion {
+                            id: view_id,
+                            rect,
+                            on_scroll: b.on_scroll.clone(),
+                            focusable: false,
+                            z_index: modifier.z_index,
+                            ..HitRegion::from_modifier(view_id, rect, &modifier)
+                        };
+                        register_hit(&mut scroll_hit, &node_hit_context, None);
+                        hits.push(scroll_hit);
+                    }
                     let vp = content_rect;
                     if let Some(s) = &b.set_viewport_width {
                         s(vp.w.max(0.0));
@@ -1991,9 +2430,32 @@ impl LayoutEngine {
                         radius: [Px::ZERO; 4],
                         op: crate::ClipOp::Intersect,
                     });
-                    let hits_start = hits.len();
+                    let scroll_hit_context = node_hit_context.with_clip(vp, ClipOp::Intersect);
+                    let cull_viewport = node_hit_context.project_rect(vp);
                     let scrolled_offset = (child_offset_px.0 - ox, child_offset_px.1 - oy);
                     for &child_id in &children {
+                        let l = self.layout_for_node(child_id);
+                        let child_rect = repose_core::Rect {
+                            x: scrolled_offset.0 + l.location.x,
+                            y: scrolled_offset.1 + l.location.y,
+                            w: l.size.width,
+                            h: l.size.height,
+                        };
+                        let cull_context = self
+                            .tree
+                            .get(child_id)
+                            .and_then(|node| node.modifier.transform)
+                            .map(|transform| {
+                                scroll_hit_context
+                                    .with_transform(resolved_transform(child_rect, transform))
+                            })
+                            .unwrap_or_else(|| scroll_hit_context.clone());
+                        if !self.descendants_have_transform_or_layer(child_id)
+                            && !cull_context.intersects(child_rect, cull_viewport)
+                        {
+                            self.stats.paint_culled += 1;
+                            continue;
+                        }
                         self.walk_paint(
                             child_id,
                             scene,
@@ -2006,20 +2468,13 @@ impl LayoutEngine {
                             alpha_accum,
                             next_sem_parent,
                             child_interaction_source,
+                            &scroll_hit_context,
                             font_px,
                             allow_cache,
                             deferred,
                             skip_defer,
+                            defer_except,
                         );
-                    }
-                    let mut i = hits_start;
-                    while i < hits.len() {
-                        if let Some(r) = intersect_rect(hits[i].rect, vp) {
-                            hits[i].rect = r;
-                            i += 1;
-                        } else {
-                            hits.remove(i);
-                        }
                     }
                     if b.show_scrollbar {
                         let set_y = b
@@ -2065,6 +2520,7 @@ impl LayoutEngine {
                             modifier.z_index,
                             ScrollbarAxis::V,
                             set_y,
+                            &scroll_hit_context,
                         );
                         push_scrollbar(
                             scene,
@@ -2077,6 +2533,7 @@ impl LayoutEngine {
                             modifier.z_index,
                             ScrollbarAxis::H,
                             set_x,
+                            &scroll_hit_context,
                         );
                     }
                     scene.nodes.push(SceneNode::PopClip);
@@ -2090,6 +2547,14 @@ impl LayoutEngine {
             if let Some(id) = layer_id {
                 scene.nodes.push(SceneNode::PopTransform);
                 scene.nodes.push(SceneNode::EndLayer { layer_id: id });
+                if let Some(shadow) = &modifier.shadow {
+                    scene.nodes.push(SceneNode::CompositeShadow {
+                        layer_id: id,
+                        blur_px: shadow.blur_radius.to_px(),
+                        offset_px: (Px::ZERO, shadow.offset_y.to_px()),
+                        color: shadow.color,
+                    });
+                }
             }
             // Pop clips and transforms pushed before the scroll branch
             if push_bounds_clip {
@@ -2128,10 +2593,12 @@ impl LayoutEngine {
                         alpha_accum,
                         next_sem_parent,
                         child_interaction_source,
+                        &node_hit_context,
                         font_px,
                         allow_cache,
                         deferred,
                         skip_defer,
+                        defer_except,
                     );
                 }
             }
@@ -2149,10 +2616,12 @@ impl LayoutEngine {
                         alpha_accum,
                         next_sem_parent,
                         child_interaction_source,
+                        &node_hit_context,
                         font_px,
                         allow_cache,
                         deferred,
                         skip_defer,
+                        defer_except,
                     );
                 }
             }
@@ -2196,4 +2665,16 @@ impl LayoutEngine {
             self.focus_callbacks.insert(view_id, cb.clone());
         }
     }
+}
+
+fn resolved_transform(rect: repose_core::Rect, transform: Transform) -> Transform {
+    let mut adjusted = transform;
+    let pivot_x = rect.x + rect.w * transform.origin_x;
+    let pivot_y = rect.y + rect.h * transform.origin_y;
+    let linear = transform.linear();
+    adjusted.translate_x += pivot_x - (linear[0] * pivot_x + linear[1] * pivot_y);
+    adjusted.translate_y += pivot_y - (linear[2] * pivot_x + linear[3] * pivot_y);
+    adjusted.origin_x = 0.0;
+    adjusted.origin_y = 0.0;
+    adjusted
 }

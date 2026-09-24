@@ -1,8 +1,9 @@
 use crate::Vec2;
-use crate::effects::{Dispose, effect_once, on_unmount};
+use crate::effects::Dispose;
 use crate::input::{Key, Modifiers, PointerKind};
-use std::cell::RefCell;
-use std::rc::Rc;
+use crate::remember_with_key;
+use std::cell::{Cell, RefCell};
+use std::rc::{Rc, Weak};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Gesture {
@@ -206,75 +207,411 @@ impl Default for ShortcutState {
     }
 }
 
+struct ScopeEntry {
+    token: Option<u64>,
+    map: ShortcutMap,
+}
+
+struct ShortcutScopeStack(Vec<ScopeEntry>);
+
+impl ShortcutScopeStack {
+    #[cfg(test)]
+    fn push(&mut self, map: ShortcutMap) {
+        self.0.push(ScopeEntry { token: None, map });
+    }
+
+    fn push_installed(&mut self, token: u64, map: ShortcutMap) {
+        self.0.push(ScopeEntry {
+            token: Some(token),
+            map,
+        });
+    }
+
+    #[cfg(test)]
+    fn pop(&mut self) -> Option<ShortcutMap> {
+        self.0.pop().map(|entry| entry.map)
+    }
+
+    fn remove(&mut self, token: u64) -> Option<ShortcutMap> {
+        let index = self.0.iter().position(|entry| entry.token == Some(token))?;
+        Some(self.0.remove(index).map)
+    }
+
+    fn update(&mut self, token: u64, map: ShortcutMap) -> Option<ShortcutMap> {
+        let entry = self.0.iter_mut().find(|entry| entry.token == Some(token))?;
+        Some(std::mem::replace(&mut entry.map, map))
+    }
+
+    fn iter_rev(&self) -> impl Iterator<Item = &ShortcutMap> {
+        self.0.iter().rev().map(|entry| &entry.map)
+    }
+}
+
+struct MapInstallState {
+    token: u64,
+    active: bool,
+    cleanup: Option<Dispose>,
+}
+
+struct HandlerInstallState {
+    token: u64,
+    active: bool,
+    cleanup: Option<Dispose>,
+}
+
 thread_local! {
     static HANDLER: RefCell<Option<Handler>> = RefCell::new(None);
+    static BASE_HANDLER: RefCell<Option<Handler>> = RefCell::new(None);
+    static HANDLER_ENTRIES: RefCell<Vec<(u64, Handler)>> = const { RefCell::new(Vec::new()) };
     static DEFAULT_MAP: RefCell<ShortcutMap> = RefCell::new(default_map());
-    static SCOPES: RefCell<Vec<ShortcutMap>> = const { RefCell::new(Vec::new()) };
+    static SCOPES: RefCell<ShortcutScopeStack> =
+        const { RefCell::new(ShortcutScopeStack(Vec::new())) };
+    static NEXT_INSTALLER_ID: Cell<u64> = const { Cell::new(1) };
 }
 
-/// Set/clear the global handler (prefer InstallShortcutHandler + scoped_effect).
+fn next_installer_id() -> u64 {
+    NEXT_INSTALLER_ID.with(|next| {
+        let id = next.get();
+        next.set(id.wrapping_add(1));
+        id
+    })
+}
+
+fn sync_handler() {
+    let handler = HANDLER_ENTRIES
+        .try_with(|entries| {
+            entries
+                .try_borrow()
+                .ok()
+                .and_then(|entries| entries.last().map(|(_, handler)| handler.clone()))
+        })
+        .ok()
+        .flatten()
+        .or_else(|| BASE_HANDLER.with(|base| base.try_borrow().ok().and_then(|base| base.clone())));
+    let old = HANDLER.try_with(|current| {
+        current
+            .try_borrow_mut()
+            .ok()
+            .map(|mut current| std::mem::replace(&mut *current, handler))
+    });
+    if let Ok(Some(old)) = old {
+        drop(old);
+    }
+}
+
 pub fn set(handler: Option<Handler>) {
-    HANDLER.with(|h| *h.borrow_mut() = handler);
+    let old = BASE_HANDLER.try_with(|base| {
+        base.try_borrow_mut()
+            .ok()
+            .map(|mut base| std::mem::replace(&mut *base, handler))
+    });
+    if let Ok(Some(old)) = old {
+        drop(old);
+    }
+    sync_handler();
 }
 
-/// Dispatch an action to the global handler. Returns true if consumed.
 pub fn handle(action: Action) -> bool {
-    HANDLER.with(|h| h.borrow().as_ref().map(|f| f(action)).unwrap_or(false))
+    let handler = HANDLER
+        .try_with(|current| {
+            current
+                .try_borrow()
+                .ok()
+                .and_then(|current| current.clone())
+        })
+        .ok()
+        .flatten();
+    handler.map(|handler| handler(action)).unwrap_or(false)
 }
 
-/// Resolve a key chord to an action using scoped + default maps.
 pub fn resolve_action(chord: KeyChord) -> Option<Action> {
     if chord.key == Key::Unknown {
         return None;
     }
-
-    if let Some(action) = SCOPES.with(|scopes| {
-        scopes
-            .borrow()
-            .iter()
-            .rev()
-            .find_map(|scope| scope.action_for(&chord))
-    }) {
-        return Some(action);
-    }
-
-    DEFAULT_MAP.with(|m| m.borrow().action_for(&chord))
+    let scoped = SCOPES
+        .try_with(|scopes| {
+            scopes
+                .try_borrow()
+                .ok()
+                .and_then(|scopes| scopes.iter_rev().find_map(|scope| scope.action_for(&chord)))
+        })
+        .ok()
+        .flatten();
+    scoped.or_else(|| {
+        DEFAULT_MAP
+            .try_with(|map| map.try_borrow().ok().and_then(|map| map.action_for(&chord)))
+            .ok()
+            .flatten()
+    })
 }
 
-/// Replace the default shortcut map used by resolve_action.
 pub fn set_default_map(map: ShortcutMap) {
-    DEFAULT_MAP.with(|m| *m.borrow_mut() = map);
+    let old = DEFAULT_MAP.try_with(|current| {
+        current
+            .try_borrow_mut()
+            .ok()
+            .map(|mut current| std::mem::replace(&mut *current, map))
+    });
+    if let Ok(Some(old)) = old {
+        drop(old);
+    }
+    crate::request_frame();
 }
 
-/// Push a shortcut map for the current scope, popped on unmount.
-/// Idempotent: recomposing the installing view (e.g. every frame of a game
-/// root view) re-runs setup without stacking duplicates (mount-once
-/// semantics). Resolution order is innermost-installed scope first.
+fn map_cleanup_key(key: &str) -> String {
+    format!("shortcut-map-cleanup:{key}")
+}
+
+fn handler_cleanup_key(key: &str) -> String {
+    format!("shortcut-handler-cleanup:{key}")
+}
+
+fn owner_disposer(key: String, cleanup: Dispose, owner: String) -> Dispose {
+    Dispose::new(move || {
+        crate::runtime::remove_keyed_disposer_for_owner(&key, &cleanup, &owner);
+    })
+}
+
+fn install_shortcut_map_state(key: impl Into<String>, map: ShortcutMap) -> Dispose {
+    let key = key.into();
+    let state_key = format!("shortcut-map-state:{key}");
+    let state: Rc<RefCell<MapInstallState>> = remember_with_key(state_key, || {
+        RefCell::new(MapInstallState {
+            token: 0,
+            active: false,
+            cleanup: None,
+        })
+    });
+    let (token, cleanup, installed) = {
+        let weak: Weak<RefCell<MapInstallState>> = Rc::downgrade(&state);
+        let mut state = state.borrow_mut();
+        if state.active {
+            (
+                state.token,
+                state.cleanup.clone().expect("active map state"),
+                false,
+            )
+        } else {
+            let token = next_installer_id();
+            let cleanup = Dispose::new(move || {
+                let removed = SCOPES
+                    .try_with(|scopes| {
+                        scopes
+                            .try_borrow_mut()
+                            .ok()
+                            .and_then(|mut scopes| scopes.remove(token))
+                    })
+                    .ok()
+                    .flatten();
+                drop(removed);
+                if let Some(state) = weak.upgrade() {
+                    let old = {
+                        let mut state = state.borrow_mut();
+                        if state.token == token {
+                            state.active = false;
+                            state.cleanup.take()
+                        } else {
+                            None
+                        }
+                    };
+                    drop(old);
+                }
+            });
+            state.token = token;
+            state.active = true;
+            state.cleanup = Some(cleanup.clone());
+            (token, cleanup, true)
+        }
+    };
+    if installed {
+        SCOPES.with(|scopes| scopes.borrow_mut().push_installed(token, map));
+    } else {
+        let old = SCOPES
+            .try_with(|scopes| {
+                scopes
+                    .try_borrow_mut()
+                    .ok()
+                    .and_then(|mut scopes| scopes.update(token, map))
+            })
+            .ok()
+            .flatten();
+        drop(old);
+    }
+    let cleanup_key = map_cleanup_key(&key);
+    let owner =
+        crate::runtime::scope_owner_token(crate::scope_cache::current_scope_key().as_deref());
+    if !crate::runtime::keyed_disposer_has_owner(&cleanup_key, &cleanup, &owner) {
+        crate::runtime::register_keyed_disposer_for_owner(
+            cleanup_key.clone(),
+            cleanup.clone(),
+            owner.clone(),
+        );
+        if let Some(scope) = crate::scope::current_scope() {
+            let registered = cleanup.clone();
+            let scope_key = cleanup_key.clone();
+            let scope_owner = owner.clone();
+            scope.add_disposer(move || {
+                crate::runtime::remove_keyed_disposer_for_owner(
+                    &scope_key,
+                    &registered,
+                    &scope_owner,
+                );
+            });
+        }
+    }
+    owner_disposer(cleanup_key, cleanup, owner)
+}
+
+pub fn install_shortcut_map_with_key(key: impl Into<String>, map: ShortcutMap) -> Dispose {
+    install_shortcut_map_state(key, map)
+}
+
+#[allow(non_snake_case)]
+pub fn InstallShortcutMapWithKey(key: impl Into<String>, map: ShortcutMap) -> Dispose {
+    install_shortcut_map_state(key, map)
+}
+
+#[track_caller]
 #[allow(non_snake_case)]
 pub fn InstallShortcutMap(map: ShortcutMap) -> Dispose {
-    effect_once(move || {
-        let map = map.clone();
-        SCOPES.with(|scopes| scopes.borrow_mut().push(map));
-        on_unmount(|| {
-            let _ = SCOPES.try_with(|scopes| {
-                scopes.borrow_mut().pop();
-            });
-        })
-    })
+    let location = std::panic::Location::caller();
+    install_shortcut_map_state(
+        format!(
+            "{}:{}:{}",
+            location.file(),
+            location.line(),
+            location.column()
+        ),
+        map,
+    )
 }
 
-/// Install/uninstall a shortcut handler for the current scope.
-/// Idempotent like [`InstallShortcutMap`]: recomposing the installing view
-/// replaces the previous handler instead of stacking.
-/// Restores the previous handler on unmount (supports nesting).
+pub fn install_shortcut_handler_state(key: impl Into<String>, handler: Handler) -> Dispose {
+    let key = key.into();
+    let state_key = format!("shortcut-handler-state:{key}");
+    let state: Rc<RefCell<HandlerInstallState>> = remember_with_key(state_key, || {
+        RefCell::new(HandlerInstallState {
+            token: 0,
+            active: false,
+            cleanup: None,
+        })
+    });
+    let (token, cleanup, installed) = {
+        let weak: Weak<RefCell<HandlerInstallState>> = Rc::downgrade(&state);
+        let mut state = state.borrow_mut();
+        if state.active {
+            (
+                state.token,
+                state.cleanup.clone().expect("active handler state"),
+                false,
+            )
+        } else {
+            let token = next_installer_id();
+            let cleanup = Dispose::new(move || {
+                let removed = HANDLER_ENTRIES
+                    .try_with(|entries| {
+                        entries.try_borrow_mut().ok().and_then(|mut entries| {
+                            let index = entries.iter().position(|(id, _)| *id == token)?;
+                            Some(entries.remove(index).1)
+                        })
+                    })
+                    .ok()
+                    .flatten();
+                drop(removed);
+                if let Some(state) = weak.upgrade() {
+                    let old = {
+                        let mut state = state.borrow_mut();
+                        if state.token == token {
+                            state.active = false;
+                            state.cleanup.take()
+                        } else {
+                            None
+                        }
+                    };
+                    drop(old);
+                }
+                sync_handler();
+            });
+            state.token = token;
+            state.active = true;
+            state.cleanup = Some(cleanup.clone());
+            (token, cleanup, true)
+        }
+    };
+    if installed {
+        let old = HANDLER_ENTRIES
+            .try_with(|entries| {
+                entries.try_borrow_mut().ok().map(|mut entries| {
+                    entries.push((token, handler));
+                    None::<Handler>
+                })
+            })
+            .ok()
+            .flatten();
+        drop(old);
+        sync_handler();
+    } else {
+        let old = HANDLER_ENTRIES
+            .try_with(|entries| {
+                entries.try_borrow_mut().ok().and_then(|mut entries| {
+                    let entry = entries.iter_mut().find(|(id, _)| *id == token)?;
+                    let old = entry.1.clone();
+                    entry.1 = handler;
+                    Some(old)
+                })
+            })
+            .ok()
+            .flatten();
+        drop(old);
+        sync_handler();
+    }
+    let cleanup_key = handler_cleanup_key(&key);
+    let owner =
+        crate::runtime::scope_owner_token(crate::scope_cache::current_scope_key().as_deref());
+    if !crate::runtime::keyed_disposer_has_owner(&cleanup_key, &cleanup, &owner) {
+        crate::runtime::register_keyed_disposer_for_owner(
+            cleanup_key.clone(),
+            cleanup.clone(),
+            owner.clone(),
+        );
+        if let Some(scope) = crate::scope::current_scope() {
+            let registered = cleanup.clone();
+            let scope_key = cleanup_key.clone();
+            let scope_owner = owner.clone();
+            scope.add_disposer(move || {
+                crate::runtime::remove_keyed_disposer_for_owner(
+                    &scope_key,
+                    &registered,
+                    &scope_owner,
+                );
+            });
+        }
+    }
+    owner_disposer(cleanup_key, cleanup, owner)
+}
+
+pub fn install_shortcut_handler_with_key(key: impl Into<String>, handler: Handler) -> Dispose {
+    install_shortcut_handler_state(key, handler)
+}
+
+#[allow(non_snake_case)]
+pub fn InstallShortcutHandlerWithKey(key: impl Into<String>, handler: Handler) -> Dispose {
+    install_shortcut_handler_state(key, handler)
+}
+
+#[track_caller]
 #[allow(non_snake_case)]
 pub fn InstallShortcutHandler(handler: Handler) -> Dispose {
-    effect_once(move || {
-        let prev = HANDLER.with(|h| h.borrow_mut().replace(handler.clone()));
-        on_unmount(move || {
-            let _ = HANDLER.try_with(|h| *h.borrow_mut() = prev);
-        })
-    })
+    let location = std::panic::Location::caller();
+    install_shortcut_handler_state(
+        format!(
+            "{}:{}:{}",
+            location.file(),
+            location.line(),
+            location.column()
+        ),
+        handler,
+    )
 }
 
 pub fn default_chord_for(action: &Action) -> Option<KeyChord> {
@@ -374,5 +711,49 @@ mod tests {
 
         SCOPES.with(|scopes| scopes.borrow_mut().pop());
         assert_eq!(resolve_action(chord), Some(Action::Custom("one".into())));
+    }
+
+    #[test]
+    fn keyed_map_updates_and_cleans_up() {
+        set_default_map(ShortcutMap::new());
+        let chord = KeyChord::new(Key::Character('m'), Modifiers::default());
+        let mut first = ShortcutMap::new();
+        first.insert(
+            chord.key.clone(),
+            chord.modifiers,
+            Action::Custom("first".into()),
+        );
+        let mut second = ShortcutMap::new();
+        second.insert(
+            chord.key.clone(),
+            chord.modifiers,
+            Action::Custom("second".into()),
+        );
+        let key = "shortcut-test-map-update";
+        let disposer = install_shortcut_map_with_key(key, first);
+        assert_eq!(
+            resolve_action(chord.clone()),
+            Some(Action::Custom("first".into()))
+        );
+        let _ = install_shortcut_map_with_key(key, second);
+        assert_eq!(
+            resolve_action(chord.clone()),
+            Some(Action::Custom("second".into()))
+        );
+        disposer.run();
+        assert_eq!(resolve_action(chord), None);
+    }
+
+    #[test]
+    fn handler_restores_base_after_keyed_cleanup() {
+        let base = Rc::new(|_action: Action| false);
+        let installed = Rc::new(|_action: Action| true);
+        set(Some(base));
+        let key = "shortcut-test-handler-restore";
+        let disposer = install_shortcut_handler_with_key(key, installed);
+        assert!(handle(Action::Copy));
+        disposer.run();
+        assert!(!handle(Action::Copy));
+        set(None);
     }
 }

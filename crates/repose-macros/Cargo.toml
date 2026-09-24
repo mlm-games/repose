@@ -1,10 +1,11 @@
 [package]
 name = "repose-macros"
 edition.workspace = true
+rust-version.workspace = true
 version.workspace = true
 license.workspace = true
-# publish = false
-description = "Wip macros for repose"
+repository.workspace = true
+description = "Procedural macros used by Repose"
 
 [lib]
 proc-macro = true

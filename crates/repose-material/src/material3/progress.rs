@@ -1,5 +1,8 @@
 #![allow(non_snake_case)]
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use web_time::Duration;
 
 use repose_core::animation::{AnimationSpec, CubicBezier, Easing, KeyframesSpec, RepeatableSpec};
@@ -32,6 +35,37 @@ impl Default for CircularProgressIndicatorConfig {
     }
 }
 
+fn progress_identity(modifier: &Modifier, kind: &str, instance_id: u64) -> String {
+    match modifier.key {
+        Some(key) => format!("progress:{kind}:key:{key}"),
+        None => format!("progress:{kind}:instance:{instance_id}"),
+    }
+}
+
+fn indeterminate_animation(key: &str, duration: Duration) -> Rc<RefCell<AnimatedValue<f32>>> {
+    let animation_key = format!("progress:driver:{key}");
+    let animation = remember_state_with_key(animation_key.clone(), || {
+        let mut animation = AnimatedValue::new(
+            0.0,
+            AnimationSpec::tween(duration, Easing::Linear).repeated(RepeatableSpec::infinite()),
+        );
+        animation.set_target(1.0);
+        animation
+    });
+    repose_core::animation_driver::touch(&animation_key);
+    if !repose_core::animation_driver::is_registered(&animation_key) {
+        let animation_for_driver = animation.clone();
+        repose_core::animation_driver::register(
+            animation_key,
+            Rc::new(RefCell::new(move || {
+                animation_for_driver.borrow_mut().update()
+            })),
+        );
+    }
+    request_frame();
+    animation
+}
+
 /// M3 Circular Progress Indicator.
 ///
 /// Determinate (`Some(0..1)`): draws arc from 12 o'clock clockwise.
@@ -40,76 +74,81 @@ pub fn CircularProgressIndicator(
     value: Option<f32>,
     config: CircularProgressIndicatorConfig,
 ) -> View {
+    let instance_id = remember(unique_component_id);
+    let identity = progress_identity(&config.modifier, "circular", *instance_id);
     let sz = ProgressIndicatorDefaults::CIRCULAR_INDICATOR_SIZE.to_px().0;
     let stroke_px = config.stroke_width.to_px().0;
-    let val = value.map(|v| v.clamp(0.0, 1.0));
-
-    // Three concurrent animations matching Compose Material3 indeterminate spec:
-    //   1. Global rotation -> 1080° linear over 6000ms
-    //   2. Additional rotation -> 90° stepped jumps with EmphasizedDecelerate
-    //   3. Sweep -> oscillates 0.1 -> 0.87 -> 0.1 over 6000ms
-    let (global_rotation, additional_rotation, sweep_val) = if value.is_none() {
-        let shared = remember_state_with_key("circ_ind_shared", || {
-            let mut a = AnimatedValue::new(
-                0.0f32,
-                AnimationSpec::tween(Duration::from_millis(6000), Easing::Linear)
-                    .repeated(RepeatableSpec::infinite()),
-            );
-            a.set_target(1.0);
-            a
-        });
-        let mut s = shared.borrow_mut();
-        s.update();
-        let t = *s.get();
-        drop(s);
-
-        let gv = t * 1080.0;
-
-        let emph = Easing::Custom(CubicBezier::new(0.05, 0.7, 0.1, 1.0));
-        let add_kf = remember_state_with_key("circ_ind_add_kf", || KeyframesSpec {
-            keyframes: vec![
-                (0.0, 0.0, None),
-                (0.05, 90.0, Some(emph)),
-                (0.25, 90.0, None),
-                (0.30, 180.0, None),
-                (0.50, 180.0, None),
-                (0.55, 270.0, None),
-                (0.75, 270.0, None),
-                (0.80, 360.0, None),
-                (1.0, 360.0, None),
-            ],
-        });
-        let av = add_kf.borrow().evaluate(t);
-
-        let std_dec = Easing::Custom(CubicBezier::new(0.2, 0.0, 0.0, 1.0));
-        let sweep_kf = remember_state_with_key("circ_ind_sweep_kf", || KeyframesSpec {
-            keyframes: vec![
-                (0.0, 0.1, None),
-                (0.5, 0.87, Some(std_dec)),
-                (1.0, 0.1, None),
-            ],
-        });
-        let sv = sweep_kf.borrow().evaluate(t);
-
-        (gv, av, sv)
-    } else {
-        (0.0, 0.0, 0.0)
-    };
+    let val = value.map(|v| {
+        if v.is_finite() {
+            v.clamp(0.0, 1.0)
+        } else {
+            0.0
+        }
+    });
+    let animation = value
+        .is_none()
+        .then(|| indeterminate_animation(&identity, Duration::from_millis(6000)));
+    let add_kf = value.is_none().then(|| {
+        remember_state_with_key(format!("{identity}:circular-add"), || {
+            let emph = Easing::Custom(CubicBezier::new(0.05, 0.7, 0.1, 1.0));
+            KeyframesSpec {
+                keyframes: vec![
+                    (0.0, 0.0, None),
+                    (0.05, 90.0, Some(emph)),
+                    (0.25, 90.0, None),
+                    (0.30, 180.0, None),
+                    (0.50, 180.0, None),
+                    (0.55, 270.0, None),
+                    (0.75, 270.0, None),
+                    (0.80, 360.0, None),
+                    (1.0, 360.0, None),
+                ],
+            }
+        })
+    });
+    let sweep_kf = value.is_none().then(|| {
+        remember_state_with_key(format!("{identity}:circular-sweep"), || {
+            let std_dec = Easing::Custom(CubicBezier::new(0.2, 0.0, 0.0, 1.0));
+            KeyframesSpec {
+                keyframes: vec![
+                    (0.0, 0.1, None),
+                    (0.5, 0.87, Some(std_dec)),
+                    (1.0, 0.1, None),
+                ],
+            }
+        })
+    });
 
     // Pre-compute gap angular size in radians
     let indicator_size_dp = ProgressIndicatorDefaults::CIRCULAR_INDICATOR_SIZE;
-    let adjusted_gap_dp = if config.stroke_cap == StrokeCap::Butt {
+    let adjusted_gap_dp = (if config.stroke_cap == StrokeCap::Butt {
         config.gap_size
     } else {
         config.gap_size + config.stroke_width
-    };
-    let circle_dia_dp = indicator_size_dp - config.stroke_width;
+    })
+    .max(Dp::ZERO);
+    let circle_dia_dp = (indicator_size_dp - config.stroke_width).max(Dp(1.0));
     let gap_sweep_rad = (adjusted_gap_dp / circle_dia_dp) * 2.0;
 
     Box(Modifier::new()
         .size(Dp(sz), Dp(sz))
         .then(config.modifier)
         .painter(move |scene: &mut Scene, rect: Rect, alpha: f32| {
+            let (global_rotation, additional_rotation, sweep_val) =
+                if let Some(animation) = &animation {
+                    let t = *animation.borrow().get();
+                    let av = add_kf
+                        .as_ref()
+                        .map(|keyframe| keyframe.borrow().evaluate(t))
+                        .unwrap_or(0.0);
+                    let sv = sweep_kf
+                        .as_ref()
+                        .map(|keyframe| keyframe.borrow().evaluate(t))
+                        .unwrap_or(0.0);
+                    (t * 1080.0, av, sv)
+                } else {
+                    (0.0, 0.0, 0.0)
+                };
             let mul_c = |c: Color| {
                 Color(
                     c.0,
@@ -195,6 +234,7 @@ pub fn CircularProgressIndicator(
         }))
     .semantics(Semantics {
         role: Role::ProgressBar,
+        value: val.map(|v| format!("{}%", (v * 100.0).round() as i32)),
         ..Default::default()
     })
 }
@@ -231,34 +271,30 @@ impl Default for LinearProgressIndicatorConfig {
 /// Determinate (`Some(0..1)`): active track + gap + stop indicator (M3).
 /// Indeterminate (`None`): sliding indicator matching Compose Material3 timing.
 pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicatorConfig) -> View {
-    let (head, tail) = if value.is_none() {
-        // Compose M3 indeterminate linear: ~1800 ms cycle, head/tail with different phases.
-        let shared = remember_state_with_key("lin_ind_shared", || {
-            let mut a = AnimatedValue::new(
-                0.0f32,
-                AnimationSpec::tween(Duration::from_millis(1800), Easing::Linear)
-                    .repeated(RepeatableSpec::infinite()),
-            );
-            a.set_target(1.0);
-            a
-        });
-        let mut s = shared.borrow_mut();
-        s.update();
-        let t = *s.get();
-        drop(s);
-        // HACK: Simplified but visually close to M3 (two overlapping segments).
-        let head = (t * 1.5).fract();
-        let tail = ((t * 1.5) - 0.4).fract().max(0.0);
-        (head, tail)
-    } else {
-        (0.0, 0.0)
-    };
+    let instance_id = remember(unique_component_id);
+    let identity = progress_identity(&config.modifier, "linear", *instance_id);
+    let value = value.map(|v| {
+        if v.is_finite() {
+            v.clamp(0.0, 1.0)
+        } else {
+            0.0
+        }
+    });
+    let animation = value
+        .is_none()
+        .then(|| indeterminate_animation(&identity, Duration::from_millis(1800)));
 
     Box(Modifier::new()
         .fill_max_width()
         .height(ProgressIndicatorDefaults::LINEAR_INDICATOR_HEIGHT)
         .then(config.modifier)
         .painter(move |scene: &mut Scene, rect: Rect, alpha: f32| {
+            let (head, tail) = if let Some(animation) = &animation {
+                let t = *animation.borrow().get();
+                ((t * 1.5).fract(), ((t * 1.5) - 0.4).fract().max(0.0))
+            } else {
+                (0.0, 0.0)
+            };
             let mul_c = |c: Color| {
                 Color(
                     c.0,
@@ -275,7 +311,8 @@ pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicat
             } else {
                 corner
             };
-            let dot_r = config.stop_size.to_px().0 * 0.5;
+            let dot_r = (config.stop_size.to_px().0 * 0.5).max(0.0);
+            let gap_px = config.gap_size.to_px().0.max(0.0);
 
             // Full track background
             scene.nodes.push(SceneNode::Rect {
@@ -290,9 +327,8 @@ pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicat
             });
 
             if let Some(t) = value {
-                let t = t.clamp(0.0, 1.0);
                 let cap_ofs = cap_radius;
-                let ind_end = (t * rect.w).clamp(cap_ofs, rect.w - cap_ofs);
+                let ind_end = (t * rect.w - gap_px).clamp(cap_ofs, rect.w - cap_ofs);
                 let ind_w = (ind_end - cap_ofs).max(0.0);
 
                 if t > 0.0 && ind_w > 0.0 {
@@ -350,6 +386,14 @@ pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicat
         }))
     .semantics(Semantics {
         role: Role::ProgressBar,
+        value: value.map(|v| {
+            let v = if v.is_finite() {
+                v.clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            format!("{}%", (v * 100.0).round() as i32)
+        }),
         ..Default::default()
     })
 }

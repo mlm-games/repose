@@ -39,6 +39,10 @@ pub mod radius {
     pub const XL: Dp = Dp(28.0);
 }
 
+pub fn compact_layout() -> bool {
+    !window_size_class().is_at_least_medium_width()
+}
+
 pub fn Hint(text: impl Into<String>) -> View {
     Text(text.into())
         .size(Sp(13.0))
@@ -136,8 +140,7 @@ pub fn AppShell(
     settings: SettingsVm,
     content: View,
 ) -> View {
-    let class = window_size_class();
-    let compact = !class.is_at_least_medium_width();
+    let compact = compact_layout();
 
     let shell = if compact {
         Column(Modifier::new().fill_max_size()).child((
@@ -192,7 +195,14 @@ fn PageHero(route: Route, compact: bool) -> View {
     let th = theme();
 
     let title_block = Column(Modifier::new().gap(sp::SM)).child((
-        Row(Modifier::new().align_items(AlignItems::CENTER).gap(sp::SM)).child((
+        FlowRow(
+            Modifier::new()
+                .fill_max_width()
+                .align_items(AlignItems::CENTER)
+                .gap(sp::SM),
+            FlowRowConfig::default(),
+        )
+        .child((
             RouteBadge(route, true),
             Pill(route.group().title(), th.primary.with_alpha(24), th.primary),
         )),
@@ -292,7 +302,7 @@ fn SettingsPanel(vm: SettingsVm) -> View {
     Column(
         Modifier::new()
             .padding(sp::XL)
-            .min_width(Dp(340.0))
+            .fill_max_width()
             .max_width(Dp(440.0))
             .gap(sp::LG),
     )

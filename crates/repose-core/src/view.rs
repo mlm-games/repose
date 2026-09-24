@@ -16,8 +16,8 @@ pub struct SubcomposeScope {
 }
 
 impl SubcomposeScope {
-    /// A scope with no constraints: unbounded in both dimensions. Use this as
-    /// a default when the parent constraints are not yet known.
+    /// A scope with no finite upper bounds. Values are density-independent
+    /// pixels (`Dp`).
     pub const UNBOUNDED: Self = Self {
         min_width: Dp(0.0),
         max_width: Dp(f32::INFINITY),
@@ -25,14 +25,45 @@ impl SubcomposeScope {
         max_height: Dp(f32::INFINITY),
     };
 
-    /// Construct a scope from raw min/max [`Dp`] values.
+    /// Construct a scope from raw min/max [`Dp`] values. Non-finite minimums
+    /// and negative values are coerced to zero, a NaN maximum becomes
+    /// unbounded, and inverted bounds collapse to the maximum.
     pub fn new(min_width: Dp, max_width: Dp, min_height: Dp, max_height: Dp) -> Self {
-        Self {
-            min_width,
-            max_width,
-            min_height,
-            max_height,
+        fn minimum(value: f32) -> f32 {
+            if value.is_nan() || value < 0.0 || !value.is_finite() {
+                0.0
+            } else {
+                value
+            }
         }
+        fn maximum(value: f32) -> f32 {
+            if value.is_nan() || value < 0.0 {
+                if value.is_nan() { f32::INFINITY } else { 0.0 }
+            } else {
+                value
+            }
+        }
+        let mut scope = Self {
+            min_width: Dp(minimum(min_width.0)),
+            max_width: Dp(maximum(max_width.0)),
+            min_height: Dp(minimum(min_height.0)),
+            max_height: Dp(maximum(max_height.0)),
+        };
+        if scope.min_width.0 > scope.max_width.0 {
+            scope.min_width = scope.max_width;
+        }
+        if scope.min_height.0 > scope.max_height.0 {
+            scope.min_height = scope.max_height;
+        }
+        scope
+    }
+
+    pub fn has_bounded_width(&self) -> bool {
+        self.max_width.0.is_finite()
+    }
+
+    pub fn has_bounded_height(&self) -> bool {
+        self.max_height.0.is_finite()
     }
 }
 

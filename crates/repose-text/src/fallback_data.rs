@@ -7,4211 +7,4211 @@ pub struct NotoFont {
 pub const NOTO_FONTS: &[NotoFont] = &[
     NotoFont {
         name: "Noto Color Emoji 0",
-        url: "notocoloremoji/v39/Yq6P-KqIXTD0t4D9z1ESnKM3-HpFabsE4tq3luCC7p-aXxcn.0.woff2",
+        url: "https://raw.githubusercontent.com/google/fonts/296bb4790d3f9bd95547c733708a3666ed35d844/ofl/notocoloremoji/NotoColorEmoji-Regular.ttf",
     },
     NotoFont {
         name: "Noto Color Emoji 1",
-        url: "notocoloremoji/v39/Yq6P-KqIXTD0t4D9z1ESnKM3-HpFabsE4tq3luCC7p-aXxcn.1.woff2",
+        url: "https://raw.githubusercontent.com/google/fonts/296bb4790d3f9bd95547c733708a3666ed35d844/ofl/notocoloremoji/NotoColorEmoji-Regular.ttf",
     },
     NotoFont {
         name: "Noto Color Emoji 2",
-        url: "notocoloremoji/v39/Yq6P-KqIXTD0t4D9z1ESnKM3-HpFabsE4tq3luCC7p-aXxcn.2.woff2",
+        url: "https://raw.githubusercontent.com/google/fonts/296bb4790d3f9bd95547c733708a3666ed35d844/ofl/notocoloremoji/NotoColorEmoji-Regular.ttf",
     },
     NotoFont {
         name: "Noto Color Emoji 3",
-        url: "notocoloremoji/v39/Yq6P-KqIXTD0t4D9z1ESnKM3-HpFabsE4tq3luCC7p-aXxcn.3.woff2",
+        url: "https://raw.githubusercontent.com/google/fonts/296bb4790d3f9bd95547c733708a3666ed35d844/ofl/notocoloremoji/NotoColorEmoji-Regular.ttf",
     },
     NotoFont {
         name: "Noto Color Emoji 4",
-        url: "notocoloremoji/v39/Yq6P-KqIXTD0t4D9z1ESnKM3-HpFabsE4tq3luCC7p-aXxcn.4.woff2",
+        url: "https://raw.githubusercontent.com/google/fonts/296bb4790d3f9bd95547c733708a3666ed35d844/ofl/notocoloremoji/NotoColorEmoji-Regular.ttf",
     },
     NotoFont {
         name: "Noto Color Emoji 5",
-        url: "notocoloremoji/v39/Yq6P-KqIXTD0t4D9z1ESnKM3-HpFabsE4tq3luCC7p-aXxcn.5.woff2",
+        url: "https://raw.githubusercontent.com/google/fonts/296bb4790d3f9bd95547c733708a3666ed35d844/ofl/notocoloremoji/NotoColorEmoji-Regular.ttf",
     },
     NotoFont {
         name: "Noto Color Emoji 6",
-        url: "notocoloremoji/v39/Yq6P-KqIXTD0t4D9z1ESnKM3-HpFabsE4tq3luCC7p-aXxcn.6.woff2",
+        url: "https://raw.githubusercontent.com/google/fonts/296bb4790d3f9bd95547c733708a3666ed35d844/ofl/notocoloremoji/NotoColorEmoji-Regular.ttf",
     },
     NotoFont {
         name: "Noto Color Emoji 7",
-        url: "notocoloremoji/v39/Yq6P-KqIXTD0t4D9z1ESnKM3-HpFabsE4tq3luCC7p-aXxcn.7.woff2",
+        url: "https://raw.githubusercontent.com/google/fonts/296bb4790d3f9bd95547c733708a3666ed35d844/ofl/notocoloremoji/NotoColorEmoji-Regular.ttf",
     },
     NotoFont {
         name: "Noto Color Emoji 8",
-        url: "notocoloremoji/v39/Yq6P-KqIXTD0t4D9z1ESnKM3-HpFabsE4tq3luCC7p-aXxcn.8.woff2",
+        url: "https://raw.githubusercontent.com/google/fonts/296bb4790d3f9bd95547c733708a3666ed35d844/ofl/notocoloremoji/NotoColorEmoji-Regular.ttf",
     },
     NotoFont {
         name: "Noto Color Emoji 9",
-        url: "notocoloremoji/v39/Yq6P-KqIXTD0t4D9z1ESnKM3-HpFabsE4tq3luCC7p-aXxcn.9.woff2",
+        url: "https://raw.githubusercontent.com/google/fonts/296bb4790d3f9bd95547c733708a3666ed35d844/ofl/notocoloremoji/NotoColorEmoji-Regular.ttf",
     },
     NotoFont {
         name: "Noto Music 0",
-        url: "notomusic/v21/pe0rMIiSN5pO63htf1sxEkW7I9tScg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoMusic/hinted/ttf/NotoMusic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Music 1",
-        url: "notomusic/v21/pe0rMIiSN5pO63htf1sxEt6aBuZr.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoMusic/hinted/ttf/NotoMusic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Music 2",
-        url: "notomusic/v21/pe0rMIiSN5pO63htf1sxEtCaBg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoMusic/hinted/ttf/NotoMusic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans 0",
-        url: "notosans/v42/o-0mIpQlx3QUlC5A4PNB6Ryti20_6n1iPHjcz6L1SoM-jCpoiyD9A-9X6VLKzA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSans/hinted/ttf/NotoSans-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans 1",
-        url: "notosans/v42/o-0mIpQlx3QUlC5A4PNB6Ryti20_6n1iPHjcz6L1SoM-jCpoiyD9A-9e6VLKzA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSans/hinted/ttf/NotoSans-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans 2",
-        url: "notosans/v42/o-0mIpQlx3QUlC5A4PNB6Ryti20_6n1iPHjcz6L1SoM-jCpoiyD9A-9b6VLKzA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSans/hinted/ttf/NotoSans-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans 3",
-        url: "notosans/v42/o-0mIpQlx3QUlC5A4PNB6Ryti20_6n1iPHjcz6L1SoM-jCpoiyD9A-9W6VLKzA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSans/hinted/ttf/NotoSans-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans 4",
-        url: "notosans/v42/o-0mIpQlx3QUlC5A4PNB6Ryti20_6n1iPHjcz6L1SoM-jCpoiyD9A-9Z6VLKzA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSans/hinted/ttf/NotoSans-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans 5",
-        url: "notosans/v42/o-0mIpQlx3QUlC5A4PNB6Ryti20_6n1iPHjcz6L1SoM-jCpoiyD9A-9V6VLKzA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSans/hinted/ttf/NotoSans-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans 6",
-        url: "notosans/v42/o-0mIpQlx3QUlC5A4PNB6Ryti20_6n1iPHjcz6L1SoM-jCpoiyD9A-9U6VLKzA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSans/hinted/ttf/NotoSans-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans 7",
-        url: "notosans/v42/o-0mIpQlx3QUlC5A4PNB6Ryti20_6n1iPHjcz6L1SoM-jCpoiyD9A-9a6VI.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSans/hinted/ttf/NotoSans-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Adlam 0",
-        url: "notosansadlam/v27/neIczCCpqp0s5pPusPamd81eMfjPonvqdbYxxpgufnv0fAzLZYwh.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansAdlam/hinted/ttf/NotoSansAdlam-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Adlam 1",
-        url: "notosansadlam/v27/neIczCCpqp0s5pPusPamd81eMfjPonvqdbYxxpgufnv0fGDLZYwh.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansAdlam/hinted/ttf/NotoSansAdlam-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Adlam 2",
-        url: "notosansadlam/v27/neIczCCpqp0s5pPusPamd81eMfjPonvqdbYxxpgufnv0fG7LZQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansAdlam/hinted/ttf/NotoSansAdlam-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Anatolian Hieroglyphs 0",
-        url: "notosansanatolianhieroglyphs/v17/ijw9s4roRME5LLRxjsRb8A0gKPSWq4BbDmHHu6j2pEtUJzZWb4bj7moAWA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansAnatolianHieroglyphs/hinted/ttf/NotoSansAnatolianHieroglyphs-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Anatolian Hieroglyphs 1",
-        url: "notosansanatolianhieroglyphs/v17/ijw9s4roRME5LLRxjsRb8A0gKPSWq4BbDmHHu6j2pEtUJzZWby_Cy1c5.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansAnatolianHieroglyphs/hinted/ttf/NotoSansAnatolianHieroglyphs-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Anatolian Hieroglyphs 2",
-        url: "notosansanatolianhieroglyphs/v17/ijw9s4roRME5LLRxjsRb8A0gKPSWq4BbDmHHu6j2pEtUJzZWbyHCyw.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansAnatolianHieroglyphs/hinted/ttf/NotoSansAnatolianHieroglyphs-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Arabic 0",
-        url: "notosansarabic/v33/nwpxtLGrOAZMl5nJ_wfgRg3DrWFZWsnVBJ_sS6tlqHHFlhQ5l3sQWIHPqzCfyGyfuXqAJQI.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansArabic/hinted/ttf/NotoSansArabic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Arabic 1",
-        url: "notosansarabic/v33/nwpxtLGrOAZMl5nJ_wfgRg3DrWFZWsnVBJ_sS6tlqHHFlhQ5l3sQWIHPqzCfyGyfwHqAJQI.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansArabic/hinted/ttf/NotoSansArabic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Arabic 2",
-        url: "notosansarabic/v33/nwpxtLGrOAZMl5nJ_wfgRg3DrWFZWsnVBJ_sS6tlqHHFlhQ5l3sQWIHPqzCfyGyf0nqAJQI.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansArabic/hinted/ttf/NotoSansArabic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Arabic 3",
-        url: "notosansarabic/v33/nwpxtLGrOAZMl5nJ_wfgRg3DrWFZWsnVBJ_sS6tlqHHFlhQ5l3sQWIHPqzCfyGyfsnqAJQI.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansArabic/hinted/ttf/NotoSansArabic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Arabic 4",
-        url: "notosansarabic/v33/nwpxtLGrOAZMl5nJ_wfgRg3DrWFZWsnVBJ_sS6tlqHHFlhQ5l3sQWIHPqzCfyGyfvHqA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansArabic/hinted/ttf/NotoSansArabic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Armenian 0",
-        url: "notosansarmenian/v47/ZgN0jOZKPa7CHqq0h37c7ReDUubm2SEdFXp7ig73qtTY5idb74R9UdM3y2nZLorxb501aS-DFw.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansArmenian/hinted/ttf/NotoSansArmenian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Armenian 1",
-        url: "notosansarmenian/v47/ZgN0jOZKPa7CHqq0h37c7ReDUubm2SEdFXp7ig73qtTY5idb74R9UdM3y2nZLorxb50raS-DFw.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansArmenian/hinted/ttf/NotoSansArmenian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Armenian 2",
-        url: "notosansarmenian/v47/ZgN0jOZKPa7CHqq0h37c7ReDUubm2SEdFXp7ig73qtTY5idb74R9UdM3y2nZLorxb50laS8.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansArmenian/hinted/ttf/NotoSansArmenian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Avestan 0",
-        url: "notosansavestan/v22/bWti7ejKfBziStx7lIzKOLQZKhIJkxvuQgW7jg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansAvestan/hinted/ttf/NotoSansAvestan-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Avestan 1",
-        url: "notosansavestan/v22/bWti7ejKfBziStx7lIzKOLQZKhIJkxu0QgW7jg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansAvestan/hinted/ttf/NotoSansAvestan-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Avestan 2",
-        url: "notosansavestan/v22/bWti7ejKfBziStx7lIzKOLQZKhIJkxu6QgU.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansAvestan/hinted/ttf/NotoSansAvestan-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Balinese 0",
-        url: "notosansbalinese/v27/NaPwcYvSBuhTirw6IaFn6UrRDaqje-lpbbRtYf-Fwu2Ov7fdtG5fdl22.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansBalinese/hinted/ttf/NotoSansBalinese-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Balinese 1",
-        url: "notosansbalinese/v27/NaPwcYvSBuhTirw6IaFn6UrRDaqje-lpbbRtYf-Fwu2Ov7fdtEdfdl22.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansBalinese/hinted/ttf/NotoSansBalinese-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Balinese 2",
-        url: "notosansbalinese/v27/NaPwcYvSBuhTirw6IaFn6UrRDaqje-lpbbRtYf-Fwu2Ov7fdtElfdg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansBalinese/hinted/ttf/NotoSansBalinese-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Bamum 0",
-        url: "notosansbamum/v35/uk-0EGK3o6EruUbnwovcbBTkkklK_Ya_PBHfNGTPEddOy6wBy3xE.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansBamum/hinted/ttf/NotoSansBamum-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Bamum 1",
-        url: "notosansbamum/v35/uk-0EGK3o6EruUbnwovcbBTkkklK_Ya_PBHfNGTPEddOy_EBy3xE.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansBamum/hinted/ttf/NotoSansBamum-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Bamum 2",
-        url: "notosansbamum/v35/uk-0EGK3o6EruUbnwovcbBTkkklK_Ya_PBHfNGTPEddOy_8Byw.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansBamum/hinted/ttf/NotoSansBamum-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Bassa Vah 0",
-        url: "notosansbassavah/v21/PN_bRee-r3f7LnqsD5sax12gjZn7mBpL5YwUpA2MBdcFn4MaAf429KwKwXk.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansBassaVah/hinted/ttf/NotoSansBassaVah-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Bassa Vah 1",
-        url: "notosansbassavah/v21/PN_bRee-r3f7LnqsD5sax12gjZn7mBpL5YwUpA2MBdcFn4MaAf6g1Yk3-A.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansBassaVah/hinted/ttf/NotoSansBassaVah-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Bassa Vah 2",
-        url: "notosansbassavah/v21/PN_bRee-r3f7LnqsD5sax12gjZn7mBpL5YwUpA2MBdcFn4MaAf6u1Yk.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansBassaVah/hinted/ttf/NotoSansBassaVah-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Batak 0",
-        url: "notosansbatak/v23/gok2H6TwAEdtF9N8-mdTCQvT-ZdQ9oXOLuk.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansBatak/hinted/ttf/NotoSansBatak-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Batak 1",
-        url: "notosansbatak/v23/gok2H6TwAEdtF9N8-mdTCQvT-ZdQqoXOLuk.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansBatak/hinted/ttf/NotoSansBatak-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Batak 2",
-        url: "notosansbatak/v23/gok2H6TwAEdtF9N8-mdTCQvT-ZdQpIXO.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansBatak/hinted/ttf/NotoSansBatak-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Bengali 0",
-        url: "notosansbengali/v33/Cn-SJsCGWQxOjaGwMQ6fIiMywrNJIky6nvd8BjzVMvJx2mcSPVFpVEqE-6KmsolLicWu8xzI.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansBengali/hinted/ttf/NotoSansBengali-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Bengali 1",
-        url: "notosansbengali/v33/Cn-SJsCGWQxOjaGwMQ6fIiMywrNJIky6nvd8BjzVMvJx2mcSPVFpVEqE-6KmsolLidmu8xzI.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansBengali/hinted/ttf/NotoSansBengali-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Bengali 2",
-        url: "notosansbengali/v33/Cn-SJsCGWQxOjaGwMQ6fIiMywrNJIky6nvd8BjzVMvJx2mcSPVFpVEqE-6KmsolLideu8w.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansBengali/hinted/ttf/NotoSansBengali-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Bhaiksuki 0",
-        url: "notosansbhaiksuki/v18/UcC63EosKniBH4iELXATsSBWdvUHXxhjwiz_UUMJng.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansBhaiksuki/hinted/ttf/NotoSansBhaiksuki-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Bhaiksuki 1",
-        url: "notosansbhaiksuki/v18/UcC63EosKniBH4iELXATsSBWdvUHXxhjwrvedH4w.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansBhaiksuki/hinted/ttf/NotoSansBhaiksuki-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Bhaiksuki 2",
-        url: "notosansbhaiksuki/v18/UcC63EosKniBH4iELXATsSBWdvUHXxhjwrXedA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansBhaiksuki/hinted/ttf/NotoSansBhaiksuki-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Brahmi 0",
-        url: "notosansbrahmi/v20/vEFK2-VODB8RrNDvZSUmQQIIByV1woS_Wo7H.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansBrahmi/hinted/ttf/NotoSansBrahmi-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Brahmi 1",
-        url: "notosansbrahmi/v20/vEFK2-VODB8RrNDvZSUmQQIIByV1wqm_Wo7H.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansBrahmi/hinted/ttf/NotoSansBrahmi-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Brahmi 2",
-        url: "notosansbrahmi/v20/vEFK2-VODB8RrNDvZSUmQQIIByV1wru_Wo7H.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansBrahmi/hinted/ttf/NotoSansBrahmi-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Brahmi 3",
-        url: "notosansbrahmi/v20/vEFK2-VODB8RrNDvZSUmQQIIByV1wtu_Wo7H.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansBrahmi/hinted/ttf/NotoSansBrahmi-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Brahmi 4",
-        url: "notosansbrahmi/v20/vEFK2-VODB8RrNDvZSUmQQIIByV1wtW_Wg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansBrahmi/hinted/ttf/NotoSansBrahmi-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Buginese 0",
-        url: "notosansbuginese/v21/esDM30ldNv-KYGGJpKGk18phe_7Da6_QmvGFbLk.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansBuginese/hinted/ttf/NotoSansBuginese-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Buginese 1",
-        url: "notosansbuginese/v21/esDM30ldNv-KYGGJpKGk18phe_7Da6_QvPGFbLk.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansBuginese/hinted/ttf/NotoSansBuginese-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Buginese 2",
-        url: "notosansbuginese/v21/esDM30ldNv-KYGGJpKGk18phe_7Da6_QsvGF.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansBuginese/hinted/ttf/NotoSansBuginese-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Buhid 0",
-        url: "notosansbuhid/v23/Dxxy8jiXMW75w3OmoDXVWJD7YwzwIqFhraE.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansBuhid/hinted/ttf/NotoSansBuhid-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Buhid 1",
-        url: "notosansbuhid/v23/Dxxy8jiXMW75w3OmoDXVWJD7YwzwcqFhraE.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansBuhid/hinted/ttf/NotoSansBuhid-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Buhid 2",
-        url: "notosansbuhid/v23/Dxxy8jiXMW75w3OmoDXVWJD7YwzwfKFh.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansBuhid/hinted/ttf/NotoSansBuhid-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Canadian Aboriginal 0",
-        url: "notosanscanadianaboriginal/v28/4C_TLjTuEqPj-8J01CwaGkiZ9os0iGVkezM1mUT-j_Lmlzda6uH_nnX1bzigWLnP4AEh4q0.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansCanadianAboriginal/hinted/ttf/NotoSansCanadianAboriginal-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Canadian Aboriginal 1",
-        url: "notosanscanadianaboriginal/v28/4C_TLjTuEqPj-8J01CwaGkiZ9os0iGVkezM1mUT-j_Lmlzda6uH_nnX1bzigWLnPswEh4q0.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansCanadianAboriginal/hinted/ttf/NotoSansCanadianAboriginal-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Canadian Aboriginal 2",
-        url: "notosanscanadianaboriginal/v28/4C_TLjTuEqPj-8J01CwaGkiZ9os0iGVkezM1mUT-j_Lmlzda6uH_nnX1bzigWLnPoQEh4q0.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansCanadianAboriginal/hinted/ttf/NotoSansCanadianAboriginal-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Canadian Aboriginal 3",
-        url: "notosanscanadianaboriginal/v28/4C_TLjTuEqPj-8J01CwaGkiZ9os0iGVkezM1mUT-j_Lmlzda6uH_nnX1bzigWLnPwQEh4q0.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansCanadianAboriginal/hinted/ttf/NotoSansCanadianAboriginal-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Canadian Aboriginal 4",
-        url: "notosanscanadianaboriginal/v28/4C_TLjTuEqPj-8J01CwaGkiZ9os0iGVkezM1mUT-j_Lmlzda6uH_nnX1bzigWLnPzwEh.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansCanadianAboriginal/hinted/ttf/NotoSansCanadianAboriginal-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Carian 0",
-        url: "notosanscarian/v17/LDIpaoiONgYwA9Yc6f0gUILeMIOgg9sR9hGL.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansCarian/hinted/ttf/NotoSansCarian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Carian 1",
-        url: "notosanscarian/v17/LDIpaoiONgYwA9Yc6f0gUILeMIOgg7MR9hGL.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansCarian/hinted/ttf/NotoSansCarian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Carian 2",
-        url: "notosanscarian/v17/LDIpaoiONgYwA9Yc6f0gUILeMIOgg70R9g.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansCarian/hinted/ttf/NotoSansCarian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Caucasian Albanian 0",
-        url: "notosanscaucasianalbanian/v19/nKKA-HM_FYFRJvXzVXaANsU0VzsAc46QGOkWytlTs-TXnQPNhVSoUA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansCaucasianAlbanian/hinted/ttf/NotoSansCaucasianAlbanian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Caucasian Albanian 1",
-        url: "notosanscaucasianalbanian/v19/nKKA-HM_FYFRJvXzVXaANsU0VzsAc46QGOkWytlTs-TXnYnsoGmR.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansCaucasianAlbanian/hinted/ttf/NotoSansCaucasianAlbanian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Caucasian Albanian 2",
-        url: "notosanscaucasianalbanian/v19/nKKA-HM_FYFRJvXzVXaANsU0VzsAc46QGOkWytlTs-TXnYfsoA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansCaucasianAlbanian/hinted/ttf/NotoSansCaucasianAlbanian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Chakma 0",
-        url: "notosanschakma/v19/Y4GQYbJ8VTEp4t3MKJSMjg5OIzhi0M_ZQyYB.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansChakma/hinted/ttf/NotoSansChakma-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Chakma 1",
-        url: "notosanschakma/v19/Y4GQYbJ8VTEp4t3MKJSMjg5OIzhi0JHZQyYB.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansChakma/hinted/ttf/NotoSansChakma-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Chakma 2",
-        url: "notosanschakma/v19/Y4GQYbJ8VTEp4t3MKJSMjg5OIzhi0J_ZQw.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansChakma/hinted/ttf/NotoSansChakma-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Cham 0",
-        url: "notosanscham/v33/pe06MIySN5pO62Z5YkFyQb_bbuRhe6D4yip43qfcERwsi7uzobo.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansCham/hinted/ttf/NotoSansCham-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Cham 1",
-        url: "notosanscham/v33/pe06MIySN5pO62Z5YkFyQb_bbuRhe6D4yip43qfcERwstruzobo.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansCham/hinted/ttf/NotoSansCham-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Cham 2",
-        url: "notosanscham/v33/pe06MIySN5pO62Z5YkFyQb_bbuRhe6D4yip43qfcERwsuLuz.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansCham/hinted/ttf/NotoSansCham-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Cherokee 0",
-        url: "notosanscherokee/v25/KFOPCm6Yu8uF-29fiz9vQF9YWK6Z8O10cHNA0cSkZCHYWi5PPl2zrTff.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansCherokee/hinted/ttf/NotoSansCherokee-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Cherokee 1",
-        url: "notosanscherokee/v25/KFOPCm6Yu8uF-29fiz9vQF9YWK6Z8O10cHNA0cSkZCHYWi5PPkCzrTff.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansCherokee/hinted/ttf/NotoSansCherokee-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Cherokee 2",
-        url: "notosanscherokee/v25/KFOPCm6Yu8uF-29fiz9vQF9YWK6Z8O10cHNA0cSkZCHYWi5PPk6zrQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansCherokee/hinted/ttf/NotoSansCherokee-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Chorasmian 0",
-        url: "notosanschorasmian/v3/MQpL-X6uKMC7ROPLwRnI9ULxK_7NVkf8S6tai1r92xY.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansChorasmian/hinted/ttf/NotoSansChorasmian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Chorasmian 1",
-        url: "notosanschorasmian/v3/MQpL-X6uKMC7ROPLwRnI9ULxK_7NVkf8S6uJqn_A4g.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansChorasmian/hinted/ttf/NotoSansChorasmian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Chorasmian 2",
-        url: "notosanschorasmian/v3/MQpL-X6uKMC7ROPLwRnI9ULxK_7NVkf8S6ubqn_A4g.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansChorasmian/hinted/ttf/NotoSansChorasmian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Chorasmian 3",
-        url: "notosanschorasmian/v3/MQpL-X6uKMC7ROPLwRnI9ULxK_7NVkf8S6v7qn_A4g.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansChorasmian/hinted/ttf/NotoSansChorasmian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Chorasmian 4",
-        url: "notosanschorasmian/v3/MQpL-X6uKMC7ROPLwRnI9ULxK_7NVkf8S6v1qn8.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansChorasmian/hinted/ttf/NotoSansChorasmian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Coptic 0",
-        url: "notosanscoptic/v22/iJWfBWmUZi_OHPqn4wq6kgqumOEd3-W1VV0x.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansCoptic/hinted/ttf/NotoSansCoptic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Coptic 1",
-        url: "notosanscoptic/v22/iJWfBWmUZi_OHPqn4wq6kgqumOEd38K1VV0x.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansCoptic/hinted/ttf/NotoSansCoptic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Coptic 2",
-        url: "notosanscoptic/v22/iJWfBWmUZi_OHPqn4wq6kgqumOEd38y1VQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansCoptic/hinted/ttf/NotoSansCoptic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Cuneiform 0",
-        url: "notosanscuneiform/v18/bMrrmTWK7YY-MF22aHGGd7H8PhJtvBDWse5DlCQu.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansCuneiform/hinted/ttf/NotoSansCuneiform-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Cuneiform 1",
-        url: "notosanscuneiform/v18/bMrrmTWK7YY-MF22aHGGd7H8PhJtvBDWsbZDlCQu.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansCuneiform/hinted/ttf/NotoSansCuneiform-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Cuneiform 2",
-        url: "notosanscuneiform/v18/bMrrmTWK7YY-MF22aHGGd7H8PhJtvBDWsbhDlA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansCuneiform/hinted/ttf/NotoSansCuneiform-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Cypriot 0",
-        url: "notosanscypriot/v20/8AtzGta9PYqQDjyp79a6f8Cj-3a3cyJ0IZI_pQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansCypriot/hinted/ttf/NotoSansCypriot-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Cypriot 1",
-        url: "notosanscypriot/v20/8AtzGta9PYqQDjyp79a6f8Cj-3a3cyIlIZI_pQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansCypriot/hinted/ttf/NotoSansCypriot-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Cypriot 2",
-        url: "notosanscypriot/v20/8AtzGta9PYqQDjyp79a6f8Cj-3a3cyIrIZI.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansCypriot/hinted/ttf/NotoSansCypriot-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Cypro Minoan 0",
-        url: "notosanscyprominoan/v1/2Eb2L_dtDUlkNmPHB_UVtEzp3ZlPGqZ_4nAGm325W8LnWA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansCyproMinoan/hinted/ttf/NotoSansCyproMinoan-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Cypro Minoan 1",
-        url: "notosanscyprominoan/v1/2Eb2L_dtDUlkNmPHB_UVtEzp3ZlPGqZ_4nAGm96Yfv_e.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansCyproMinoan/hinted/ttf/NotoSansCyproMinoan-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Cypro Minoan 2",
-        url: "notosanscyprominoan/v1/2Eb2L_dtDUlkNmPHB_UVtEzp3ZlPGqZ_4nAGm9CYfg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansCyproMinoan/hinted/ttf/NotoSansCyproMinoan-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Deseret 0",
-        url: "notosansdeseret/v18/MwQsbgPp1eKH6QsAVuFb9AZM6MMr2WqGbHNiZg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansDeseret/hinted/ttf/NotoSansDeseret-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Deseret 1",
-        url: "notosansdeseret/v18/MwQsbgPp1eKH6QsAVuFb9AZM6MMr2Wq0bHNiZg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansDeseret/hinted/ttf/NotoSansDeseret-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Deseret 2",
-        url: "notosansdeseret/v18/MwQsbgPp1eKH6QsAVuFb9AZM6MMr2Wq6bHM.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansDeseret/hinted/ttf/NotoSansDeseret-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Devanagari 0",
-        url: "notosansdevanagari/v30/TuGoUUFzXI5FBtUq5a8bjKYTZjtRU6Sgv3NaV_SNmI0b8QQCQmHn6B2OHjbL_08AlXQl--Y5oWoW.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansDevanagari/hinted/ttf/NotoSansDevanagari-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Devanagari 1",
-        url: "notosansdevanagari/v30/TuGoUUFzXI5FBtUq5a8bjKYTZjtRU6Sgv3NaV_SNmI0b8QQCQmHn6B2OHjbL_08AlXQl--k5oWoW.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansDevanagari/hinted/ttf/NotoSansDevanagari-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Devanagari 2",
-        url: "notosansdevanagari/v30/TuGoUUFzXI5FBtUq5a8bjKYTZjtRU6Sgv3NaV_SNmI0b8QQCQmHn6B2OHjbL_08AlXQl--c5oQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansDevanagari/hinted/ttf/NotoSansDevanagari-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Duployan 0",
-        url: "notosansduployan/v19/gokzH7nwAEdtF9N8-mdTDx_X9JM5wsvbi-kD5F8a.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansDuployan/hinted/ttf/NotoSansDuployan-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Duployan 1",
-        url: "notosansduployan/v19/gokzH7nwAEdtF9N8-mdTDx_X9JM5wsvbH8gm2WY.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansDuployan/hinted/ttf/NotoSansDuployan-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Duployan 2",
-        url: "notosansduployan/v19/gokzH7nwAEdtF9N8-mdTDx_X9JM5wsvbEcgm.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansDuployan/hinted/ttf/NotoSansDuployan-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Egyptian Hieroglyphs 0",
-        url: "notosansegyptianhieroglyphs/v30/vEF42-tODB8RrNDvZSUmRhcQHzx1s7y_F9-j3qSzEcbEYintdVi99Rg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansEgyptianHieroglyphs/hinted/ttf/NotoSansEgyptianHieroglyphs-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Egyptian Hieroglyphs 1",
-        url: "notosansegyptianhieroglyphs/v30/vEF42-tODB8RrNDvZSUmRhcQHzx1s7y_F9-j3qSzEcbEYintQFi99Rg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansEgyptianHieroglyphs/hinted/ttf/NotoSansEgyptianHieroglyphs-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Egyptian Hieroglyphs 2",
-        url: "notosansegyptianhieroglyphs/v30/vEF42-tODB8RrNDvZSUmRhcQHzx1s7y_F9-j3qSzEcbEYintTli9.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansEgyptianHieroglyphs/hinted/ttf/NotoSansEgyptianHieroglyphs-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Elbasan 0",
-        url: "notosanselbasan/v17/-F6rfiZqLzI2JPCgQBnw400qp1trvEcUp-8tFQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansElbasan/hinted/ttf/NotoSansElbasan-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Elbasan 1",
-        url: "notosanselbasan/v17/-F6rfiZqLzI2JPCgQBnw400qp1trvEdsp-8tFQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansElbasan/hinted/ttf/NotoSansElbasan-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Elbasan 2",
-        url: "notosanselbasan/v17/-F6rfiZqLzI2JPCgQBnw400qp1trvEdip-8.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansElbasan/hinted/ttf/NotoSansElbasan-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Elymaic 0",
-        url: "notosanselymaic/v18/UqyKK9YTJW5liNMhTMqe9vUFP65ZD7C_c8D59zQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansElymaic/hinted/ttf/NotoSansElymaic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Elymaic 1",
-        url: "notosanselymaic/v18/UqyKK9YTJW5liNMhTMqe9vUFP65ZD7AqUuXEzg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansElymaic/hinted/ttf/NotoSansElymaic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Elymaic 2",
-        url: "notosanselymaic/v18/UqyKK9YTJW5liNMhTMqe9vUFP65ZD7AkUuU.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansElymaic/hinted/ttf/NotoSansElymaic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Ethiopic 0",
-        url: "notosansethiopic/v50/7cHPv50vjIepfJVOZZgcpQ5B9FBTH9KGNfhSTgtoow1KVnIvyBoMSzUMacb-T35OK5D1yGbuaQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansEthiopic/hinted/ttf/NotoSansEthiopic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Ethiopic 1",
-        url: "notosansethiopic/v50/7cHPv50vjIepfJVOZZgcpQ5B9FBTH9KGNfhSTgtoow1KVnIvyBoMSzUMacb-T35OK5DqyGbuaQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansEthiopic/hinted/ttf/NotoSansEthiopic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Ethiopic 2",
-        url: "notosansethiopic/v50/7cHPv50vjIepfJVOZZgcpQ5B9FBTH9KGNfhSTgtoow1KVnIvyBoMSzUMacb-T35OK5DkyGY.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansEthiopic/hinted/ttf/NotoSansEthiopic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Georgian 0",
-        url: "notosansgeorgian/v48/PlIaFke5O6RzLfvNNVSitxkr76PRHBC4Ytyq-Gof7PUs4S7zWn-8YDB09HFNdpvnzGj0dZS60A.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansGeorgian/hinted/ttf/NotoSansGeorgian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Georgian 1",
-        url: "notosansgeorgian/v48/PlIaFke5O6RzLfvNNVSitxkr76PRHBC4Ytyq-Gof7PUs4S7zWn-8YDB09HFNdpvnzGjmdZS60A.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansGeorgian/hinted/ttf/NotoSansGeorgian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Georgian 2",
-        url: "notosansgeorgian/v48/PlIaFke5O6RzLfvNNVSitxkr76PRHBC4Ytyq-Gof7PUs4S7zWn-8YDB09HFNdpvnzGj1dZS60A.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansGeorgian/hinted/ttf/NotoSansGeorgian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Georgian 3",
-        url: "notosansgeorgian/v48/PlIaFke5O6RzLfvNNVSitxkr76PRHBC4Ytyq-Gof7PUs4S7zWn-8YDB09HFNdpvnzGiFdZS60A.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansGeorgian/hinted/ttf/NotoSansGeorgian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Georgian 4",
-        url: "notosansgeorgian/v48/PlIaFke5O6RzLfvNNVSitxkr76PRHBC4Ytyq-Gof7PUs4S7zWn-8YDB09HFNdpvnzGiXdZS60A.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansGeorgian/hinted/ttf/NotoSansGeorgian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Georgian 5",
-        url: "notosansgeorgian/v48/PlIaFke5O6RzLfvNNVSitxkr76PRHBC4Ytyq-Gof7PUs4S7zWn-8YDB09HFNdpvnzGj3dZS60A.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansGeorgian/hinted/ttf/NotoSansGeorgian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Georgian 6",
-        url: "notosansgeorgian/v48/PlIaFke5O6RzLfvNNVSitxkr76PRHBC4Ytyq-Gof7PUs4S7zWn-8YDB09HFNdpvnzGj5dZQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansGeorgian/hinted/ttf/NotoSansGeorgian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Glagolitic 0",
-        url: "notosansglagolitic/v19/1q2ZY4-BBFBst88SU_tOj4J-4yuNF_HI4HRA6gie7g.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansGlagolitic/hinted/ttf/NotoSansGlagolitic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Glagolitic 1",
-        url: "notosansglagolitic/v19/1q2ZY4-BBFBst88SU_tOj4J-4yuNF_HI4HTLyy2j12o.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansGlagolitic/hinted/ttf/NotoSansGlagolitic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Glagolitic 2",
-        url: "notosansglagolitic/v19/1q2ZY4-BBFBst88SU_tOj4J-4yuNF_HI4HQx6gie7g.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansGlagolitic/hinted/ttf/NotoSansGlagolitic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Glagolitic 3",
-        url: "notosansglagolitic/v19/1q2ZY4-BBFBst88SU_tOj4J-4yuNF_HI4HQj6gie7g.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansGlagolitic/hinted/ttf/NotoSansGlagolitic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Glagolitic 4",
-        url: "notosansglagolitic/v19/1q2ZY4-BBFBst88SU_tOj4J-4yuNF_HI4HRD6gie7g.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansGlagolitic/hinted/ttf/NotoSansGlagolitic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Glagolitic 5",
-        url: "notosansglagolitic/v19/1q2ZY4-BBFBst88SU_tOj4J-4yuNF_HI4HRN6gg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansGlagolitic/hinted/ttf/NotoSansGlagolitic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Gothic 0",
-        url: "notosansgothic/v17/TuGKUUVzXI5FBtUq5a8bj6wRbzxTJPXy03FQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansGothic/hinted/ttf/NotoSansGothic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Gothic 1",
-        url: "notosansgothic/v17/TuGKUUVzXI5FBtUq5a8bj6wRbzxTJMzy03FQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansGothic/hinted/ttf/NotoSansGothic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Gothic 2",
-        url: "notosansgothic/v17/TuGKUUVzXI5FBtUq5a8bj6wRbzxTJMLy0w.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansGothic/hinted/ttf/NotoSansGothic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Grantha 0",
-        url: "notosansgrantha/v20/3y976akwcCjmsU8NDyrKo3IQfQ4o-o-cPs-oJNc.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansGrantha/hinted/ttf/NotoSansGrantha-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Grantha 1",
-        url: "notosansgrantha/v20/3y976akwcCjmsU8NDyrKo3IQfQ4o-o8VH-qVHQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansGrantha/hinted/ttf/NotoSansGrantha-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Grantha 2",
-        url: "notosansgrantha/v20/3y976akwcCjmsU8NDyrKo3IQfQ4o-o8bH-o.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansGrantha/hinted/ttf/NotoSansGrantha-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Gujarati 0",
-        url: "notosansgujarati/v27/wlpWgx_HC1ti5ViekvcxnhMlCVo3f5pv17ivlzsUB14gg1TMR2Gw4VceEl7MA_ypFzPQ9uZSEA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansGujarati/hinted/ttf/NotoSansGujarati-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Gujarati 1",
-        url: "notosansgujarati/v27/wlpWgx_HC1ti5ViekvcxnhMlCVo3f5pv17ivlzsUB14gg1TMR2Gw4VceEl7MA_ypFzO39uZSEA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansGujarati/hinted/ttf/NotoSansGujarati-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Gujarati 2",
-        url: "notosansgujarati/v27/wlpWgx_HC1ti5ViekvcxnhMlCVo3f5pv17ivlzsUB14gg1TMR2Gw4VceEl7MA_ypFzOl9uZSEA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansGujarati/hinted/ttf/NotoSansGujarati-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Gujarati 3",
-        url: "notosansgujarati/v27/wlpWgx_HC1ti5ViekvcxnhMlCVo3f5pv17ivlzsUB14gg1TMR2Gw4VceEl7MA_ypFzPF9uZSEA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansGujarati/hinted/ttf/NotoSansGujarati-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Gujarati 4",
-        url: "notosansgujarati/v27/wlpWgx_HC1ti5ViekvcxnhMlCVo3f5pv17ivlzsUB14gg1TMR2Gw4VceEl7MA_ypFzPL9uY.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansGujarati/hinted/ttf/NotoSansGujarati-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Gunjala Gondi 0",
-        url: "notosansgunjalagondi/v21/bWtX7e7KfBziStx7lIzKPrcSMwcEnCv6DW7n5g0ef3PLtymzNxYL4YD0kJQuOTw.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansGunjalaGondi/hinted/ttf/NotoSansGunjalaGondi-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Gunjala Gondi 1",
-        url: "notosansgunjalagondi/v21/bWtX7e7KfBziStx7lIzKPrcSMwcEnCv6DW7n5g0ef3PLtymzNxYL4YD06ZQuOTw.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansGunjalaGondi/hinted/ttf/NotoSansGunjalaGondi-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Gunjala Gondi 2",
-        url: "notosansgunjalagondi/v21/bWtX7e7KfBziStx7lIzKPrcSMwcEnCv6DW7n5g0ef3PLtymzNxYL4YD055Qu.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansGunjalaGondi/hinted/ttf/NotoSansGunjalaGondi-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Gurmukhi 0",
-        url: "notosansgurmukhi/v29/w8g9H3EvQP81sInb43inmyN9zZ7hb7ATbSWo4q8dJ74a3cVrYFQ_bogT0-gPeG1OekbVbfpbdg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansGurmukhi/hinted/ttf/NotoSansGurmukhi-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Gurmukhi 1",
-        url: "notosansgurmukhi/v29/w8g9H3EvQP81sInb43inmyN9zZ7hb7ATbSWo4q8dJ74a3cVrYFQ_bogT0-gPeG1Oekb4bfpbdg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansGurmukhi/hinted/ttf/NotoSansGurmukhi-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Gurmukhi 2",
-        url: "notosansgurmukhi/v29/w8g9H3EvQP81sInb43inmyN9zZ7hb7ATbSWo4q8dJ74a3cVrYFQ_bogT0-gPeG1Oekb2bfo.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansGurmukhi/hinted/ttf/NotoSansGurmukhi-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans HK 0",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.0.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 1",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.1.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 2",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.2.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 3",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.3.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 4",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.4.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 5",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.5.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 6",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.6.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 7",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.7.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 8",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.8.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 9",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.9.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 10",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.10.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 11",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.15.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 12",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.16.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 13",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.17.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 14",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.25.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 15",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.26.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 16",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.27.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 17",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.28.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 18",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.29.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 19",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.30.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 20",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.31.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 21",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.32.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 22",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.33.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 23",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.34.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 24",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.35.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 25",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.36.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 26",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.37.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 27",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.38.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 28",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.39.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 29",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.40.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 30",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.41.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 31",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.42.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 32",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.43.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 33",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.44.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 34",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.45.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 35",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.46.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 36",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.47.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 37",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.48.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 38",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.49.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 39",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.50.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 40",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.51.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 41",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.52.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 42",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.53.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 43",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.54.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 44",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.55.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 45",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.56.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 46",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.57.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 47",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.58.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 48",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.59.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 49",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.60.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 50",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.61.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 51",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.62.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 52",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.63.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 53",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.64.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 54",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.65.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 55",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.66.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 56",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.67.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 57",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.68.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 58",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.69.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 59",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.70.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 60",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.71.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 61",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.72.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 62",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.73.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 63",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.74.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 64",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.75.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 65",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.76.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 66",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.77.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 67",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.78.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 68",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.79.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 69",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.80.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 70",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.81.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 71",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.82.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 72",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.83.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 73",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.84.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 74",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.85.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 75",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.86.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 76",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.87.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 77",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.88.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 78",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.89.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 79",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.90.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 80",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.91.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 81",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.92.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 82",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.93.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 83",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.98.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 84",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.99.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 85",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.100.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 86",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.101.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 87",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.102.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 88",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.103.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 89",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.104.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 90",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.105.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 91",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.106.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 92",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.107.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 93",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.108.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 94",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.109.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 95",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.110.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 96",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.111.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 97",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.112.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 98",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.113.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 99",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.114.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 100",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.115.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 101",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.116.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 102",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.117.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 103",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.118.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 104",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB--oD7kYrUzT7-NvA3pTohjc3XVtNXX8A7gG1LO2KAPAw.119.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 105",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB-yoaZiLjN.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 106",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB-yo2ZiLjN.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 107",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB-yoyZiLjN.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans HK 108",
-        url: "notosanshk/v35/nKKF-GM_FYFRJvXzVXaAPe97P1KHynJFP716qHB-yoKZiA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans Hanifi Rohingya 0",
-        url: "notosanshanifirohingya/v30/5h17iYsoOmIC3Yu3MDXLDw3UZCgghyOEBBY7hhLNyo3tiaiuSIAqrIYY4g7At8qtKw.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansHanifiRohingya/hinted/ttf/NotoSansHanifiRohingya-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Hanifi Rohingya 1",
-        url: "notosanshanifirohingya/v30/5h17iYsoOmIC3Yu3MDXLDw3UZCgghyOEBBY7hhLNyo3tiaiuSIAqrIYY4g6mt8qtKw.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansHanifiRohingya/hinted/ttf/NotoSansHanifiRohingya-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Hanifi Rohingya 2",
-        url: "notosanshanifirohingya/v30/5h17iYsoOmIC3Yu3MDXLDw3UZCgghyOEBBY7hhLNyo3tiaiuSIAqrIYY4g6ot8o.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansHanifiRohingya/hinted/ttf/NotoSansHanifiRohingya-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Hanunoo 0",
-        url: "notosanshanunoo/v22/f0Xs0fCv8dxkDWlZSoXOj6CphMloFvERGJk7_g.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansHanunoo/hinted/ttf/NotoSansHanunoo-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Hanunoo 1",
-        url: "notosanshanunoo/v22/f0Xs0fCv8dxkDWlZSoXOj6CphMloFvElGJk7_g.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansHanunoo/hinted/ttf/NotoSansHanunoo-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Hanunoo 2",
-        url: "notosanshanunoo/v22/f0Xs0fCv8dxkDWlZSoXOj6CphMloFvErGJk.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansHanunoo/hinted/ttf/NotoSansHanunoo-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Hatran 0",
-        url: "notosanshatran/v17/A2BBn4Ne0RgnVF3Lnko-0sOBIfL_qFQci1TJ1Q.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansHatran/hinted/ttf/NotoSansHatran-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Hatran 1",
-        url: "notosanshatran/v17/A2BBn4Ne0RgnVF3Lnko-0sOBIfL_qMY9rmnw.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansHatran/hinted/ttf/NotoSansHatran-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Hatran 2",
-        url: "notosanshatran/v17/A2BBn4Ne0RgnVF3Lnko-0sOBIfL_qMg9rg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansHatran/hinted/ttf/NotoSansHatran-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Hebrew 0",
-        url: "notosanshebrew/v50/or3HQ7v33eiDljA1IufXTtVf7V6RvEEdhQlk0LlGxCyaeNKYZC0sqk3xXGiXd4qdqChkhus.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansHebrew/hinted/ttf/NotoSansHebrew-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Hebrew 1",
-        url: "notosanshebrew/v50/or3HQ7v33eiDljA1IufXTtVf7V6RvEEdhQlk0LlGxCyaeNKYZC0sqk3xXGiXd4qdqShkhus.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansHebrew/hinted/ttf/NotoSansHebrew-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Hebrew 2",
-        url: "notosanshebrew/v50/or3HQ7v33eiDljA1IufXTtVf7V6RvEEdhQlk0LlGxCyaeNKYZC0sqk3xXGiXd4qdpyhkhus.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansHebrew/hinted/ttf/NotoSansHebrew-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Hebrew 3",
-        url: "notosanshebrew/v50/or3HQ7v33eiDljA1IufXTtVf7V6RvEEdhQlk0LlGxCyaeNKYZC0sqk3xXGiXd4qdqyhkhus.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansHebrew/hinted/ttf/NotoSansHebrew-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Hebrew 4",
-        url: "notosanshebrew/v50/or3HQ7v33eiDljA1IufXTtVf7V6RvEEdhQlk0LlGxCyaeNKYZC0sqk3xXGiXd4qdpShk.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansHebrew/hinted/ttf/NotoSansHebrew-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Imperial Aramaic 0",
-        url: "notosansimperialaramaic/v18/a8IMNpjwKmHXpgXbMIsbTc_kvks91LlLetBr5itQruc8nXcvPA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansImperialAramaic/hinted/ttf/NotoSansImperialAramaic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Imperial Aramaic 1",
-        url: "notosansimperialaramaic/v18/a8IMNpjwKmHXpgXbMIsbTc_kvks91LlLetBr5itQrudvnXcvPA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansImperialAramaic/hinted/ttf/NotoSansImperialAramaic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Imperial Aramaic 2",
-        url: "notosansimperialaramaic/v18/a8IMNpjwKmHXpgXbMIsbTc_kvks91LlLetBr5itQrudhnXc.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansImperialAramaic/hinted/ttf/NotoSansImperialAramaic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Indic Siyaq Numbers 0",
-        url: "notosansindicsiyaqnumbers/v17/6xK5dTJFKcWIu4bpRBjRZRpsIYHabOeZ8UZLubTzpXNHKy0MF85YTos.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansIndicSiyaqNumbers/hinted/ttf/NotoSansIndicSiyaqNumbers-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Indic Siyaq Numbers 1",
-        url: "notosansindicsiyaqnumbers/v17/6xK5dTJFKcWIu4bpRBjRZRpsIYHabOeZ8UZLubTzpXNHKy2fNutldw.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansIndicSiyaqNumbers/hinted/ttf/NotoSansIndicSiyaqNumbers-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Indic Siyaq Numbers 2",
-        url: "notosansindicsiyaqnumbers/v17/6xK5dTJFKcWIu4bpRBjRZRpsIYHabOeZ8UZLubTzpXNHKy2RNus.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansIndicSiyaqNumbers/hinted/ttf/NotoSansIndicSiyaqNumbers-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Inscriptional Pahlavi 0",
-        url: "notosansinscriptionalpahlavi/v18/ll8UK3GaVDuxR-TEqFPIbsR79Xxz9WEKbwsjpz7VklYlC7FCZoGfOTYK.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansInscriptionalPahlavi/hinted/ttf/NotoSansInscriptionalPahlavi-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Inscriptional Pahlavi 1",
-        url: "notosansinscriptionalpahlavi/v18/ll8UK3GaVDuxR-TEqFPIbsR79Xxz9WEKbwsjpz7VklYlC7FCZtOfOTYK.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansInscriptionalPahlavi/hinted/ttf/NotoSansInscriptionalPahlavi-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Inscriptional Pahlavi 2",
-        url: "notosansinscriptionalpahlavi/v18/ll8UK3GaVDuxR-TEqFPIbsR79Xxz9WEKbwsjpz7VklYlC7FCZt2fOQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansInscriptionalPahlavi/hinted/ttf/NotoSansInscriptionalPahlavi-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Inscriptional Parthian 0",
-        url: "notosansinscriptionalparthian/v18/k3k7o-IMPvpLmixcA63oYi-yStDkgXuXncL7dzfW3P4TAJ2ykmAr0DJULg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansInscriptionalParthian/hinted/ttf/NotoSansInscriptionalParthian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Inscriptional Parthian 1",
-        url: "notosansinscriptionalparthian/v18/k3k7o-IMPvpLmixcA63oYi-yStDkgXuXncL7dzfW3P4TAJ2ykmBA0DJULg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansInscriptionalParthian/hinted/ttf/NotoSansInscriptionalParthian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Inscriptional Parthian 2",
-        url: "notosansinscriptionalparthian/v18/k3k7o-IMPvpLmixcA63oYi-yStDkgXuXncL7dzfW3P4TAJ2ykmBO0DI.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansInscriptionalParthian/hinted/ttf/NotoSansInscriptionalParthian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans JP 0",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.0.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 1",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.1.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 2",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.2.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 3",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.3.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 4",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.4.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 5",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.5.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 6",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.6.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 7",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.7.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 8",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.8.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 9",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.9.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 10",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.10.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 11",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.11.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 12",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.12.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 13",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.13.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 14",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.14.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 15",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.15.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 16",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.16.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 17",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.17.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 18",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.18.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 19",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.19.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 20",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.20.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 21",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.21.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 22",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.22.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 23",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.23.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 24",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.24.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 25",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.25.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 26",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.26.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 27",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.27.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 28",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.28.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 29",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.29.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 30",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.30.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 31",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.31.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 32",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.32.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 33",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.33.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 34",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.34.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 35",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.35.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 36",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.36.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 37",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.37.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 38",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.38.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 39",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.39.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 40",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.40.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 41",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.41.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 42",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.42.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 43",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.43.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 44",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.44.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 45",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.45.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 46",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.46.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 47",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.47.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 48",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.48.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 49",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.49.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 50",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.50.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 51",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.51.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 52",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.52.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 53",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.53.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 54",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.54.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 55",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.55.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 56",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.56.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 57",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.57.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 58",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.58.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 59",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.59.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 60",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.60.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 61",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.61.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 62",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.62.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 63",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.63.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 64",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.64.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 65",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.65.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 66",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.66.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 67",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.67.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 68",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.68.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 69",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.69.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 70",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.70.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 71",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.71.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 72",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.72.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 73",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.73.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 74",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.74.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 75",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.75.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 76",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.76.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 77",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.77.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 78",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.78.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 79",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.79.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 80",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.80.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 81",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.81.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 82",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.82.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 83",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.83.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 84",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.84.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 85",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.85.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 86",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.86.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 87",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.87.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 88",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.88.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 89",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.89.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 90",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.90.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 91",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.91.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 92",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.92.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 93",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.93.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 94",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.94.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 95",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.95.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 96",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.96.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 97",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.97.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 98",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.98.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 99",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.99.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 100",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.100.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 101",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.101.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 102",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.102.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 103",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.103.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 104",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.104.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 105",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.105.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 106",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.106.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 107",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.107.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 108",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.108.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 109",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.109.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 110",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.110.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 111",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.111.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 112",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.112.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 113",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.113.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 114",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.114.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 115",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.115.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 116",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.116.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 117",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.117.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 118",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.118.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 119",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj756wwr4v0qHnANADNsISRDl2PRkiiWsg.119.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 120",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj35jS04w-.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 121",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj35PS04w-.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 122",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj35LS04w-.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans JP 123",
-        url: "notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj35zS0w.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans Javanese 0",
-        url: "notosansjavanese/v25/2V01KJkDAIA6Hp4zoSScDjV0Y-eoHAHT-Z3MngEefiidxJnkJHhoZLWj.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansJavanese/hinted/ttf/NotoSansJavanese-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Javanese 1",
-        url: "notosansjavanese/v25/2V01KJkDAIA6Hp4zoSScDjV0Y-eoHAHT-Z3MngEefiidxJnkJFBoZLWj.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansJavanese/hinted/ttf/NotoSansJavanese-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Javanese 2",
-        url: "notosansjavanese/v25/2V01KJkDAIA6Hp4zoSScDjV0Y-eoHAHT-Z3MngEefiidxJnkJF5oZA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansJavanese/hinted/ttf/NotoSansJavanese-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans KR 0",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.0.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 1",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.1.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 2",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.2.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 3",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.3.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 4",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.4.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 5",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.5.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 6",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.6.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 7",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.7.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 8",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.8.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 9",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.9.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 10",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.10.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 11",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.11.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 12",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.12.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 13",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.13.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 14",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.14.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 15",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.15.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 16",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.16.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 17",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.17.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 18",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.18.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 19",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.19.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 20",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.20.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 21",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.21.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 22",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.22.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 23",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.23.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 24",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.24.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 25",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.25.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 26",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.26.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 27",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.27.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 28",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.28.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 29",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.29.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 30",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.30.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 31",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.31.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 32",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.32.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 33",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.33.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 34",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.34.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 35",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.35.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 36",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.36.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 37",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.37.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 38",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.38.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 39",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.39.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 40",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.40.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 41",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.41.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 42",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.42.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 43",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.43.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 44",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.44.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 45",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.45.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 46",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.46.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 47",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.47.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 48",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.48.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 49",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.49.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 50",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.50.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 51",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.51.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 52",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.52.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 53",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.53.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 54",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.54.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 55",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.55.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 56",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.56.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 57",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.57.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 58",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.58.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 59",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.59.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 60",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.60.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 61",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.61.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 62",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.62.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 63",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.63.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 64",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.64.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 65",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.65.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 66",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.66.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 67",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.67.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 68",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.68.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 69",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.69.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 70",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.70.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 71",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.71.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 72",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.72.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 73",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.73.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 74",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.74.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 75",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.75.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 76",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.76.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 77",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.77.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 78",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.78.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 79",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.79.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 80",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.80.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 81",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.81.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 82",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.82.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 83",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.83.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 84",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.84.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 85",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.85.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 86",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.86.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 87",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.87.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 88",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.88.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 89",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.89.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 90",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.90.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 91",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.91.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 92",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.92.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 93",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.93.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 94",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.94.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 95",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.95.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 96",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.96.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 97",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.97.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 98",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.98.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 99",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.99.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 100",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.100.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 101",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.101.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 102",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.102.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 103",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.103.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 104",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.104.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 105",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.105.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 106",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.106.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 107",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.107.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 108",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.108.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 109",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.109.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 110",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.110.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 111",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.111.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 112",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.112.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 113",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.113.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 114",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.114.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 115",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.115.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 116",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.116.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 117",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.117.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 118",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.118.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 119",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoyeLGC5nwuDo-KBTUm6CryotyJROlrnQ.119.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 120",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoySLfg8U4h.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 121",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoySLzg8U4h.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 122",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoySL3g8U4h.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans KR 123",
-        url: "notosanskr/v39/PbyxFmXiEBPT4ITbgNA5Cgms3VYcOA-vvnIzzuoySLPg8Q.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans Kaithi 0",
-        url: "notosanskaithi/v23/buEtppS9f8_vkXadMBJJu0tWjLwjcnEAd7ZI.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansKaithi/hinted/ttf/NotoSansKaithi-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Kaithi 1",
-        url: "notosanskaithi/v23/buEtppS9f8_vkXadMBJJu0tWjLwjciQAd7ZI.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansKaithi/hinted/ttf/NotoSansKaithi-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Kaithi 2",
-        url: "notosanskaithi/v23/buEtppS9f8_vkXadMBJJu0tWjLwjcioAdw.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansKaithi/hinted/ttf/NotoSansKaithi-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Kannada 0",
-        url: "notosanskannada/v32/8vIs7xs32H97qzQKnzfeXycxXZyUmySvZWItmf1fe6TVmgop9ndpS-BqHEyGrDvN_T8GL_PK.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansKannada/hinted/ttf/NotoSansKannada-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Kannada 1",
-        url: "notosanskannada/v32/8vIs7xs32H97qzQKnzfeXycxXZyUmySvZWItmf1fe6TVmgop9ndpS-BqHEyGrDvN_SsGL_PK.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansKannada/hinted/ttf/NotoSansKannada-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Kannada 2",
-        url: "notosanskannada/v32/8vIs7xs32H97qzQKnzfeXycxXZyUmySvZWItmf1fe6TVmgop9ndpS-BqHEyGrDvN_SUGLw.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansKannada/hinted/ttf/NotoSansKannada-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Kayah Li 0",
-        url: "notosanskayahli/v26/B50nF61OpWTRcGrhOVJJwOMXdca6Yecki3E06x2jVTX3WCc3Od7yEELu.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansKayahLi/hinted/ttf/NotoSansKayahLi-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Kayah Li 1",
-        url: "notosanskayahli/v26/B50nF61OpWTRcGrhOVJJwOMXdca6Yecki3E06x2jVTX3WCc3OZjyEELu.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansKayahLi/hinted/ttf/NotoSansKayahLi-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Kayah Li 2",
-        url: "notosanskayahli/v26/B50nF61OpWTRcGrhOVJJwOMXdca6Yecki3E06x2jVTX3WCc3OZbyEA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansKayahLi/hinted/ttf/NotoSansKayahLi-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Kharoshthi 0",
-        url: "notosanskharoshthi/v17/Fh4qPiLjKS30-P4-pGMMXCCfvkc5Vd7KE6zGpl2B5g.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansKharoshthi/hinted/ttf/NotoSansKharoshthi-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Kharoshthi 1",
-        url: "notosanskharoshthi/v17/Fh4qPiLjKS30-P4-pGMMXCCfvkc5Vd7KE6zxpl2B5g.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansKharoshthi/hinted/ttf/NotoSansKharoshthi-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Kharoshthi 2",
-        url: "notosanskharoshthi/v17/Fh4qPiLjKS30-P4-pGMMXCCfvkc5Vd7KE6z_pl0.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansKharoshthi/hinted/ttf/NotoSansKharoshthi-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Khmer 0",
-        url: "notosanskhmer/v29/ijw3s5roRME5LLRxjsRb-gssOenAyendxrgV2c-Zw-9vbVUti_Z_dWgtWYuNAKz0mgfbdQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansKhmer/hinted/ttf/NotoSansKhmer-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Khmer 1",
-        url: "notosanskhmer/v29/ijw3s5roRME5LLRxjsRb-gssOenAyendxrgV2c-Zw-9vbVUti_Z_dWgtWYuNAKzxmgfbdQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansKhmer/hinted/ttf/NotoSansKhmer-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Khmer 2",
-        url: "notosanskhmer/v29/ijw3s5roRME5LLRxjsRb-gssOenAyendxrgV2c-Zw-9vbVUti_Z_dWgtWYuNAKz_mgc.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansKhmer/hinted/ttf/NotoSansKhmer-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Khojki 0",
-        url: "notosanskhojki/v20/-nFnOHM29Oofr2wohFbTuPPKVWpmG4hx0ujy.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansKhojki/hinted/ttf/NotoSansKhojki-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Khojki 1",
-        url: "notosanskhojki/v20/-nFnOHM29Oofr2wohFbTuPPKVWpmG_5x0ujy.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansKhojki/hinted/ttf/NotoSansKhojki-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Khojki 2",
-        url: "notosanskhojki/v20/-nFnOHM29Oofr2wohFbTuPPKVWpmG_Bx0g.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansKhojki/hinted/ttf/NotoSansKhojki-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Khudawadi 0",
-        url: "notosanskhudawadi/v23/fdNi9t6ZsWBZ2k5ltHN73zZ5hc8HANlHEkptVGXz.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansKhudawadi/hinted/ttf/NotoSansKhudawadi-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Khudawadi 1",
-        url: "notosanskhudawadi/v23/fdNi9t6ZsWBZ2k5ltHN73zZ5hc8HANlHEj1tVGXz.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansKhudawadi/hinted/ttf/NotoSansKhudawadi-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Khudawadi 2",
-        url: "notosanskhudawadi/v23/fdNi9t6ZsWBZ2k5ltHN73zZ5hc8HANlHEjNtVA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansKhudawadi/hinted/ttf/NotoSansKhudawadi-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Lao 0",
-        url: "notosanslao/v33/bx6lNx2Ol_ixgdYWLm9BwxM3NW6BOkuf763Clj73CiQ_J1Djx9pidOt4ccbtcZkL7rg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansLao/hinted/ttf/NotoSansLao-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Lao 1",
-        url: "notosanslao/v33/bx6lNx2Ol_ixgdYWLm9BwxM3NW6BOkuf763Clj73CiQ_J1Djx9pidOt4ccbtdpkL7rg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansLao/hinted/ttf/NotoSansLao-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Lao 2",
-        url: "notosanslao/v33/bx6lNx2Ol_ixgdYWLm9BwxM3NW6BOkuf763Clj73CiQ_J1Djx9pidOt4ccbteJkL.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansLao/hinted/ttf/NotoSansLao-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Lepcha 0",
-        url: "notosanslepcha/v20/0QI7MWlB_JWgA166SKhu05TekNS36D1mt5BX.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansLepcha/hinted/ttf/NotoSansLepcha-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Lepcha 1",
-        url: "notosanslepcha/v20/0QI7MWlB_JWgA166SKhu05TekNS36Atmt5BX.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansLepcha/hinted/ttf/NotoSansLepcha-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Lepcha 2",
-        url: "notosanslepcha/v20/0QI7MWlB_JWgA166SKhu05TekNS36AVmtw.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansLepcha/hinted/ttf/NotoSansLepcha-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Limbu 0",
-        url: "notosanslimbu/v26/3JnlSDv90Gmq2mrzckOBBRRoNJVT4st2CHQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansLimbu/hinted/ttf/NotoSansLimbu-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Limbu 1",
-        url: "notosanslimbu/v26/3JnlSDv90Gmq2mrzckOBBRRoNJVT2ct2CHQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansLimbu/hinted/ttf/NotoSansLimbu-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Limbu 2",
-        url: "notosanslimbu/v26/3JnlSDv90Gmq2mrzckOBBRRoNJVT18t2.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansLimbu/hinted/ttf/NotoSansLimbu-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Linear A 0",
-        url: "notosanslineara/v19/oPWS_l16kP4jCuhpgEGmwJOiA18FZj2GV0r0DV07.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansLinearA/hinted/ttf/NotoSansLinearA-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Linear A 1",
-        url: "notosanslineara/v19/oPWS_l16kP4jCuhpgEGmwJOiA18FZj2Gx2vRMGQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansLinearA/hinted/ttf/NotoSansLinearA-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Linear A 2",
-        url: "notosanslineara/v19/oPWS_l16kP4jCuhpgEGmwJOiA18FZj2GyWvR.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansLinearA/hinted/ttf/NotoSansLinearA-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Linear B 0",
-        url: "notosanslinearb/v18/HhyJU4wt9vSgfHoORYOiXOckKNB737IlnBMEfq4.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansLinearB/hinted/ttf/NotoSansLinearB-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Linear B 1",
-        url: "notosanslinearb/v18/HhyJU4wt9vSgfHoORYOiXOckKNB737Il1RMEfq4.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansLinearB/hinted/ttf/NotoSansLinearB-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Linear B 2",
-        url: "notosanslinearb/v18/HhyJU4wt9vSgfHoORYOiXOckKNB737Il2xME.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansLinearB/hinted/ttf/NotoSansLinearB-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Lisu 0",
-        url: "notosanslisu/v27/uk-3EGO3o6EruUbnwovcYhz6kh57_nqbcTdjJnHP2Vwdmtgk9kU.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansLisu/hinted/ttf/NotoSansLisu-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Lisu 1",
-        url: "notosanslisu/v27/uk-3EGO3o6EruUbnwovcYhz6kh57_nqbcTdjJnHP2Vwd0tgk9kU.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansLisu/hinted/ttf/NotoSansLisu-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Lisu 2",
-        url: "notosanslisu/v27/uk-3EGO3o6EruUbnwovcYhz6kh57_nqbcTdjJnHP2Vwd3Ngk.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansLisu/hinted/ttf/NotoSansLisu-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Lycian 0",
-        url: "notosanslycian/v16/QldVNSNMqAsHtsJ7UmqxBQA9r8wA16TQCQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansLycian/hinted/ttf/NotoSansLycian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Lydian 0",
-        url: "notosanslydian/v19/c4m71mVzGN7s8FmIukZJ1v4ZlcPRSR3dM7Ij.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansLydian/hinted/ttf/NotoSansLydian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Lydian 1",
-        url: "notosanslydian/v19/c4m71mVzGN7s8FmIukZJ1v4ZlcPRSUrdM7Ij.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansLydian/hinted/ttf/NotoSansLydian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Lydian 2",
-        url: "notosanslydian/v19/c4m71mVzGN7s8FmIukZJ1v4ZlcPRSUTdMw.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansLydian/hinted/ttf/NotoSansLydian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mahajani 0",
-        url: "notosansmahajani/v20/-F6sfiVqLzI2JPCgQBnw60Agp0JrvD51-soQLNg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMahajani/hinted/ttf/NotoSansMahajani-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mahajani 1",
-        url: "notosansmahajani/v20/-F6sfiVqLzI2JPCgQBnw60Agp0JrvD51jsoQLNg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMahajani/hinted/ttf/NotoSansMahajani-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mahajani 2",
-        url: "notosansmahajani/v20/-F6sfiVqLzI2JPCgQBnw60Agp0JrvD51gMoQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMahajani/hinted/ttf/NotoSansMahajani-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Malayalam 0",
-        url: "notosansmalayalam/v29/sJoi3K5XjsSdcnzn071rL37lpAOsUThnDZIfPdbeSNzVakglNM-Qw8EaeB8Nss-_RuDNG1bFn6E.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMalayalam/hinted/ttf/NotoSansMalayalam-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Malayalam 1",
-        url: "notosansmalayalam/v29/sJoi3K5XjsSdcnzn071rL37lpAOsUThnDZIfPdbeSNzVakglNM-Qw8EaeB8Nss-_RuDNDVbFn6E.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMalayalam/hinted/ttf/NotoSansMalayalam-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Malayalam 2",
-        url: "notosansmalayalam/v29/sJoi3K5XjsSdcnzn071rL37lpAOsUThnDZIfPdbeSNzVakglNM-Qw8EaeB8Nss-_RuDNA1bF.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMalayalam/hinted/ttf/NotoSansMalayalam-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mandaic 0",
-        url: "notosansmandaic/v18/cIfnMbdWt1w_HgCcilqhKQBo_OsMI6-C9AIU0g.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMandaic/hinted/ttf/NotoSansMandaic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mandaic 1",
-        url: "notosansmandaic/v18/cIfnMbdWt1w_HgCcilqhKQBo_OsMI6_J9AIU0g.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMandaic/hinted/ttf/NotoSansMandaic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mandaic 2",
-        url: "notosansmandaic/v18/cIfnMbdWt1w_HgCcilqhKQBo_OsMI6_H9AI.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMandaic/hinted/ttf/NotoSansMandaic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Manichaean 0",
-        url: "notosansmanichaean/v19/taiVGntiC4--qtsfi4Jp9-_GkPZZCcrfenr-Pzp1Cg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansManichaean/hinted/ttf/NotoSansManichaean-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Manichaean 1",
-        url: "notosansmanichaean/v19/taiVGntiC4--qtsfi4Jp9-_GkPZZCcrfenqLPzp1Cg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansManichaean/hinted/ttf/NotoSansManichaean-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Manichaean 2",
-        url: "notosansmanichaean/v19/taiVGntiC4--qtsfi4Jp9-_GkPZZCcrfenqFPzo.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansManichaean/hinted/ttf/NotoSansManichaean-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Marchen 0",
-        url: "notosansmarchen/v21/aFTO7OZ_Y282EP-WyG6QTOX_C8WZMEjXuIp7XLg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMarchen/hinted/ttf/NotoSansMarchen-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Marchen 1",
-        url: "notosansmarchen/v21/aFTO7OZ_Y282EP-WyG6QTOX_C8WZMEhGma9GZQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMarchen/hinted/ttf/NotoSansMarchen-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Marchen 2",
-        url: "notosansmarchen/v21/aFTO7OZ_Y282EP-WyG6QTOX_C8WZMEhIma8.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMarchen/hinted/ttf/NotoSansMarchen-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Masaram Gondi 0",
-        url: "notosansmasaramgondi/v19/6xK_dThFKcWIu4bpRBjRYRV7KZCbUq6n_1kPntH65xMNWQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMasaramGondi/hinted/ttf/NotoSansMasaramGondi-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Masaram Gondi 1",
-        url: "notosansmasaramgondi/v19/6xK_dThFKcWIu4bpRBjRYRV7KZCbUq6n_1kPntGX5xMNWQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMasaramGondi/hinted/ttf/NotoSansMasaramGondi-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Masaram Gondi 2",
-        url: "notosansmasaramgondi/v19/6xK_dThFKcWIu4bpRBjRYRV7KZCbUq6n_1kPntGZ5xM.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMasaramGondi/hinted/ttf/NotoSansMasaramGondi-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Math 0",
-        url: "notosansmath/v18/7Aump_cpkSecTWaHRlH2hyV5UEkF81wI8A.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMath/hinted/ttf/NotoSansMath-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Math 1",
-        url: "notosansmath/v18/7Aump_cpkSecTWaHRlH2hyV5UEl981wI8A.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMath/hinted/ttf/NotoSansMath-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Math 2",
-        url: "notosansmath/v18/7Aump_cpkSecTWaHRlH2hyV5UEkB81w.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMath/hinted/ttf/NotoSansMath-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mayan Numerals 0",
-        url: "notosansmayannumerals/v17/PlIuFk25O6RzLfvNNVSivR09_KqYMwvvDKYjfIi0fOEM5N6w.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMayanNumerals/hinted/ttf/NotoSansMayanNumerals-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mayan Numerals 1",
-        url: "notosansmayannumerals/v17/PlIuFk25O6RzLfvNNVSivR09_KqYMwvvDKYjfIi04sAp2ec.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMayanNumerals/hinted/ttf/NotoSansMayanNumerals-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mayan Numerals 2",
-        url: "notosansmayannumerals/v17/PlIuFk25O6RzLfvNNVSivR09_KqYMwvvDKYjfIi07MAp.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMayanNumerals/hinted/ttf/NotoSansMayanNumerals-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Meetei Mayek 0",
-        url: "notosansmeeteimayek/v20/HTxAL3QyKieByqY9eZPFweO0be7M21uSphSdhqILnmrRfJ8t_1TJ_sSV7vkuFQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMeeteiMayek/hinted/ttf/NotoSansMeeteiMayek-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Meetei Mayek 1",
-        url: "notosansmeeteimayek/v20/HTxAL3QyKieByqY9eZPFweO0be7M21uSphSdhqILnmrRfJ8t_1TJ_sTf7vkuFQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMeeteiMayek/hinted/ttf/NotoSansMeeteiMayek-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Meetei Mayek 2",
-        url: "notosansmeeteimayek/v20/HTxAL3QyKieByqY9eZPFweO0be7M21uSphSdhqILnmrRfJ8t_1TJ_sTR7vk.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMeeteiMayek/hinted/ttf/NotoSansMeeteiMayek-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mende Kikakui 0",
-        url: "notosansmendekikakui/v30/11hRGoLHz17aKjQCWj-JHcLvu2Q5zZrnkbNCLXzqQxZGOW4.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMendeKikakui/hinted/ttf/NotoSansMendeKikakui-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mende Kikakui 1",
-        url: "notosansmendekikakui/v30/11hRGoLHz17aKjQCWj-JHcLvu2Q5zZrnkbNCLXx2YjN7AA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMendeKikakui/hinted/ttf/NotoSansMendeKikakui-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mende Kikakui 2",
-        url: "notosansmendekikakui/v30/11hRGoLHz17aKjQCWj-JHcLvu2Q5zZrnkbNCLXx4YjM.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMendeKikakui/hinted/ttf/NotoSansMendeKikakui-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Meroitic 0",
-        url: "notosansmeroitic/v19/IFS5HfRJndhE3P4b5jnZ3ITPvC6i00Uz7jJSuKY.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMeroitic/hinted/ttf/NotoSansMeroitic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Meroitic 1",
-        url: "notosansmeroitic/v19/IFS5HfRJndhE3P4b5jnZ3ITPvC6i00UzLhN3hZ8k.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMeroitic/hinted/ttf/NotoSansMeroitic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Meroitic 2",
-        url: "notosansmeroitic/v19/IFS5HfRJndhE3P4b5jnZ3ITPvC6i00UzLxN3hZ8k.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMeroitic/hinted/ttf/NotoSansMeroitic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Meroitic 3",
-        url: "notosansmeroitic/v19/IFS5HfRJndhE3P4b5jnZ3ITPvC6i00UziTJSuKY.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMeroitic/hinted/ttf/NotoSansMeroitic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Meroitic 4",
-        url: "notosansmeroitic/v19/IFS5HfRJndhE3P4b5jnZ3ITPvC6i00UzhzJS.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMeroitic/hinted/ttf/NotoSansMeroitic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Miao 0",
-        url: "notosansmiao/v19/Dxxz8jmXMW75w3OmoDXVV4zyZXh0eqFhraE.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMiao/hinted/ttf/NotoSansMiao-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Miao 1",
-        url: "notosansmiao/v19/Dxxz8jmXMW75w3OmoDXVV4zyZXjpW4RclA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMiao/hinted/ttf/NotoSansMiao-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Miao 2",
-        url: "notosansmiao/v19/Dxxz8jmXMW75w3OmoDXVV4zyZXjnW4Q.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMiao/hinted/ttf/NotoSansMiao-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Modi 0",
-        url: "notosansmodi/v25/pe03MIySN5pO62Z5YkFyT7jeas4QU1EQVg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansModi/hinted/ttf/NotoSansModi-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Modi 1",
-        url: "notosansmodi/v25/pe03MIySN5pO62Z5YkFyT7jeas5jU1EQVg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansModi/hinted/ttf/NotoSansModi-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Modi 2",
-        url: "notosansmodi/v25/pe03MIySN5pO62Z5YkFyT7jeas5tU1E.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansModi/hinted/ttf/NotoSansModi-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mongolian 0",
-        url: "notosansmongolian/v23/VdGCAYADGIwE0EopZx8xQfHlgEAMsrToxL5I8eS0vHUmOj_GxV8hTQ6opSoXyWFRU1d14CMQwI84ag.90.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMongolian/hinted/ttf/NotoSansMongolian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mongolian 1",
-        url: "notosansmongolian/v23/VdGCAYADGIwE0EopZx8xQfHlgEAMsrToxL5I8eS0vHUmOj_GxV8hTQ6opSoXyWFRU1d14CMQwI84ag.91.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMongolian/hinted/ttf/NotoSansMongolian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mongolian 2",
-        url: "notosansmongolian/v23/VdGCAYADGIwE0EopZx8xQfHlgEAMsrToxL5I8eS0vHUmOj_GxV8hTQ6opSoXyWFRU1d14CMQwI84ag.92.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMongolian/hinted/ttf/NotoSansMongolian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mongolian 3",
-        url: "notosansmongolian/v23/VdGCAYADGIwE0EopZx8xQfHlgEAMsrToxL5I8eS0vHUmOj_GxV8hTQ6opSoXyWFRU1d14CMQwI84ag.97.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMongolian/hinted/ttf/NotoSansMongolian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mongolian 4",
-        url: "notosansmongolian/v23/VdGCAYADGIwE0EopZx8xQfHlgEAMsrToxL5I8eS0vHUmOj_GxV8hTQ6opSoXyWFRU1d14CMQwI84ag.98.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMongolian/hinted/ttf/NotoSansMongolian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mongolian 5",
-        url: "notosansmongolian/v23/VdGCAYADGIwE0EopZx8xQfHlgEAMsrToxL5I8eS0vHUmOj_GxV8hTQ6opSoXyWFRU1d14CMQwI84ag.99.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMongolian/hinted/ttf/NotoSansMongolian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mongolian 6",
-        url: "notosansmongolian/v23/VdGCAYADGIwE0EopZx8xQfHlgEAMsrToxL5I8eS0vHUmOj_GxV8hTQ6opSoXyWFRU1d14CMQwI84ag.100.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMongolian/hinted/ttf/NotoSansMongolian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mongolian 7",
-        url: "notosansmongolian/v23/VdGCAYADGIwE0EopZx8xQfHlgEAMsrToxL5I8eS0vHUmOj_GxV8hTQ6opSoXyWFRU1d14CMQwI84ag.101.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMongolian/hinted/ttf/NotoSansMongolian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mongolian 8",
-        url: "notosansmongolian/v23/VdGCAYADGIwE0EopZx8xQfHlgEAMsrToxL5I8eS0vHUmOj_GxV8hTQ6opSoXyWFRU1d14CMQwI84ag.102.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMongolian/hinted/ttf/NotoSansMongolian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mongolian 9",
-        url: "notosansmongolian/v23/VdGCAYADGIwE0EopZx8xQfHlgEAMsrToxL5I8eS0vHUmOj_GxV8hTQ6opSoXyWFRU1d14CMQwI84ag.103.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMongolian/hinted/ttf/NotoSansMongolian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mongolian 10",
-        url: "notosansmongolian/v23/VdGCAYADGIwE0EopZx8xQfHlgEAMsrToxL5I8eS0vHUmOj_GxV8hTQ6opSoXyWFRU1d14CMQwI84ag.105.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMongolian/hinted/ttf/NotoSansMongolian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mongolian 11",
-        url: "notosansmongolian/v23/VdGCAYADGIwE0EopZx8xQfHlgEAMsrToxL5I8eS0vHUmOj_GxV8hTQ6opSoXyWFRU1d14CMQwI84ag.106.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMongolian/hinted/ttf/NotoSansMongolian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mongolian 12",
-        url: "notosansmongolian/v23/VdGCAYADGIwE0EopZx8xQfHlgEAMsrToxL5I8eS0vHUmOj_GxV8hTQ6opSoXyWFRU1d14CMQwI84ag.108.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMongolian/hinted/ttf/NotoSansMongolian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mongolian 13",
-        url: "notosansmongolian/v23/VdGCAYADGIwE0EopZx8xQfHlgEAMsrToxL5I8eS0vHUmOj_GxV8hTQ6opSoXyWFRU1d14CMQwI84ag.109.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMongolian/hinted/ttf/NotoSansMongolian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mongolian 14",
-        url: "notosansmongolian/v23/VdGCAYADGIwE0EopZx8xQfHlgEAMsrToxL5I8eS0vHUmOj_GxV8hTQ6opSoXyWFRU1d14CMQwI84ag.110.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMongolian/hinted/ttf/NotoSansMongolian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mongolian 15",
-        url: "notosansmongolian/v23/VdGCAYADGIwE0EopZx8xQfHlgEAMsrToxL5I8eS0vHUmOj_GxV8hTQ6opSoXyWFRU1d14CMQwI84ag.112.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMongolian/hinted/ttf/NotoSansMongolian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mongolian 16",
-        url: "notosansmongolian/v23/VdGCAYADGIwE0EopZx8xQfHlgEAMsrToxL5I8eS0vHUmOj_GxV8hTQ6opSoXyWFRU1d14CMQwI84ag.113.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMongolian/hinted/ttf/NotoSansMongolian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mongolian 17",
-        url: "notosansmongolian/v23/VdGCAYADGIwE0EopZx8xQfHlgEAMsrToxL5I8eS0vHUmOj_GxV8hTQ6opSoXyWFRU1d14CMQwI84ag.114.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMongolian/hinted/ttf/NotoSansMongolian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mongolian 18",
-        url: "notosansmongolian/v23/VdGCAYADGIwE0EopZx8xQfHlgEAMsrToxL5I8eS0vHUmOj_GxV8hTQ6opSoXyWFRU1d14CMQwI84ag.115.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMongolian/hinted/ttf/NotoSansMongolian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mongolian 19",
-        url: "notosansmongolian/v23/VdGCAYADGIwE0EopZx8xQfHlgEAMsrToxL5I8eS0vHUmOj_GxV8hTQ6opSoXyWFRU1d14CMQwI84ag.116.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMongolian/hinted/ttf/NotoSansMongolian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mongolian 20",
-        url: "notosansmongolian/v23/VdGCAYADGIwE0EopZx8xQfHlgEAMsrToxL5I8eS0vHUmOj_GxV8hTQ6opSoXyWFRU1d14CMQwI84ag.117.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMongolian/hinted/ttf/NotoSansMongolian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mongolian 21",
-        url: "notosansmongolian/v23/VdGCAYADGIwE0EopZx8xQfHlgEAMsrToxL5I8eS0vHUmOj_GxV8hTQ6opSoXyWFRU1d14CMQwI84ag.118.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMongolian/hinted/ttf/NotoSansMongolian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mongolian 22",
-        url: "notosansmongolian/v23/VdGCAYADGIwE0EopZx8xQfHlgEAMsrToxL5I8eS0vHUmOj_GxV8hTQ6opSoXyWFRU1d14CMQwI84ag.119.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMongolian/hinted/ttf/NotoSansMongolian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mongolian 23",
-        url: "notosansmongolian/v23/VdGCAYADGIwE0EopZx8xQfHlgEAMsrTo9MAq6tav.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMongolian/hinted/ttf/NotoSansMongolian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mongolian 24",
-        url: "notosansmongolian/v23/VdGCAYADGIwE0EopZx8xQfHlgEAMsrTo9Jcq6tav.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMongolian/hinted/ttf/NotoSansMongolian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mongolian 25",
-        url: "notosansmongolian/v23/VdGCAYADGIwE0EopZx8xQfHlgEAMsrTo9NIq6tav.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMongolian/hinted/ttf/NotoSansMongolian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mongolian 26",
-        url: "notosansmongolian/v23/VdGCAYADGIwE0EopZx8xQfHlgEAMsrTo9LIq6tav.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMongolian/hinted/ttf/NotoSansMongolian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mongolian 27",
-        url: "notosansmongolian/v23/VdGCAYADGIwE0EopZx8xQfHlgEAMsrTo9Lwq6g.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMongolian/hinted/ttf/NotoSansMongolian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mro 0",
-        url: "notosansmro/v20/qWcsB6--pZv9TqnUQMhe9b39aK_6kjQYug.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMro/hinted/ttf/NotoSansMro-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mro 1",
-        url: "notosansmro/v20/qWcsB6--pZv9TqnUQMhe9b39aDXbtwkh.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMro/hinted/ttf/NotoSansMro-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Mro 2",
-        url: "notosansmro/v20/qWcsB6--pZv9TqnUQMhe9b39aDvbtw.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMro/hinted/ttf/NotoSansMro-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Multani 0",
-        url: "notosansmultani/v22/9Bty3ClF38_RfOpe1gCaZ8p30BOFO2BNr_Gc5A.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMultani/hinted/ttf/NotoSansMultani-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Multani 1",
-        url: "notosansmultani/v22/9Bty3ClF38_RfOpe1gCaZ8p30BOFO2A9r_Gc5A.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMultani/hinted/ttf/NotoSansMultani-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Multani 2",
-        url: "notosansmultani/v22/9Bty3ClF38_RfOpe1gCaZ8p30BOFO2Azr_E.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMultani/hinted/ttf/NotoSansMultani-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Myanmar 0",
-        url: "notosansmyanmar/v27/AlZU_y1ZtY3ymOryg38hOCSdOnFq0FP9_gnYM_ME0QeqLzz8-kqmtY3KLEbEGTOZpswRAKxl.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMyanmar/hinted/ttf/NotoSansMyanmar-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Myanmar 1",
-        url: "notosansmyanmar/v27/AlZU_y1ZtY3ymOryg38hOCSdOnFq0FP9_gnYM_ME0QeqLzz8-kqmtY3KLEbEGTOZptwRAKxl.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMyanmar/hinted/ttf/NotoSansMyanmar-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Myanmar 2",
-        url: "notosansmyanmar/v27/AlZU_y1ZtY3ymOryg38hOCSdOnFq0FP9_gnYM_ME0QeqLzz8-kqmtY3KLEbEGTOZptIRAA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansMyanmar/hinted/ttf/NotoSansMyanmar-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans NKo 0",
-        url: "notosansnko/v7/esDX31ZdNv-KYGGJpKGk2_RpAvyGHfLB.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansNKo/hinted/ttf/NotoSansNKo-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans NKo 1",
-        url: "notosansnko/v7/esDX31ZdNv-KYGGJpKGk2_RpApmGHfLB.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansNKo/hinted/ttf/NotoSansNKo-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans NKo 2",
-        url: "notosansnko/v7/esDX31ZdNv-KYGGJpKGk2_RpApeGHQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansNKo/hinted/ttf/NotoSansNKo-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Nabataean 0",
-        url: "notosansnabataean/v17/IFS4HfVJndhE3P4b5jnZ34DfsjO330dNkINWoKIdKQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansNabataean/hinted/ttf/NotoSansNabataean-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Nabataean 1",
-        url: "notosansnabataean/v17/IFS4HfVJndhE3P4b5jnZ34DfsjO330dNkBt3hZ8k.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansNabataean/hinted/ttf/NotoSansNabataean-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Nabataean 2",
-        url: "notosansnabataean/v17/IFS4HfVJndhE3P4b5jnZ34DfsjO330dNkBV3hQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansNabataean/hinted/ttf/NotoSansNabataean-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Nandinagari 0",
-        url: "notosansnandinagari/v4/or38Q7733eiDljA1IufXSNFT-1KI5y10H4jl279zwRRT.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansNandinagari/hinted/ttf/NotoSansNandinagari-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Nandinagari 1",
-        url: "notosansnandinagari/v4/or38Q7733eiDljA1IufXSNFT-1KI5y10H4jlYp5W_C0.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansNandinagari/hinted/ttf/NotoSansNandinagari-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Nandinagari 2",
-        url: "notosansnandinagari/v4/or38Q7733eiDljA1IufXSNFT-1KI5y10H4jlbJ5W.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansNandinagari/hinted/ttf/NotoSansNandinagari-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans New Tai Lue 0",
-        url: "notosansnewtailue/v24/H4cKBW-Pl9DZ0Xe_nHUapt7PovLXAhAnY7wqaLy-OJgU3p_pdeXAUXPqhWPK.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansNewTaiLue/hinted/ttf/NotoSansNewTaiLue-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans New Tai Lue 1",
-        url: "notosansnewtailue/v24/H4cKBW-Pl9DZ0Xe_nHUapt7PovLXAhAnY7wqaLy-OJgU3p_pdeXAUU_qhWPK.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansNewTaiLue/hinted/ttf/NotoSansNewTaiLue-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans New Tai Lue 2",
-        url: "notosansnewtailue/v24/H4cKBW-Pl9DZ0Xe_nHUapt7PovLXAhAnY7wqaLy-OJgU3p_pdeXAUUHqhQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansNewTaiLue/hinted/ttf/NotoSansNewTaiLue-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Newa 0",
-        url: "notosansnewa/v18/7r3fqXp6utEsO9pI4f8ok8sWg_mSot8h5g.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansNewa/hinted/ttf/NotoSansNewa-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Newa 1",
-        url: "notosansnewa/v18/7r3fqXp6utEsO9pI4f8ok8sWg_n2ot8h5g.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansNewa/hinted/ttf/NotoSansNewa-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Newa 2",
-        url: "notosansnewa/v18/7r3fqXp6utEsO9pI4f8ok8sWg_n4ot8.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansNewa/hinted/ttf/NotoSansNewa-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Nushu 0",
-        url: "notosansnushu/v20/rnCw-xRQ3B7652emAbAe_Ai1IYa1IFoNMrY.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansNushu/hinted/ttf/NotoSansNushu-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Nushu 1",
-        url: "notosansnushu/v20/rnCw-xRQ3B7652emAbAe_Ai1IYa1UVoNMrY.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansNushu/hinted/ttf/NotoSansNushu-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Nushu 2",
-        url: "notosansnushu/v20/rnCw-xRQ3B7652emAbAe_Ai1IYa1X1oN.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansNushu/hinted/ttf/NotoSansNushu-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Ogham 0",
-        url: "notosansogham/v18/kmKlZqk1GBDGN0mY6k5lmEmww4hb55Nbcxc.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOgham/hinted/ttf/NotoSansOgham-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Ogham 1",
-        url: "notosansogham/v18/kmKlZqk1GBDGN0mY6k5lmEmww4hbvpNbcxc.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOgham/hinted/ttf/NotoSansOgham-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Ogham 2",
-        url: "notosansogham/v18/kmKlZqk1GBDGN0mY6k5lmEmww4hbsJNb.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOgham/hinted/ttf/NotoSansOgham-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Ol Chiki 0",
-        url: "notosansolchiki/v31/N0b92TJNOPt-eHmFZCdQbrL32r-4CvhzDzRwlxOQYuVALWk22_YwgGrz.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOlChiki/hinted/ttf/NotoSansOlChiki-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Ol Chiki 1",
-        url: "notosansolchiki/v31/N0b92TJNOPt-eHmFZCdQbrL32r-4CvhzDzRwlxOQYuVALWk227swgGrz.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOlChiki/hinted/ttf/NotoSansOlChiki-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Ol Chiki 2",
-        url: "notosansolchiki/v31/N0b92TJNOPt-eHmFZCdQbrL32r-4CvhzDzRwlxOQYuVALWk227UwgA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOlChiki/hinted/ttf/NotoSansOlChiki-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Old Hungarian 0",
-        url: "notosansoldhungarian/v19/E213_cD6hP3GwCJPEUssHEM0KqLaHJXg2PiIgSdsRSpqMJw.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOldHungarian/hinted/ttf/NotoSansOldHungarian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Old Hungarian 1",
-        url: "notosansoldhungarian/v19/E213_cD6hP3GwCJPEUssHEM0KqLaHJXg2PiIgSfqZA9XCQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOldHungarian/hinted/ttf/NotoSansOldHungarian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Old Hungarian 2",
-        url: "notosansoldhungarian/v19/E213_cD6hP3GwCJPEUssHEM0KqLaHJXg2PiIgSfkZA8.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOldHungarian/hinted/ttf/NotoSansOldHungarian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Old Italic 0",
-        url: "notosansolditalic/v18/TuGOUUFzXI5FBtUq5a8bh68BJxxEVam7tVkUfxldCA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOldItalic/hinted/ttf/NotoSansOldItalic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Old Italic 1",
-        url: "notosansolditalic/v18/TuGOUUFzXI5FBtUq5a8bh68BJxxEVam7tVlYfxldCA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOldItalic/hinted/ttf/NotoSansOldItalic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Old Italic 2",
-        url: "notosansolditalic/v18/TuGOUUFzXI5FBtUq5a8bh68BJxxEVam7tVlWfxk.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOldItalic/hinted/ttf/NotoSansOldItalic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Old North Arabian 0",
-        url: "notosansoldnortharabian/v17/esDF30BdNv-KYGGJpKGk2tNiMt7Jar6olZDyNdr81zBgF2EbyjcZ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOldNorthArabian/hinted/ttf/NotoSansOldNorthArabian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Old North Arabian 1",
-        url: "notosansoldnortharabian/v17/esDF30BdNv-KYGGJpKGk2tNiMt7Jar6olZDyNdr81zBgkEA-9w4.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOldNorthArabian/hinted/ttf/NotoSansOldNorthArabian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Old North Arabian 2",
-        url: "notosansoldnortharabian/v17/esDF30BdNv-KYGGJpKGk2tNiMt7Jar6olZDyNdr81zBgnkA-.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOldNorthArabian/hinted/ttf/NotoSansOldNorthArabian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Old Permic 0",
-        url: "notosansoldpermic/v18/snf1s1q1-dF8pli1TesqcbUY4Mr-ElrwKIddiP7tKQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOldPermic/hinted/ttf/NotoSansOldPermic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Old Permic 1",
-        url: "notosansoldpermic/v18/snf1s1q1-dF8pli1TesqcbUY4Mr-ElrwKIc8iP7tKQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOldPermic/hinted/ttf/NotoSansOldPermic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Old Permic 2",
-        url: "notosansoldpermic/v18/snf1s1q1-dF8pli1TesqcbUY4Mr-ElrwKIdeiP7tKQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOldPermic/hinted/ttf/NotoSansOldPermic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Old Permic 3",
-        url: "notosansoldpermic/v18/snf1s1q1-dF8pli1TesqcbUY4Mr-ElrwKIdQiP4.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOldPermic/hinted/ttf/NotoSansOldPermic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Old Persian 0",
-        url: "notosansoldpersian/v17/wEOjEAbNnc5caQTFG18FHrZr9Bp6-8CmIJ_d7uNRTx8.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOldPersian/hinted/ttf/NotoSansOldPersian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Old Persian 1",
-        url: "notosansoldpersian/v17/wEOjEAbNnc5caQTFG18FHrZr9Bp6-8CmIJ_doeNRTx8.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOldPersian/hinted/ttf/NotoSansOldPersian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Old Persian 2",
-        url: "notosansoldpersian/v17/wEOjEAbNnc5caQTFG18FHrZr9Bp6-8CmIJ_dr-NR.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOldPersian/hinted/ttf/NotoSansOldPersian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Old Sogdian 0",
-        url: "notosansoldsogdian/v18/3JnjSCH90Gmq2mrzckOBBhFhdrMst48aURtLEMkOPtZ3.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOldSogdian/hinted/ttf/NotoSansOldSogdian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Old Sogdian 1",
-        url: "notosansoldsogdian/v18/3JnjSCH90Gmq2mrzckOBBhFhdrMst48aURtLlOgrA-8.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOldSogdian/hinted/ttf/NotoSansOldSogdian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Old Sogdian 2",
-        url: "notosansoldsogdian/v18/3JnjSCH90Gmq2mrzckOBBhFhdrMst48aURtLmugr.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOldSogdian/hinted/ttf/NotoSansOldSogdian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Old South Arabian 0",
-        url: "notosansoldsoutharabian/v17/3qT5oiOhnSyU8TNFIdhZTice3hB_HWKsEnF--0XCHiKBi-FCf9E.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOldSouthArabian/hinted/ttf/NotoSansOldSouthArabian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Old South Arabian 1",
-        url: "notosansoldsoutharabian/v17/3qT5oiOhnSyU8TNFIdhZTice3hB_HWKsEnF--0XCHiKB3eFCf9E.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOldSouthArabian/hinted/ttf/NotoSansOldSouthArabian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Old South Arabian 2",
-        url: "notosansoldsoutharabian/v17/3qT5oiOhnSyU8TNFIdhZTice3hB_HWKsEnF--0XCHiKB0-FC.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOldSouthArabian/hinted/ttf/NotoSansOldSouthArabian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Old Turkic 0",
-        url: "notosansoldturkic/v19/yMJNMJVya43H0SUF_WmcGEQVqoEMKDKbsH3Dhk0OVw.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOldTurkic/hinted/ttf/NotoSansOldTurkic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Old Turkic 1",
-        url: "notosansoldturkic/v19/yMJNMJVya43H0SUF_WmcGEQVqoEMKDKbsH2Yhk0OVw.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOldTurkic/hinted/ttf/NotoSansOldTurkic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Old Turkic 2",
-        url: "notosansoldturkic/v19/yMJNMJVya43H0SUF_WmcGEQVqoEMKDKbsH2Whk0.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOldTurkic/hinted/ttf/NotoSansOldTurkic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Oriya 0",
-        url: "notosansoriya/v35/AYCppXfzfccDCstK_hrjDyADv5e9748vhj3CJBLHIARtgD6TJQS0dJT5Ivj0f5_C4rl3BQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOriya/hinted/ttf/NotoSansOriya-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Oriya 1",
-        url: "notosansoriya/v35/AYCppXfzfccDCstK_hrjDyADv5e9748vhj3CJBLHIARtgD6TJQS0dJT5Ivj0f5_V4rl3BQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOriya/hinted/ttf/NotoSansOriya-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Oriya 2",
-        url: "notosansoriya/v35/AYCppXfzfccDCstK_hrjDyADv5e9748vhj3CJBLHIARtgD6TJQS0dJT5Ivj0f5_b4rk.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOriya/hinted/ttf/NotoSansOriya-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Osage 0",
-        url: "notosansosage/v20/oPWX_kB6kP4jCuhpgEGmw4mtAVtnyn22y3PV.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOsage/hinted/ttf/NotoSansOsage-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Osage 1",
-        url: "notosansosage/v20/oPWX_kB6kP4jCuhpgEGmw4mtAVtnT1yT9ko.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOsage/hinted/ttf/NotoSansOsage-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Osage 2",
-        url: "notosansosage/v20/oPWX_kB6kP4jCuhpgEGmw4mtAVtnQVyT.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOsage/hinted/ttf/NotoSansOsage-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Osmanya 0",
-        url: "notosansosmanya/v20/8vIS7xs32H97qzQKnzfeWzUyUpOJmw60TY_9CQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOsmanya/hinted/ttf/NotoSansOsmanya-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Osmanya 1",
-        url: "notosansosmanya/v20/8vIS7xs32H97qzQKnzfeWzUyUpOJmw6tTY_9CQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOsmanya/hinted/ttf/NotoSansOsmanya-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Osmanya 2",
-        url: "notosansosmanya/v20/8vIS7xs32H97qzQKnzfeWzUyUpOJmw6jTY8.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansOsmanya/hinted/ttf/NotoSansOsmanya-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Pahawh Hmong 0",
-        url: "notosanspahawhhmong/v21/bWtp7e_KfBziStx7lIzKKaMUOBEA3UPQDW7kn7wUV4IjKw.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansPahawhHmong/hinted/ttf/NotoSansPahawhHmong-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Pahawh Hmong 1",
-        url: "notosanspahawhhmong/v21/bWtp7e_KfBziStx7lIzKKaMUOBEA3UPQDW7knz41cr8a.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansPahawhHmong/hinted/ttf/NotoSansPahawhHmong-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Pahawh Hmong 2",
-        url: "notosanspahawhhmong/v21/bWtp7e_KfBziStx7lIzKKaMUOBEA3UPQDW7knzA1cg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansPahawhHmong/hinted/ttf/NotoSansPahawhHmong-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Palmyrene 0",
-        url: "notosanspalmyrene/v17/ZgNPjOdKPa7CHqq0h37c_ASCWvH93SFCDviSQpp0rA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansPalmyrene/hinted/ttf/NotoSansPalmyrene-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Palmyrene 1",
-        url: "notosanspalmyrene/v17/ZgNPjOdKPa7CHqq0h37c_ASCWvH93SFCDnuzZ6dN.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansPalmyrene/hinted/ttf/NotoSansPalmyrene-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Palmyrene 2",
-        url: "notosanspalmyrene/v17/ZgNPjOdKPa7CHqq0h37c_ASCWvH93SFCDnWzZw.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansPalmyrene/hinted/ttf/NotoSansPalmyrene-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Pau Cin Hau 0",
-        url: "notosanspaucinhau/v21/x3d-cl3IZKmUqiMg_9wBLLtzl22EayN7ehItBW6OJfV1.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansPauCinHau/hinted/ttf/NotoSansPauCinHau-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Pau Cin Hau 1",
-        url: "notosanspaucinhau/v21/x3d-cl3IZKmUqiMg_9wBLLtzl22EayN7ehIthU-rGMw.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansPauCinHau/hinted/ttf/NotoSansPauCinHau-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Pau Cin Hau 2",
-        url: "notosanspaucinhau/v21/x3d-cl3IZKmUqiMg_9wBLLtzl22EayN7ehIti0-r.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansPauCinHau/hinted/ttf/NotoSansPauCinHau-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Phoenician 0",
-        url: "notosansphoenician/v18/jizFRF9Ksm4Bt9PvcTaEkIHiTVtxmFtS5U6OqN6Z5w.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansPhoenician/hinted/ttf/NotoSansPhoenician-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Phoenician 1",
-        url: "notosansphoenician/v18/jizFRF9Ksm4Bt9PvcTaEkIHiTVtxmFtS5U7AqN6Z5w.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansPhoenician/hinted/ttf/NotoSansPhoenician-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Phoenician 2",
-        url: "notosansphoenician/v18/jizFRF9Ksm4Bt9PvcTaEkIHiTVtxmFtS5U7OqN4.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansPhoenician/hinted/ttf/NotoSansPhoenician-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Psalter Pahlavi 0",
-        url: "notosanspsalterpahlavi/v18/rP2Vp3K65FkAtHfwd-eISGznYihzggmsicPfud3w5BrAsHQB.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansPsalterPahlavi/hinted/ttf/NotoSansPsalterPahlavi-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Psalter Pahlavi 1",
-        url: "notosanspsalterpahlavi/v18/rP2Vp3K65FkAtHfwd-eISGznYihzggmsicPfud3w5GTAsHQB.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansPsalterPahlavi/hinted/ttf/NotoSansPsalterPahlavi-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Psalter Pahlavi 2",
-        url: "notosanspsalterpahlavi/v18/rP2Vp3K65FkAtHfwd-eISGznYihzggmsicPfud3w5GrAsA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansPsalterPahlavi/hinted/ttf/NotoSansPsalterPahlavi-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Rejang 0",
-        url: "notosansrejang/v23/Ktk2AKuMeZjqPnXgyqrib7DIogqwB8u9WLZB.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansRejang/hinted/ttf/NotoSansRejang-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Rejang 1",
-        url: "notosansrejang/v23/Ktk2AKuMeZjqPnXgyqrib7DIogqwB4q9WLZB.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansRejang/hinted/ttf/NotoSansRejang-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Rejang 2",
-        url: "notosansrejang/v23/Ktk2AKuMeZjqPnXgyqrib7DIogqwB4S9WA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansRejang/hinted/ttf/NotoSansRejang-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Runic 0",
-        url: "notosansrunic/v18/H4c_BXWPl9DZ0Xe_nHUaus7W68WmWBBuLtg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansRunic/hinted/ttf/NotoSansRunic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Runic 1",
-        url: "notosansrunic/v18/H4c_BXWPl9DZ0Xe_nHUaus7W68WmYhBuLtg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansRunic/hinted/ttf/NotoSansRunic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Runic 2",
-        url: "notosansrunic/v18/H4c_BXWPl9DZ0Xe_nHUaus7W68WmbBBu.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansRunic/hinted/ttf/NotoSansRunic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans SC 0",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.4.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 1",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.5.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 2",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.6.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 3",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.21.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 4",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.22.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 5",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.23.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 6",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.24.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 7",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.25.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 8",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.26.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 9",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.27.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 10",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.28.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 11",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.29.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 12",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.30.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 13",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.31.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 14",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.32.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 15",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.33.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 16",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.34.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 17",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.35.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 18",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.36.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 19",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.37.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 20",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.38.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 21",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.39.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 22",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.40.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 23",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.41.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 24",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.42.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 25",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.43.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 26",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.44.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 27",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.45.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 28",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.46.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 29",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.47.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 30",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.48.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 31",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.49.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 32",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.50.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 33",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.51.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 34",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.52.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 35",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.53.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 36",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.54.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 37",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.55.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 38",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.56.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 39",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.57.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 40",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.58.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 41",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.59.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 42",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.60.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 43",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.61.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 44",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.62.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 45",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.63.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 46",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.64.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 47",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.65.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 48",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.66.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 49",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.67.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 50",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.68.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 51",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.69.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 52",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.70.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 53",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.71.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 54",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.72.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 55",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.73.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 56",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.74.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 57",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.75.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 58",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.76.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 59",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.77.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 60",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.78.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 61",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.79.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 62",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.80.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 63",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.81.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 64",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.82.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 65",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.83.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 66",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.84.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 67",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.85.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 68",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.86.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 69",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.87.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 70",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.88.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 71",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.89.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 72",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.90.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 73",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.91.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 74",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.97.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 75",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.98.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 76",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.99.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 77",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.100.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 78",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.101.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 79",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.102.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 80",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.103.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 81",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.104.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 82",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.105.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 83",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.106.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 84",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.107.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 85",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.108.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 86",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.109.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 87",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.110.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 88",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.111.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 89",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.112.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 90",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.113.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 91",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.114.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 92",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.115.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 93",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.116.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 94",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.117.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 95",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.118.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 96",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYkldv7JjxkkgFsFSSOPMOkySAZ73y9ViAt3acb8NexQ2w.119.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 97",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FrY9HbczS.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 98",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FrYRHbczS.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 99",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FrYVHbczS.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans SC 100",
-        url: "notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FrYtHbQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans Samaritan 0",
-        url: "notosanssamaritan/v17/buEqppe9f8_vkXadMBJJo0tSmaYjFkxOYrdpN2OV.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSamaritan/hinted/ttf/NotoSansSamaritan-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Samaritan 1",
-        url: "notosanssamaritan/v17/buEqppe9f8_vkXadMBJJo0tSmaYjFkxOYodpN2OV.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSamaritan/hinted/ttf/NotoSansSamaritan-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Samaritan 2",
-        url: "notosanssamaritan/v17/buEqppe9f8_vkXadMBJJo0tSmaYjFkxOYolpNw.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSamaritan/hinted/ttf/NotoSansSamaritan-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Saurashtra 0",
-        url: "notosanssaurashtra/v24/ea8GacQ0Wfz_XKWXe6OtoA8w8zvmYwTef-mUhBLjSA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSaurashtra/hinted/ttf/NotoSansSaurashtra-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Saurashtra 1",
-        url: "notosanssaurashtra/v24/ea8GacQ0Wfz_XKWXe6OtoA8w8zvmYwTef-nUhBLjSA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSaurashtra/hinted/ttf/NotoSansSaurashtra-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Saurashtra 2",
-        url: "notosanssaurashtra/v24/ea8GacQ0Wfz_XKWXe6OtoA8w8zvmYwTef-nahBI.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSaurashtra/hinted/ttf/NotoSansSaurashtra-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Sharada 0",
-        url: "notosanssharada/v18/gok0H7rwAEdtF9N8-mdTGALG6p0kwrW9Nu0b4A.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSharada/hinted/ttf/NotoSansSharada-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Sharada 1",
-        url: "notosanssharada/v18/gok0H7rwAEdtF9N8-mdTGALG6p0kwrXCNu0b4A.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSharada/hinted/ttf/NotoSansSharada-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Sharada 2",
-        url: "notosanssharada/v18/gok0H7rwAEdtF9N8-mdTGALG6p0kwrXMNu0.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSharada/hinted/ttf/NotoSansSharada-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Siddham 0",
-        url: "notosanssiddham/v21/OZpZg-FwqiNLe9PELUikxTWDoCCeGplVuFYRzn8.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSiddham/hinted/ttf/NotoSansSiddham-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Siddham 1",
-        url: "notosanssiddham/v21/OZpZg-FwqiNLe9PELUikxTWDoCCeGpnUmXMs9w.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSiddham/hinted/ttf/NotoSansSiddham-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Siddham 2",
-        url: "notosanssiddham/v21/OZpZg-FwqiNLe9PELUikxTWDoCCeGpnamXM.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSiddham/hinted/ttf/NotoSansSiddham-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans SignWriting 0",
-        url: "notosanssignwriting/v5/Noas6VX_wIWFbTTCrYmvy9A2UnkL-2SZAWiksnukSL0H.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSignWriting/hinted/ttf/NotoSansSignWriting-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans SignWriting 1",
-        url: "notosanssignwriting/v5/Noas6VX_wIWFbTTCrYmvy9A2UnkL-2SZAWikGFqBdYQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSignWriting/hinted/ttf/NotoSansSignWriting-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans SignWriting 2",
-        url: "notosanssignwriting/v5/Noas6VX_wIWFbTTCrYmvy9A2UnkL-2SZAWikFlqB.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSignWriting/hinted/ttf/NotoSansSignWriting-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Sinhala 0",
-        url: "notosanssinhala/v36/yMJ2MJBya43H0SUF_WmcBEEf4rQVO2P524V5N_MxQzQtb-tf5dJbC30Fu9zUwg2a1kIBpawb.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSinhala/hinted/ttf/NotoSansSinhala-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Sinhala 1",
-        url: "notosanssinhala/v36/yMJ2MJBya43H0SUF_WmcBEEf4rQVO2P524V5N_MxQzQtb-tf5dJbC30Fu9zUwg2a1lEBpawb.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSinhala/hinted/ttf/NotoSansSinhala-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Sinhala 2",
-        url: "notosanssinhala/v36/yMJ2MJBya43H0SUF_WmcBEEf4rQVO2P524V5N_MxQzQtb-tf5dJbC30Fu9zUwg2a1l8BpQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSinhala/hinted/ttf/NotoSansSinhala-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Sogdian 0",
-        url: "notosanssogdian/v17/taiQGn5iC4--qtsfi4Jp6eHPnfxQBr_LNG-6Hg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSogdian/hinted/ttf/NotoSansSogdian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Sogdian 1",
-        url: "notosanssogdian/v17/taiQGn5iC4--qtsfi4Jp6eHPnfxQBr-3NG-6Hg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSogdian/hinted/ttf/NotoSansSogdian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Sogdian 2",
-        url: "notosanssogdian/v17/taiQGn5iC4--qtsfi4Jp6eHPnfxQBr-5NG8.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSogdian/hinted/ttf/NotoSansSogdian-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Sora Sompeng 0",
-        url: "notosanssorasompeng/v26/PlIRFkO5O6RzLfvNNVSioxM2_OTrEhPyDLolKvCsHzCxWuGkYHR81_CDb3Ngdw.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSoraSompeng/hinted/ttf/NotoSansSoraSompeng-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Sora Sompeng 1",
-        url: "notosanssorasompeng/v26/PlIRFkO5O6RzLfvNNVSioxM2_OTrEhPyDLolKvCsHzCxWuGkYHR81_Dgb3Ngdw.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSoraSompeng/hinted/ttf/NotoSansSoraSompeng-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Sora Sompeng 2",
-        url: "notosanssorasompeng/v26/PlIRFkO5O6RzLfvNNVSioxM2_OTrEhPyDLolKvCsHzCxWuGkYHR81_Dub3M.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSoraSompeng/hinted/ttf/NotoSansSoraSompeng-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Soyombo 0",
-        url: "notosanssoyombo/v18/RWmSoL-Y6-8q5LTtXs6MF6q7xsxgY3HsC3eREnc.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSoyombo/hinted/ttf/NotoSansSoyombo-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Soyombo 1",
-        url: "notosanssoyombo/v18/RWmSoL-Y6-8q5LTtXs6MF6q7xsxgY3FiKlKsKw.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSoyombo/hinted/ttf/NotoSansSoyombo-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Soyombo 2",
-        url: "notosanssoyombo/v18/RWmSoL-Y6-8q5LTtXs6MF6q7xsxgY3FsKlI.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSoyombo/hinted/ttf/NotoSansSoyombo-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Sundanese 0",
-        url: "notosanssundanese/v28/FwZw7_84xUkosG2xJo2gm7nFwSLQkdymq2mkz3Gz1_b6ctxpNOH4gTrLfQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSundanese/hinted/ttf/NotoSansSundanese-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Sundanese 1",
-        url: "notosanssundanese/v28/FwZw7_84xUkosG2xJo2gm7nFwSLQkdymq2mkz3Gz1_b6ctxpNOHLgTrLfQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSundanese/hinted/ttf/NotoSansSundanese-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Sundanese 2",
-        url: "notosanssundanese/v28/FwZw7_84xUkosG2xJo2gm7nFwSLQkdymq2mkz3Gz1_b6ctxpNOHFgTo.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSundanese/hinted/ttf/NotoSansSundanese-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Syloti Nagri 0",
-        url: "notosanssylotinagri/v25/uU9eCAQZ75uhfF9UoWDRiY3q7Sf_VFV3m4dGJW_7Nv7g.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSylotiNagri/hinted/ttf/NotoSansSylotiNagri-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Syloti Nagri 1",
-        url: "notosanssylotinagri/v25/uU9eCAQZ75uhfF9UoWDRiY3q7Sf_VFV3m4dGJV77Nv7g.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSylotiNagri/hinted/ttf/NotoSansSylotiNagri-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Syloti Nagri 2",
-        url: "notosanssylotinagri/v25/uU9eCAQZ75uhfF9UoWDRiY3q7Sf_VFV3m4dGJVD7Ng.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSylotiNagri/hinted/ttf/NotoSansSylotiNagri-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Symbols 0",
-        url: "notosanssymbols/v47/rP2up3q65FkAtHfwd-eIS2brbDN6gxP34F9jRRCe4W3gfQ8QA_9Edkw.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSymbols/hinted/ttf/NotoSansSymbols-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Symbols 1",
-        url: "notosanssymbols/v47/rP2up3q65FkAtHfwd-eIS2brbDN6gxP34F9jRRCe4W3gfQ8QY_9Edkw.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSymbols/hinted/ttf/NotoSansSymbols-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Symbols 2",
-        url: "notosanssymbols/v47/rP2up3q65FkAtHfwd-eIS2brbDN6gxP34F9jRRCe4W3gfQ8Qbf9E.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSymbols/hinted/ttf/NotoSansSymbols-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Symbols 2 0",
-        url: "notosanssymbols2/v25/I_uyMoGduATTei9eI8daxVHDyfisHr71-jrBWXPM4Q.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSymbols2/hinted/ttf/NotoSansSymbols2-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Symbols 2 1",
-        url: "notosanssymbols2/v25/I_uyMoGduATTei9eI8daxVHDyfisHr71-ujgfE71.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSymbols2/hinted/ttf/NotoSansSymbols2-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Symbols 2 2",
-        url: "notosanssymbols2/v25/I_uyMoGduATTei9eI8daxVHDyfisHr71-gTBWXPM4Q.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSymbols2/hinted/ttf/NotoSansSymbols2-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Symbols 2 3",
-        url: "notosanssymbols2/v25/I_uyMoGduATTei9eI8daxVHDyfisHr71-vrgfE71.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSymbols2/hinted/ttf/NotoSansSymbols2-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Symbols 2 4",
-        url: "notosanssymbols2/v25/I_uyMoGduATTei9eI8daxVHDyfisHr71-prgfE71.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSymbols2/hinted/ttf/NotoSansSymbols2-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Symbols 2 5",
-        url: "notosanssymbols2/v25/I_uyMoGduATTei9eI8daxVHDyfisHr71-pTgfA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSymbols2/hinted/ttf/NotoSansSymbols2-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Syriac 0",
-        url: "notosanssyriac/v18/Ktk7AKuMeZjqPnXgyqribqzQqgW0LYiVqV7dXcP0C-VD9Pb9w5bkLw.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSyriac/hinted/ttf/NotoSansSyriac-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Syriac 1",
-        url: "notosanssyriac/v18/Ktk7AKuMeZjqPnXgyqribqzQqgW0LYiVqV7dXcP0C-VD9PaAw5bkLw.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSyriac/hinted/ttf/NotoSansSyriac-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Syriac 2",
-        url: "notosanssyriac/v18/Ktk7AKuMeZjqPnXgyqribqzQqgW0LYiVqV7dXcP0C-VD9PaOw5Y.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansSyriac/hinted/ttf/NotoSansSyriac-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans TC 0",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.0.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 1",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.6.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 2",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.7.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 3",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.8.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 4",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.19.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 5",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.20.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 6",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.21.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 7",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.22.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 8",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.23.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 9",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.24.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 10",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.25.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 11",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.26.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 12",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.27.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 13",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.28.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 14",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.29.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 15",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.30.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 16",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.31.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 17",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.32.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 18",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.33.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 19",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.34.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 20",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.35.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 21",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.36.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 22",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.37.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 23",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.38.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 24",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.39.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 25",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.40.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 26",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.41.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 27",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.42.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 28",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.43.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 29",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.44.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 30",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.45.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 31",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.46.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 32",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.47.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 33",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.48.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 34",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.49.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 35",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.50.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 36",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.51.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 37",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.52.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 38",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.53.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 39",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.54.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 40",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.55.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 41",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.56.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 42",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.57.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 43",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.58.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 44",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.59.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 45",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.60.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 46",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.61.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 47",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.62.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 48",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.63.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 49",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.64.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 50",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.65.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 51",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.66.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 52",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.67.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 53",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.68.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 54",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.69.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 55",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.70.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 56",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.71.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 57",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.72.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 58",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.73.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 59",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.74.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 60",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.75.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 61",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.76.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 62",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.77.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 63",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.78.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 64",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.79.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 65",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.80.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 66",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.81.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 67",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.82.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 68",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.83.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 69",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.84.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 70",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.85.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 71",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.86.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 72",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.87.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 73",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.88.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 74",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.89.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 75",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.90.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 76",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.91.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 77",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.92.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 78",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.97.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 79",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.98.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 80",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.99.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 81",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.100.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 82",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.101.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 83",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.102.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 84",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.103.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 85",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.104.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 86",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.105.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 87",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.106.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 88",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.107.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 89",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.108.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 90",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.109.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 91",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.110.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 92",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.111.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 93",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.112.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 94",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.113.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 95",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.114.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 96",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.115.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 97",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.116.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 98",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.117.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 99",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.118.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 100",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8mrWSt1KeqzFVoizG-KdWhyhvKuGOf8EUcrq3YKp7nxxk.119.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 101",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76CyzClEt1a3.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 102",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76CyzCJEt1a3.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 103",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76CyzCNEt1a3.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans TC 104",
-        url: "notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76CyzC1Etw.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTC/NotoSansCJK-Regular.ttc",
     },
     NotoFont {
         name: "Noto Sans Tagalog 0",
-        url: "notosanstagalog/v23/J7aFnoNzCnFcV9ZI-sUYuvote1R0wzExCcn3ew.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansTagalog/hinted/ttf/NotoSansTagalog-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Tagalog 1",
-        url: "notosanstagalog/v23/J7aFnoNzCnFcV9ZI-sUYuvote1R0wzEJCcn3ew.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansTagalog/hinted/ttf/NotoSansTagalog-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Tagalog 2",
-        url: "notosanstagalog/v23/J7aFnoNzCnFcV9ZI-sUYuvote1R0wzEHCck.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansTagalog/hinted/ttf/NotoSansTagalog-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Tagbanwa 0",
-        url: "notosanstagbanwa/v21/Y4GWYbB8VTEp4t3MKJSMmQdIKjRtt_npJj4FWYo.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansTagbanwa/hinted/ttf/NotoSansTagbanwa-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Tagbanwa 1",
-        url: "notosanstagbanwa/v21/Y4GWYbB8VTEp4t3MKJSMmQdIKjRtt_npTz4FWYo.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansTagbanwa/hinted/ttf/NotoSansTagbanwa-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Tagbanwa 2",
-        url: "notosanstagbanwa/v21/Y4GWYbB8VTEp4t3MKJSMmQdIKjRtt_npQT4F.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansTagbanwa/hinted/ttf/NotoSansTagbanwa-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Tai Le 0",
-        url: "notosanstaile/v19/vEFK2-VODB8RrNDvZSUmVxEATwR5wpm_Wo7H.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansTaiLe/hinted/ttf/NotoSansTaiLe-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Tai Le 1",
-        url: "notosanstaile/v19/vEFK2-VODB8RrNDvZSUmVxEATwR5wtu_Wo7H.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansTaiLe/hinted/ttf/NotoSansTaiLe-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Tai Le 2",
-        url: "notosanstaile/v19/vEFK2-VODB8RrNDvZSUmVxEATwR5wtW_Wg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansTaiLe/hinted/ttf/NotoSansTaiLe-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Tai Tham 0",
-        url: "notosanstaitham/v25/kJEbBv0U4hgtwxDUw2x9q7tbjLIfbPGHBoaVSAZ3MdLJBCUbDkakyJRG.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansTaiTham/hinted/ttf/NotoSansTaiTham-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Tai Tham 1",
-        url: "notosanstaitham/v25/kJEbBv0U4hgtwxDUw2x9q7tbjLIfbPGHBoaVSAZ3MdLJBCUbDgOkyJRG.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansTaiTham/hinted/ttf/NotoSansTaiTham-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Tai Tham 2",
-        url: "notosanstaitham/v25/kJEbBv0U4hgtwxDUw2x9q7tbjLIfbPGHBoaVSAZ3MdLJBCUbDg2kyA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansTaiTham/hinted/ttf/NotoSansTaiTham-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Tai Viet 0",
-        url: "notosanstaiviet/v20/8QIUdj3HhN_lv4jf9vsE-9GMOLsaSPZbpoQeasQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansTaiViet/hinted/ttf/NotoSansTaiViet-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Tai Viet 1",
-        url: "notosanstaiviet/v20/8QIUdj3HhN_lv4jf9vsE-9GMOLsaSPZb4oQeasQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansTaiViet/hinted/ttf/NotoSansTaiViet-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Tai Viet 2",
-        url: "notosanstaiviet/v20/8QIUdj3HhN_lv4jf9vsE-9GMOLsaSPZb7IQe.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansTaiViet/hinted/ttf/NotoSansTaiViet-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Takri 0",
-        url: "notosanstakri/v25/TuGJUVpzXI5FBtUq5a8bnKIOdTwgR-XX7kg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansTakri/hinted/ttf/NotoSansTakri-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Takri 1",
-        url: "notosanstakri/v25/TuGJUVpzXI5FBtUq5a8bnKIOdTwgPeXX7kg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansTakri/hinted/ttf/NotoSansTakri-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Takri 2",
-        url: "notosanstakri/v25/TuGJUVpzXI5FBtUq5a8bnKIOdTwgM-XX.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansTakri/hinted/ttf/NotoSansTakri-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Tamil 0",
-        url: "notosanstamil/v31/ieVc2YdFI3GCY6SyQy1KfStzYKZgzN1z4LKDbeZce-0429tBManUktuex7vGo40AoqHd_A.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansTamil/hinted/ttf/NotoSansTamil-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Tamil 1",
-        url: "notosanstamil/v31/ieVc2YdFI3GCY6SyQy1KfStzYKZgzN1z4LKDbeZce-0429tBManUktuex7vGo40YoqHd_A.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansTamil/hinted/ttf/NotoSansTamil-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Tamil 2",
-        url: "notosanstamil/v31/ieVc2YdFI3GCY6SyQy1KfStzYKZgzN1z4LKDbeZce-0429tBManUktuex7vGo40WoqE.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansTamil/hinted/ttf/NotoSansTamil-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Tamil Supplement 0",
-        url: "notosanstamilsupplement/v23/DdTz78kEtnooLS5rXF1DaruiCd_bFp_Ph4sGcn7ax8tqKscpQ7Q.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansTamilSupplement/hinted/ttf/NotoSansTamilSupplement-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Tamil Supplement 1",
-        url: "notosanstamilsupplement/v23/DdTz78kEtnooLS5rXF1DaruiCd_bFp_Ph4sGcn7ax8vlC-IUeg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansTamilSupplement/hinted/ttf/NotoSansTamilSupplement-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Tamil Supplement 2",
-        url: "notosanstamilsupplement/v23/DdTz78kEtnooLS5rXF1DaruiCd_bFp_Ph4sGcn7ax8vrC-I.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansTamilSupplement/hinted/ttf/NotoSansTamilSupplement-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Telugu 0",
-        url: "notosanstelugu/v30/0FlxVOGZlE2Rrtr-HmgkMWJNjJ5_RyT8o8c7fHkeg-esVC5dzHkHIJQqrEntezbaWkzey3s.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansTelugu/hinted/ttf/NotoSansTelugu-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Telugu 1",
-        url: "notosanstelugu/v30/0FlxVOGZlE2Rrtr-HmgkMWJNjJ5_RyT8o8c7fHkeg-esVC5dzHkHIJQqrEntezbaSEzey3s.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansTelugu/hinted/ttf/NotoSansTelugu-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Telugu 2",
-        url: "notosanstelugu/v30/0FlxVOGZlE2Rrtr-HmgkMWJNjJ5_RyT8o8c7fHkeg-esVC5dzHkHIJQqrEntezbaRkze.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansTelugu/hinted/ttf/NotoSansTelugu-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Thaana 0",
-        url: "notosansthaana/v26/C8c14dM-vnz-s-3jaEsxlxHkBH-WZOETXfoQrfQ9Y4XrbiLElO8OtQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansThaana/hinted/ttf/NotoSansThaana-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Thaana 1",
-        url: "notosansthaana/v26/C8c14dM-vnz-s-3jaEsxlxHkBH-WZOETXfoQrfQ9Y4XrbiLolO8OtQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansThaana/hinted/ttf/NotoSansThaana-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Thaana 2",
-        url: "notosansthaana/v26/C8c14dM-vnz-s-3jaEsxlxHkBH-WZOETXfoQrfQ9Y4XrbiLmlO8.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansThaana/hinted/ttf/NotoSansThaana-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Thai 0",
-        url: "notosansthai/v29/iJWnBXeUZi_OHPqn4wq6hQ2_hbJ1xyN9wd43SofNWcd1MKVQt_So_9CdU5RtlyJ0QCvz.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansThai/hinted/ttf/NotoSansThai-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Thai 1",
-        url: "notosansthai/v29/iJWnBXeUZi_OHPqn4wq6hQ2_hbJ1xyN9wd43SofNWcd1MKVQt_So_9CdU5Rtlzh0QCvz.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansThai/hinted/ttf/NotoSansThai-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Thai 2",
-        url: "notosansthai/v29/iJWnBXeUZi_OHPqn4wq6hQ2_hbJ1xyN9wd43SofNWcd1MKVQt_So_9CdU5RtlzZ0QA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansThai/hinted/ttf/NotoSansThai-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Tifinagh 0",
-        url: "notosanstifinagh/v21/I_uzMoCduATTei9eI8dawkHIwvmhCvbXzbPFQXc.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansTifinagh/hinted/ttf/NotoSansTifinagh-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Tifinagh 1",
-        url: "notosanstifinagh/v21/I_uzMoCduATTei9eI8dawkHIwvmhCvbX47PFQXc.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansTifinagh/hinted/ttf/NotoSansTifinagh-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Tifinagh 2",
-        url: "notosanstifinagh/v21/I_uzMoCduATTei9eI8dawkHIwvmhCvbX7bPF.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansTifinagh/hinted/ttf/NotoSansTifinagh-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Tirhuta 0",
-        url: "notosanstirhuta/v17/t5t6IQYRNJ6TWjahPR6X-M-apUyby4v0Whojrg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansTirhuta/hinted/ttf/NotoSansTirhuta-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Tirhuta 1",
-        url: "notosanstirhuta/v17/t5t6IQYRNJ6TWjahPR6X-M-apUyby4uPWhojrg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansTirhuta/hinted/ttf/NotoSansTirhuta-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Tirhuta 2",
-        url: "notosanstirhuta/v17/t5t6IQYRNJ6TWjahPR6X-M-apUyby4uBWho.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansTirhuta/hinted/ttf/NotoSansTirhuta-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Ugaritic 0",
-        url: "notosansugaritic/v17/3qTwoiqhnSyU8TNFIdhZVCwbjCpkAXXUfBAJoiY.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansUgaritic/hinted/ttf/NotoSansUgaritic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Ugaritic 1",
-        url: "notosansugaritic/v17/3qTwoiqhnSyU8TNFIdhZVCwbjCpkAXXUOxAJoiY.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansUgaritic/hinted/ttf/NotoSansUgaritic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Ugaritic 2",
-        url: "notosansugaritic/v17/3qTwoiqhnSyU8TNFIdhZVCwbjCpkAXXUNRAJ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansUgaritic/hinted/ttf/NotoSansUgaritic-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Vai 0",
-        url: "notosansvai/v19/NaPecZTSBuhTirw6IaFn_UrUdPLmDbRS.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansVai/hinted/ttf/NotoSansVai-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Vai 1",
-        url: "notosansvai/v19/NaPecZTSBuhTirw6IaFn_UrUdM3mDbRS.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansVai/hinted/ttf/NotoSansVai-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Vai 2",
-        url: "notosansvai/v19/NaPecZTSBuhTirw6IaFn_UrUdMPmDQ.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansVai/hinted/ttf/NotoSansVai-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Wancho 0",
-        url: "notosanswancho/v19/zrf-0GXXyfn6Fs0lH9P4cUubP0GBmGvipxRf.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansWancho/hinted/ttf/NotoSansWancho-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Wancho 1",
-        url: "notosanswancho/v19/zrf-0GXXyfn6Fs0lH9P4cUubP0GBmAripxRf.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansWancho/hinted/ttf/NotoSansWancho-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Wancho 2",
-        url: "notosanswancho/v19/zrf-0GXXyfn6Fs0lH9P4cUubP0GBmATipw.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansWancho/hinted/ttf/NotoSansWancho-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Warang Citi 0",
-        url: "notosanswarangciti/v19/EYqtmb9SzL1YtsZSScyKDXIeOv3w-zgsNvKhwu9DOXw.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansWarangCiti/hinted/ttf/NotoSansWarangCiti-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Warang Citi 1",
-        url: "notosanswarangciti/v19/EYqtmb9SzL1YtsZSScyKDXIeOv3w-zgsNvKhrO9DOXw.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansWarangCiti/hinted/ttf/NotoSansWarangCiti-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Warang Citi 2",
-        url: "notosanswarangciti/v19/EYqtmb9SzL1YtsZSScyKDXIeOv3w-zgsNvKhou9D.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansWarangCiti/hinted/ttf/NotoSansWarangCiti-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Yi 0",
-        url: "notosansyi/v22/sJoD3LFXjsSdcnzn071rO3aZ41rIBVg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansYi/hinted/ttf/NotoSansYi-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Yi 1",
-        url: "notosansyi/v22/sJoD3LFXjsSdcnzn071rO3aZzFrIBVg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansYi/hinted/ttf/NotoSansYi-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Yi 2",
-        url: "notosansyi/v22/sJoD3LFXjsSdcnzn071rO3aZwlrI.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansYi/hinted/ttf/NotoSansYi-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Zanabazar Square 0",
-        url: "notosanszanabazarsquare/v20/Cn-jJsuGWQxOjaGwMQ6fOicyxLBEMRfDtkzl4uagQuL1EwUtDlg.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansZanabazarSquare/hinted/ttf/NotoSansZanabazarSquare-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Zanabazar Square 1",
-        url: "notosanszanabazarsquare/v20/Cn-jJsuGWQxOjaGwMQ6fOicyxLBEMRfDtkzl4uagQuJ4MiAQNw.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansZanabazarSquare/hinted/ttf/NotoSansZanabazarSquare-Regular.ttf",
     },
     NotoFont {
         name: "Noto Sans Zanabazar Square 2",
-        url: "notosanszanabazarsquare/v20/Cn-jJsuGWQxOjaGwMQ6fOicyxLBEMRfDtkzl4uagQuJ2MiA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSansZanabazarSquare/hinted/ttf/NotoSansZanabazarSquare-Regular.ttf",
     },
     NotoFont {
         name: "Noto Serif Tibetan 0",
-        url: "notoseriftibetan/v24/gokGH7nwAEdtF9N45n0Vaz7O-pk0wsvxHeDXMfqguoCmIrYcDTzhdBy_.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSerifTibetan/hinted/ttf/NotoSerifTibetan-Regular.ttf",
     },
     NotoFont {
         name: "Noto Serif Tibetan 1",
-        url: "notoseriftibetan/v24/gokGH7nwAEdtF9N45n0Vaz7O-pk0wsvxHeDXMfqguoCmIrYcDSfhdBy_.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSerifTibetan/hinted/ttf/NotoSerifTibetan-Regular.ttf",
     },
     NotoFont {
         name: "Noto Serif Tibetan 2",
-        url: "notoseriftibetan/v24/gokGH7nwAEdtF9N45n0Vaz7O-pk0wsvxHeDXMfqguoCmIrYcDSnhdA.woff2",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/e0ad9f160a2942bcdd249bb1958e8336742edef3/fonts/NotoSerifTibetan/hinted/ttf/NotoSerifTibetan-Regular.ttf",
     },
 ];
 

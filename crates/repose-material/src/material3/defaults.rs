@@ -818,9 +818,10 @@ impl FABDefaults {
     pub const SMALL_SIZE: Dp = Dp(40.0);
     pub const SMALL_SHAPE_RADIUS: Dp = Dp(12.0);
     pub const SIZE: Dp = Dp(56.0);
+    pub const SHAPE_RADIUS: Dp = Dp(16.0);
     pub const LARGE_SIZE: Dp = Dp(96.0);
-    pub const SHAPE_RADIUS: Dp = Dp(28.0);
     pub const LARGE_SHAPE_RADIUS: Dp = Dp(28.0);
+    pub const EXTENDED_SHAPE_RADIUS: Dp = Dp(16.0);
     pub fn container_color() -> Color {
         theme().primary_container
     }
@@ -1236,6 +1237,8 @@ impl DatePickerDefaults {
     pub const YEAR_CELL_WIDTH: Dp = Dp(72.0);
     pub const TODAY_BORDER_WIDTH: Dp = Dp(1.0);
     pub const HORIZONTAL_PADDING: Dp = Dp(12.0);
+    pub const CONFIRM_LABEL: &str = "OK";
+    pub const DISMISS_LABEL: &str = "Cancel";
 
     pub fn container_color() -> Color {
         theme().surface_container_high
@@ -1285,6 +1288,8 @@ impl TimePickerDefaults {
     pub const TIME_SELECTOR_CONTAINER_HEIGHT: Dp = Dp(80.0);
     pub const TIME_SELECTOR_24H_WIDTH: Dp = Dp(114.0);
     pub const MAX_HEIGHT: Dp = Dp(384.0);
+    pub const CONFIRM_LABEL: &str = "OK";
+    pub const DISMISS_LABEL: &str = "Cancel";
 
     pub fn clock_dial_color() -> Color {
         theme().surface_container_highest

@@ -46,6 +46,18 @@ fn tint_trailing_icon(color: Color, icon: Option<View>) -> View {
     }
 }
 
+fn accessible_value(
+    value: &str,
+    visual_transformation: Option<&Rc<dyn VisualTransformation>>,
+) -> Option<String> {
+    visual_transformation.map(|transformation| {
+        transformation
+            .filter(&AnnotatedString::new(value.to_string(), vec![]))
+            .text
+            .text
+    })
+}
+
 /// Color slots for text fields -> matches Compose Material3 `TextFieldColors`.
 /// All 42 color fields (focused/unfocused/disabled/error variants of each slot).
 #[allow(dead_code)]
@@ -420,6 +432,7 @@ pub fn OutlinedTextField(
                 .clone()
                 .or_else(|| config.supporting_text.clone()),
             enabled: config.enabled,
+            value: accessible_value(&value, config.visual_transformation.as_ref()),
             ..Default::default()
         });
 
@@ -467,6 +480,8 @@ pub fn OutlinedTextFieldState(
         config.placeholder.clone().unwrap_or_default()
     };
 
+    let text_value = state.borrow().text.clone();
+    let semantic_value = accessible_value(&text_value, config.visual_transformation.as_ref());
     let text_input = BasicTextField(
         state,
         Modifier::new().flex_grow(1.0),
@@ -485,9 +500,20 @@ pub fn OutlinedTextFieldState(
             focus_tracker: Some(focus_tracker),
             enabled: config.enabled,
             read_only: config.read_only,
+            visual_transformation: config.visual_transformation.clone(),
             ..Default::default()
         },
-    );
+    )
+    .semantics(Semantics {
+        role: Role::TextField,
+        label: config
+            .label
+            .clone()
+            .or_else(|| config.supporting_text.clone()),
+        enabled: config.enabled,
+        value: semantic_value,
+        ..Default::default()
+    });
 
     outlined_field_decoration(
         modifier,
@@ -1008,6 +1034,7 @@ pub fn TextField(
                 .clone()
                 .or_else(|| config.supporting_text.clone()),
             enabled: config.enabled,
+            value: accessible_value(&value, config.visual_transformation.as_ref()),
             ..Default::default()
         });
 
@@ -1086,4 +1113,19 @@ pub fn TextField(
         )),
         supporting.unwrap_or(Box(Modifier::new())),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn password_accessibility_value_is_transformed() {
+        let transformation: Rc<dyn VisualTransformation> =
+            Rc::new(PasswordVisualTransformation::default());
+        assert_eq!(
+            accessible_value("secret", Some(&transformation)),
+            Some("••••••".into())
+        );
+    }
 }

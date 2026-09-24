@@ -92,6 +92,7 @@ fn pull_to_refresh_demo() -> View {
         if c > 120 {
             ptr.set_refreshing(false);
             frame_counter.set(0);
+            count.update(|value| *value += 1);
             refreshing.set(true);
         } else {
             request_frame();
@@ -105,12 +106,12 @@ fn pull_to_refresh_demo() -> View {
         refreshing.set(false);
         let ts = web_time::SystemTime::now()
             .duration_since(web_time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
+            .map(|value| value.as_secs())
+            .unwrap_or_default();
         (0..20)
             .map(|i| {
                 let label = if i == 0 {
-                    format!("✓ Refreshed at {}", ts % 100000)
+                    format!("✓ Refreshed at {ts}")
                 } else {
                     format!("List item {}", i)
                 };
@@ -156,11 +157,9 @@ fn pull_to_refresh_demo() -> View {
                     ptr.clone(),
                     Modifier::new().fill_max_width(),
                     Rc::new({
-                        let c = count.clone();
                         let p = ptr.clone();
                         let f = frame_counter.clone();
                         move || {
-                            c.update(|x| *x += 1);
                             p.set_refreshing(true);
                             f.set(0);
                             request_frame();

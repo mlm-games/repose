@@ -40,8 +40,7 @@ pub struct TouchGestureState {
     accum_pan: Vec2,
     accum_zoom: f32,
     accum_rotation: f32,
-    // single-finger pending (deferred press to allow 2nd finger to cancel)
-    primary_press_dispatched: bool,
+    primary_press_focus: Option<Option<u64>>,
     pending_primary: Option<(Vec2, web_time::Instant, u64)>,
 }
 
@@ -61,7 +60,7 @@ impl Default for TouchGestureState {
             accum_pan: Vec2 { x: 0.0, y: 0.0 },
             accum_zoom: 1.0,
             accum_rotation: 0.0,
-            primary_press_dispatched: false,
+            primary_press_focus: None,
             pending_primary: None,
         }
     }
@@ -164,13 +163,11 @@ impl TouchGestureState {
             x: pos_px.0,
             y: pos_px.1,
         };
-        let was_empty = self.active_touches.is_empty();
-        let _ = was_empty;
         self.active_touches.insert(tid, pos_px);
         // Every finger dispatches its own press immediately: games stage
         // per-finger contacts off these events (GML `device_mouse_*`
         // parity).
-        rt.handle_touch_press(Self::touch_finger(tid), pos, PointerButton::Primary);
+        let press = rt.handle_touch_press(Self::touch_finger(tid), pos, PointerButton::Primary);
 
         let is_primary = self.primary_touch_id.is_none();
         if is_primary {
@@ -182,16 +179,16 @@ impl TouchGestureState {
             self.touch_scroll_accum_y_px = 0.0;
             self.prev_touch_px = Some(pos_px);
             self.pending_primary = Some((pos, web_time::Instant::now(), tid));
-            self.primary_press_dispatched = false;
+            self.primary_press_focus = Some(press.focused);
             if self.active_touches.len() >= 2 {
                 self.update_gesture(Some(pos), true);
             }
-            return None;
+            return press.focused;
         }
-        if self.pending_primary.is_some() {
-            self.pending_primary = None;
+        if let Some(primary_tid) = self.primary_touch_id {
+            rt.suppress_touch_click(primary_tid);
         }
-        self.primary_press_dispatched = false;
+        self.pending_primary = None;
         if self.active_touches.len() >= 2 {
             let pointer_pos = self
                 .primary_touch_id
@@ -219,7 +216,7 @@ impl TouchGestureState {
             x: pos_px.0,
             y: pos_px.1,
         };
-        let mut dirty = false;
+        let mut dirty;
         let mut pinch: Option<(f32, Vec2)> = None;
         let mut pan: Option<(Vec2, Vec2)> = None;
         let mut rotation: Option<(f32, Vec2)> = None;
@@ -285,8 +282,8 @@ impl TouchGestureState {
             let dy = pos_px.1 - pending_pos.y;
             let dist = (dx * dx + dy * dy).sqrt();
             if dt > 0.03 || dist > 6.0 * scale {
-                let _ = (pending_pos, pending_tid);
-                self.primary_press_dispatched = true;
+                let _ = pending_pos;
+                rt.suppress_touch_click(pending_tid);
                 self.pending_primary = None;
             } else {
                 self.prev_touch_px = Some(pos_px);
@@ -343,31 +340,21 @@ impl TouchGestureState {
         };
 
         let is_primary = self.primary_touch_id == Some(tid);
-        let was_multi = self.active_touches.len() >= 2;
-
-        let mut press = None;
         if cancelled {
-            rt.handle_touch_cancel(Self::touch_finger(tid));
+            rt.handle_touch_cancel_at(tid, pos);
         } else {
             rt.handle_touch_release(Self::touch_finger(tid), pos, PointerButton::Primary);
         }
-        if is_primary {
-            if let Some((pending_pos, _, pending_tid)) = self.pending_primary.take() {
-                if !cancelled && !was_multi && self.active_touches.len() < 2 {
-                    press = Some(
-                        rt.handle_touch_press(
-                            Self::touch_finger(pending_tid),
-                            pending_pos,
-                            PointerButton::Primary,
-                        )
-                        .focused,
-                    );
-                }
-                self.primary_press_dispatched = false;
-            } else if self.primary_press_dispatched {
-                self.primary_press_dispatched = false;
+        let press = if is_primary && !cancelled {
+            self.pending_primary.take();
+            self.primary_press_focus.take()
+        } else {
+            if is_primary && cancelled {
+                self.pending_primary = None;
+                self.primary_press_focus = None;
             }
-        }
+            None
+        };
 
         self.active_touches.remove(&tid);
         if self.active_touches.len() >= 2 {

@@ -1,3 +1,17 @@
+//! Android runner (winit native-activity).
+//!
+//! winit can show and hide the Android soft keyboard, but it does not create
+//! an Android `InputConnection` or a native editable view. Soft-keyboard text,
+//! composing text, selection, and key events must therefore be bridged by the
+//! host application: implement the activity's `onCreateInputConnection`, keep
+//! an editable buffer synchronized with the focused Repose field, and forward
+//! `BaseInputConnection` `commitText`/`setComposingText`/
+//! `finishComposingText`/`deleteSurroundingText`/`setSelection`/
+//! `performEditorAction` results to the runtime; winit does not turn Android
+//! soft-keyboard edits into `WindowEvent::Ime` for this canvas. The
+//! `set_ime_allowed` calls below only control keyboard visibility; they are not
+//! an editor implementation.
+
 use crate::common as rc;
 
 use crate::render::RenderContext;
@@ -8,12 +22,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use repose_app::ReposeRuntime;
-use repose_core::shortcuts::{Action, Gesture};
 use winit::application::ApplicationHandler;
-use winit::dpi::{PhysicalPosition, PhysicalSize};
-use winit::event::{ElementState, Ime, WindowEvent};
-use winit::event_loop::EventLoop;
-use winit::keyboard::{KeyCode, PhysicalKey};
+use winit::dpi::PhysicalSize;
+use winit::event::{ElementState, WindowEvent};
+use winit::keyboard::PhysicalKey;
 use winit::platform::android::EventLoopBuilderExtAndroid;
 use winit::platform::android::activity::AndroidApp;
 use winit::window::{Window, WindowAttributes};
@@ -84,10 +96,15 @@ pub fn run_android_app_with_options(
         #[cfg(feature = "gamepad")]
         gamepad: crate::gamepad::AndroidBackend,
 
-        /// True while the Activity surface is usable (between resumed and suspended).
         surface_active: bool,
-        /// App-level foreground-ish flag (mirrors the last lifecycle transition).
         in_foreground: bool,
+        occluded: bool,
+        os_focused: bool,
+        ime_output_allowed: bool,
+        surface_retry_pending: bool,
+        surface_retry_at: Option<web_time::Instant>,
+        render_retry_pending: bool,
+        render_retry_at: Option<web_time::Instant>,
 
         // clipboard
         clipboard: Option<clipawl::Clipboard>,
@@ -120,6 +137,13 @@ pub fn run_android_app_with_options(
                 gamepad: crate::gamepad::create_android_backend().expect("android gamepad backend"),
                 surface_active: false,
                 in_foreground: false,
+                occluded: false,
+                os_focused: true,
+                ime_output_allowed: false,
+                surface_retry_pending: false,
+                surface_retry_at: None,
+                render_retry_pending: false,
+                render_retry_at: None,
 
                 clipboard: None,
 
@@ -152,11 +176,158 @@ pub fn run_android_app_with_options(
             crate::push_lifecycle(state);
         }
 
+        fn set_foreground(&mut self, foreground: bool) {
+            if self.in_foreground == foreground {
+                return;
+            }
+            self.in_foreground = foreground;
+            self.notify_lifecycle(if foreground {
+                AppLifecycle::Foreground
+            } else {
+                AppLifecycle::Background
+            });
+        }
+
         fn scale(&self) -> f32 {
             self.window
                 .as_ref()
                 .map(|w| w.scale_factor() as f32)
                 .unwrap_or(1.0)
+        }
+
+        fn clear_input_state(&mut self) {
+            let active_touches = self
+                .touch_gestures
+                .active_touches()
+                .iter()
+                .map(|(id, pos)| (*id, *pos))
+                .collect::<Vec<_>>();
+            for (touch_id, pos) in active_touches {
+                self.touch_gestures
+                    .touch_ended(&mut self.rt, touch_id, pos, true);
+                self.touch_gestures.contact_up(touch_id);
+            }
+            self.touch_gestures = rc::TouchGestureState::default();
+            self.rt.handle_focus_lost();
+            self.rt.touch_paths.clear();
+            self.rt.scroll_capture_id = None;
+            self.rt.pointer_inside = false;
+            self.rt.hover_id = None;
+            self.rt.hover_ancestors.clear();
+            self.rt.last_focus = None;
+            self.rt.sched.window_focused = false;
+            self.rt.sched.pointer_pos_px = None;
+            self.rt.sched.held_keys.clear();
+            self.rt.sched.touch_points.clear();
+            self.rt.sched.mouse_primary = false;
+            self.rt.sched.mouse_secondary = false;
+            self.rt.sched.mouse_middle = false;
+            self.rt.held_keys.clear();
+            self.rt.held_mouse.clear();
+            self.rt.pressed_ids.clear();
+            self.rt.key_pressed_active = None;
+            self.rt.ime_preedit = false;
+            self.rt.modifiers = Default::default();
+            #[cfg(feature = "gamepad")]
+            {
+                use repose_core::input::{GamepadEvent, GamepadId};
+                let mut releases = Vec::new();
+                for (id, pad) in &self.rt.gamepads {
+                    let id = GamepadId(*id);
+                    for button in &pad.pressed {
+                        releases.push(GamepadEvent::Button {
+                            id,
+                            button: *button,
+                            pressed: false,
+                        });
+                    }
+                    for axis in pad.axes.keys() {
+                        releases.push(GamepadEvent::Axis {
+                            id,
+                            axis: *axis,
+                            value: 0.0,
+                        });
+                    }
+                }
+                for event in releases {
+                    self.rt.handle_gamepad(&event);
+                }
+            }
+            self.ime_visible = false;
+            self.ime_shown_for = None;
+            if let Some(win) = &self.window {
+                rc::set_ime_for_textfield(win, false);
+            }
+        }
+
+        fn try_recreate_surface(&mut self) -> bool {
+            let Some(window) = self.window.clone() else {
+                return false;
+            };
+            let size = window.inner_size();
+            if size.width == 0 || size.height == 0 {
+                return false;
+            }
+            let result = match self.backend.as_mut() {
+                Some(backend) => backend.recreate_surface(&window),
+                None => return false,
+            };
+            match result {
+                Ok(()) => {
+                    let scale = window.scale_factor() as f32;
+                    self.sync_window_size(size, scale);
+                    true
+                }
+                Err(e) => {
+                    log::warn!("surface recreate failed: {e:?}");
+                    false
+                }
+            }
+        }
+
+        fn defer_render_retry(&mut self) {
+            take_frame_request();
+            self.render_retry_pending = true;
+            self.render_retry_at =
+                Some(web_time::Instant::now() + web_time::Duration::from_millis(100));
+            self.dirty = false;
+        }
+
+        fn handle_frame_result(&mut self, presented: bool) {
+            if presented {
+                self.render_retry_pending = false;
+                self.render_retry_at = None;
+                self.dirty = false;
+            } else if self
+                .backend
+                .as_ref()
+                .is_some_and(|backend| backend.surface.is_some())
+            {
+                self.defer_render_retry();
+            } else {
+                self.defer_surface_retry();
+            }
+        }
+
+        fn defer_surface_retry(&mut self) {
+            take_frame_request();
+            self.surface_retry_pending = true;
+            self.render_retry_pending = false;
+            self.render_retry_at = None;
+            self.surface_retry_at =
+                Some(web_time::Instant::now() + web_time::Duration::from_millis(100));
+            self.surface_active = false;
+            self.dirty = true;
+        }
+
+        fn activate_surface(&mut self) {
+            self.surface_retry_pending = false;
+            self.surface_retry_at = None;
+            self.render_retry_pending = false;
+            self.render_retry_at = None;
+            self.surface_active = true;
+            self.dirty = true;
+            self.request_redraw();
         }
 
         fn dp_px(&self, dp: f32) -> f32 {
@@ -166,50 +337,32 @@ pub fn run_android_app_with_options(
         /// Sync the soft keyboard with the currently focused textfield.
         /// When `force` is set, re-show the keyboard even if it is already
         /// marked visible.
-        fn update_ime_state(&mut self, force: bool) {
-            let Some(win) = &self.window else { return };
-            let Some(frame) = &self.rt.frame_cache else {
+        fn update_ime_state(&mut self, force: bool, ime_allowed: bool) {
+            let Some(win) = self.window.clone() else {
                 return;
             };
 
-            let focused_tf = self
-                .rt
-                .sched
-                .focused
-                .filter(|id| self.rt.is_editable_textfield(*id));
-            if focused_tf == self.ime_shown_for && self.ime_visible && !force {
-                return;
-            }
-            if focused_tf.is_none() && !self.ime_visible {
+            let focused_tf = if self.in_foreground && self.rt.sched.window_focused && ime_allowed {
+                self.rt.sched.focused.filter(|id| {
+                    self.rt
+                        .frame_cache
+                        .as_ref()
+                        .is_some_and(|frame| rc::is_editable_textfield_hit(frame, *id))
+                })
+            } else {
+                None
+            };
+            let ime_active = focused_tf.is_some();
+            if !force && focused_tf == self.ime_shown_for && ime_active == self.ime_visible {
                 return;
             }
 
-            rc::sync_ime_for_focused(win, &self.rt, frame);
-            self.ime_visible = focused_tf.is_some();
+            win.set_ime_allowed(ime_active);
+            self.ime_visible = ime_active;
             self.ime_shown_for = focused_tf;
-            if focused_tf.is_none() {
+            if !ime_active {
                 self.rt.finish_compositions();
             }
-        }
-
-        fn update_ime_cursor_area(&self, win: &Window) {
-            let Some(fid) = self.rt.sched.focused else {
-                return;
-            };
-            let Some(f) = &self.rt.frame_cache else {
-                return;
-            };
-            let Some(i) = rc::hit_index_by_id(f, fid) else {
-                return;
-            };
-
-            let hit = &f.hit_regions[i];
-            let sf = win.scale_factor() as f32;
-
-            win.set_ime_cursor_area(
-                PhysicalPosition::new((hit.rect.x * sf) as i32, (hit.rect.y * sf) as i32),
-                PhysicalSize::new((hit.rect.w * sf) as u32, (hit.rect.h * sf) as u32),
-            );
         }
 
         // IME inset is normally supplied by the app itself, which forwards
@@ -268,9 +421,22 @@ pub fn run_android_app_with_options(
             repose_render_wgpu::apply_render_commands(backend, self.render.drain());
         }
 
+        fn current_ime_allowed(&self) -> bool {
+            self.in_foreground
+                && self.ime_output_allowed
+                && self.rt.sched.window_focused
+                && self.rt.sched.focused.is_some_and(|id| {
+                    self.rt
+                        .frame_cache
+                        .as_ref()
+                        .is_some_and(|frame| rc::is_editable_textfield_hit(frame, id))
+                })
+        }
+
         fn dispatch_action(&mut self, action: repose_core::shortcuts::Action) -> bool {
             if self.rt.dispatch_action(action) {
-                self.update_ime_state(false);
+                let ime_allowed = self.current_ime_allowed();
+                self.update_ime_state(false, ime_allowed);
                 return true;
             }
 
@@ -288,44 +454,31 @@ pub fn run_android_app_with_options(
     impl ApplicationHandler<()> for AppState {
         fn suspended(&mut self, _el: &winit::event_loop::ActiveEventLoop) {
             self.surface_active = false;
-            self.in_foreground = false;
-            self.notify_lifecycle(AppLifecycle::Background);
-            // Drop the surface but keep device/queue/pipelines. `frame()`
-            // never holds an acquired texture across events, so this cannot
-            // strand the swapchain.
+            self.set_foreground(false);
+            self.os_focused = false;
+            self.surface_retry_pending = false;
+            self.surface_retry_at = None;
+            self.render_retry_pending = false;
+            self.render_retry_at = None;
             if let Some(backend) = self.backend.as_mut() {
                 backend.take_surface();
             }
-            self.rt.handle_focus_lost();
-            self.ime_visible = false;
-            self.ime_shown_for = None;
-            // Do NOT request a redraw here: the surface is gone.
+            self.clear_input_state();
         }
 
         fn resumed(&mut self, el: &winit::event_loop::ActiveEventLoop) {
+            self.set_foreground(true);
+            if self.os_focused {
+                self.rt.sched.window_focused = !self.occluded;
+            }
+            let ime_allowed = self.current_ime_allowed();
+            self.update_ime_state(true, ime_allowed);
             if self.window.is_some() {
-                let recreated = match (&mut self.backend, &self.window) {
-                    (Some(backend), Some(window)) => match backend.recreate_surface(window) {
-                        Ok(()) => true,
-                        Err(e) => {
-                            log::warn!("surface recreate failed: {e:?}");
-                            false
-                        }
-                    },
-                    _ => false,
-                };
-                if recreated
-                    && let (Some(window), Some(_)) = (self.window.as_ref(), self.backend.as_ref())
-                {
-                    let size = window.inner_size();
-                    let sf = window.scale_factor() as f32;
-                    self.sync_window_size(size, sf);
+                if self.try_recreate_surface() {
+                    self.activate_surface();
+                } else {
+                    self.defer_surface_retry();
                 }
-                self.surface_active = recreated;
-                self.in_foreground = recreated;
-                self.notify_lifecycle(AppLifecycle::Foreground);
-                self.dirty = true;
-                self.request_redraw();
                 return;
             }
 
@@ -341,7 +494,8 @@ pub fn run_android_app_with_options(
                         self.options.common.msaa_samples,
                         self.options.common.present_mode,
                     ) {
-                        Ok(b) => {
+                        Ok(mut b) => {
+                            b.set_pixels_per_point(sf);
                             repose_render_wgpu::offscreen::set_shared_device(
                                 b.device.clone(),
                                 b.queue.clone(),
@@ -362,13 +516,8 @@ pub fn run_android_app_with_options(
                 }
             }
 
-            // After a successful backend init the surface is usable again.
             if self.backend.is_some() {
-                self.surface_active = true;
-                self.in_foreground = true;
-                self.notify_lifecycle(AppLifecycle::Foreground);
-                self.dirty = true;
-                self.request_redraw();
+                self.activate_surface();
             }
         }
 
@@ -383,6 +532,65 @@ pub fn run_android_app_with_options(
 
                 WindowEvent::Resized(size) => {
                     self.sync_window_size(size, self.scale());
+                    self.dirty = true;
+                    if size.width == 0 || size.height == 0 {
+                        if self.backend.is_some() {
+                            if let Some(backend) = self.backend.as_mut() {
+                                backend.take_surface();
+                            }
+                            self.defer_surface_retry();
+                        }
+                    } else if !self.surface_retry_pending {
+                        self.request_redraw();
+                    }
+                }
+
+                WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                    let size = self
+                        .window
+                        .as_ref()
+                        .map(|w| w.inner_size())
+                        .unwrap_or_default();
+                    self.sync_window_size(size, scale_factor as f32);
+                    self.dirty = true;
+                    if size.width == 0 || size.height == 0 {
+                        if self.backend.is_some() {
+                            if let Some(backend) = self.backend.as_mut() {
+                                backend.take_surface();
+                            }
+                            self.defer_surface_retry();
+                        }
+                    } else if !self.surface_retry_pending {
+                        self.request_redraw();
+                    }
+                }
+
+                WindowEvent::Focused(focused) => {
+                    self.os_focused = focused;
+                    let focused = focused && !self.occluded;
+                    self.rt.sched.window_focused = focused;
+                    if !focused {
+                        self.clear_input_state();
+                    } else {
+                        let ime_allowed = self.current_ime_allowed();
+                        self.update_ime_state(true, ime_allowed);
+                    }
+                    self.dirty = true;
+                    self.request_redraw();
+                }
+
+                WindowEvent::Occluded(occluded) => {
+                    self.occluded = occluded;
+                    if occluded {
+                        self.rt.sched.window_focused = false;
+                        self.clear_input_state();
+                    } else {
+                        self.rt.sched.window_focused = self.os_focused;
+                        if self.os_focused {
+                            let ime_allowed = self.current_ime_allowed();
+                            self.update_ime_state(true, ime_allowed);
+                        }
+                    }
                     self.dirty = true;
                     self.request_redraw();
                 }
@@ -400,6 +608,8 @@ pub fn run_android_app_with_options(
                         self.touch_gestures
                             .touch_started(&mut self.rt, t.id, pos_px);
                         crate::runner_common::sync_touch_points(&mut self.rt, &self.touch_gestures);
+                        let ime_allowed = self.current_ime_allowed();
+                        self.update_ime_state(true, ime_allowed);
                         self.dirty = true;
                         self.request_redraw();
                     } else {
@@ -411,7 +621,8 @@ pub fn run_android_app_with_options(
                             scale,
                         );
                         if t.phase == winit::event::TouchPhase::Ended && r.press.is_some() {
-                            self.update_ime_state(true);
+                            let ime_allowed = self.current_ime_allowed();
+                            self.update_ime_state(true, ime_allowed);
                         }
                         let mut dirty = r.dirty;
                         if let Some((delta_scale, center)) = r.pinch {
@@ -489,22 +700,25 @@ pub fn run_android_app_with_options(
                         self.request_redraw();
                         return;
                     }
-                    if key_event.state == ElementState::Pressed && !key_event.repeat {
-                        match key_event.physical_key {
-                            PhysicalKey::Code(KeyCode::Escape)
-                            | PhysicalKey::Code(KeyCode::BrowserBack) => {
-                                return;
-                            }
-                            _ => {}
+                    if key_event.state == ElementState::Pressed
+                        && !key_event.repeat
+                        && (rc::is_back_key(&key_event) || rc::is_escape_key(&key_event))
+                    {
+                        use repose_navigation::back;
+                        if back::handle() {
+                            self.dirty = true;
+                            self.request_redraw();
+                            return;
+                        }
+                        if rc::is_back_key(&key_event) {
+                            el.exit();
+                            return;
                         }
                     }
                 }
 
                 WindowEvent::Ime(ime) => {
                     crate::runner_common::on_ime(&mut self.rt, &ime);
-                    if let Some(win) = &self.window {
-                        self.update_ime_cursor_area(win);
-                    }
                     self.dirty = true;
                     self.request_redraw();
                 }
@@ -512,6 +726,17 @@ pub fn run_android_app_with_options(
                 WindowEvent::RedrawRequested => {
                     if !self.surface_active || self.backend.is_none() {
                         return; // surface gone; never touch the GPU
+                    }
+                    let zero_size = self.window.as_ref().is_some_and(|window| {
+                        let size = window.inner_size();
+                        size.width == 0 || size.height == 0
+                    });
+                    if zero_size {
+                        if let Some(backend) = self.backend.as_mut() {
+                            backend.take_surface();
+                        }
+                        self.defer_surface_retry();
+                        return;
                     }
 
                     crate::run_pre_redraw(&self.render);
@@ -551,8 +776,11 @@ pub fn run_android_app_with_options(
                             }
                             _ => (false, self.rt.frame_cache.is_some()),
                         };
-                        if !presented && has_frame {
-                            return;
+                        if has_frame {
+                            self.handle_frame_result(presented);
+                            if !presented {
+                                return;
+                            }
                         }
                         self.last_redraw = web_time::Instant::now();
                         return;
@@ -570,8 +798,6 @@ pub fn run_android_app_with_options(
                         };
                         win.scale_factor() as f32
                     };
-                    let focused = self.rt.sched.focused;
-
                     self.rt.scale = scale;
 
                     let output = self.rt.frame(&mut self.root, &self.render);
@@ -579,15 +805,18 @@ pub fn run_android_app_with_options(
                     // Drain upload commands queued during compose before presenting
                     self.process_render_commands();
 
-                    self.update_ime_state(false);
-
-                    if !output.wants_keyboard
-                        && focused.is_some()
-                        && self.rt.sched.focused.is_none()
-                        && self.rt.ime_preedit
-                    {
-                        self.rt.ime_preedit = false;
-                    }
+                    self.ime_output_allowed = output.platform.ime_allowed;
+                    let ime_allowed = output.platform.ime_allowed
+                        && self.rt.sched.window_focused
+                        && self.rt.sched.focused.is_some_and(|id| {
+                            rc::editable_textfield_hit(
+                                &output.hit_regions,
+                                &output.semantics_nodes,
+                                id,
+                            )
+                            .is_some()
+                        });
+                    self.update_ime_state(false, ime_allowed);
 
                     let frame = output.into_frame();
 
@@ -608,13 +837,12 @@ pub fn run_android_app_with_options(
                     );
 
                     self.rt.cache_frame(frame);
+                    self.update_ime_state(false, ime_allowed);
                     self.last_redraw = web_time::Instant::now();
 
-                    if presented {
-                        self.dirty = false;
-                    }
+                    self.handle_frame_result(presented);
 
-                    if self.continuous_redraw() || animating {
+                    if presented && (self.continuous_redraw() || animating) {
                         if let Some(win) = self.window.as_ref() {
                             win.request_redraw();
                         }
@@ -644,6 +872,45 @@ pub fn run_android_app_with_options(
             #[cfg(not(feature = "gamepad"))]
             {
                 self.rt.take_rumble_requests();
+            }
+
+            if self.surface_retry_pending {
+                let now = web_time::Instant::now();
+                if let Some(retry_at) = self.surface_retry_at
+                    && now < retry_at
+                {
+                    el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(retry_at));
+                    return;
+                }
+                if self.backend.is_none() {
+                    self.surface_retry_pending = false;
+                    self.surface_retry_at = None;
+                    return;
+                }
+                if self.try_recreate_surface() {
+                    self.activate_surface();
+                } else {
+                    self.defer_surface_retry();
+                    if let Some(retry_at) = self.surface_retry_at {
+                        el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(retry_at));
+                    }
+                    return;
+                }
+            }
+
+            if self.render_retry_pending {
+                let now = web_time::Instant::now();
+                if let Some(retry_at) = self.render_retry_at
+                    && now < retry_at
+                {
+                    el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(retry_at));
+                    return;
+                }
+                self.render_retry_pending = false;
+                self.render_retry_at = None;
+                self.dirty = true;
+                self.request_redraw();
+                return;
             }
 
             if !self.surface_active {

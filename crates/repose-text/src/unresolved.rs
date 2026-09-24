@@ -98,6 +98,11 @@ impl UnresolvedSymbolsRegistry {
         }
     }
 
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn snapshot(&self) -> HashSet<u32> {
+        self.inner.lock().unwrap().unresolved.clone()
+    }
+
     pub fn unresolved_len(&self) -> usize {
         self.inner.lock().unwrap().unresolved.len()
     }

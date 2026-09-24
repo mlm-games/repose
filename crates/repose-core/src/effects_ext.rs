@@ -18,34 +18,60 @@ pub fn disposable_effect<K: PartialEq + Clone + 'static>(
 ) {
     let callsite = effect_key!("de");
     let last_key = crate::remember_with_key(format!("{callsite}:last"), || RefCell::new(None::<K>));
-    let cleanup_slot = crate::remember_with_key(format!("{callsite}:cleanup"), || {
-        RefCell::new(None::<Dispose>)
+    let cleanup_key = format!("{callsite}:cleanup");
+    let cleanup_slot =
+        crate::remember_with_key(cleanup_key.clone(), || RefCell::new(None::<Dispose>));
+    let owner =
+        crate::runtime::scope_owner_token(crate::scope_cache::current_scope_key().as_deref());
+    let installed = crate::remember_with_key(format!("{callsite}:installed:{owner}"), || {
+        RefCell::new(false)
     });
-    let installed =
-        crate::remember_with_key(format!("{callsite}:installed"), || RefCell::new(false));
 
     if !*installed.borrow() {
         *installed.borrow_mut() = true;
         let cleanup_slot = cleanup_slot.clone();
+        let cleanup_key = cleanup_key.clone();
+        let cleanup_owner = owner.clone();
         scoped_effect(move || {
             on_unmount(move || {
-                if let Some(d) = cleanup_slot.borrow_mut().take() {
-                    d.run();
+                let disposer = cleanup_slot.borrow().as_ref().cloned();
+                if let Some(disposer) = disposer.as_ref() {
+                    crate::runtime::remove_keyed_disposer_for_owner(
+                        &cleanup_key,
+                        disposer,
+                        &cleanup_owner,
+                    );
                 }
+                let (_, removed) =
+                    crate::runtime::release_keyed_owner(&cleanup_key, &cleanup_owner);
+                drop(removed);
             })
         });
     }
 
     let changed = last_key.borrow().as_ref() != Some(&key);
     if changed {
-        *last_key.borrow_mut() = Some(key);
+        let old_key = {
+            let mut last = last_key.borrow_mut();
+            last.replace(key.clone())
+        };
+        drop(old_key);
 
-        if let Some(d) = cleanup_slot.borrow_mut().take() {
-            d.run();
+        let previous = {
+            let mut slot = cleanup_slot.borrow_mut();
+            slot.take()
+        };
+        if let Some(previous) = previous {
+            crate::runtime::remove_keyed_disposer_for_owner(&cleanup_key, &previous, &owner);
         }
 
         let d = effect();
-        *cleanup_slot.borrow_mut() = Some(d);
+        let old = {
+            let mut slot = cleanup_slot.borrow_mut();
+            slot.replace(d.clone())
+        };
+        drop(old);
+        crate::runtime::register_keyed_disposer_for_owner(cleanup_key.clone(), d, owner.clone());
     }
 }
 
@@ -71,30 +97,58 @@ fn disposable_effect_with_callsite<K: PartialEq + Clone + 'static>(
     effect: impl FnOnce() -> Dispose + 'static,
 ) {
     let last_key = crate::remember_with_key(format!("{callsite}:last"), || RefCell::new(None::<K>));
-    let cleanup_slot = crate::remember_with_key(format!("{callsite}:cleanup"), || {
-        RefCell::new(None::<Dispose>)
+    let cleanup_key = format!("{callsite}:cleanup");
+    let cleanup_slot =
+        crate::remember_with_key(cleanup_key.clone(), || RefCell::new(None::<Dispose>));
+    let owner =
+        crate::runtime::scope_owner_token(crate::scope_cache::current_scope_key().as_deref());
+    let installed = crate::remember_with_key(format!("{callsite}:installed:{owner}"), || {
+        RefCell::new(false)
     });
-    let installed =
-        crate::remember_with_key(format!("{callsite}:installed"), || RefCell::new(false));
 
     if !*installed.borrow() {
         *installed.borrow_mut() = true;
         let cleanup_slot = cleanup_slot.clone();
+        let cleanup_key = cleanup_key.clone();
+        let cleanup_owner = owner.clone();
         scoped_effect(move || {
             on_unmount(move || {
-                if let Some(d) = cleanup_slot.borrow_mut().take() {
-                    d.run();
+                let disposer = cleanup_slot.borrow().as_ref().cloned();
+                if let Some(disposer) = disposer.as_ref() {
+                    crate::runtime::remove_keyed_disposer_for_owner(
+                        &cleanup_key,
+                        disposer,
+                        &cleanup_owner,
+                    );
                 }
+                let (_, removed) =
+                    crate::runtime::release_keyed_owner(&cleanup_key, &cleanup_owner);
+                drop(removed);
             })
         });
     }
 
-    if last_key.borrow().as_ref() != Some(&key) {
-        *last_key.borrow_mut() = Some(key);
-        if let Some(d) = cleanup_slot.borrow_mut().take() {
-            d.run();
+    let changed = last_key.borrow().as_ref() != Some(&key);
+    if changed {
+        let old_key = {
+            let mut last = last_key.borrow_mut();
+            last.replace(key.clone())
+        };
+        drop(old_key);
+        let previous = {
+            let mut slot = cleanup_slot.borrow_mut();
+            slot.take()
+        };
+        if let Some(previous) = previous {
+            crate::runtime::remove_keyed_disposer_for_owner(&cleanup_key, &previous, &owner);
         }
-        *cleanup_slot.borrow_mut() = Some(effect());
+        let d = effect();
+        let old = {
+            let mut slot = cleanup_slot.borrow_mut();
+            slot.replace(d.clone())
+        };
+        drop(old);
+        crate::runtime::register_keyed_disposer_for_owner(cleanup_key.clone(), d, owner.clone());
     }
 }
 
@@ -109,9 +163,13 @@ pub fn launched_effect_uncancelled_internal<K: PartialEq + Clone + 'static>(
     let last_key =
         crate::remember_with_key(format!("launched:{callsite}"), || RefCell::new(None::<K>));
 
-    let mut last = last_key.borrow_mut();
-    if last.as_ref() != Some(&key) {
-        *last = Some(key);
+    let changed = last_key.borrow().as_ref() != Some(&key);
+    if changed {
+        let old = {
+            let mut last = last_key.borrow_mut();
+            last.replace(key.clone())
+        };
+        drop(old);
         effect();
     }
 }

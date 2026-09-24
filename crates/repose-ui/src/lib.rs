@@ -88,6 +88,13 @@ pub mod anim;
 pub mod anim_ext;
 pub mod color_picker;
 pub mod gestures;
+pub(crate) mod hit_testing;
+pub use hit_testing::{
+    HitRegionSnapshot, dispatch_keyboard_action, hit_region_contains, hit_region_local_rect,
+    hit_region_pointer_coordinates, hit_region_to_local, hit_region_transformed_origin,
+    hit_region_world_rect, hit_test_enabled_frame, hit_test_frame, hit_test_frame_path,
+    hit_test_frame_regions,
+};
 pub mod layout;
 pub use layout::IntrinsicSizeMode;
 pub mod lazy;
@@ -436,6 +443,12 @@ pub fn DragValue(
                 drg.set(false);
             }
         })
+        .on_pointer_cancel({
+            let drg = is_dragging.clone();
+            move |_pe: PointerEvent| {
+                drg.set(false);
+            }
+        })
         .cursor(CursorIcon::EwResize))
     .child(
         Text(format_value(value))
@@ -567,11 +580,13 @@ pub fn layout_and_paint(
     interactions: &Interactions,
     focused: Option<u64>,
 ) -> (Scene, Vec<HitRegion>, Vec<SemNode>) {
-    LAYOUT_ENGINE.with(|engine| {
+    let result = LAYOUT_ENGINE.with(|engine| {
         engine
             .borrow_mut()
             .layout_frame(root, size_px_u32, textfield_states, interactions, focused)
-    })
+    });
+    textfield::prune_textfield_registries();
+    result
 }
 
 /// Return the [`LayoutStats`] from the most recent `layout_and_paint` call on

@@ -4,7 +4,7 @@ use repose_ui::LazyVerticalStaggeredGridState;
 use repose_ui::lazy::LazyVerticalStaggeredGrid;
 use repose_ui::*;
 
-use crate::ui::{DemoTile, Hint, Page, Section, sp};
+use crate::ui::{DemoTile, Hint, Page, Section, compact_layout, sp};
 
 #[derive(Clone)]
 struct StaggeredItem {
@@ -33,12 +33,22 @@ fn make(n: usize) -> Vec<StaggeredItem> {
 pub fn screen() -> View {
     let items = remember_with_key("stagg_items", || signal(make(50)));
     let state = remember_with_key("stagg_state", LazyVerticalStaggeredGridState::new);
+    let compact = compact_layout();
+    let columns = if compact { 1 } else { 3 };
 
     Page(vec![Section(
         "LazyVerticalStaggeredGrid",
         Column(Modifier::new().padding(sp::MD).gap(sp::MD)).child((
-            Hint("Masonry-style layout: each cell keeps its natural height, columns fill independently."),
-            Row(Modifier::new().gap(sp::SM).align_items(AlignItems::CENTER)).child((
+            Hint(if compact {
+                "Masonry-style single-column layout: each cell keeps its natural height."
+            } else {
+                "Masonry-style layout: each cell keeps its natural height, columns fill independently."
+            }),
+            FlowRow(
+                Modifier::new().fill_max_width().gap(sp::SM).align_items(AlignItems::CENTER),
+                FlowRowConfig::default(),
+            )
+            .child((
                 Button(Modifier::new(), {
                     let items = items.clone();
                     move || items.update(|v| {
@@ -56,7 +66,7 @@ pub fn screen() -> View {
                     .color(theme().on_surface_variant),
             )),
             LazyVerticalStaggeredGrid(
-                3,
+                columns,
                 items.get(),
                 |item| item.height,
                 |item, _| {

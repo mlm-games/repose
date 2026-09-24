@@ -11,12 +11,9 @@ use repose_core::locals::{Density, set_density_default, with_density};
 use repose_core::runtime::{Frame, Scheduler};
 use repose_core::shortcuts::DragAction;
 use repose_core::{
-    CursorIcon, Dp, HitRegion, Interaction, Modifier, RenderContext, Scene, Sp, Vec2, View,
-    request_frame,
+    CursorIcon, HitRegion, Interaction, Modifier, RenderContext, Scene, Vec2, View, request_frame,
 };
-use repose_ui::textfield::{
-    TF_FONT_SP, TextFieldState, TextMeasureConfig, caret_xy_for_byte, measure_text,
-};
+use repose_ui::textfield::TextFieldState;
 use repose_ui::{Interactions, layout_and_paint};
 
 fn ensure_tf_state(
@@ -141,6 +138,16 @@ const DOUBLE_CLICK_MS: u128 = 300;
 const DOUBLE_TAP_MIN_MS: u128 = 40;
 const LONG_PRESS_SLOP_DP: f32 = 18.0;
 
+struct TouchPressState {
+    capture_id: u64,
+    pressed_ids: HashSet<u64>,
+}
+
+struct DndPointerCapture {
+    touch: Option<u64>,
+    source_id: u64,
+}
+
 /// Embeddable Repose runtime.
 ///
 /// Manages composition scheduling, input routing, text-field state, and
@@ -152,6 +159,8 @@ pub struct ReposeRuntime {
     /// Ambient host layer for floating surfaces. Installed around
     /// composition each frame; entries render at the root.
     pub overlay: repose_ui::overlay::OverlayHandle,
+    lifecycle_events: crate::lifecycle::LifecycleDispatcher,
+    deeplink_events: crate::lifecycle::DeeplinkDispatcher,
 
     pub modifiers: Modifiers,
     pub mouse_pos_px: (f32, f32),
@@ -162,7 +171,7 @@ pub struct ReposeRuntime {
     /// Needed so `Leave` still fires
     /// even when the hovered hit region is removed from the tree between frames.
     /// Rebuilt on every `cache_frame`.
-    hover_leave: HashMap<u64, (f32, f32, f32, f32, Rc<dyn Fn(PointerEvent)>)>,
+    hover_leave: HashMap<u64, repose_ui::HitRegionSnapshot>,
     pub capture_id: Option<u64>,
     /// Hit path captured at pointer-down: every region under the pointer,
     /// ordered bottom-up (deepest child first, ancestors last).
@@ -176,12 +185,20 @@ pub struct ReposeRuntime {
     /// (tap/click/scroll) stays single-primary in `touch_gesture`;
     /// this only routes the per-finger event stream.
     pub touch_paths: HashMap<u64, Vec<u64>>,
+    mouse_targets: Option<Vec<repose_ui::HitRegionSnapshot>>,
+    touch_targets: HashMap<u64, Vec<repose_ui::HitRegionSnapshot>>,
+    touch_positions: HashMap<u64, Vec2>,
+    touch_presses: HashMap<u64, TouchPressState>,
+    dnd_capture: Option<DndPointerCapture>,
+    touch_primary: Option<u64>,
+    suppressed_touch_clicks: HashSet<u64>,
     /// Which scroll consumer currently owns the wheel gesture.
     pub scroll_capture_id: Option<u64>,
     last_scroll_at: Option<web_time::Instant>,
     pub pressed_ids: HashSet<u64>,
     pub ime_preedit: bool,
     pub key_pressed_active: Option<u64>,
+    key_pressed_key: Option<Key>,
     pub last_focus: Option<u64>,
     /// Polled physical-key state, keyed by debug name (`KeyCode::KeyW`,
     /// `Digit1`, ...). Platform runners report every `KeyboardInput`
@@ -207,6 +224,7 @@ pub struct ReposeRuntime {
     /// Confirms the double click. A canceled second tap falls back to the first tap's onClick.
     double_candidate: Option<u64>,
     long_press: Option<(u64, web_time::Instant, f32, f32)>,
+    long_press_touch: Option<u64>,
     /// Keyboard long-press (Compose combinedClickable: holding Space/Enter
     /// past LONG_PRESS_MS fires on_long_click). `bool` = already fired.
     key_long_press: Option<(u64, web_time::Instant, bool)>,
@@ -217,12 +235,6 @@ pub struct ReposeRuntime {
 
     cursor: Option<CursorIcon>,
 
-    /// Per-runtime shortcut state: games compose `InstallShortcutMap` /
-    /// `InstallShortcutHandler` once in the root view and the runtime
-    /// resolves against it, so two apps in one process never share
-    /// bindings. Falls back to the process-global
-    /// `repose_core::shortcuts` thread-locals so headless tests that
-    /// never composed keep working.
     pub shortcuts: repose_core::shortcuts::ShortcutState,
 
     pub textfield_states: HashMap<u64, Rc<RefCell<TextFieldState>>>,
@@ -262,6 +274,8 @@ impl ReposeRuntime {
     pub fn with_overlay(overlay: repose_ui::overlay::OverlayHandle) -> Self {
         Self {
             overlay,
+            lifecycle_events: crate::lifecycle::LifecycleDispatcher::default(),
+            deeplink_events: crate::lifecycle::DeeplinkDispatcher::default(),
             sched: Scheduler::new(),
             scale: 1.0,
             modifiers: Modifiers::default(),
@@ -273,11 +287,19 @@ impl ReposeRuntime {
             capture_id: None,
             hit_path: None,
             touch_paths: HashMap::new(),
+            mouse_targets: None,
+            touch_targets: HashMap::new(),
+            touch_positions: HashMap::new(),
+            touch_presses: HashMap::new(),
+            dnd_capture: None,
+            touch_primary: None,
+            suppressed_touch_clicks: HashSet::new(),
             scroll_capture_id: None,
             last_scroll_at: None,
             pressed_ids: HashSet::new(),
             ime_preedit: false,
             key_pressed_active: None,
+            key_pressed_key: None,
             last_focus: None,
             held_keys: HashSet::new(),
             held_mouse: HashSet::new(),
@@ -285,6 +307,7 @@ impl ReposeRuntime {
             last_down: None,
             double_candidate: None,
             long_press: None,
+            long_press_touch: None,
             key_long_press: None,
             suppress_next_click: false,
             pending_click: None,
@@ -295,6 +318,56 @@ impl ReposeRuntime {
             gamepads: HashMap::new(),
             pending_rumble: Vec::new(),
         }
+    }
+
+    pub fn set_lifecycle_callback(
+        &mut self,
+        callback: Box<dyn Fn(crate::lifecycle::AppLifecycle) + Send>,
+    ) {
+        self.lifecycle_events.set_callback(callback);
+    }
+
+    pub fn add_lifecycle_listener(
+        &mut self,
+        callback: Box<dyn Fn(crate::lifecycle::AppLifecycle) + Send>,
+    ) -> u64 {
+        self.lifecycle_events.add_listener(callback)
+    }
+
+    pub fn remove_lifecycle_listener(&mut self, id: u64) -> bool {
+        self.lifecycle_events.remove_listener(id)
+    }
+
+    pub fn current_lifecycle(&self) -> Option<crate::lifecycle::AppLifecycle> {
+        self.lifecycle_events.current()
+    }
+
+    pub fn push_lifecycle(&mut self, state: crate::lifecycle::AppLifecycle) {
+        self.lifecycle_events.push(state);
+    }
+
+    pub fn process_lifecycle(&mut self) {
+        self.lifecycle_events.process();
+    }
+
+    pub fn set_deeplink_callback(&mut self, callback: Box<dyn Fn(Vec<u8>) + Send>) {
+        self.deeplink_events.set_callback(callback);
+    }
+
+    pub fn add_deeplink_listener(&mut self, callback: Box<dyn Fn(Vec<u8>) + Send>) -> u64 {
+        self.deeplink_events.add_listener(callback)
+    }
+
+    pub fn remove_deeplink_listener(&mut self, id: u64) -> bool {
+        self.deeplink_events.remove_listener(id)
+    }
+
+    pub fn push_deeplink(&mut self, data: Vec<u8>) {
+        self.deeplink_events.push(data);
+    }
+
+    pub fn process_deeplinks(&mut self) {
+        self.deeplink_events.process();
     }
 
     /// Set the logical viewport size (in device pixels).
@@ -380,9 +453,9 @@ impl ReposeRuntime {
             // further changes still works (cache_frame does this fully).
             self.hover_leave.clear();
             for h in &frame.hit_regions {
-                if let Some(cb) = &h.on_pointer_leave {
+                if h.on_pointer_leave.is_some() {
                     self.hover_leave
-                        .insert(h.id, (h.rect.x, h.rect.y, h.rect.w, h.rect.h, cb.clone()));
+                        .insert(h.id, repose_ui::HitRegionSnapshot::new(h));
                 }
             }
             // Hover should be stable: same geometry + same pointer. Do not loop.
@@ -410,25 +483,28 @@ impl ReposeRuntime {
 
         let wants_pointer = self.hover_id.is_some() || self.capture_id.is_some();
 
-        let ime_allowed = self.sched.focused.is_some_and(|fid| {
-            f.semantics_nodes
-                .iter()
-                .any(|n| n.id == fid && n.role == repose_core::semantics::Role::TextField)
-        });
-
         let focused_hit = self
             .sched
             .focused
             .and_then(|fid| f.hit_regions.iter().find(|h| h.id == fid));
+        let ime_allowed = focused_hit.is_some_and(|hit| {
+            hit.tf_enabled
+                && !hit.tf_read_only
+                && f.semantics_nodes.iter().any(|node| {
+                    node.id == hit.id && node.role == repose_core::semantics::Role::TextField
+                })
+        });
 
         let ime_cursor_area = if ime_allowed {
             focused_hit.map(|hit| {
                 let sf = self.scale as f64;
+                let origin = repose_ui::hit_region_transformed_origin(hit);
+                let local = repose_ui::hit_region_local_rect(hit);
                 (
-                    hit.rect.x as f64 / sf,
-                    hit.rect.y as f64 / sf,
-                    hit.rect.w as f64 / sf,
-                    hit.rect.h as f64 / sf,
+                    origin.x as f64 / sf,
+                    origin.y as f64 / sf,
+                    local.w as f64 / sf,
+                    local.h as f64 / sf,
                 )
             })
         } else {
@@ -487,14 +563,24 @@ impl ReposeRuntime {
 
     /// Store the composed frame for event hit testing.
     pub fn cache_frame(&mut self, frame: Frame) {
+        if self.key_pressed_active.is_some_and(|id| {
+            self.sched.focused != Some(id)
+                || !frame
+                    .hit_regions
+                    .iter()
+                    .any(|hit| hit.id == id && !hit.disabled)
+        }) {
+            self.cancel_keyboard_press();
+        }
         self.hover_leave.clear();
-        for h in &frame.hit_regions {
-            if let Some(cb) = &h.on_pointer_leave {
+        for hit in &frame.hit_regions {
+            if hit.on_pointer_leave.is_some() {
                 self.hover_leave
-                    .insert(h.id, (h.rect.x, h.rect.y, h.rect.w, h.rect.h, cb.clone()));
+                    .insert(hit.id, repose_ui::HitRegionSnapshot::new(hit));
             }
         }
         self.frame_cache = Some(frame);
+        self.reconcile_cached_targets();
     }
 
     /// Post-compose host-agnostic bookkeeping.
@@ -520,6 +606,22 @@ impl ReposeRuntime {
             .filter_map(|h| h.tf_state_key)
             .collect();
         self.textfield_states.retain(|k, _| live.contains(k));
+    }
+
+    fn end_textfield_drag(&mut self, id: u64) {
+        let key = self
+            .frame_cache
+            .as_ref()
+            .and_then(|frame| is_tf_hit(frame, id).then(|| tf_key_of(frame, id)));
+        if let Some(key) = key {
+            self.end_textfield_drag_key(key);
+        }
+    }
+
+    fn end_textfield_drag_key(&mut self, key: u64) {
+        if let Some(state) = self.textfield_states.get(&key) {
+            state.borrow_mut().end_drag();
+        }
     }
 
     /// Lazy-init the focused textfield's persistent state (FocusRequester
@@ -556,8 +658,8 @@ impl ReposeRuntime {
             semantics_nodes: out.semantics_nodes.clone(),
             focus_chain: out.focus_chain.clone(),
         };
+        self.cache_frame(frame.clone());
         self.after_compose(&frame, self.scale);
-        self.cache_frame(frame);
     }
 
     /// One-shot host tick: advance animations, compose a frame, and publish
@@ -577,6 +679,41 @@ impl ReposeRuntime {
         out
     }
 
+    fn dispatch_pointer_to_targets(
+        &self,
+        kind: PointerEventKind,
+        pos: Vec2,
+        targets: &[repose_ui::HitRegionSnapshot],
+        touch: Option<u64>,
+    ) {
+        let (id, pkind) = match touch {
+            Some(tid) => (PointerId(tid), PointerKind::Touch),
+            None => (PointerId(0), PointerKind::Mouse),
+        };
+        let base = PointerEvent::new(id, pkind, kind, pos, 1.0, self.modifiers);
+        for target in targets {
+            let hit = target.hit();
+            let callback = match kind {
+                PointerEventKind::Down(_) => &hit.on_pointer_down,
+                PointerEventKind::Up(_) => &hit.on_pointer_up,
+                PointerEventKind::Move => &hit.on_pointer_move,
+                PointerEventKind::Cancel => &hit.on_pointer_cancel,
+                PointerEventKind::Enter | PointerEventKind::Leave => continue,
+            };
+            let Some(callback) = callback else {
+                continue;
+            };
+            let mut event = base.clone();
+            let (origin, local) = target.pointer_coordinates(pos);
+            event.origin = origin;
+            event.position = local;
+            callback(event);
+            if !matches!(kind, PointerEventKind::Cancel) && base.is_consumed() {
+                break;
+            }
+        }
+    }
+
     fn dispatch_pointer_to_path(
         &self,
         kind: PointerEventKind,
@@ -584,38 +721,162 @@ impl ReposeRuntime {
         path: &[u64],
         touch: Option<u64>,
     ) {
-        let Some(f) = &self.frame_cache else {
+        let Some(frame) = &self.frame_cache else {
             return;
         };
-        let (id, pkind) = match touch {
-            Some(tid) => (PointerId(tid), PointerKind::Touch),
-            None => (PointerId(0), PointerKind::Mouse),
+        let targets: Vec<_> = path
+            .iter()
+            .filter_map(|id| frame.hit_regions.iter().find(|hit| hit.id == *id))
+            .map(repose_ui::HitRegionSnapshot::new)
+            .collect();
+        self.dispatch_pointer_to_targets(kind, pos, &targets, touch);
+    }
+
+    fn refreshed_capture_targets(
+        &self,
+        targets: &[repose_ui::HitRegionSnapshot],
+    ) -> (
+        Vec<repose_ui::HitRegionSnapshot>,
+        Vec<repose_ui::HitRegionSnapshot>,
+    ) {
+        let Some(frame) = &self.frame_cache else {
+            return (targets.to_vec(), Vec::new());
         };
-        let base = PointerEvent::new(id, pkind, kind, pos, 1.0, self.modifiers);
-        for &id in path {
-            let Some(h) = f.hit_regions.iter().find(|h| h.id == id) else {
-                continue;
-            };
-            let cb = match kind {
-                PointerEventKind::Down(_) => &h.on_pointer_down,
-                PointerEventKind::Up(_) => &h.on_pointer_up,
-                PointerEventKind::Move => &h.on_pointer_move,
-                PointerEventKind::Cancel => &h.on_pointer_cancel,
-                PointerEventKind::Enter | PointerEventKind::Leave => continue,
-            };
-            let Some(cb) = cb else {
-                continue;
-            };
-            let mut ev = base.clone();
-            ev.origin = Vec2 {
-                x: h.rect.x,
-                y: h.rect.y,
-            };
-            ev.position = pos - ev.origin;
-            cb(ev);
-            if base.is_consumed() {
-                break;
+        let mut live = Vec::with_capacity(targets.len());
+        let mut stale = Vec::new();
+        for target in targets {
+            if let Some(hit) = frame
+                .hit_regions
+                .iter()
+                .find(|hit| hit.id == target.id() && !hit.disabled)
+            {
+                live.push(repose_ui::HitRegionSnapshot::new(hit));
+            } else {
+                stale.push(target.clone());
             }
+        }
+        (live, stale)
+    }
+
+    fn cancel_dnd_capture(&mut self, touch: Option<u64>, source_id: u64) -> bool {
+        if !self
+            .dnd_capture
+            .as_ref()
+            .is_some_and(|capture| capture.touch == touch && capture.source_id == source_id)
+        {
+            return false;
+        }
+        self.dnd_capture = None;
+        dnd::handle_drag_action(&DragAction::Cancel)
+    }
+
+    fn cancel_active_dnd(&mut self) -> bool {
+        if self.dnd_capture.take().is_none() {
+            return false;
+        }
+        dnd::handle_drag_action(&DragAction::Cancel)
+    }
+
+    fn reconcile_cached_targets(&mut self) {
+        let mouse_pos = Vec2 {
+            x: self.mouse_pos_px.0,
+            y: self.mouse_pos_px.1,
+        };
+        if let Some(targets) = self.mouse_targets.take() {
+            let capture_id = targets.first().map(|target| target.id());
+            let capture_key = targets.first().and_then(|target| target.hit().tf_state_key);
+            let (live, stale) = self.refreshed_capture_targets(&targets);
+            if !stale.is_empty() {
+                self.dispatch_pointer_to_targets(PointerEventKind::Cancel, mouse_pos, &stale, None);
+            }
+            let capture_stale =
+                capture_id.is_some_and(|id| stale.iter().any(|target| target.id() == id));
+            if capture_stale {
+                self.pressed_ids.remove(&capture_id.unwrap_or_default());
+                self.capture_id = None;
+                self.hit_path = None;
+                if let Some(key) = capture_key {
+                    self.end_textfield_drag_key(key);
+                }
+                if self
+                    .long_press
+                    .is_some_and(|(id, _, _, _)| Some(id) == capture_id)
+                {
+                    self.long_press = None;
+                    self.long_press_touch = None;
+                }
+                self.cancel_dnd_capture(None, capture_id.unwrap_or_default());
+            } else {
+                self.mouse_targets = (!live.is_empty()).then_some(live);
+                self.hit_path = self
+                    .mouse_targets
+                    .as_ref()
+                    .map(|targets| targets.iter().map(|target| target.id()).collect());
+            }
+            if !stale.is_empty() {
+                request_frame();
+            }
+        }
+
+        let mut touch_ids: Vec<u64> = self.touch_targets.keys().copied().collect();
+        touch_ids.sort_unstable();
+        let mut changed = false;
+        for tid in touch_ids {
+            let Some(targets) = self.touch_targets.remove(&tid) else {
+                continue;
+            };
+            let pos = self.touch_positions.get(&tid).copied().unwrap_or(mouse_pos);
+            let old_capture = self.touch_presses.get(&tid).map(|state| state.capture_id);
+            let old_capture_key = targets.first().and_then(|target| target.hit().tf_state_key);
+            let (live, stale) = self.refreshed_capture_targets(&targets);
+            if !stale.is_empty() {
+                self.dispatch_pointer_to_targets(PointerEventKind::Cancel, pos, &stale, Some(tid));
+                changed = true;
+            }
+            let capture_stale =
+                old_capture.is_some_and(|id| stale.iter().any(|target| target.id() == id));
+            if capture_stale {
+                self.touch_targets.remove(&tid);
+                self.touch_paths.remove(&tid);
+                self.touch_presses.remove(&tid);
+                self.suppressed_touch_clicks.remove(&tid);
+                if let Some(key) = old_capture_key {
+                    self.end_textfield_drag_key(key);
+                }
+                if self.long_press_touch == Some(tid)
+                    && old_capture.is_some_and(|id| {
+                        self.long_press
+                            .is_some_and(|(long_id, _, _, _)| long_id == id)
+                    })
+                {
+                    self.long_press = None;
+                    self.long_press_touch = None;
+                }
+                if self.touch_primary == Some(tid) {
+                    self.touch_primary = None;
+                    self.double_candidate = None;
+                    self.pending_click = None;
+                    self.last_up = None;
+                    self.last_down = None;
+                    self.suppress_next_click = false;
+                    self.scroll_capture_id = None;
+                    if let Some(source_id) = old_capture {
+                        self.cancel_dnd_capture(Some(tid), source_id);
+                    }
+                }
+            } else if live.is_empty() {
+                self.touch_paths.remove(&tid);
+                self.touch_presses.remove(&tid);
+                self.suppressed_touch_clicks.remove(&tid);
+            } else {
+                self.touch_targets.insert(tid, live.clone());
+                self.touch_paths
+                    .insert(tid, live.iter().map(|target| target.id()).collect());
+            }
+        }
+        if changed {
+            self.rebuild_pressed_ids();
+            request_frame();
         }
     }
 
@@ -628,24 +889,26 @@ impl ReposeRuntime {
     /// [`Self::handle_touch_press`]; hover fallback stays mouse).
     pub fn handle_touch_move(&mut self, touch: Option<u64>, pos: Vec2) -> PointerMoveResult {
         self.mouse_pos_px = (pos.x, pos.y);
+        if let Some(tid) = touch {
+            self.touch_positions.insert(tid, pos);
+        }
         self.pointer_inside = true;
         if touch.is_none() {
             self.sched.pointer_pos_px = Some((pos.x, pos.y));
         }
 
-        if dnd::handle_drag_action(&DragAction::Move {
-            position: pos,
-            modifiers: self.modifiers,
-        }) {
+        let owns_dnd_move = self
+            .dnd_capture
+            .as_ref()
+            .is_some_and(|capture| capture.touch == touch);
+        let dnd_move_consumed = owns_dnd_move
+            && dnd::handle_drag_action(&DragAction::Move {
+                position: pos,
+                modifiers: self.modifiers,
+            });
+        if dnd_move_consumed {
+            self.cancel_keyboard_press();
             request_frame();
-            return PointerMoveResult {
-                cursor: if dnd::is_dragging() {
-                    Some(CursorIcon::Grabbing)
-                } else {
-                    self.cursor.clone()
-                },
-                hover_id: self.hover_id,
-            };
         }
 
         let Some(f) = &self.frame_cache else {
@@ -655,62 +918,77 @@ impl ReposeRuntime {
             };
         };
 
-        if let Some((_, _, x0, y0)) = self.long_press {
+        let active_long_press_matches = match (touch, self.long_press_touch) {
+            (Some(tid), Some(active)) => tid == active,
+            (None, None) => true,
+            _ => false,
+        };
+        if active_long_press_matches && let Some((_, _, x0, y0)) = self.long_press {
             let slop = LONG_PRESS_SLOP_DP * self.scale;
             let dx = pos.x - x0;
             let dy = pos.y - y0;
             if dx * dx + dy * dy > slop * slop {
                 self.long_press = None;
+                self.long_press_touch = None;
             }
         }
 
         // Cancel the long press once the pointer leaves the element's bounds
-        if self.long_press.is_some()
+        if active_long_press_matches
+            && self.long_press.is_some()
             && let Some(lid) = self.long_press.map(|(id, _, _, _)| id)
             && f.hit_regions
                 .iter()
                 .find(|h| h.id == lid)
-                .is_none_or(|h| !h.rect.contains(pos))
+                .is_none_or(|h| !repose_ui::hit_region_contains(h, pos))
         {
             self.long_press = None;
+            self.long_press_touch = None;
         }
 
-        // TextField/TextArea drag selection (if captured)
-        if let Some(cid) = self.capture_id
+        let text_capture = match touch {
+            Some(tid) => self.touch_presses.get(&tid).map(|state| state.capture_id),
+            None => self.capture_id,
+        };
+        let owns_text_drag = touch.is_none() || self.touch_primary == touch;
+        if owns_text_drag
+            && let Some(cid) = text_capture
             && is_tf_hit(f, cid)
             && let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid)
         {
             let key = tf_key_of(f, cid);
             if let Some(st_rc) = self.textfield_states.get(&key) {
                 let mut st = st_rc.borrow_mut();
-                let (ox, oy) = hit.tf_content_origin.unwrap_or((hit.rect.x, hit.rect.y));
-                let content_x = (pos.x - ox + st.scroll_offset).max(0.0);
-                let content_y = (pos.y - oy + st.scroll_offset_y).max(0.0);
-                let font_size_sp = if hit.tf_font_size != Sp::ZERO {
-                    hit.tf_font_size
-                } else {
-                    TF_FONT_SP
-                };
-                let font_px = font_size_sp.to_px().0;
+                let local = repose_ui::hit_region_to_local(hit, pos);
+                let local_rect = repose_ui::hit_region_local_rect(hit);
+                let content_origin = hit
+                    .tf_content_origin
+                    .map(|(x, y)| repose_ui::hit_region_to_local(hit, Vec2 { x, y }))
+                    .unwrap_or(Vec2 {
+                        x: local_rect.x,
+                        y: local_rect.y,
+                    });
+                let content_x = (local.x - content_origin.x + st.scroll_offset).max(0.0);
+                let content_y = (local.y - content_origin.y + st.scroll_offset_y).max(0.0);
+                let metrics = repose_ui::textfield::textfield_metrics(hit);
                 let wrap_w = st.inner_width.max(1.0);
                 let idx = if hit.tf_multiline {
-                    index_for_xy_bytes_vt(&st, font_px, wrap_w, content_x, content_y)
+                    index_for_xy_bytes_vt(&st, &metrics, wrap_w, content_x, content_y)
                 } else {
-                    index_for_x_bytes_vt(&st, font_px, content_x)
+                    index_for_x_bytes_vt(&st, &metrics, content_x)
                 };
                 st.drag_to(idx);
             }
         }
 
-        let top = f
-            .hit_regions
-            .iter()
-            .rev()
-            .find(|h| !h.disabled && h.rect.contains(pos));
+        let top = repose_ui::hit_test_enabled_frame(f, pos);
 
         self.cursor = top
             .and_then(|h| h.cursor.clone())
             .or(Some(CursorIcon::Default));
+        if dnd_move_consumed && dnd::is_dragging() {
+            self.cursor = Some(CursorIcon::Grabbing);
+        }
 
         let new_hover = top.map(|h| h.id);
 
@@ -730,20 +1008,10 @@ impl ReposeRuntime {
         }
 
         if let Some(tid) = touch {
-            if let Some(path) = self.touch_paths.get(&tid).cloned() {
-                let live: Vec<u64> = path
-                    .iter()
-                    .copied()
-                    .filter(|id| f.hit_regions.iter().any(|h| h.id == *id))
-                    .collect();
-                if live.is_empty() {
-                    self.touch_paths.remove(&tid);
-                } else {
-                    self.dispatch_pointer_to_path(PointerEventKind::Move, pos, &live, touch);
-                    if live.len() != path.len() {
-                        self.touch_paths.insert(tid, live);
-                    }
-                }
+            if let Some(targets) = self.touch_targets.get(&tid) {
+                self.dispatch_pointer_to_targets(PointerEventKind::Move, pos, targets, Some(tid));
+            } else if let Some(path) = self.touch_paths.get(&tid).cloned() {
+                self.dispatch_pointer_to_path(PointerEventKind::Move, pos, &path, Some(tid));
             }
             return PointerMoveResult {
                 cursor: self.cursor.clone(),
@@ -751,18 +1019,10 @@ impl ReposeRuntime {
             };
         }
 
-        if let Some(path) = &self.hit_path {
-            let live: Vec<u64> = path
-                .iter()
-                .copied()
-                .filter(|id| f.hit_regions.iter().any(|h| h.id == *id))
-                .collect();
-            if live.is_empty() {
-                self.hit_path = None;
-                self.capture_id = None;
-            } else {
-                self.dispatch_pointer_to_path(PointerEventKind::Move, pos, &live, touch);
-            }
+        if let Some(targets) = &self.mouse_targets {
+            self.dispatch_pointer_to_targets(PointerEventKind::Move, pos, targets, None);
+        } else if let Some(path) = self.hit_path.clone() {
+            self.dispatch_pointer_to_path(PointerEventKind::Move, pos, &path, None);
         }
         if self.hit_path.is_none()
             && let Some(h) = top
@@ -774,11 +1034,9 @@ impl ReposeRuntime {
             };
             let mut pe =
                 PointerEvent::new(id, kind, PointerEventKind::Move, pos, 1.0, self.modifiers);
-            pe.origin = Vec2 {
-                x: h.rect.x,
-                y: h.rect.y,
-            };
-            pe.position = pe.position - pe.origin;
+            let (origin, local) = repose_ui::hit_region_pointer_coordinates(h, pos);
+            pe.origin = origin;
+            pe.position = local;
             cb(pe);
         }
 
@@ -808,13 +1066,30 @@ impl ReposeRuntime {
         button: PointerButton,
     ) -> PointerButtonResult {
         self.mouse_pos_px = (pos.x, pos.y);
+        if let Some(tid) = touch {
+            self.touch_positions.insert(tid, pos);
+        }
         if touch.is_none() {
             self.sched.pointer_pos_px = Some((pos.x, pos.y));
         }
-        self.held_mouse.insert(button);
+        if touch.is_none() {
+            self.held_mouse.insert(button);
+        }
         let _ = repose_core::request_input_mode(repose_core::InputMode::Touch);
 
-        let Some(f) = &self.frame_cache else {
+        if touch.is_none() && (self.capture_id.is_some() || self.hit_path.is_some()) {
+            self.handle_pointer_cancel();
+        }
+        if let Some(tid) = touch
+            && self.touch_presses.contains_key(&tid)
+        {
+            self.handle_touch_cancel(Some(tid));
+        }
+        if let Some(tid) = touch {
+            self.touch_positions.insert(tid, pos);
+        }
+
+        let Some(frame) = self.frame_cache.clone() else {
             return PointerButtonResult {
                 focused: None,
                 capture_id: None,
@@ -823,6 +1098,7 @@ impl ReposeRuntime {
                 clicked_id: None,
             };
         };
+        let f = &frame;
 
         let mut result = PointerButtonResult {
             focused: None,
@@ -831,77 +1107,108 @@ impl ReposeRuntime {
             needs_a11y_announce: false,
             clicked_id: None,
         };
-
-        if let Some(hit) = f
-            .hit_regions
-            .iter()
-            .rev()
-            .find(|h| !h.disabled && h.rect.contains(pos))
-        {
-            let mut path: Vec<u64> = vec![hit.id];
-            let mut cur = hit.parent;
-            while let Some(pid) = cur {
-                path.push(pid);
-                cur = f
-                    .hit_regions
-                    .iter()
-                    .find(|h| h.id == pid)
-                    .and_then(|h| h.parent);
+        let primary_pointer = match touch {
+            Some(tid) => {
+                if self.touch_primary.is_none() {
+                    self.touch_primary = Some(tid);
+                }
+                self.touch_primary == Some(tid)
             }
-            self.hit_path = Some(path.clone());
+            None => true,
+        };
 
-            dnd::handle_drag_action(&DragAction::Press {
-                position: pos,
-                capture_id: hit.id,
-                kind: match touch {
-                    Some(_) => PointerKind::Touch,
-                    None => PointerKind::Mouse,
-                },
-                modifiers: self.modifiers,
-            });
+        if primary_pointer {
+            self.cancel_keyboard_press();
+        }
 
-            self.capture_id = Some(hit.id);
+        let path = repose_ui::hit_test_frame_path(f, pos);
+        if let Some(&capture_id) = path.first()
+            && let Some(hit) = f.hit_regions.iter().find(|hit| hit.id == capture_id)
+        {
+            if touch.is_none() {
+                self.hit_path = Some(path.clone());
+            }
+
+            if touch.is_none() || primary_pointer {
+                dnd::handle_drag_action(&DragAction::Press {
+                    position: pos,
+                    capture_id: hit.id,
+                    kind: match touch {
+                        Some(_) => PointerKind::Touch,
+                        None => PointerKind::Mouse,
+                    },
+                    modifiers: self.modifiers,
+                });
+                self.dnd_capture = Some(DndPointerCapture {
+                    touch,
+                    source_id: hit.id,
+                });
+            }
+
+            if touch.is_none() {
+                self.capture_id = Some(hit.id);
+            }
             result.capture_id = Some(hit.id);
             result.consumed = true;
-            // Per-finger path (touch only)
+            let targets: Vec<_> = path
+                .iter()
+                .filter_map(|id| f.hit_regions.iter().find(|hit| hit.id == *id))
+                .map(repose_ui::HitRegionSnapshot::new)
+                .collect();
             if let Some(tid) = touch {
                 self.touch_paths.insert(tid, path.clone());
+                self.touch_targets.insert(tid, targets);
+                self.touch_presses.insert(
+                    tid,
+                    TouchPressState {
+                        capture_id: hit.id,
+                        pressed_ids: HashSet::from([hit.id]),
+                    },
+                );
+            } else {
+                self.mouse_targets = Some(targets);
             }
 
             // A new press cancels a still-pending delayed single click only
             // when it qualifies as the second tap of a double click on the
             // same element (Compose detectTapGestures).
-            self.last_down = Some((hit.id, web_time::Instant::now()));
-            // The second DOWN must land within
-            // [doubleTapMinTimeMillis, doubleTapTimeoutMillis] after the first
-            // tap's UP. No distance/slop requirement between the taps.
-            self.double_candidate = if hit.on_double_click.is_some()
-                && self.last_up.is_some_and(|(pid, t0, _, _)| {
-                    pid == hit.id
-                        && self.last_down.is_some_and(|(did, dt)| {
-                            did == hit.id
-                                && dt.duration_since(t0).as_millis() >= DOUBLE_TAP_MIN_MS
-                                && dt.duration_since(t0).as_millis() <= DOUBLE_CLICK_MS
-                        })
-                }) {
-                Some(hit.id)
-            } else {
-                None
-            };
-            if self.double_candidate.is_some() {
-                self.pending_click = None;
-            }
-
-            if let PointerButton::Primary = button {
-                self.long_press = if hit.on_long_click.is_some() {
-                    Some((hit.id, web_time::Instant::now(), pos.x, pos.y))
+            if primary_pointer {
+                self.last_down = Some((hit.id, web_time::Instant::now()));
+                // The second DOWN must land within
+                // [doubleTapMinTimeMillis, doubleTapTimeoutMillis] after the first
+                // tap's UP. No distance/slop requirement between the taps.
+                self.double_candidate = if hit.on_double_click.is_some()
+                    && self.last_up.is_some_and(|(pid, t0, _, _)| {
+                        pid == hit.id
+                            && self.last_down.is_some_and(|(did, dt)| {
+                                did == hit.id
+                                    && dt.duration_since(t0).as_millis() >= DOUBLE_TAP_MIN_MS
+                                    && dt.duration_since(t0).as_millis() <= DOUBLE_CLICK_MS
+                            })
+                    }) {
+                    Some(hit.id)
                 } else {
                     None
                 };
-                self.suppress_next_click = false;
+                if self.double_candidate.is_some() {
+                    self.pending_click = None;
+                }
+
+                if let PointerButton::Primary = button {
+                    self.long_press = if hit.on_long_click.is_some() {
+                        Some((hit.id, web_time::Instant::now(), pos.x, pos.y))
+                    } else {
+                        None
+                    };
+                    self.long_press_touch = touch;
+                    self.suppress_next_click = false;
+                }
             }
 
-            if hit.tf_state_key.is_some() || is_textfield_in_frame(f, hit.id) {
+            if primary_pointer
+                && hit.tf_enabled
+                && (hit.tf_state_key.is_some() || is_textfield_in_frame(f, hit.id))
+            {
                 let key = tf_key_of(f, hit.id);
                 let seed = hit.tf_value.as_str();
                 let st_rc = ensure_tf_state(&mut self.textfield_states, key, seed);
@@ -911,30 +1218,29 @@ impl ReposeRuntime {
                     st.apply_controlled_value(seed);
 
                     if st.inner_width <= 0.0 {
-                        let w = hit
-                            .tf_content_origin
-                            .map(|_| hit.rect.w)
-                            .unwrap_or(hit.rect.w)
-                            .max(1.0);
-                        st.set_inner_width(w);
-                        st.set_inner_height(hit.rect.h.max(1.0));
+                        let local_rect = repose_ui::hit_region_local_rect(hit);
+                        st.set_inner_width(local_rect.w.max(1.0));
+                        st.set_inner_height(local_rect.h.max(1.0));
                     }
 
-                    let (ox, oy) = hit.tf_content_origin.unwrap_or((hit.rect.x, hit.rect.y));
-                    let content_x = (pos.x - ox + st.scroll_offset).max(0.0);
-                    let content_y = (pos.y - oy + st.scroll_offset_y).max(0.0);
-                    let font_size_sp = if hit.tf_font_size != Sp::ZERO {
-                        hit.tf_font_size
-                    } else {
-                        TF_FONT_SP
-                    };
-                    let font_px = font_size_sp.to_px().0;
+                    let local = repose_ui::hit_region_to_local(hit, pos);
+                    let local_rect = repose_ui::hit_region_local_rect(hit);
+                    let content_origin = hit
+                        .tf_content_origin
+                        .map(|(x, y)| repose_ui::hit_region_to_local(hit, Vec2 { x, y }))
+                        .unwrap_or(Vec2 {
+                            x: local_rect.x,
+                            y: local_rect.y,
+                        });
+                    let content_x = (local.x - content_origin.x + st.scroll_offset).max(0.0);
+                    let content_y = (local.y - content_origin.y + st.scroll_offset_y).max(0.0);
+                    let metrics = repose_ui::textfield::textfield_metrics(hit);
                     let wrap_w = st.inner_width.max(1.0);
 
                     let idx = if hit.tf_multiline {
-                        index_for_xy_bytes_vt(&st, font_px, wrap_w, content_x, content_y)
+                        index_for_xy_bytes_vt(&st, &metrics, wrap_w, content_x, content_y)
                     } else {
-                        index_for_x_bytes_vt(&st, font_px, content_x)
+                        index_for_x_bytes_vt(&st, &metrics, content_x)
                     };
                     st.handle_pointer_down(idx, (pos.x, pos.y), self.modifiers.shift);
                     // caret was placed by pointer this gesture
@@ -943,7 +1249,10 @@ impl ReposeRuntime {
 
             self.pressed_ids.insert(hit.id);
 
-            if hit.focusable {
+            if primary_pointer && hit.focusable {
+                if self.sched.focused != Some(hit.id) {
+                    self.finish_compositions();
+                }
                 self.sched.focused = Some(hit.id);
                 result.focused = Some(hit.id);
                 if hit.tf_state_key.is_some() {
@@ -956,11 +1265,32 @@ impl ReposeRuntime {
                 }
             }
 
-            self.dispatch_pointer_to_path(PointerEventKind::Down(button), pos, &path, touch);
+            let targets = if touch.is_some() {
+                self.touch_targets.get(&touch.unwrap()).cloned()
+            } else {
+                self.mouse_targets.clone()
+            };
+            if let Some(targets) = targets {
+                self.dispatch_pointer_to_targets(
+                    PointerEventKind::Down(button),
+                    pos,
+                    &targets,
+                    touch,
+                );
+            }
 
             request_frame();
-        } else {
-            self.hit_path = None;
+        } else if primary_pointer {
+            if touch.is_none() {
+                self.hit_path = None;
+                self.mouse_targets = None;
+                self.capture_id = None;
+                self.pressed_ids.clear();
+            } else if let Some(tid) = touch {
+                self.touch_paths.remove(&tid);
+                self.touch_targets.remove(&tid);
+                self.touch_positions.remove(&tid);
+            }
             self.finish_compositions();
             self.sched.focused = None;
             request_frame();
@@ -987,10 +1317,12 @@ impl ReposeRuntime {
         button: PointerButton,
     ) -> PointerButtonResult {
         self.mouse_pos_px = (pos.x, pos.y);
-        if touch.is_none() {
+        if let Some(tid) = touch {
+            self.touch_positions.insert(tid, pos);
+        } else {
             self.sched.pointer_pos_px = Some((pos.x, pos.y));
+            self.held_mouse.remove(&button);
         }
-        self.held_mouse.remove(&button);
         let mut result = PointerButtonResult {
             focused: self.sched.focused,
             capture_id: self.capture_id,
@@ -998,14 +1330,37 @@ impl ReposeRuntime {
             needs_a11y_announce: false,
             clicked_id: None,
         };
+        if let Some(tid) = touch {
+            return self.finish_touch_release(tid, pos, button, result);
+        }
 
-        if dnd::handle_drag_action(&DragAction::Release {
-            position: pos,
-            modifiers: self.modifiers,
-        }) {
+        let owns_dnd_release = self.dnd_capture.as_ref().is_some_and(|capture| {
+            capture.touch.is_none() && Some(capture.source_id) == self.capture_id
+        });
+        let drag_consumed = if owns_dnd_release {
+            self.dnd_capture = None;
+            dnd::handle_drag_action(&DragAction::Release {
+                position: pos,
+                modifiers: self.modifiers,
+            })
+        } else {
+            false
+        };
+        if let Some(targets) = &self.mouse_targets {
+            self.dispatch_pointer_to_targets(PointerEventKind::Up(button), pos, targets, None);
+            result.consumed = true;
+        } else if let Some(path) = &self.hit_path {
+            self.dispatch_pointer_to_path(PointerEventKind::Up(button), pos, path, None);
+            result.consumed = true;
+        }
+        if let Some(cid) = self.capture_id {
+            self.pressed_ids.remove(&cid);
+            self.end_textfield_drag(cid);
+        }
+        if drag_consumed {
             self.capture_id = None;
             self.hit_path = None;
-            self.pressed_ids.clear();
+            self.mouse_targets = None;
             request_frame();
             result.consumed = true;
             return result;
@@ -1014,36 +1369,17 @@ impl ReposeRuntime {
         let f = match &self.frame_cache {
             Some(f) => f.clone(),
             None => {
-                if touch.is_none() {
-                    self.capture_id = None;
-                    self.hit_path = None;
-                } else if let Some(tid) = touch {
-                    self.touch_paths.remove(&tid);
-                }
+                self.capture_id = None;
+                self.hit_path = None;
+                self.mouse_targets = None;
+                self.pressed_ids.clear();
                 return result;
             }
         };
 
-        // Touch releases route down the finger's own path (see
-        // `handle_touch_press`)
-        if let Some(tid) = touch {
-            if let Some(path) = self.touch_paths.remove(&tid) {
-                self.dispatch_pointer_to_path(PointerEventKind::Up(button), pos, &path, touch);
-                result.consumed = true;
-            }
-            self.pressed_ids.clear();
-            request_frame();
-            return result;
-        }
-
-        if let Some(path) = &self.hit_path {
-            self.dispatch_pointer_to_path(PointerEventKind::Up(button), pos, path, touch);
-            result.consumed = true;
-        }
-        self.pressed_ids.clear();
-
         // Long-press resolution: `poll_long_press` normally fires on timeout when held.
-        if let Some((lid, t0, _, _)) = self.long_press.take()
+        if self.long_press_touch.is_none()
+            && let Some((lid, t0, _, _)) = self.long_press.take()
             && Some(lid) == self.capture_id
             && t0.elapsed().as_millis() >= LONG_PRESS_MS
             && let Some(hit) = f.hit_regions.iter().find(|h| h.id == lid && !h.disabled)
@@ -1061,7 +1397,7 @@ impl ReposeRuntime {
             && !self.suppress_next_click
             && let Some(cid) = self.capture_id
             && let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid && !h.disabled)
-            && hit.rect.contains(pos)
+            && repose_ui::hit_region_contains(hit, pos)
         {
             let now = web_time::Instant::now();
             // With onDoubleTap present, single
@@ -1094,7 +1430,7 @@ impl ReposeRuntime {
             self.last_down = None;
             if self.capture_id == Some(dc)
                 && let Some(hit) = f.hit_regions.iter().find(|h| h.id == dc && !h.disabled)
-                && hit.rect.contains(pos)
+                && repose_ui::hit_region_contains(hit, pos)
             {
                 if let Some(cb) = &hit.on_double_click {
                     cb();
@@ -1115,20 +1451,178 @@ impl ReposeRuntime {
             }
         }
 
-        // TextField drag end
-        if let Some(cid) = self.capture_id
-            && is_tf_hit(&f, cid)
-        {
-            let key = tf_key_of(&f, cid);
-            if let Some(state_rc) = self.textfield_states.get(&key) {
-                state_rc.borrow_mut().end_drag();
-            }
-        }
-
         self.capture_id = None;
         self.hit_path = None;
+        self.mouse_targets = None;
         request_frame();
         result
+    }
+
+    fn finish_touch_release(
+        &mut self,
+        tid: u64,
+        pos: Vec2,
+        button: PointerButton,
+        mut result: PointerButtonResult,
+    ) -> PointerButtonResult {
+        let capture_id = self
+            .touch_presses
+            .remove(&tid)
+            .map(|state| state.capture_id);
+        result.capture_id = capture_id;
+        let targets = self.touch_targets.remove(&tid);
+        if let Some(targets) = &targets {
+            self.dispatch_pointer_to_targets(PointerEventKind::Up(button), pos, targets, Some(tid));
+            result.consumed = true;
+        } else if let Some(path) = self.touch_paths.remove(&tid) {
+            self.dispatch_pointer_to_path(PointerEventKind::Up(button), pos, &path, Some(tid));
+            result.consumed = true;
+        }
+        self.touch_paths.remove(&tid);
+        self.touch_positions.remove(&tid);
+        let primary = self.touch_primary == Some(tid);
+        if let Some(cid) = capture_id {
+            self.end_textfield_drag(cid);
+        }
+        let owns_dnd_release = self.dnd_capture.as_ref().is_some_and(|capture| {
+            capture.touch == Some(tid) && Some(capture.source_id) == capture_id
+        });
+        let drag_consumed = if owns_dnd_release {
+            self.dnd_capture = None;
+            dnd::handle_drag_action(&DragAction::Release {
+                position: pos,
+                modifiers: self.modifiers,
+            })
+        } else {
+            false
+        };
+        let suppressed = self.suppressed_touch_clicks.remove(&tid);
+        if primary
+            && !drag_consumed
+            && !suppressed
+            && let Some(frame) = self.frame_cache.clone()
+            && let Some(cid) = capture_id
+        {
+            if self.long_press_touch == Some(tid)
+                && let Some((lid, t0, _, _)) = self.long_press.take()
+                && lid == cid
+                && t0.elapsed().as_millis() >= LONG_PRESS_MS
+                && let Some(hit) = frame
+                    .hit_regions
+                    .iter()
+                    .find(|hit| hit.id == lid && !hit.disabled)
+                && let Some(callback) = &hit.on_long_click
+            {
+                callback();
+                self.suppress_next_click = true;
+                self.pending_click = None;
+                result.clicked_id = Some(lid);
+                result.needs_a11y_announce = true;
+                result.consumed = true;
+            }
+
+            if self.double_candidate.is_none()
+                && !self.suppress_next_click
+                && let Some(hit) = frame
+                    .hit_regions
+                    .iter()
+                    .find(|hit| hit.id == cid && !hit.disabled)
+                && repose_ui::hit_region_contains(hit, pos)
+            {
+                let now = web_time::Instant::now();
+                if hit.on_double_click.is_some() {
+                    if let Some(callback) = hit.on_click.clone() {
+                        self.pending_click = Some((cid, now, callback));
+                    }
+                    self.last_up = Some((cid, now, pos.x, pos.y));
+                    result.consumed = true;
+                    request_frame();
+                } else {
+                    if let Some(callback) = &hit.on_click {
+                        callback();
+                    }
+                    self.last_up = Some((cid, now, pos.x, pos.y));
+                    result.clicked_id = Some(cid);
+                    result.needs_a11y_announce = true;
+                    result.consumed = true;
+                }
+            }
+            self.suppress_next_click = false;
+
+            if let Some(double_id) = self.double_candidate.take() {
+                self.pending_click = None;
+                self.last_up = None;
+                self.last_down = None;
+                if let Some(hit) = frame
+                    .hit_regions
+                    .iter()
+                    .find(|hit| hit.id == double_id && !hit.disabled)
+                {
+                    if repose_ui::hit_region_contains(hit, pos) {
+                        if let Some(callback) = &hit.on_double_click {
+                            callback();
+                        }
+                    } else if let Some(callback) = &hit.on_click {
+                        callback();
+                    }
+                    result.clicked_id = Some(double_id);
+                    result.needs_a11y_announce = true;
+                    result.consumed = true;
+                }
+            }
+        }
+        if self.long_press_touch == Some(tid) {
+            self.long_press = None;
+            self.long_press_touch = None;
+        }
+        self.rebuild_pressed_ids();
+        if primary {
+            self.touch_primary = None;
+        }
+        request_frame();
+        result
+    }
+
+    fn cancel_keyboard_press(&mut self) {
+        let active = self.key_pressed_active.take();
+        self.key_pressed_key = None;
+        self.key_long_press = None;
+        let Some(active) = active else {
+            return;
+        };
+        self.pressed_ids.remove(&active);
+        let hit = self
+            .frame_cache
+            .as_ref()
+            .and_then(|frame| frame.hit_regions.iter().find(|hit| hit.id == active))
+            .cloned();
+        if let Some(hit) = hit
+            && let Some(source) = &hit.interaction_source
+        {
+            let press_id = source.collect_last_press_id().unwrap_or(0);
+            source.to_mutable().emit(Interaction::Cancel(press_id));
+        }
+    }
+
+    fn rebuild_pressed_ids(&mut self) {
+        self.pressed_ids = self
+            .touch_presses
+            .values()
+            .flat_map(|state| state.pressed_ids.iter().copied())
+            .collect();
+        if let Some(active) = self.key_pressed_active {
+            self.pressed_ids.insert(active);
+        }
+    }
+
+    pub fn suppress_touch_click(&mut self, tid: u64) {
+        self.suppressed_touch_clicks.insert(tid);
+        if self.touch_primary == Some(tid) {
+            self.suppress_next_click = true;
+            self.long_press = None;
+            self.pending_click = None;
+            self.double_candidate = None;
+        }
     }
 
     /// Cancel mouse pointer state (focus lost). Touch fingers never feed
@@ -1138,35 +1632,103 @@ impl ReposeRuntime {
     /// full-reset behavior for the single mouse path.
     pub fn handle_touch_cancel(&mut self, touch: Option<u64>) {
         if let Some(tid) = touch {
-            let saved = self.sched.pointer_pos_px;
-            if let Some(path) = self.touch_paths.remove(&tid) {
-                let pos = Vec2 {
-                    x: self.mouse_pos_px.0,
-                    y: self.mouse_pos_px.1,
-                };
-                self.dispatch_pointer_to_path(PointerEventKind::Cancel, pos, &path, touch);
-            }
-            self.sched.pointer_pos_px = saved;
-            request_frame();
-            return;
+            let pos = self.touch_positions.get(&tid).copied().unwrap_or(Vec2 {
+                x: self.mouse_pos_px.0,
+                y: self.mouse_pos_px.1,
+            });
+            self.handle_touch_cancel_at(tid, pos);
+        } else {
+            self.handle_pointer_cancel();
         }
-        self.handle_pointer_cancel();
+    }
+
+    pub fn handle_touch_cancel_at(&mut self, tid: u64, pos: Vec2) {
+        let was_primary = self.touch_primary == Some(tid);
+        let capture_id = self
+            .touch_presses
+            .remove(&tid)
+            .map(|state| state.capture_id);
+        let targets = self.touch_targets.remove(&tid);
+        if let Some(targets) = &targets {
+            self.dispatch_pointer_to_targets(PointerEventKind::Cancel, pos, targets, Some(tid));
+        } else if let Some(path) = self.touch_paths.remove(&tid) {
+            self.dispatch_pointer_to_path(PointerEventKind::Cancel, pos, &path, Some(tid));
+        }
+        self.touch_paths.remove(&tid);
+        self.touch_positions.remove(&tid);
+        if let Some(cid) = capture_id {
+            self.end_textfield_drag(cid);
+        }
+        self.suppressed_touch_clicks.remove(&tid);
+        if was_primary {
+            self.touch_primary = None;
+            self.double_candidate = None;
+            self.pending_click = None;
+            self.last_up = None;
+            self.last_down = None;
+            self.suppress_next_click = false;
+            self.scroll_capture_id = None;
+        }
+        if self.long_press_touch == Some(tid) {
+            self.long_press = None;
+            self.long_press_touch = None;
+        }
+        self.rebuild_pressed_ids();
+        if let Some(source_id) = capture_id {
+            self.cancel_dnd_capture(Some(tid), source_id);
+        }
+        request_frame();
     }
 
     pub fn handle_pointer_cancel(&mut self) {
         self.sched.pointer_pos_px = None;
-        if let Some(f) = &self.frame_cache
-            && let Some(cid) = self.capture_id
-            && is_tf_hit(f, cid)
-        {
-            let key = tf_key_of(f, cid);
-            if let Some(state_rc) = self.textfield_states.get(&key) {
-                state_rc.borrow_mut().end_drag();
+        self.held_mouse.clear();
+        self.sched.mouse_primary = false;
+        self.sched.mouse_secondary = false;
+        self.sched.mouse_middle = false;
+        self.scroll_capture_id = None;
+        self.last_scroll_at = None;
+        if let Some(cid) = self.capture_id {
+            self.end_textfield_drag(cid);
+        }
+        let touch_targets = std::mem::take(&mut self.touch_targets);
+        let touch_paths = std::mem::take(&mut self.touch_paths);
+        let mut touch_ids: Vec<u64> = touch_targets
+            .keys()
+            .chain(touch_paths.keys())
+            .copied()
+            .collect();
+        touch_ids.sort_unstable();
+        touch_ids.dedup();
+        for tid in touch_ids {
+            let pos = self.touch_positions.remove(&tid).unwrap_or(Vec2 {
+                x: self.mouse_pos_px.0,
+                y: self.mouse_pos_px.1,
+            });
+            if let Some(targets) = touch_targets.get(&tid) {
+                self.dispatch_pointer_to_targets(PointerEventKind::Cancel, pos, targets, Some(tid));
+            } else if let Some(path) = touch_paths.get(&tid) {
+                self.dispatch_pointer_to_path(PointerEventKind::Cancel, pos, path, Some(tid));
             }
         }
+        let touch_presses = std::mem::take(&mut self.touch_presses);
+        for (tid, state) in &touch_presses {
+            let source_id = state.capture_id;
+            self.cancel_dnd_capture(Some(*tid), source_id);
+            self.end_textfield_drag(source_id);
+        }
+        self.touch_primary = None;
+        self.suppressed_touch_clicks.clear();
+        self.cancel_keyboard_press();
         self.long_press = None;
+        self.long_press_touch = None;
         self.last_up = None;
-        dnd::handle_drag_action(&DragAction::Cancel);
+        self.last_down = None;
+        self.double_candidate = None;
+        self.suppress_next_click = false;
+        if self.dnd_capture.is_some() {
+            self.cancel_active_dnd();
+        }
         let pos = Vec2 {
             x: self.mouse_pos_px.0,
             y: self.mouse_pos_px.1,
@@ -1180,10 +1742,13 @@ impl ReposeRuntime {
             pos,
             self.modifiers,
         );
-        if let Some(path) = &self.hit_path {
+        if let Some(targets) = &self.mouse_targets {
+            self.dispatch_pointer_to_targets(PointerEventKind::Cancel, pos, targets, None);
+        } else if let Some(path) = &self.hit_path {
             self.dispatch_pointer_to_path(PointerEventKind::Cancel, pos, path, None);
         }
         self.reset_pointer_state();
+        request_frame();
     }
 
     /// Clear hover state, emitting HoverLeave for the currently hovered region.
@@ -1245,12 +1810,7 @@ impl ReposeRuntime {
             return;
         }
 
-        let new_hover = new_frame
-            .hit_regions
-            .iter()
-            .rev()
-            .find(|h| !h.disabled && h.rect.contains(pos))
-            .map(|h| h.id);
+        let new_hover = repose_ui::hit_test_enabled_frame(new_frame, pos).map(|hit| hit.id);
 
         self.cursor = if dnd::is_dragging() {
             Some(CursorIcon::Grabbing)
@@ -1282,12 +1842,24 @@ impl ReposeRuntime {
     fn reset_pointer_state(&mut self) {
         self.capture_id = None;
         self.hit_path = None;
+        self.mouse_targets = None;
         self.touch_paths.clear();
+        self.touch_targets.clear();
+        self.touch_positions.clear();
+        self.touch_presses.clear();
+        self.dnd_capture = None;
+        self.touch_primary = None;
+        self.suppressed_touch_clicks.clear();
         self.pressed_ids.clear();
         self.pending_click = None;
         self.last_down = None;
         self.double_candidate = None;
+        self.key_pressed_active = None;
+        self.key_pressed_key = None;
         self.key_long_press = None;
+        self.last_up = None;
+        self.last_down = None;
+        self.double_candidate = None;
         self.suppress_next_click = false;
     }
 
@@ -1317,8 +1889,13 @@ impl ReposeRuntime {
         }
         // Still captured and within the element bounds? (Compose cancels the
         // long press when the pointer leaves the element.)
-        if self.capture_id != Some(lid) {
+        let captured = self
+            .long_press_touch
+            .and_then(|tid| self.touch_presses.get(&tid).map(|state| state.capture_id))
+            .or(self.capture_id);
+        if captured != Some(lid) {
             self.long_press = None;
+            self.long_press_touch = None;
             return;
         }
         let (mx, my) = self.mouse_pos_px;
@@ -1326,7 +1903,7 @@ impl ReposeRuntime {
             .hit_regions
             .iter()
             .find(|h| h.id == lid)
-            .is_some_and(|h| h.rect.contains(Vec2 { x: mx, y: my }));
+            .is_some_and(|h| repose_ui::hit_region_contains(h, Vec2 { x: mx, y: my }));
         if !in_bounds {
             self.long_press = None;
             return;
@@ -1394,6 +1971,17 @@ impl ReposeRuntime {
         consumed
     }
 
+    fn resolve_shortcut_action(
+        &self,
+        chord: &repose_core::shortcuts::KeyChord,
+    ) -> Option<repose_core::shortcuts::Action> {
+        self.shortcuts.resolve_action(chord)
+    }
+
+    fn handle_shortcut_action(&self, action: repose_core::shortcuts::Action) -> bool {
+        self.shortcuts.handle(action)
+    }
+
     /// Process a keyboard key event. Returns true if consumed.
     pub fn handle_key(&mut self, event: &KeyEvent) -> bool {
         if event.event_type == KeyEventType::Down {
@@ -1408,13 +1996,12 @@ impl ReposeRuntime {
         // Escape / BrowserBack: cancel DnD first so a grabbed pointer does
         // not swallow back / exit handling, then fall through to the normal
         // key pipeline so ancestors up to the root see the event.
-        if event.event_type == KeyEventType::Down
-            && !event.is_repeat
-            && event.key == Key::Escape
-            && dnd::handle_drag_action(&DragAction::Cancel)
-        {
-            request_frame();
-            return true;
+        if event.event_type == KeyEventType::Down && !event.is_repeat && event.key == Key::Escape {
+            self.cancel_keyboard_press();
+            if self.cancel_active_dnd() {
+                request_frame();
+                return true;
+            }
         }
 
         if self.dispatch_key_event(f, event) {
@@ -1425,8 +2012,8 @@ impl ReposeRuntime {
         // Action dispatch (shortcuts like Ctrl+C, Tab, etc.)
         if event.event_type == KeyEventType::Down
             && !event.is_repeat
-            && let Some(action) = repose_core::shortcuts::resolve_action(
-                repose_core::shortcuts::KeyChord::new(event.key.clone(), self.modifiers),
+            && let Some(action) = self.resolve_shortcut_action(
+                &repose_core::shortcuts::KeyChord::new(event.key.clone(), self.modifiers),
             )
         {
             // `dispatch_action` covers focus navigation internally.
@@ -1447,14 +2034,19 @@ impl ReposeRuntime {
                         let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid) else {
                             return false;
                         };
+                        if hit.disabled {
+                            return false;
+                        }
                         if hit.on_click.is_none()
                             && hit.on_long_click.is_none()
                             && hit.on_double_click.is_none()
                         {
                             return false; // don't steal keys from non-clickable focusables
                         }
+                        self.cancel_keyboard_press();
                         self.pressed_ids.insert(fid);
                         self.key_pressed_active = Some(fid);
+                        self.key_pressed_key = Some(event.key.clone());
                         self.key_long_press = if hit.on_long_click.is_some() {
                             Some((fid, web_time::Instant::now(), false))
                         } else {
@@ -1476,10 +2068,14 @@ impl ReposeRuntime {
                     }
                 } else if event.event_type == KeyEventType::Up
                     && let Some(active_id) = self.key_pressed_active
-                    && (event.key == Key::Space || event.key == Key::Enter)
+                    && self
+                        .key_pressed_key
+                        .as_ref()
+                        .is_some_and(|key| key == &event.key)
                 {
                     self.pressed_ids.remove(&active_id);
                     self.key_pressed_active = None;
+                    self.key_pressed_key = None;
 
                     let long_fired = self
                         .key_long_press
@@ -1520,14 +2116,22 @@ impl ReposeRuntime {
                 true
             };
             if should_submit {
-                if let Some(on_submit) = &hit.on_text_submit {
-                    let key = tf_key_of(f, fid);
-                    if let Some(state_rc) = self.textfield_states.get(&key) {
-                        let text = state_rc.borrow().text.clone();
-                        on_submit(text);
-                        request_frame();
-                        return true;
-                    }
+                let key = tf_key_of(f, fid);
+                if let Some(state_rc) = self.textfield_states.get(&key) {
+                    let text = state_rc.borrow().text.clone();
+                    let action = match hit.ime_action {
+                        repose_core::text::ImeAction::Unspecified => {
+                            repose_core::text::ImeAction::Done
+                        }
+                        action => action,
+                    };
+                    repose_ui::textfield::dispatch_textfield_keyboard_action(hit, action, &|| {
+                        if let Some(on_submit) = &hit.on_text_submit {
+                            on_submit(text.clone());
+                        }
+                    });
+                    request_frame();
+                    return true;
                 }
             } else {
                 // Multiline plain Enter: insert newline
@@ -1536,11 +2140,17 @@ impl ReposeRuntime {
                     return true;
                 }
                 if let Some(state_rc) = self.textfield_states.get(&key) {
-                    let mut st = state_rc.borrow_mut();
-                    st.insert_text("\n");
-                    let new_text = st.text.clone();
+                    let mut edited = state_rc.borrow().clone();
+                    repose_ui::textfield::insert_text_with_input_transformation(
+                        hit,
+                        &mut edited,
+                        "\n",
+                        false,
+                    );
+                    tf_ensure_caret_visible_for_hit(hit, &mut edited);
+                    let new_text = edited.text.clone();
+                    *state_rc.borrow_mut() = edited;
                     notify_text_change(f, fid, new_text);
-                    tf_ensure_caret_visible(&mut st, hit.tf_multiline);
                     request_frame();
                     return true;
                 }
@@ -1548,142 +2158,14 @@ impl ReposeRuntime {
         }
 
         // TextField navigation / edit keys
-        if event.event_type == KeyEventType::Down {
-            if let Some(fid) = self.sched.focused {
-                let key = tf_key_of(f, fid);
-                if let Some(state_rc) = self.textfield_states.get(&key) {
-                    let mut state = state_rc.borrow_mut();
-                    match event.key {
-                        Key::Backspace => {
-                            if !is_tf_editable(f, fid) {
-                                return true;
-                            }
-                            state.delete_backward();
-                            let new_text = state.text.clone();
-                            notify_text_change(f, fid, new_text);
-                            tf_ensure_caret_visible(&mut state, is_multiline_id(f, fid));
-                            request_frame();
-                            return true;
-                        }
-                        Key::Delete => {
-                            if !is_tf_editable(f, fid) {
-                                return true;
-                            }
-                            state.delete_forward();
-                            let new_text = state.text.clone();
-                            notify_text_change(f, fid, new_text);
-                            tf_ensure_caret_visible(&mut state, is_multiline_id(f, fid));
-                            request_frame();
-                            return true;
-                        }
-                        Key::ArrowLeft => {
-                            state.move_cursor(-1, self.modifiers.shift);
-                            state.preferred_x_px = None;
-                            tf_ensure_caret_visible(&mut state, is_multiline_id(f, fid));
-                            request_frame();
-                            return true;
-                        }
-                        Key::ArrowRight => {
-                            state.move_cursor(1, self.modifiers.shift);
-                            state.preferred_x_px = None;
-                            tf_ensure_caret_visible(&mut state, is_multiline_id(f, fid));
-                            request_frame();
-                            return true;
-                        }
-                        Key::ArrowUp => {
-                            if is_multiline_id(f, fid)
-                                && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
-                            {
-                                let font_size_sp = if hit.tf_font_size != Sp::ZERO {
-                                    hit.tf_font_size
-                                } else {
-                                    TF_FONT_SP
-                                };
-                                let font_px = font_size_sp.to_px().0;
-                                let cur = state.caret_index();
-                                let (new_pos, px) = repose_ui::textfield::move_caret_vertical(
-                                    &state.text,
-                                    font_px,
-                                    hit.rect.w,
-                                    cur,
-                                    -1,
-                                    state.preferred_x_px,
-                                );
-                                if self.modifiers.shift {
-                                    state.selection.end = new_pos;
-                                } else {
-                                    state.selection = new_pos..new_pos;
-                                }
-                                state.preferred_x_px = Some(px);
-                                let (cx, cy, _) = caret_xy_for_byte(
-                                    &state.text,
-                                    font_px,
-                                    hit.rect.w,
-                                    state.caret_index(),
-                                );
-                                let iw = state.inner_width;
-                                let ih = state.inner_height;
-                                state.ensure_caret_visible_xy(cx, cy, iw, ih, Dp(2.0).to_px().0);
-                                request_frame();
-                                return true;
-                            }
-                        }
-                        Key::ArrowDown => {
-                            if is_multiline_id(f, fid)
-                                && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
-                            {
-                                let font_size_sp = if hit.tf_font_size != Sp::ZERO {
-                                    hit.tf_font_size
-                                } else {
-                                    TF_FONT_SP
-                                };
-                                let font_px = font_size_sp.to_px().0;
-                                let cur = state.caret_index();
-                                let (new_pos, px) = repose_ui::textfield::move_caret_vertical(
-                                    &state.text,
-                                    font_px,
-                                    hit.rect.w,
-                                    cur,
-                                    1,
-                                    state.preferred_x_px,
-                                );
-                                if self.modifiers.shift {
-                                    state.selection.end = new_pos;
-                                } else {
-                                    state.selection = new_pos..new_pos;
-                                }
-                                state.preferred_x_px = Some(px);
-                                let (cx, cy, _) = caret_xy_for_byte(
-                                    &state.text,
-                                    font_px,
-                                    hit.rect.w,
-                                    state.caret_index(),
-                                );
-                                let iw = state.inner_width;
-                                let ih = state.inner_height;
-                                state.ensure_caret_visible_xy(cx, cy, iw, ih, Dp(2.0).to_px().0);
-                                request_frame();
-                                return true;
-                            }
-                        }
-                        Key::Home => {
-                            state.selection = 0..0;
-                            tf_ensure_caret_visible(&mut state, is_multiline_id(f, fid));
-                            request_frame();
-                            return true;
-                        }
-                        Key::End => {
-                            let end = state.text.len();
-                            state.selection = end..end;
-                            tf_ensure_caret_visible(&mut state, is_multiline_id(f, fid));
-                            request_frame();
-                            return true;
-                        }
-                        _ => {}
-                    }
-                }
-            }
+        if event.event_type == KeyEventType::Down
+            && let Some(fid) = self.sched.focused
+            && self.handle_text_navigation_key(f, fid, &event.key)
+        {
+            return true;
+        }
 
+        if event.event_type == KeyEventType::Down {
             // Plain text input (non-IME)
             if !self.ime_preedit
                 && !self.modifiers.ctrl
@@ -1700,13 +2182,22 @@ impl ReposeRuntime {
                     return true;
                 }
                 if let Some(state_rc) = self.textfield_states.get(&key) {
-                    let mut st = state_rc.borrow_mut();
-                    let text = c.to_string();
-                    st.insert_text(&text);
-                    notify_text_change(f, fid, st.text.clone());
-                    if let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid) {
-                        tf_ensure_caret_visible(&mut st, hit.tf_multiline);
-                    }
+                    let new_text = if let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid) {
+                        let mut edited = state_rc.borrow().clone();
+                        repose_ui::textfield::insert_text_with_input_transformation(
+                            hit,
+                            &mut edited,
+                            &c.to_string(),
+                            false,
+                        );
+                        tf_ensure_caret_visible_for_hit(hit, &mut edited);
+                        let text = edited.text.clone();
+                        *state_rc.borrow_mut() = edited;
+                        text
+                    } else {
+                        return false;
+                    };
+                    notify_text_change(f, fid, new_text);
                     request_frame();
                     return true;
                 }
@@ -1714,6 +2205,143 @@ impl ReposeRuntime {
         }
 
         false
+    }
+
+    fn display_text_for_state(
+        state: &TextFieldState,
+    ) -> (String, usize, Option<Box<dyn repose_core::OffsetMapping>>) {
+        let caret = state.caret_index();
+        let Some(transformation) = state.visual_transformation.clone() else {
+            return (state.text.clone(), caret, None);
+        };
+        let annotated = repose_core::AnnotatedString::new(state.text.clone(), vec![]);
+        let transformed = transformation.filter(&annotated);
+        let display_caret = transformed.offset_mapping.original_to_transformed(caret);
+        (
+            transformed.text.text,
+            display_caret,
+            Some(transformed.offset_mapping),
+        )
+    }
+
+    fn handle_text_navigation_key(&mut self, frame: &Frame, id: u64, key: &Key) -> bool {
+        let Some(hit) = frame.hit_regions.iter().find(|hit| hit.id == id) else {
+            return false;
+        };
+        let state_key = tf_key_of(frame, id);
+        let Some(state) = self.textfield_states.get(&state_key) else {
+            return false;
+        };
+        let editable = is_tf_editable(frame, id);
+        let metrics = repose_ui::textfield::textfield_metrics(hit);
+        let shift = self.modifiers.shift;
+        let mut edited = state.borrow().clone();
+        let (display, display_caret, mapping) = Self::display_text_for_state(&edited);
+        let mut changed = false;
+        let consumed = match key {
+            Key::Backspace => {
+                changed = editable
+                    && repose_ui::textfield::delete_backward_with_input_transformation(
+                        hit,
+                        &mut edited,
+                    );
+                true
+            }
+            Key::Delete => {
+                changed = editable
+                    && repose_ui::textfield::delete_forward_with_input_transformation(
+                        hit,
+                        &mut edited,
+                    );
+                true
+            }
+            Key::ArrowLeft => {
+                edited.move_cursor(-1, shift);
+                edited.preferred_x_px = None;
+                true
+            }
+            Key::ArrowRight => {
+                edited.move_cursor(1, shift);
+                edited.preferred_x_px = None;
+                true
+            }
+            Key::ArrowUp if hit.tf_multiline => {
+                let (next_display, preferred) =
+                    repose_ui::textfield::move_caret_vertical_with_metrics(
+                        &display,
+                        edited.inner_width.max(1.0),
+                        display_caret,
+                        -1,
+                        edited.preferred_x_px,
+                        &metrics,
+                    );
+                let next = mapping.as_ref().map_or(next_display, |mapping| {
+                    mapping.transformed_to_original(next_display)
+                });
+                set_caret(&mut edited, next, shift);
+                edited.preferred_x_px = Some(preferred);
+                true
+            }
+            Key::ArrowDown if hit.tf_multiline => {
+                let (next_display, preferred) =
+                    repose_ui::textfield::move_caret_vertical_with_metrics(
+                        &display,
+                        edited.inner_width.max(1.0),
+                        display_caret,
+                        1,
+                        edited.preferred_x_px,
+                        &metrics,
+                    );
+                let next = mapping.as_ref().map_or(next_display, |mapping| {
+                    mapping.transformed_to_original(next_display)
+                });
+                set_caret(&mut edited, next, shift);
+                edited.preferred_x_px = Some(preferred);
+                true
+            }
+            Key::Home => {
+                let next_display = repose_ui::textfield::line_home_end_with_metrics(
+                    &display,
+                    edited.inner_width.max(1.0),
+                    display_caret,
+                    false,
+                    &metrics,
+                );
+                let next = mapping.as_ref().map_or(next_display, |mapping| {
+                    mapping.transformed_to_original(next_display)
+                });
+                set_caret(&mut edited, next, shift);
+                edited.preferred_x_px = None;
+                true
+            }
+            Key::End => {
+                let next_display = repose_ui::textfield::line_home_end_with_metrics(
+                    &display,
+                    edited.inner_width.max(1.0),
+                    display_caret,
+                    true,
+                    &metrics,
+                );
+                let next = mapping.as_ref().map_or(next_display, |mapping| {
+                    mapping.transformed_to_original(next_display)
+                });
+                set_caret(&mut edited, next, shift);
+                edited.preferred_x_px = None;
+                true
+            }
+            _ => false,
+        };
+        if !consumed {
+            return false;
+        }
+        tf_ensure_caret_visible_for_hit(hit, &mut edited);
+        let text = changed.then(|| edited.text.clone());
+        *state.borrow_mut() = edited;
+        if let Some(text) = text {
+            notify_text_change(frame, id, text);
+        }
+        request_frame();
+        true
     }
 
     /// Dispatch a key event through the compose hierarchy, mirroring
@@ -1776,7 +2404,7 @@ impl ReposeRuntime {
         }
 
         // 3) Global shortcut handler
-        if repose_core::shortcuts::handle(action.clone()) {
+        if self.handle_shortcut_action(action.clone()) {
             request_frame();
             return true;
         }
@@ -1786,10 +2414,7 @@ impl ReposeRuntime {
             && let Some(new_id) = repose_core::focus::handle_action(&action, &mut self.sched, &f)
         {
             // End any in-flight keyboard press (e.g. Space held on the old focus).
-            if let Some(active) = self.key_pressed_active.take() {
-                self.pressed_ids.remove(&active);
-            }
-            self.key_long_press = None;
+            self.cancel_keyboard_press();
             // Lazy-init + reset the caret blink for the newly focused text field.
             if let Some(hit) = f.hit_regions.iter().find(|h| h.id == new_id)
                 && let Some(key) = hit.tf_state_key
@@ -1825,28 +2450,42 @@ impl ReposeRuntime {
         let Some(state_rc) = self.textfield_states.get(&key).cloned() else {
             return false;
         };
-        let multiline = is_multiline_id(&f, fid);
+        let hit = f.hit_regions.iter().find(|hit| hit.id == fid);
 
         match action {
             Action::Undo => {
-                let mut st = state_rc.borrow_mut();
-                if !st.can_undo() {
+                if !is_tf_editable(&f, fid) {
+                    return true;
+                }
+                let Some(hit) = hit else {
+                    return false;
+                };
+                let mut edited = state_rc.borrow().clone();
+                if !repose_ui::textfield::undo_with_input_transformation(hit, &mut edited) {
                     return false;
                 }
-                st.undo();
-                notify_text_change(&f, fid, st.text.clone());
-                tf_ensure_caret_visible(&mut st, multiline);
+                tf_ensure_caret_visible_for_hit(hit, &mut edited);
+                let new_text = edited.text.clone();
+                *state_rc.borrow_mut() = edited;
+                notify_text_change(&f, fid, new_text);
                 request_frame();
                 true
             }
             Action::Redo => {
-                let mut st = state_rc.borrow_mut();
-                if !st.can_redo() {
+                if !is_tf_editable(&f, fid) {
+                    return true;
+                }
+                let Some(hit) = hit else {
+                    return false;
+                };
+                let mut edited = state_rc.borrow().clone();
+                if !repose_ui::textfield::redo_with_input_transformation(hit, &mut edited) {
                     return false;
                 }
-                st.redo();
-                notify_text_change(&f, fid, st.text.clone());
-                tf_ensure_caret_visible(&mut st, multiline);
+                tf_ensure_caret_visible_for_hit(hit, &mut edited);
+                let new_text = edited.text.clone();
+                *state_rc.borrow_mut() = edited;
+                notify_text_change(&f, fid, new_text);
                 request_frame();
                 true
             }
@@ -1854,6 +2493,9 @@ impl ReposeRuntime {
                 let mut st = state_rc.borrow_mut();
                 let len = st.text.len();
                 st.selection = 0..len;
+                if let Some(hit) = hit {
+                    tf_ensure_caret_visible_for_hit(hit, &mut st);
+                }
                 request_frame();
                 true
             }
@@ -1875,28 +2517,22 @@ impl ReposeRuntime {
             }
             Action::Cut => {
                 if !is_tf_editable(&f, fid) {
+                    return true;
+                }
+                let Some(hit) = hit else {
                     return false;
-                }
-                let mut st = state_rc.borrow_mut();
-                let (a, b) = (
-                    st.selection.start.min(st.selection.end),
-                    st.selection.start.max(st.selection.end),
-                );
-                if a == b {
+                };
+                let mut edited = state_rc.borrow().clone();
+                let Some(slice) =
+                    repose_ui::textfield::cut_with_input_transformation(hit, &mut edited)
+                else {
                     return false;
-                }
-                let slice = st.text.get(a..b).unwrap_or("").to_string();
-                // Replacing the selection with "" deletes it.
-                st.insert_text_atomic("");
-                let new_text = st.text.clone();
-                drop(st);
-                if !slice.is_empty() {
-                    repose_core::clipboard::copy_to_clipboard(&slice);
-                }
+                };
+                tf_ensure_caret_visible_for_hit(hit, &mut edited);
+                let new_text = edited.text.clone();
+                *state_rc.borrow_mut() = edited;
+                repose_core::clipboard::copy_to_clipboard(&slice);
                 notify_text_change(&f, fid, new_text);
-                if let Some(mut st) = self.textfield_states.get(&key).map(|s| s.borrow_mut()) {
-                    tf_ensure_caret_visible(&mut st, multiline);
-                }
                 request_frame();
                 true
             }
@@ -1911,50 +2547,85 @@ impl ReposeRuntime {
         }
     }
 
+    fn cancel_ime_compositions(&mut self) {
+        let mut changed = None;
+        for (key, state) in &self.textfield_states {
+            let mut edited = state.borrow().clone();
+            if edited.composition.is_none() {
+                continue;
+            }
+            edited.cancel_composition();
+            *state.borrow_mut() = edited;
+            changed = Some((*key, self.textfield_states[key].borrow().text.clone()));
+        }
+        self.ime_preedit = false;
+        if let (Some((key, text)), Some(frame)) = (changed, &self.frame_cache)
+            && let Some(id) = frame
+                .hit_regions
+                .iter()
+                .find(|hit| hit.tf_state_key.unwrap_or(hit.id) == key)
+                .map(|hit| hit.id)
+        {
+            notify_text_change(frame, id, text);
+        }
+        request_frame();
+    }
+
     /// Process an IME event.
     pub fn handle_ime(&mut self, event: &ImeEvent) {
-        // Ime::Disabled arrives after set_ime_allowed(false). by then the confirmed
-        // composition text is already in the buffer, so keep it.
         if matches!(event, ImeEvent::Cancel) {
-            self.finish_compositions();
-            request_frame();
+            self.cancel_ime_compositions();
             return;
         }
         let Some(fid) = self.sched.focused else {
             return;
         };
-        let Some(f) = &self.frame_cache else {
+        let Some(frame) = self.frame_cache.clone() else {
             return;
         };
-        if !is_tf_editable(f, fid) {
+        if !matches!(event, ImeEvent::Cancel) && !is_tf_editable(&frame, fid) {
             return;
         }
-        let key = tf_key_of(f, fid);
-        let Some(state_rc) = self.textfield_states.get(&key).cloned() else {
+        let key = tf_key_of(&frame, fid);
+        let Some(state) = self.textfield_states.get(&key).cloned() else {
             return;
         };
-
-        let mut state = state_rc.borrow_mut();
-
-        match event {
+        let hit = frame.hit_regions.iter().find(|hit| hit.id == fid);
+        let mut edited = state.borrow().clone();
+        let changed = match event {
             ImeEvent::Start => {
                 self.ime_preedit = false;
+                None
             }
             ImeEvent::Update { text, cursor } => {
-                state.set_composition(text.clone(), *cursor);
+                edited.set_composition(text.clone(), *cursor);
+                if let Some(hit) = hit {
+                    repose_ui::textfield::apply_textfield_input_transformation(hit, &mut edited);
+                    tf_ensure_caret_visible_for_hit(hit, &mut edited);
+                }
                 self.ime_preedit = !text.is_empty();
-                repose_ui::textfield::ensure_caret_visible(&mut state, true);
-                notify_text_change(f, fid, state.text.clone());
+                Some(edited.text.clone())
             }
             ImeEvent::Commit(text) => {
-                state.commit_composition(text.clone());
+                if let Some(hit) = hit {
+                    repose_ui::textfield::commit_composition_with_input_transformation(
+                        hit,
+                        &mut edited,
+                        text.clone(),
+                    );
+                    tf_ensure_caret_visible_for_hit(hit, &mut edited);
+                } else {
+                    edited.commit_composition(text.clone());
+                }
                 self.ime_preedit = false;
-                repose_ui::textfield::ensure_caret_visible(&mut state, true);
-                notify_text_change(f, fid, state.text.clone());
+                Some(edited.text.clone())
             }
             ImeEvent::Cancel => unreachable!(),
+        };
+        *state.borrow_mut() = edited;
+        if let Some(text) = changed {
+            notify_text_change(&frame, fid, text);
         }
-
         request_frame();
     }
 
@@ -1962,9 +2633,6 @@ impl ReposeRuntime {
     /// Used for focus changes and IME disconnects where the confirmed text
     /// must be kept; distinct from cancelling, which discards the preedit.
     pub fn finish_compositions(&mut self) {
-        if !self.ime_preedit {
-            return;
-        }
         for state_rc in self.textfield_states.values() {
             let mut st = state_rc.borrow_mut();
             if st.composition.is_some() {
@@ -1979,11 +2647,26 @@ impl ReposeRuntime {
     /// for keys still down across an alt-tab, so without this the
     /// polled `held_keys` set sticks until the next press of that key.
     pub fn handle_focus_lost(&mut self) {
-        dnd::handle_drag_action(&DragAction::Cancel);
+        self.pointer_inside = false;
+        self.sched.window_focused = false;
         self.handle_pointer_cancel();
         self.held_keys.clear();
         self.held_mouse.clear();
+        self.sched.held_keys.clear();
+        self.sched.mouse_primary = false;
+        self.sched.mouse_secondary = false;
+        self.sched.mouse_middle = false;
         self.sched.touch_points.clear();
+        self.key_pressed_active = None;
+        self.key_pressed_key = None;
+        self.key_long_press = None;
+        self.pressed_ids.clear();
+        self.pending_click = None;
+        self.last_down = None;
+        self.last_up = None;
+        self.double_candidate = None;
+        self.scroll_capture_id = None;
+        self.last_scroll_at = None;
         self.finish_compositions();
     }
 
@@ -2096,6 +2779,18 @@ impl ReposeRuntime {
         }
     }
 
+    pub fn focused_ime_action(&self) -> repose_core::text::ImeAction {
+        self.frame_cache
+            .as_ref()
+            .and_then(|frame| {
+                self.sched
+                    .focused
+                    .and_then(|id| frame.hit_regions.iter().find(|hit| hit.id == id))
+            })
+            .map(|hit| hit.ime_action)
+            .unwrap_or_default()
+    }
+
     /// Insert arbitrary text into the focused text field (composed keyboard
     /// text, clipboard paste, hardware-keyboard fallback, ...).
     /// Returns true if text was inserted.
@@ -2139,15 +2834,22 @@ impl ReposeRuntime {
         if filtered.is_empty() {
             return false;
         }
-        {
-            let mut st = state_rc.borrow_mut();
-            st.insert_text(&filtered);
-            let new_text = st.text.clone();
-            notify_text_change(&f, fid, new_text);
-            if let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid) {
-                tf_ensure_caret_visible(&mut st, hit.tf_multiline);
-            }
-        }
+        let new_text = if let Some(hit) = f.hit_regions.iter().find(|hit| hit.id == fid) {
+            let mut edited = state_rc.borrow().clone();
+            repose_ui::textfield::insert_text_with_input_transformation(
+                hit,
+                &mut edited,
+                &filtered,
+                false,
+            );
+            tf_ensure_caret_visible_for_hit(hit, &mut edited);
+            let text = edited.text.clone();
+            *state_rc.borrow_mut() = edited;
+            text
+        } else {
+            return false;
+        };
+        notify_text_change(&f, fid, new_text);
         request_frame();
         true
     }
@@ -2172,15 +2874,33 @@ impl ReposeRuntime {
             return;
         }
         let key = tf_key_of(f, fid);
-        if let Some(state_rc) = self.textfield_states.get(&key) {
-            let mut st = state_rc.borrow_mut();
-            st.insert_text_atomic(text);
-            let new_text = st.text.clone();
-            notify_text_change(f, fid, new_text);
-            if let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid) {
-                tf_ensure_caret_visible(&mut st, hit.tf_multiline);
-            }
+        let Some(state_rc) = self.textfield_states.get(&key) else {
+            return;
+        };
+        let Some(hit) = f.hit_regions.iter().find(|hit| hit.id == fid) else {
+            return;
+        };
+        let filtered: String = text
+            .chars()
+            .filter(|c| (*c == '\n' && hit.tf_multiline) || (!c.is_control() && *c != '\r'))
+            .collect();
+        if filtered.is_empty() {
+            return;
         }
+        let new_text = {
+            let mut edited = state_rc.borrow().clone();
+            repose_ui::textfield::insert_text_with_input_transformation(
+                hit,
+                &mut edited,
+                &filtered,
+                true,
+            );
+            tf_ensure_caret_visible_for_hit(hit, &mut edited);
+            let text = edited.text.clone();
+            *state_rc.borrow_mut() = edited;
+            text
+        };
+        notify_text_change(f, fid, new_text);
         request_frame();
     }
 
@@ -2468,6 +3188,14 @@ where
         },
     );
 
+    for requested_id in repose_core::runtime::drain_focus_requests() {
+        if requested_id == repose_core::runtime::CLEAR_FOCUS_MARKER {
+            sched.focused = None;
+        } else if frame.focus_chain.contains(&requested_id) {
+            sched.focused = Some(requested_id);
+        }
+    }
+
     if let Some(fid) = sched.focused
         && !frame.focus_chain.contains(&fid)
     {
@@ -2531,7 +3259,7 @@ fn hover_chain_for(frame: Option<&Frame>, hover: Option<u64>) -> std::collection
 
 fn dispatch_hover_change_bubbled(
     frame: Option<&Frame>,
-    leave_map: &HashMap<u64, (f32, f32, f32, f32, Rc<dyn Fn(PointerEvent)>)>,
+    leave_map: &HashMap<u64, repose_ui::HitRegionSnapshot>,
     hover_id: &mut Option<u64>,
     hover_ancestors: &mut std::collections::HashSet<u64>,
     new_hover: Option<u64>,
@@ -2539,25 +3267,19 @@ fn dispatch_hover_change_bubbled(
     modifiers: Modifiers,
 ) {
     let old_hover = *hover_id;
-    let old_chain = hover_chain_for(frame, old_hover);
+    let mut old_chain = hover_ancestors.clone();
+    if let Some(id) = old_hover {
+        old_chain.insert(id);
+    }
     let new_chain = hover_chain_for(frame, new_hover);
     if old_chain == new_chain {
         return;
     }
     for leave_id in old_chain.difference(&new_chain) {
-        let leave_info = leave_map.get(leave_id).cloned().or_else(|| {
-            frame.and_then(|f| {
-                f.hit_regions
-                    .iter()
-                    .find(|h| h.id == *leave_id)
-                    .and_then(|h| {
-                        h.on_pointer_leave
-                            .as_ref()
-                            .map(|cb| (h.rect.x, h.rect.y, h.rect.w, h.rect.h, cb.clone()))
-                    })
-            })
-        });
-        if let Some((rx, ry, _rw, _rh, cb)) = leave_info {
+        let current = frame.and_then(|f| f.hit_regions.iter().find(|h| h.id == *leave_id));
+        if let Some(hit) = current
+            && let Some(cb) = &hit.on_pointer_leave
+        {
             let mut pe = PointerEvent::new(
                 PointerId(0),
                 PointerKind::Mouse,
@@ -2566,9 +3288,27 @@ fn dispatch_hover_change_bubbled(
                 1.0,
                 modifiers,
             );
-            pe.origin = Vec2 { x: rx, y: ry };
-            pe.position = pe.position - pe.origin;
+            let (origin, local) = repose_ui::hit_region_pointer_coordinates(hit, pos);
+            pe.origin = origin;
+            pe.position = local;
             cb(pe);
+            continue;
+        }
+        if let Some(snapshot) = leave_map.get(leave_id)
+            && let Some(callback) = &snapshot.hit().on_pointer_leave
+        {
+            let mut pe = PointerEvent::new(
+                PointerId(0),
+                PointerKind::Mouse,
+                PointerEventKind::Leave,
+                pos,
+                1.0,
+                modifiers,
+            );
+            let (origin, local) = snapshot.pointer_coordinates(pos);
+            pe.origin = origin;
+            pe.position = local;
+            callback(pe);
         }
     }
     for enter_id in new_chain.difference(&old_chain) {
@@ -2584,11 +3324,9 @@ fn dispatch_hover_change_bubbled(
                 1.0,
                 modifiers,
             );
-            pe.origin = Vec2 {
-                x: h.rect.x,
-                y: h.rect.y,
-            };
-            pe.position = pe.position - pe.origin;
+            let (origin, local) = repose_ui::hit_region_pointer_coordinates(h, pos);
+            pe.origin = origin;
+            pe.position = local;
             cb(pe);
         }
     }
@@ -2648,6 +3386,14 @@ fn tf_key_of(frame: &Frame, visual_id: u64) -> u64 {
     visual_id
 }
 
+fn set_caret(state: &mut TextFieldState, position: usize, extend: bool) {
+    if extend {
+        state.selection.end = position;
+    } else {
+        state.selection = position..position;
+    }
+}
+
 fn notify_text_change(f: &Frame, id: u64, text: String) {
     if let Some(h) = f.hit_regions.iter().find(|h| h.id == id)
         && let Some(cb) = &h.on_text_change
@@ -2656,68 +3402,70 @@ fn notify_text_change(f: &Frame, id: u64, text: String) {
     }
 }
 
-fn tf_ensure_caret_visible(state: &mut TextFieldState, is_multiline: bool) {
-    let font_px = TF_FONT_SP.to_px().0;
-    let wrap_width = state.inner_width;
-
-    if is_multiline {
-        let (cx, cy, _) = caret_xy_for_byte(&state.text, font_px, wrap_width, state.caret_index());
-        state.ensure_caret_visible_xy(
-            cx,
-            cy,
-            state.inner_width,
-            state.inner_height,
-            Dp(2.0).to_px().0,
-        );
-    } else {
-        let caret_idx = state.caret_index();
-        let (display, caret_display_off) = if let Some(vt) = &state.visual_transformation {
-            let annotated = repose_core::AnnotatedString::new(state.text.clone(), vec![]);
-            let tfmd = vt.filter(&annotated);
-            let off =
-                repose_core::original_offset_to_display(&state.text, tfmd.text.as_str(), caret_idx);
-            (tfmd.text.text, off)
-        } else {
-            (state.text.clone(), caret_idx)
-        };
-        let m = measure_text(&display, font_px, TextMeasureConfig::default());
-        let caret_x_px = m.positions.get(caret_display_off).copied().unwrap_or(0.0);
-        state.ensure_caret_visible(caret_x_px, wrap_width, Dp(2.0).to_px().0);
-    }
+fn tf_ensure_caret_visible_for_hit(hit: &HitRegion, state: &mut TextFieldState) {
+    let metrics = repose_ui::textfield::textfield_metrics(hit);
+    tf_ensure_caret_visible_with_metrics(state, hit.tf_multiline, &metrics);
 }
 
-fn index_for_x_bytes_vt(state: &TextFieldState, font_px: f32, x_px: f32) -> usize {
-    if let Some(vt) = &state.visual_transformation {
+fn tf_ensure_caret_visible_with_metrics(
+    state: &mut TextFieldState,
+    is_multiline: bool,
+    metrics: &repose_ui::textfield::TextFieldMetrics,
+) {
+    repose_ui::textfield::ensure_caret_visible_with_metrics(state, is_multiline, metrics);
+}
+
+fn index_for_x_bytes_vt(
+    state: &TextFieldState,
+    metrics: &repose_ui::textfield::TextFieldMetrics,
+    x_px: f32,
+) -> usize {
+    if let Some(transformation) = &state.visual_transformation {
         let annotated = repose_core::AnnotatedString::new(state.text.clone(), vec![]);
-        let tfmd = vt.filter(&annotated);
-        let display_idx =
-            repose_ui::textfield::index_for_x_bytes(tfmd.text.as_str(), font_px, x_px, 400, 0);
-        tfmd.offset_mapping.transformed_to_original(display_idx)
+        let transformed = transformation.filter(&annotated);
+        let display = repose_ui::textfield::index_for_x_bytes_with_config(
+            transformed.text.as_str(),
+            metrics.font_px,
+            x_px,
+            metrics.measure_config(),
+        );
+        transformed.offset_mapping.transformed_to_original(display)
     } else {
-        repose_ui::textfield::index_for_x_bytes(&state.text, font_px, x_px, 400, 0)
+        repose_ui::textfield::index_for_x_bytes_with_config(
+            &state.text,
+            metrics.font_px,
+            x_px,
+            metrics.measure_config(),
+        )
     }
 }
 
 fn index_for_xy_bytes_vt(
     state: &TextFieldState,
-    font_px: f32,
-    wrap_w: f32,
+    metrics: &repose_ui::textfield::TextFieldMetrics,
+    wrap_width: f32,
     x_px: f32,
     y_px: f32,
 ) -> usize {
-    if let Some(vt) = &state.visual_transformation {
+    if let Some(transformation) = &state.visual_transformation {
         let annotated = repose_core::AnnotatedString::new(state.text.clone(), vec![]);
-        let tfmd = vt.filter(&annotated);
-        let display_idx = repose_ui::textfield::index_for_xy_bytes(
-            tfmd.text.as_str(),
-            font_px,
-            wrap_w,
+        let transformed = transformation.filter(&annotated);
+        let display = repose_ui::textfield::index_for_xy_bytes_with_metrics(
+            transformed.text.as_str(),
+            wrap_width,
             x_px,
             y_px,
+            metrics,
         );
-        tfmd.offset_mapping.transformed_to_original(display_idx)
+        transformed.offset_mapping.transformed_to_original(display)
     } else {
-        repose_ui::textfield::index_for_xy_bytes(&state.text, font_px, wrap_w, x_px, y_px)
+        repose_ui::textfield::index_for_xy_bytes_with_metrics(
+            &state.text,
+            wrap_width,
+            x_px,
+            y_px,
+            metrics,
+        )
     }
 }
 
@@ -2748,13 +3496,13 @@ fn dispatch_scroll(
     }
 
     let mut consumed_any = first_consumer.is_some();
-    for hit in frame
-        .hit_regions
-        .iter()
-        .rev()
-        .filter(|h| h.rect.contains(pos))
-        .filter(|h| Some(h.id) != scroll_capture)
-    {
+    for id in repose_ui::hit_test_frame_regions(frame, pos) {
+        if Some(id) == scroll_capture {
+            continue;
+        }
+        let Some(hit) = frame.hit_regions.iter().find(|hit| hit.id == id) else {
+            continue;
+        };
         if remaining.x.abs() <= 0.001 && remaining.y.abs() <= 0.001 {
             break;
         }
@@ -2836,7 +3584,7 @@ mod ime_tests {
     }
 
     #[test]
-    fn disable_keeps_composed_text() {
+    fn cancel_discards_preedit() {
         let mut rt = focused_rt();
         rt.handle_ime(&ImeEvent::Update {
             text: "あ".to_string(),
@@ -2845,7 +3593,7 @@ mod ime_tests {
         assert!(rt.ime_preedit);
         rt.handle_ime(&ImeEvent::Cancel);
         let st = rt.textfield_states[&TF_ID].borrow();
-        assert_eq!(st.text, "あ");
+        assert_eq!(st.text, "");
         assert!(st.composition.is_none());
         assert!(!rt.ime_preedit);
     }

@@ -1,19 +1,28 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::num::NonZero;
+use std::num::NonZeroU64;
 #[cfg(feature = "winit-surface")]
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
 
 use repose_core::color::{ChromaSiting, ColorInfo, PixelFormat};
-use repose_core::request_frame;
-use repose_core::{
-    Brush, FontStyle, GlyphRasterConfig, PresentModePref, RenderBackend, Scene, SceneNode,
-    StrokeCap, Transform, Vec2,
-};
+use repose_core::{Brush, FontStyle, Scene, SceneNode, StrokeCap, Transform, Vec2};
+#[cfg(feature = "winit-surface")]
+use repose_core::{GlyphRasterConfig, PresentModePref, RenderBackend, request_frame};
+#[cfg(feature = "winit-surface")]
 use wgpu::Instance;
 
 mod slug;
+
+fn align_up(value: u64, alignment: u64) -> anyhow::Result<u64> {
+    if !alignment.is_power_of_two() {
+        anyhow::bail!("alignment must be a power of two");
+    }
+    value
+        .checked_add(alignment - 1)
+        .map(|v| v & !(alignment - 1))
+        .ok_or_else(|| anyhow::anyhow!("alignment overflow"))
+}
 
 mod commands;
 pub use commands::apply_render_commands;
@@ -21,7 +30,9 @@ pub use commands::apply_render_commands;
 pub mod offscreen;
 
 mod callback;
-pub use callback::{Callback, CallbackResources, ScreenDescriptor, WgpuCallback};
+pub use callback::{
+    Callback, CallbackRenderPass, CallbackResources, ScreenDescriptor, WgpuCallback,
+};
 
 mod depth_composite;
 pub use depth_composite::DepthComposite;
@@ -36,6 +47,8 @@ struct UploadRing {
 
 impl UploadRing {
     fn new(device: &wgpu::Device, label: &str, cap: u64, usage: wgpu::BufferUsages) -> Self {
+        let max = device.limits().max_buffer_size;
+        let cap = cap.max(4).min(max).min(MAX_UPLOAD_RING_BYTES).max(4);
         let buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some(label),
             size: cap,
@@ -54,19 +67,33 @@ impl UploadRing {
         self.head = 0;
     }
 
-    fn grow_to_fit(&mut self, device: &wgpu::Device, needed: u64) {
-        let start = (self.head + 3) & !3;
-        let aligned_needed = (needed + 3) & !3;
-        // Need start + needed within cap, accounting for alignment padding
-        if start + needed <= self.cap {
-            return;
+    fn grow_to_fit(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        needed: u64,
+    ) -> anyhow::Result<()> {
+        if needed == 0 {
+            return Ok(());
         }
-        let required = start + needed;
-        let mut new_cap = required.next_power_of_two().max(self.cap * 2).max(256);
-        new_cap = (new_cap + 3) & !3;
-        if new_cap < aligned_needed {
-            new_cap = aligned_needed.next_power_of_two();
+        let start = align_up(self.head, 4)?;
+        let end = start
+            .checked_add(needed)
+            .ok_or_else(|| anyhow::anyhow!("upload ring offset overflow"))?;
+        if end <= self.cap {
+            return Ok(());
         }
+        let required = align_up(end, 4)?;
+        let doubled = self.cap.checked_mul(2).unwrap_or(0);
+        let new_cap = required.max(doubled).max(256);
+        let new_cap = align_up(new_cap, 4)?;
+        if new_cap > device.limits().max_buffer_size || new_cap > MAX_UPLOAD_RING_BYTES {
+            anyhow::bail!("upload ring exceeds resource budget");
+        }
+        if !self.usage.contains(wgpu::BufferUsages::COPY_SRC) {
+            anyhow::bail!("upload ring growth requires COPY_SRC");
+        }
+        let old = self.buf.clone();
         self.buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("upload ring (grown)"),
             size: new_cap,
@@ -74,39 +101,32 @@ impl UploadRing {
             mapped_at_creation: false,
         });
         self.cap = new_cap;
-        if start + needed > self.cap {
-            self.head = 0;
+        if self.head > 0 {
+            let copy_size = align_up(self.head, 4)?;
+            if copy_size > old.size() {
+                anyhow::bail!("upload ring old data exceeds old buffer");
+            }
+            encoder.copy_buffer_to_buffer(&old, 0, &self.buf, 0, copy_size);
         }
+        Ok(())
     }
 
-    fn alloc_write(&mut self, queue: &wgpu::Queue, bytes: &[u8]) -> (u64, u64) {
-        let len = bytes.len() as u64;
-        let start = (self.head + 3) & !3; // align to 4
-        let end = start + len;
+    fn alloc_write(&mut self, queue: &wgpu::Queue, bytes: &[u8]) -> anyhow::Result<u64> {
+        let len = u64::try_from(bytes.len())
+            .map_err(|_| anyhow::anyhow!("upload byte length exceeds u64"))?;
+        let start = align_up(self.head, 4)?;
+        let end = start
+            .checked_add(len)
+            .ok_or_else(|| anyhow::anyhow!("upload ring offset overflow"))?;
         if end > self.cap {
-            // Instead of panicking, grow and reset
-            log::error!(
-                "UploadRing overflow: start={start} len={len} cap={} - growing",
+            anyhow::bail!(
+                "upload ring overflow: start={start} len={len} cap={}",
                 self.cap
             );
-            if len > self.cap {
-                // Need larger buffer; create via grow_to_fit side-effect not available here (no device)
-                // Fallback: truncate write to avoid UB, return dummy range
-                return (0, 0);
-            }
-            // Wrap to beginning if alignment pushed us over
-            let wrapped_start = 0;
-            let wrapped_end = len;
-            if wrapped_end <= self.cap {
-                queue.write_buffer(&self.buf, wrapped_start, bytes);
-                self.head = wrapped_end;
-                return (wrapped_start, len);
-            }
-            return (0, 0);
         }
         queue.write_buffer(&self.buf, start, bytes);
         self.head = end;
-        (start, len)
+        Ok(start)
     }
 }
 
@@ -127,23 +147,28 @@ impl<I: bytemuck::Pod> InstancedPipe<I> {
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
         data: &[I],
     ) -> Option<(u64, u32)> {
         if data.is_empty() {
             return None;
         }
+        let count = u32::try_from(data.len()).ok()?;
         let bytes = bytemuck::cast_slice(data);
-        self.ring.grow_to_fit(device, bytes.len() as u64);
-        let (off, wrote) = self.ring.alloc_write(queue, bytes);
-        if wrote as usize != bytes.len() {
-            log::error!(
-                "upload skipped: batch {}B exceeds ring {}B",
-                bytes.len(),
-                self.ring.cap
-            );
+        let byte_len = u64::try_from(bytes.len()).ok()?;
+        if byte_len == 0 || byte_len > device.limits().max_buffer_size {
             return None;
         }
-        Some((off, data.len() as u32))
+        self.ring
+            .grow_to_fit(device, encoder, byte_len)
+            .map_err(|error| log::error!("{error:#}"))
+            .ok()?;
+        let off = self
+            .ring
+            .alloc_write(queue, bytes)
+            .map_err(|error| log::error!("{error:#}"))
+            .ok()?;
+        Some((off, count))
     }
 
     fn reset(&mut self) {
@@ -177,7 +202,9 @@ pub struct WgpuSceneRenderer {
     // Render pipelines. Two sets: one for the MSAA surface pass, one for
     // graphics-layer render-to-texture passes (sample_count = 1).
     surface_pipes: Pipelines,
+    working_space_pipes: Pipelines,
     layer_pipes: Pipelines,
+    working_space_layer_pipes: Pipelines,
 
     // Instanced draw rings
     rects: InstancedPipe<RectInstance>,
@@ -222,13 +249,10 @@ pub struct WgpuSceneRenderer {
     mesh_verts: UploadRing,
     mesh_indices: UploadRing,
     mesh_uniform_buf: wgpu::Buffer,
-    mesh_bind_layout: wgpu::BindGroupLayout,
     mesh_bind: wgpu::BindGroup,
     mesh_uniform_head: u64,
-    /// CPU mirror of the active vector-clip stack: (voff, vcnt, ioff, icnt,
-    /// uoff, difference) of each pushed mask so `PopVectorClip` can re-draw
-    /// it to decrement the stencil.
-    mesh_clip_stack: Vec<(u64, u32, u64, u32, u64, bool)>,
+    mesh_uniform_alignment: u64,
+    mesh_uniform_cap: u64,
 
     /// Translator-owned flatten layer ids used by the previous frame;
     /// drained from the layer pool at the start of each translation (they
@@ -242,7 +266,7 @@ pub struct WgpuSceneRenderer {
     /// (blend layer id, parent target) copies to run before the pass that
     /// composites the blend. Executed between passes: copies the current
     /// target region into the snapshot texture.
-    blend_copies: Vec<(u32, PassTarget, repose_core::Rect)>,
+    blend_copies: Vec<BlendCopy>,
 
     msaa_samples: u32,
 
@@ -253,6 +277,13 @@ pub struct WgpuSceneRenderer {
     // Optional MSAA color target
     msaa_tex: Option<wgpu::Texture>,
     msaa_view: Option<wgpu::TextureView>,
+    ws_msaa_tex: Option<wgpu::Texture>,
+    ws_msaa_view: Option<wgpu::TextureView>,
+    surface_resolve_tex: Option<wgpu::Texture>,
+    surface_resolve_view: Option<wgpu::TextureView>,
+    surface_resolve_bytes: u64,
+    working_space_bytes: u64,
+    gpu_budget_bytes: u64,
 
     globals_buf: wgpu::Buffer,
     globals_bind: wgpu::BindGroup,
@@ -265,6 +296,7 @@ pub struct WgpuSceneRenderer {
     next_image_handle: u64,
     images: HashMap<u64, ImageTex>,
     retained: HashMap<u64, RetainedImage>,
+    retained_bytes_total: u64,
 
     // A8 coverage-tile management (host-rasterized masks composited tinted;
     // no retained CPU copies — tiles are immutable and re-registered).
@@ -280,6 +312,8 @@ pub struct WgpuSceneRenderer {
     // Graphics layer pool. Maps `SceneNode::BeginLayer::layer_id` to a
     // cached offscreen render target.
     layer_pool: HashMap<u32, LayerTarget>,
+    producer_layer_ids: Vec<u32>,
+    layer_bytes_total: u64,
 
     // Linear working-space mode (default off -> fast playback path).
     // When enabled, the scene is rendered into an Rgba16Float intermediate
@@ -292,13 +326,20 @@ pub struct WgpuSceneRenderer {
     display_layout: Option<wgpu::BindGroupLayout>,
 
     pub callback_resources: CallbackResources,
+    callback_scoped_resources: HashMap<CallbackScopeKey, CallbackResources>,
+    blend_snapshot_bytes_total: u64,
+    frame_active: bool,
+    last_render_error: Option<String>,
 }
 
 pub struct WgpuSurfaceBackend {
     #[cfg(feature = "winit-surface")]
     instance: Option<wgpu::Instance>,
+    #[cfg(feature = "winit-surface")]
+    window: Option<Arc<winit::window::Window>>,
     pub surface: Option<wgpu::Surface<'static>>,
     pub surface_config: Option<wgpu::SurfaceConfiguration>,
+    #[cfg_attr(not(feature = "winit-surface"), allow(dead_code))]
     pending_reconfigure: bool,
     pub renderer: WgpuSceneRenderer,
 }
@@ -340,6 +381,8 @@ struct LayerTarget {
     depth_stencil_view: wgpu::TextureView,
     width: u32,
     height: u32,
+    format: wgpu::TextureFormat,
+    bytes: u64,
     rect_px: (f32, f32, f32, f32),
 }
 
@@ -352,13 +395,87 @@ struct BlendSnapshot {
     bind: wgpu::BindGroup,
     width: u32,
     height: u32,
+    bytes: u64,
+}
+
+struct BlendCopy {
+    pass_id: u64,
+    blend_id: u32,
+    target: PassTarget,
+    region: repose_core::Rect,
+}
+
+#[derive(Clone)]
+enum ActiveClip {
+    Rect {
+        off: u64,
+        cnt: u32,
+        rect: repose_core::Rect,
+        radii: [f32; 4],
+        difference: bool,
+        applied: bool,
+        blocked: bool,
+    },
+    Vector {
+        voff: u64,
+        vcnt: u32,
+        ioff: u64,
+        icnt: u32,
+        uoff: u64,
+        mesh: Arc<repose_core::VectorMeshData>,
+        affine: [f32; 6],
+        difference: bool,
+        applied: bool,
+        blocked: bool,
+    },
+}
+
+impl ActiveClip {
+    fn difference(&self) -> bool {
+        match self {
+            Self::Rect { difference, .. } | Self::Vector { difference, .. } => *difference,
+        }
+    }
+
+    fn blocked(&self) -> bool {
+        match self {
+            Self::Rect { blocked, .. } | Self::Vector { blocked, .. } => *blocked,
+        }
+    }
 }
 
 /// Identifies which render target a `Pass` draws into.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum PassTarget {
     Surface,
     Layer(u32),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct CallbackScopeKey {
+    callback: usize,
+    target: PassTarget,
+    width: u32,
+    height: u32,
+    target_format: wgpu::TextureFormat,
+    sample_count: u32,
+    pixels_per_point_bits: u32,
+}
+
+fn callback_scope_key(
+    payload: &repose_core::PaintCallbackPayload,
+    target: PassTarget,
+    descriptor: &ScreenDescriptor,
+) -> CallbackScopeKey {
+    CallbackScopeKey {
+        callback: Arc::as_ptr(payload) as *const () as usize,
+        target,
+        width: descriptor.size_in_pixels[0],
+        height: descriptor.size_in_pixels[1],
+        target_format: descriptor.target_format,
+        sample_count: descriptor.sample_count,
+        pixels_per_point_bits: descriptor.pixels_per_point.to_bits(),
+    }
 }
 
 /// A bundle of render pipelines for a single sample-count target. Created
@@ -426,7 +543,6 @@ impl Pipelines {
         stencil_for_content: &wgpu::DepthStencilState,
         stencil_for_clip_inc: &wgpu::DepthStencilState,
         stencil_for_clip_dec: &wgpu::DepthStencilState,
-        clip_color_target: &wgpu::ColorTargetState,
         clip_vertex_layout: &wgpu::VertexBufferLayout,
         mesh_bind_layout: &wgpu::BindGroupLayout,
     ) -> Self {
@@ -957,6 +1073,11 @@ impl Pipelines {
                             offset: 56,
                             format: wgpu::VertexFormat::Float32x4,
                         },
+                        wgpu::VertexAttribute {
+                            shader_location: 5,
+                            offset: 72,
+                            format: wgpu::VertexFormat::Uint32,
+                        },
                     ],
                 })],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
@@ -1019,6 +1140,11 @@ impl Pipelines {
                             shader_location: 4,
                             offset: 56,
                             format: wgpu::VertexFormat::Float32x4,
+                        },
+                        wgpu::VertexAttribute {
+                            shader_location: 5,
+                            offset: 72,
+                            format: wgpu::VertexFormat::Uint32,
                         },
                     ],
                 })],
@@ -1086,6 +1212,11 @@ impl Pipelines {
                         wgpu::VertexAttribute {
                             shader_location: 4,
                             offset: 52,
+                            format: wgpu::VertexFormat::Float32,
+                        },
+                        wgpu::VertexAttribute {
+                            shader_location: 5,
+                            offset: 56,
                             format: wgpu::VertexFormat::Float32x4,
                         },
                     ],
@@ -1108,6 +1239,12 @@ impl Pipelines {
             multiview_mask: None,
             cache: None,
         });
+
+        let clip_color_target = wgpu::ColorTargetState {
+            format,
+            blend: None,
+            write_mask: wgpu::ColorWrites::empty(),
+        };
 
         // Clipping
         let clip_shader_bin = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -1240,21 +1377,24 @@ impl Pipelines {
         let mut stencil_for_mesh = stencil_for_content.clone();
         stencil_for_mesh.stencil.front.compare = wgpu::CompareFunction::Equal;
         stencil_for_mesh.stencil.back.compare = wgpu::CompareFunction::Equal;
+        let mut stencil_for_overlay = stencil_for_content.clone();
+        stencil_for_overlay.stencil.front.compare = wgpu::CompareFunction::LessEqual;
+        stencil_for_overlay.stencil.back.compare = wgpu::CompareFunction::LessEqual;
         let mesh = make_mesh_pipeline("mesh pipeline", &stencil_for_mesh, &mesh_color_target);
         let mesh_overlay = make_mesh_pipeline(
             "mesh overlay pipeline",
-            stencil_for_content,
+            &stencil_for_overlay,
             &mesh_color_target,
         );
         let mesh_clip_inc = make_mesh_pipeline(
             "mesh clip (inc) pipeline",
             stencil_for_clip_inc,
-            clip_color_target,
+            &clip_color_target,
         );
         let mesh_clip_dec = make_mesh_pipeline(
             "mesh clip (dec) pipeline",
             stencil_for_clip_dec,
-            clip_color_target,
+            &clip_color_target,
         );
         let mesh_blend_target = |blend: wgpu::BlendState| wgpu::ColorTargetState {
             format,
@@ -1271,7 +1411,11 @@ impl Pipelines {
                     dst_factor: wgpu::BlendFactor::One,
                     operation: wgpu::BlendOperation::Add,
                 },
-                alpha: premult_alpha,
+                alpha: wgpu::BlendComponent {
+                    src_factor: wgpu::BlendFactor::One,
+                    dst_factor: wgpu::BlendFactor::One,
+                    operation: wgpu::BlendOperation::Add,
+                },
             }),
         );
         let mesh_multiply = make_mesh_pipeline(
@@ -1280,7 +1424,7 @@ impl Pipelines {
             &mesh_blend_target(wgpu::BlendState {
                 color: wgpu::BlendComponent {
                     src_factor: wgpu::BlendFactor::Dst,
-                    dst_factor: wgpu::BlendFactor::Zero,
+                    dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
                     operation: wgpu::BlendOperation::Add,
                 },
                 alpha: premult_alpha,
@@ -1510,13 +1654,31 @@ impl Pipelines {
 
 /// A segment of the frame that draws into a single render target.
 struct Pass {
+    id: u64,
     target: PassTarget,
-    /// The initial scissor to apply to the rpass when it is opened.
+    /// The scissor to apply when the pass is opened.
     initial_scissor: (u32, u32, u32, u32),
+    /// The currently active scissor in the translated pass. `None` means an
+    /// empty intersection and all draws must be suppressed.
+    active_scissor: Option<(u32, u32, u32, u32)>,
     /// `None` means `LoadOp::Load` (resume existing content);
     /// `Some(c)` means `LoadOp::Clear(c)`.
     clear_color: Option<[f32; 4]>,
     cmds: Vec<Cmd>,
+}
+
+struct LayerState {
+    layer_id: u32,
+    parent_target: PassTarget,
+    parent_scissors: Vec<repose_core::Rect>,
+    parent_root_clip: repose_core::Rect,
+    parent_size: (f32, f32),
+    parent_transform: Transform,
+    parent_scissor: Option<(u32, u32, u32, u32)>,
+    parent_clips: Vec<ActiveClip>,
+    alpha: f32,
+    blur: (f32, f32),
+    rectangle_edge: bool,
 }
 
 /// One translator-flattened perspective layer (see
@@ -1532,15 +1694,21 @@ struct FlattenRecord {
     map: [f32; 9],
     /// Layer rect in the parent target's coordinates.
     layer_rect: repose_core::Rect,
-    saved_scissor: Vec<repose_core::Rect>,
+    saved_scissor_stack: Vec<repose_core::Rect>,
     saved_root: repose_core::Rect,
     saved_size: (f32, f32),
+    saved_active_scissor: Option<(u32, u32, u32, u32)>,
+    saved_clips: Vec<ActiveClip>,
 }
 
 /// First translator-owned flatten layer id. Producer ids start at 1 per
 /// scene, so this range never collides; ids are drained from the layer pool
 /// after each frame, so reuse across frames is safe.
 const FLATTEN_ID_BASE: u32 = 0xF000_0000;
+const MAX_GRAPHICS_LAYERS: usize = 128;
+const MAX_GRAPHICS_LAYER_BYTES: u64 = 256 * 1024 * 1024;
+const STENCIL_BASE: u32 = 128;
+const STENCIL_MAX_DEPTH: u32 = 127;
 
 #[allow(non_snake_case)]
 enum Cmd {
@@ -1549,13 +1717,14 @@ enum Cmd {
         cnt: u32,
         scissor: (u32, u32, u32, u32),
         difference: bool,
-        rounded: bool,
+        applied: bool,
     },
     ClipPop {
         off: u64,
         cnt: u32,
         scissor: (u32, u32, u32, u32),
         difference: bool,
+        applied: bool,
     },
     Rect {
         off: u64,
@@ -1660,6 +1829,7 @@ enum Cmd {
         src_layer: u32,
         dst_layer: Option<u32>,
         parent: PassTarget,
+        scissor: (u32, u32, u32, u32),
     },
     /// Draw a screen-space overlay mesh (identity transform, device pixels).
     VectorOverlay {
@@ -1681,6 +1851,7 @@ enum Cmd {
         uoff: u64,
         scissor: (u32, u32, u32, u32),
         difference: bool,
+        applied: bool,
     },
     /// Decrement the stencil buffer with the matching vector mask.
     VectorClipPop {
@@ -1691,9 +1862,14 @@ enum Cmd {
         uoff: u64,
         scissor: (u32, u32, u32, u32),
         difference: bool,
+        applied: bool,
     },
     Callback {
         rect: repose_core::Rect,
+        clip_rect: repose_core::Rect,
+        scissor: (u32, u32, u32, u32),
+        restore_scissor: (u32, u32, u32, u32),
+        callback_id: usize,
         payload: repose_core::PaintCallbackPayload,
     },
 }
@@ -1738,10 +1914,23 @@ enum ImageTex {
         yuv_buf: wgpu::Buffer,
         w: u32,
         h: u32,
+        pixel_format: PixelFormat,
+        fourcc: Option<u32>,
         color_info: ColorInfo,
+        external: bool,
         last_used_frame: u64,
         bytes: u64,
     },
+}
+
+impl ImageTex {
+    fn evictable(&self) -> bool {
+        match self {
+            Self::Rgba { .. } => true,
+            Self::User { .. } => false,
+            Self::Nv12 { external, .. } => !*external,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -1750,6 +1939,7 @@ struct RetainedImage {
     h: u32,
     format: wgpu::TextureFormat,
     rgba: Vec<u8>,
+    last_used_frame: u64,
 }
 
 struct AtlasA8 {
@@ -1890,6 +2080,8 @@ struct BlurInstance {
     color: [f32; 4],
     blur_uv: [f32; 2],
     fwd_mat: [f32; 4],
+    edge_mode: u32,
+    _pad: [f32; 3],
 }
 
 /// Projective layer-composite instance: the four layer-rect corners projected
@@ -1919,6 +2111,29 @@ struct YuvTransformRaw {
     row1: [f32; 4],
     row2: [f32; 4],
     b: [f32; 4],
+    transfer: [f32; 4],
+}
+
+fn make_yuv_transform_raw(color_info: ColorInfo, pixel_format: PixelFormat) -> YuvTransformRaw {
+    let yuv = color_info.to_yuv_transform();
+    let sample_scale = match pixel_format {
+        PixelFormat::P010 => 65535.0 / (64.0 * 1020.0),
+        _ => 1.0,
+    };
+    let transfer_mode = match color_info.transfer {
+        repose_core::color::Transfer::Srgb => 0.0,
+        repose_core::color::Transfer::Bt709 => 1.0,
+        repose_core::color::Transfer::Linear => 2.0,
+        repose_core::color::Transfer::Pq => 3.0,
+        repose_core::color::Transfer::Hlg => 4.0,
+    };
+    YuvTransformRaw {
+        row0: [yuv.m[0][0], yuv.m[0][1], yuv.m[0][2], 0.0],
+        row1: [yuv.m[1][0], yuv.m[1][1], yuv.m[1][2], 0.0],
+        row2: [yuv.m[2][0], yuv.m[2][1], yuv.m[2][2], 0.0],
+        b: [yuv.b[0], yuv.b[1], yuv.b[2], sample_scale],
+        transfer: [transfer_mode, 0.0, 0.0, 0.0],
+    }
 }
 
 #[repr(C)]
@@ -1926,10 +2141,10 @@ struct YuvTransformRaw {
 struct Nv12Instance {
     xywh: [f32; 4],
     uv: [f32; 4],
-    color: [f32; 4], // tint
+    color: [f32; 4],
     uv_x_offset: f32,
+    uv_y_offset: f32,
     fwd_mat: [f32; 4],
-    _pad: [f32; 1],
 }
 
 #[repr(C)]
@@ -1975,9 +2190,22 @@ struct MeshUniform {
     _p4: [f32; 2],
 }
 
-/// Dynamic uniform slots are aligned to 256 bytes by wgpu.
-const MESH_UNIFORM_SLOT: u64 = 256;
 const MESH_UNIFORM_CAP: u64 = 4 * 1024 * 1024;
+const MAX_RETAINED_IMAGE_BYTES: u64 = 256 * 1024 * 1024;
+const MAX_RETAINED_IMAGES: usize = 512;
+const MAX_BLEND_SNAPSHOT_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_GPU_RESOURCE_BYTES: u64 = 1024 * 1024 * 1024;
+const MAX_UPLOAD_RING_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_CALLBACK_SCOPES: usize = 256;
+const NV12_FOURCC: u32 = 0x3231_564e;
+const P010_FOURCC: u32 = 0x3031_3050;
+
+fn canonical_fourcc(format: PixelFormat) -> u32 {
+    match format {
+        PixelFormat::P010 => P010_FOURCC,
+        _ => NV12_FOURCC,
+    }
+}
 
 impl MeshUniform {
     fn identity() -> Self {
@@ -2072,10 +2300,10 @@ fn combine_mesh_affine(current: &Transform, mesh: [f32; 6]) -> [f32; 6] {
 }
 
 fn mesh_aabb(mesh: &repose_core::VectorMeshData, affine: [f32; 6]) -> repose_core::Rect {
-    let mut min_x = f32::MAX;
-    let mut min_y = f32::MAX;
-    let mut max_x = f32::MIN;
-    let mut max_y = f32::MIN;
+    let mut min_x = f32::INFINITY;
+    let mut min_y = f32::INFINITY;
+    let mut max_x = f32::NEG_INFINITY;
+    let mut max_y = f32::NEG_INFINITY;
     for v in mesh.vertices.iter() {
         let x = affine[0] * v.pos[0] + affine[1] * v.pos[1] + affine[2];
         let y = affine[3] * v.pos[0] + affine[4] * v.pos[1] + affine[5];
@@ -2126,6 +2354,19 @@ impl WgpuSceneRenderer {
         output_format: wgpu::TextureFormat,
         msaa_samples: u32,
     ) -> Self {
+        let msaa_samples = msaa_samples.max(1);
+        let mesh_uniform_size = std::mem::size_of::<MeshUniform>() as u64;
+        let base_mesh_alignment =
+            u64::from(device.limits().min_uniform_buffer_offset_alignment).max(4);
+        let mesh_uniform_alignment =
+            align_up(mesh_uniform_size, base_mesh_alignment).unwrap_or(base_mesh_alignment);
+        let mesh_uniform_cap = align_up(
+            MESH_UNIFORM_CAP
+                .min(device.limits().max_buffer_size)
+                .max(mesh_uniform_alignment),
+            mesh_uniform_alignment,
+        )
+        .unwrap_or(mesh_uniform_alignment);
         let globals_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("globals layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
@@ -2193,13 +2434,13 @@ impl WgpuSceneRenderer {
             depth_compare: Some(wgpu::CompareFunction::Always),
             stencil: wgpu::StencilState {
                 front: wgpu::StencilFaceState {
-                    compare: wgpu::CompareFunction::Equal,
+                    compare: wgpu::CompareFunction::Always,
                     fail_op: wgpu::StencilOperation::Keep,
                     depth_fail_op: wgpu::StencilOperation::Keep,
                     pass_op: wgpu::StencilOperation::IncrementClamp,
                 },
                 back: wgpu::StencilFaceState {
-                    compare: wgpu::CompareFunction::Equal,
+                    compare: wgpu::CompareFunction::Always,
                     fail_op: wgpu::StencilOperation::Keep,
                     depth_fail_op: wgpu::StencilOperation::Keep,
                     pass_op: wgpu::StencilOperation::IncrementClamp,
@@ -2216,13 +2457,13 @@ impl WgpuSceneRenderer {
             depth_compare: Some(wgpu::CompareFunction::Always),
             stencil: wgpu::StencilState {
                 front: wgpu::StencilFaceState {
-                    compare: wgpu::CompareFunction::Equal,
+                    compare: wgpu::CompareFunction::Always,
                     fail_op: wgpu::StencilOperation::Keep,
                     depth_fail_op: wgpu::StencilOperation::Keep,
                     pass_op: wgpu::StencilOperation::DecrementClamp,
                 },
                 back: wgpu::StencilFaceState {
-                    compare: wgpu::CompareFunction::Equal,
+                    compare: wgpu::CompareFunction::Always,
                     fail_op: wgpu::StencilOperation::Keep,
                     depth_fail_op: wgpu::StencilOperation::Keep,
                     pass_op: wgpu::StencilOperation::DecrementClamp,
@@ -2375,12 +2616,6 @@ impl WgpuSceneRenderer {
                 },
             ],
         };
-        let clip_color_target = wgpu::ColorTargetState {
-            format: output_format,
-            blend: None,
-            write_mask: wgpu::ColorWrites::empty(),
-        };
-
         // Bind layout for per-draw vector mesh uniforms (dynamic offset).
         let mesh_bind_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("mesh uniform layout"),
@@ -2390,14 +2625,14 @@ impl WgpuSceneRenderer {
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: true,
-                    min_binding_size: NonZero::new(MESH_UNIFORM_SLOT),
+                    min_binding_size: NonZeroU64::new(mesh_uniform_size),
                 },
                 count: None,
             }],
         });
         let mesh_uniform_buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("mesh uniform buffer"),
-            size: MESH_UNIFORM_CAP,
+            size: mesh_uniform_cap,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -2409,7 +2644,7 @@ impl WgpuSceneRenderer {
                 resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
                     buffer: &mesh_uniform_buf,
                     offset: 0,
-                    size: NonZero::new(MESH_UNIFORM_SLOT),
+                    size: NonZeroU64::new(mesh_uniform_size),
                 }),
             }],
         });
@@ -2427,7 +2662,20 @@ impl WgpuSceneRenderer {
             &stencil_for_content,
             &stencil_for_clip_inc,
             &stencil_for_clip_dec,
-            &clip_color_target,
+            &clip_vertex_layout,
+            &mesh_bind_layout,
+        );
+        let working_space_pipes = Pipelines::create(
+            &device,
+            wgpu::TextureFormat::Rgba16Float,
+            msaa_samples,
+            &globals_layout,
+            &text_bind_layout,
+            &image_bind_layout_nv12,
+            &clip_pipeline_layout,
+            &stencil_for_content,
+            &stencil_for_clip_inc,
+            &stencil_for_clip_dec,
             &clip_vertex_layout,
             &mesh_bind_layout,
         );
@@ -2442,7 +2690,20 @@ impl WgpuSceneRenderer {
             &stencil_for_content,
             &stencil_for_clip_inc,
             &stencil_for_clip_dec,
-            &clip_color_target,
+            &clip_vertex_layout,
+            &mesh_bind_layout,
+        );
+        let working_space_layer_pipes = Pipelines::create(
+            &device,
+            wgpu::TextureFormat::Rgba16Float,
+            1,
+            &globals_layout,
+            &text_bind_layout,
+            &image_bind_layout_nv12,
+            &clip_pipeline_layout,
+            &stencil_for_content,
+            &stencil_for_clip_inc,
+            &stencil_for_clip_dec,
             &clip_vertex_layout,
             &mesh_bind_layout,
         );
@@ -2455,7 +2716,9 @@ impl WgpuSceneRenderer {
             &device,
             "blur ring",
             1024 * 1024,
-            wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
         );
 
         // Atlases
@@ -2467,85 +2730,111 @@ impl WgpuSceneRenderer {
             &device,
             "ring rect",
             1 << 20,
-            wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
         );
         let ring_border = UploadRing::new(
             &device,
             "ring border",
             1 << 20,
-            wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
         );
         let ring_ellipse = UploadRing::new(
             &device,
             "ring ellipse",
             1 << 20,
-            wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
         );
         let ring_ellipse_border = UploadRing::new(
             &device,
             "ring ellipse border",
             1 << 20,
-            wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
         );
         let ring_arc = UploadRing::new(
             &device,
             "ring arc",
             1 << 20,
-            wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
         );
         let ring_glyph_mask = UploadRing::new(
             &device,
             "ring glyph mask",
             1 << 20,
-            wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
         );
         let ring_glyph_color = UploadRing::new(
             &device,
             "ring glyph color",
             1 << 20,
-            wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
         );
         let ring_slug = UploadRing::new(
             &device,
             "ring slug",
             1 << 22,
-            wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
         );
         let ring_clip = UploadRing::new(
             &device,
             "ring clip",
             1 << 16,
-            wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
         );
         let blend_ring = UploadRing::new(
             &device,
             "ring blend",
             1 << 16,
-            wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
         );
         let ring_projective = UploadRing::new(
             &device,
             "ring projective",
             1 << 16,
-            wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
         );
         let ring_nv12 = UploadRing::new(
             &device,
             "ring nv12",
             1 << 20,
-            wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
         );
         let ring_mesh_verts = UploadRing::new(
             &device,
             "ring mesh verts",
             1 << 22,
-            wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
         );
         let ring_mesh_indices = UploadRing::new(
             &device,
             "ring mesh indices",
             1 << 22,
-            wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
         );
 
         // Placeholder textures
@@ -2575,7 +2864,9 @@ impl WgpuSceneRenderer {
             pixels_per_point: 1.0,
 
             surface_pipes,
+            working_space_pipes,
             layer_pipes,
+            working_space_layer_pipes,
 
             rects: InstancedPipe::new(ring_rect),
             borders: InstancedPipe::new(ring_border),
@@ -2606,10 +2897,10 @@ impl WgpuSceneRenderer {
             mesh_verts: ring_mesh_verts,
             mesh_indices: ring_mesh_indices,
             mesh_uniform_buf,
-            mesh_bind_layout,
             mesh_bind,
             mesh_uniform_head: 0,
-            mesh_clip_stack: Vec::new(),
+            mesh_uniform_alignment,
+            mesh_uniform_cap,
 
             projective_ring: ring_projective,
             blend_ring,
@@ -2622,6 +2913,13 @@ impl WgpuSceneRenderer {
             depth_stencil_view,
             msaa_tex: None,
             msaa_view: None,
+            ws_msaa_tex: None,
+            ws_msaa_view: None,
+            surface_resolve_tex: None,
+            surface_resolve_view: None,
+            surface_resolve_bytes: 0,
+            working_space_bytes: 0,
+            gpu_budget_bytes: MAX_GPU_RESOURCE_BYTES,
             globals_bind,
             globals_buf,
 
@@ -2631,6 +2929,7 @@ impl WgpuSceneRenderer {
             next_image_handle: 1,
             images: HashMap::new(),
             retained: HashMap::new(),
+            retained_bytes_total: 0,
 
             next_coverage_handle: 1,
             coverages: HashMap::new(),
@@ -2640,6 +2939,8 @@ impl WgpuSceneRenderer {
             image_evict_after_frames: 600,         // ~10s @ 60fps
             image_budget_bytes: 512 * 1024 * 1024, // 512 MB
             layer_pool: HashMap::new(),
+            producer_layer_ids: Vec::new(),
+            layer_bytes_total: 0,
 
             working_space: false,
             ws_tex: None,
@@ -2649,6 +2950,10 @@ impl WgpuSceneRenderer {
             display_layout: None,
 
             callback_resources: CallbackResources::default(),
+            callback_scoped_resources: HashMap::new(),
+            blend_snapshot_bytes_total: 0,
+            frame_active: false,
+            last_render_error: None,
         };
 
         renderer.recreate_msaa_and_depth_stencil();
@@ -2704,20 +3009,23 @@ impl WgpuSurfaceBackend {
 
         let limits = adapter.limits();
 
-        #[cfg(target_os = "linux")]
         let features = {
-            let af = adapter.features();
-            let mut f = wgpu::Features::empty();
-            if af.contains(wgpu::Features::VULKAN_EXTERNAL_MEMORY_FD) {
-                f |= wgpu::Features::VULKAN_EXTERNAL_MEMORY_FD;
+            let available = adapter.features();
+            let mut features = wgpu::Features::empty();
+            if available.contains(wgpu::Features::TEXTURE_FORMAT_16BIT_NORM) {
+                features |= wgpu::Features::TEXTURE_FORMAT_16BIT_NORM;
             }
-            if af.contains(wgpu::Features::VULKAN_EXTERNAL_MEMORY_DMA_BUF) {
-                f |= wgpu::Features::VULKAN_EXTERNAL_MEMORY_DMA_BUF;
+            #[cfg(target_os = "linux")]
+            {
+                if available.contains(wgpu::Features::VULKAN_EXTERNAL_MEMORY_FD) {
+                    features |= wgpu::Features::VULKAN_EXTERNAL_MEMORY_FD;
+                }
+                if available.contains(wgpu::Features::VULKAN_EXTERNAL_MEMORY_DMA_BUF) {
+                    features |= wgpu::Features::VULKAN_EXTERNAL_MEMORY_DMA_BUF;
+                }
             }
-            f
+            features
         };
-        #[cfg(not(target_os = "linux"))]
-        let features = wgpu::Features::empty();
 
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
@@ -2770,13 +3078,15 @@ impl WgpuSurfaceBackend {
         let alpha_mode = caps.alpha_modes[0];
 
         let render_format = view_format.unwrap_or(format);
-        let msaa_samples = pick_surface_msaa(&adapter, format, msaa_samples);
-        let renderer = WgpuSceneRenderer::from_device(device, queue, render_format, msaa_samples);
+        let msaa_samples = pick_surface_msaa(&adapter, render_format, msaa_samples);
+        let mut renderer =
+            WgpuSceneRenderer::from_device(device, queue, render_format, msaa_samples);
+        renderer.resize(size.width, size.height);
 
         let view_formats = view_format.into_iter().collect::<Vec<_>>();
 
         let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
             format,
             width: size.width.max(1),
             height: size.height.max(1),
@@ -2791,6 +3101,8 @@ impl WgpuSurfaceBackend {
         Ok(WgpuSurfaceBackend {
             #[cfg(feature = "winit-surface")]
             instance: Some(instance),
+            #[cfg(feature = "winit-surface")]
+            window: Some(window),
             surface: Some(surface),
             surface_config: Some(config),
             pending_reconfigure: false,
@@ -2851,6 +3163,7 @@ impl WgpuSurfaceBackend {
 
 /// Pick the swapchain present mode honoring `pref`, falling back to an "auto"
 /// Fifo-first selection when the preferred mode is unavailable.
+#[cfg(feature = "winit-surface")]
 fn pick_present_mode(caps: &wgpu::SurfaceCapabilities, pref: PresentModePref) -> wgpu::PresentMode {
     let auto = || {
         caps.present_modes
@@ -2891,12 +3204,19 @@ pub fn pick_surface_msaa(
 ) -> u32 {
     let requested = requested.max(1);
     let color_feat = adapter.get_texture_format_features(format);
+    let working_space_feat = adapter.get_texture_format_features(wgpu::TextureFormat::Rgba16Float);
     let depth_feat = adapter.get_texture_format_features(wgpu::TextureFormat::Depth24PlusStencil8);
     let supported = |n: u32| {
         color_feat.flags.sample_count_supported(n)
-            && color_feat
-                .flags
-                .contains(wgpu::TextureFormatFeatureFlags::MULTISAMPLE_RESOLVE)
+            && working_space_feat.flags.sample_count_supported(n)
+            && (n == 1
+                || color_feat
+                    .flags
+                    .contains(wgpu::TextureFormatFeatureFlags::MULTISAMPLE_RESOLVE))
+            && (n == 1
+                || working_space_feat
+                    .flags
+                    .contains(wgpu::TextureFormatFeatureFlags::MULTISAMPLE_RESOLVE))
             && depth_feat.flags.sample_count_supported(n)
     };
     let mut candidates = vec![requested];
@@ -2935,7 +3255,9 @@ impl WgpuSceneRenderer {
         rgba: &[u8],
         srgb: bool,
     ) -> anyhow::Result<()> {
-        let expected = (w as usize) * (h as usize) * 4;
+        validate_image_handle(handle)?;
+        validate_texture_dimensions(&self.device, w, h)?;
+        let expected = checked_image_bytes_usize(w, h, 4)?;
         if rgba.len() < expected {
             return Err(anyhow::anyhow!(
                 "RGBA buffer too small: {} < {}",
@@ -2964,8 +3286,8 @@ impl WgpuSceneRenderer {
             self.remove_image(handle);
 
             let (tex, bind) = self.create_rgba_tex(w, h, format);
-            let bytes = (w as u64) * (h as u64) * 4;
-            self.image_bytes_total += bytes;
+            let bytes = checked_image_bytes(w, h, 4)?;
+            self.image_bytes_total = self.image_bytes_total.saturating_add(bytes);
 
             self.images.insert(
                 handle,
@@ -2981,6 +3303,12 @@ impl WgpuSceneRenderer {
             );
         }
 
+        if let Some(old) = self.retained.remove(&handle) {
+            self.retained_bytes_total = self
+                .retained_bytes_total
+                .saturating_sub(old.rgba.len() as u64);
+        }
+        self.retained_bytes_total = self.retained_bytes_total.saturating_add(expected as u64);
         self.retained.insert(
             handle,
             RetainedImage {
@@ -2988,8 +3316,10 @@ impl WgpuSceneRenderer {
                 h,
                 format,
                 rgba: rgba[..expected].to_vec(),
+                last_used_frame: self.frame_index,
             },
         );
+        self.evict_retained_excess();
 
         let tex = match self.images.get(&handle) {
             Some(ImageTex::Rgba { tex, .. }) => tex,
@@ -3065,12 +3395,60 @@ impl WgpuSceneRenderer {
     }
 
     /// Register an externally-created `wgpu::TextureView` as an image (zero-copy).
+    fn validate_native_texture_view(
+        &self,
+        view: &wgpu::TextureView,
+        width: u32,
+        height: u32,
+    ) -> anyhow::Result<()> {
+        if width == 0 || height == 0 {
+            anyhow::bail!("native texture dimensions must be non-zero");
+        }
+        let texture = view.texture();
+        if texture.sample_count() != 1
+            || texture.dimension() != wgpu::TextureDimension::D2
+            || texture.depth_or_array_layers() != 1
+            || texture.mip_level_count() == 0
+        {
+            anyhow::bail!("native texture must be a single-sample 2D texture with mip levels");
+        }
+        if width > self.device.limits().max_texture_dimension_2d
+            || height > self.device.limits().max_texture_dimension_2d
+        {
+            anyhow::bail!("native texture dimensions exceed the device limit");
+        }
+        if !texture
+            .usage()
+            .contains(wgpu::TextureUsages::TEXTURE_BINDING)
+        {
+            anyhow::bail!("native texture lacks TEXTURE_BINDING usage");
+        }
+        if !native_format_supported(texture.format(), self.device.features()) {
+            anyhow::bail!(
+                "native texture format {:?} is not a filterable alpha color format",
+                texture.format()
+            );
+        }
+        if texture.width() < width || texture.height() < height {
+            anyhow::bail!(
+                "native texture is {}x{}, smaller than requested {width}x{height}",
+                texture.width(),
+                texture.height()
+            );
+        }
+        Ok(())
+    }
+
     pub fn register_native_texture(
         &mut self,
         view: &wgpu::TextureView,
         width: u32,
         height: u32,
     ) -> u64 {
+        if let Err(error) = self.validate_native_texture_view(view, width, height) {
+            log::warn!("register_native_texture: {error:#}");
+            return 0;
+        }
         let handle = self.next_image_handle;
         self.next_image_handle += 1;
         let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -3108,6 +3486,14 @@ impl WgpuSceneRenderer {
         width: u32,
         height: u32,
     ) -> u64 {
+        if let Err(error) = self.validate_native_texture_view(view, width, height) {
+            log::warn!("register_native_texture: {error:#}");
+            return 0;
+        }
+        if let Err(error) = validate_sampler_descriptor(&self.device, &sampler_desc) {
+            log::warn!("register_native_texture: {error:#}");
+            return 0;
+        }
         let handle = self.next_image_handle;
         self.next_image_handle += 1;
         let sampler = self.device.create_sampler(&sampler_desc);
@@ -3140,23 +3526,21 @@ impl WgpuSceneRenderer {
 
     /// Update an existing native texture handle with a new view (reuse handle).
     pub fn update_native_texture(&mut self, handle: u64, view: &wgpu::TextureView) {
-        let Some(entry) = self.images.get_mut(&handle) else {
-            log::warn!("update_native_texture: handle {handle} not found");
+        if handle == 0 {
+            log::warn!("update_native_texture: reserved handle");
+            return;
+        }
+        let Some((w, h)) = self.images.get(&handle).and_then(|entry| match entry {
+            ImageTex::User { w, h, .. } => Some((*w, *h)),
+            _ => None,
+        }) else {
+            log::warn!("update_native_texture: handle {handle} is not a native image");
             return;
         };
-        let w = match entry {
-            ImageTex::User { w, .. } => *w,
-            ImageTex::Rgba { w, .. } => *w,
-            _ => {
-                log::warn!("update_native_texture: handle {handle} is not rgba/user");
-                return;
-            }
-        };
-        let h = match entry {
-            ImageTex::User { h, .. } => *h,
-            ImageTex::Rgba { h, .. } => *h,
-            _ => 0,
-        };
+        if let Err(error) = self.validate_native_texture_view(view, w, h) {
+            log::warn!("update_native_texture: {error:#}");
+            return;
+        }
         let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("user native image update"),
             layout: &self.image_bind_layout_rgba,
@@ -3171,13 +3555,15 @@ impl WgpuSceneRenderer {
                 },
             ],
         });
-        *entry = ImageTex::User {
-            bind,
-            w,
-            h,
-            last_used_frame: self.frame_index,
-            bytes: 0,
-        };
+        if let Some(entry) = self.images.get_mut(&handle) {
+            *entry = ImageTex::User {
+                bind,
+                w,
+                h,
+                last_used_frame: self.frame_index,
+                bytes: 0,
+            };
+        }
     }
 
     pub fn set_image_nv12(
@@ -3189,10 +3575,19 @@ impl WgpuSceneRenderer {
         uv: &[u8],
         color_info: ColorInfo,
     ) -> anyhow::Result<()> {
-        let y_expected = (w as usize) * (h as usize);
+        validate_image_handle(handle)?;
+        validate_texture_dimensions(&self.device, w, h)?;
+        if self
+            .images
+            .get(&handle)
+            .is_some_and(|image| matches!(image, ImageTex::Nv12 { external: true, .. }))
+        {
+            anyhow::bail!("cannot overwrite an external DMA-BUF image");
+        }
+        let y_expected = checked_image_bytes_usize(w, h, 1)?;
         let uv_w = w.div_ceil(2);
         let uv_h = h.div_ceil(2);
-        let uv_expected = (uv_w as usize) * (uv_h as usize) * 2;
+        let uv_expected = checked_image_bytes_usize(uv_w, uv_h, 2)?;
 
         if y.len() < y_expected {
             return Err(anyhow::anyhow!("Y plane too small"));
@@ -3202,18 +3597,17 @@ impl WgpuSceneRenderer {
         }
 
         let needs_recreate = match self.images.get(&handle) {
-            Some(ImageTex::Nv12 { w: ww, h: hh, .. }) => *ww != w || *hh != h,
+            Some(ImageTex::Nv12 {
+                w: ww,
+                h: hh,
+                pixel_format,
+                ..
+            }) => *ww != w || *hh != h || *pixel_format != PixelFormat::Nv12,
             _ => true,
         };
 
         // Compute the YUV->RGB transform on the CPU.
-        let yuv = color_info.to_yuv_transform();
-        let yuv_raw = YuvTransformRaw {
-            row0: [yuv.m[0][0], yuv.m[0][1], yuv.m[0][2], 0.0],
-            row1: [yuv.m[1][0], yuv.m[1][1], yuv.m[1][2], 0.0],
-            row2: [yuv.m[2][0], yuv.m[2][1], yuv.m[2][2], 0.0],
-            b: [yuv.b[0], yuv.b[1], yuv.b[2], 0.0],
-        };
+        let yuv_raw = make_yuv_transform_raw(color_info, PixelFormat::Nv12);
 
         if needs_recreate {
             self.remove_image(handle);
@@ -3289,10 +3683,11 @@ impl WgpuSceneRenderer {
                 ],
             });
 
-            let bytes = (w as u64) * (h as u64)
-                + (uv_w as u64) * (uv_h as u64) * 2
-                + std::mem::size_of::<YuvTransformRaw>() as u64;
-            self.image_bytes_total += bytes;
+            let bytes = checked_image_bytes(w, h, 1)?
+                .checked_add(checked_image_bytes(uv_w, uv_h, 2)?)
+                .and_then(|bytes| bytes.checked_add(std::mem::size_of::<YuvTransformRaw>() as u64))
+                .ok_or_else(|| anyhow::anyhow!("NV12 image byte size overflow"))?;
+            self.image_bytes_total = self.image_bytes_total.saturating_add(bytes);
 
             self.images.insert(
                 handle,
@@ -3303,14 +3698,25 @@ impl WgpuSceneRenderer {
                     yuv_buf,
                     w,
                     h,
+                    pixel_format: PixelFormat::Nv12,
+                    fourcc: Some(NV12_FOURCC),
                     color_info,
+                    external: false,
                     last_used_frame: self.frame_index,
                     bytes,
                 },
             );
         } else {
             // Re-use existing textures; just update the YUV transform if needed.
-            if let Some(ImageTex::Nv12 { yuv_buf, .. }) = self.images.get(&handle) {
+            if let Some(ImageTex::Nv12 {
+                yuv_buf,
+                color_info: stored_color,
+                last_used_frame,
+                ..
+            }) = self.images.get_mut(&handle)
+            {
+                *stored_color = color_info;
+                *last_used_frame = self.frame_index;
                 self.queue
                     .write_buffer(yuv_buf, 0, bytemuck::bytes_of(&yuv_raw));
             }
@@ -3379,6 +3785,21 @@ impl WgpuSceneRenderer {
         planes: &[&[u8]],
         color_info: ColorInfo,
     ) -> anyhow::Result<()> {
+        validate_image_handle(handle)?;
+        if planes.len() != pixel_format.num_planes() as usize {
+            anyhow::bail!(
+                "{} requires {} planes, got {}",
+                match pixel_format {
+                    PixelFormat::Nv12 => "NV12",
+                    PixelFormat::P010 => "P010",
+                    PixelFormat::I420 => "I420",
+                    PixelFormat::I444 => "I444",
+                    PixelFormat::Rgba => "RGBA",
+                },
+                pixel_format.num_planes(),
+                planes.len()
+            );
+        }
         match pixel_format {
             PixelFormat::Nv12 => {
                 let y = planes.first().ok_or(anyhow::anyhow!("missing Y plane"))?;
@@ -3411,11 +3832,27 @@ impl WgpuSceneRenderer {
         uv: &[u8],
         color_info: ColorInfo,
     ) -> anyhow::Result<()> {
+        validate_image_handle(handle)?;
+        validate_texture_dimensions(&self.device, w, h)?;
+        if self
+            .images
+            .get(&handle)
+            .is_some_and(|image| matches!(image, ImageTex::Nv12 { external: true, .. }))
+        {
+            anyhow::bail!("cannot overwrite an external DMA-BUF image");
+        }
+        if !self
+            .device
+            .features()
+            .contains(wgpu::Features::TEXTURE_FORMAT_16BIT_NORM)
+        {
+            anyhow::bail!("P010 requires TEXTURE_FORMAT_16BIT_NORM");
+        }
         let uv_w = w.div_ceil(2);
         let uv_h = h.div_ceil(2);
 
-        let y_expected = (w as usize) * (h as usize) * 2;
-        let uv_expected = (uv_w as usize) * (uv_h as usize) * 4;
+        let y_expected = checked_image_bytes_usize(w, h, 2)?;
+        let uv_expected = checked_image_bytes_usize(uv_w, uv_h, 4)?;
 
         if y.len() < y_expected {
             return Err(anyhow::anyhow!("P010 Y plane too small"));
@@ -3428,17 +3865,16 @@ impl WgpuSceneRenderer {
         // abstracts the storage format so R16Unorm/Rg16Unorm are
         // filterable float textures just like R8Unorm/Rg8Unorm).
         let needs_recreate = match self.images.get(&handle) {
-            Some(ImageTex::Nv12 { w: ww, h: hh, .. }) => *ww != w || *hh != h,
+            Some(ImageTex::Nv12 {
+                w: ww,
+                h: hh,
+                pixel_format,
+                ..
+            }) => *ww != w || *hh != h || *pixel_format != PixelFormat::P010,
             _ => true,
         };
 
-        let yuv = color_info.to_yuv_transform();
-        let yuv_raw = YuvTransformRaw {
-            row0: [yuv.m[0][0], yuv.m[0][1], yuv.m[0][2], 0.0],
-            row1: [yuv.m[1][0], yuv.m[1][1], yuv.m[1][2], 0.0],
-            row2: [yuv.m[2][0], yuv.m[2][1], yuv.m[2][2], 0.0],
-            b: [yuv.b[0], yuv.b[1], yuv.b[2], 0.0],
-        };
+        let yuv_raw = make_yuv_transform_raw(color_info, PixelFormat::P010);
 
         if needs_recreate {
             self.remove_image(handle);
@@ -3511,10 +3947,11 @@ impl WgpuSceneRenderer {
                 ],
             });
 
-            let bytes = (w as u64) * (h as u64) * 2
-                + (uv_w as u64) * (uv_h as u64) * 4
-                + std::mem::size_of::<YuvTransformRaw>() as u64;
-            self.image_bytes_total += bytes;
+            let bytes = checked_image_bytes(w, h, 2)?
+                .checked_add(checked_image_bytes(uv_w, uv_h, 4)?)
+                .and_then(|bytes| bytes.checked_add(std::mem::size_of::<YuvTransformRaw>() as u64))
+                .ok_or_else(|| anyhow::anyhow!("P010 image byte size overflow"))?;
+            self.image_bytes_total = self.image_bytes_total.saturating_add(bytes);
 
             self.images.insert(
                 handle,
@@ -3525,13 +3962,24 @@ impl WgpuSceneRenderer {
                     yuv_buf,
                     w,
                     h,
+                    pixel_format: PixelFormat::P010,
+                    fourcc: Some(P010_FOURCC),
                     color_info,
+                    external: false,
                     last_used_frame: self.frame_index,
                     bytes,
                 },
             );
         } else {
-            if let Some(ImageTex::Nv12 { yuv_buf, .. }) = self.images.get(&handle) {
+            if let Some(ImageTex::Nv12 {
+                yuv_buf,
+                color_info: stored_color,
+                last_used_frame,
+                ..
+            }) = self.images.get_mut(&handle)
+            {
+                *stored_color = color_info;
+                *last_used_frame = self.frame_index;
                 self.queue
                     .write_buffer(yuv_buf, 0, bytemuck::bytes_of(&yuv_raw));
             }
@@ -3557,7 +4005,10 @@ impl WgpuSceneRenderer {
             &y[..y_expected],
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
-                bytes_per_row: Some(w * 2),
+                bytes_per_row: Some(
+                    w.checked_mul(2)
+                        .ok_or_else(|| anyhow::anyhow!("P010 row size overflow"))?,
+                ),
                 rows_per_image: Some(h),
             },
             wgpu::Extent3d {
@@ -3576,7 +4027,10 @@ impl WgpuSceneRenderer {
             &uv[..uv_expected],
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
-                bytes_per_row: Some(uv_w * 4),
+                bytes_per_row: Some(
+                    uv_w.checked_mul(4)
+                        .ok_or_else(|| anyhow::anyhow!("P010 UV row size overflow"))?,
+                ),
                 rows_per_image: Some(uv_h),
             },
             wgpu::Extent3d {
@@ -3602,33 +4056,98 @@ impl WgpuSceneRenderer {
         offsets: Vec<u64>,
         color_info: ColorInfo,
     ) -> anyhow::Result<()> {
-        log::info!(
-            "set_image_dmabuf handle={handle} {}x{} fds={} modifier=0x{modifier:x}",
+        self.set_image_dmabuf_fourcc(
+            handle,
             w,
             h,
-            fds.len()
-        );
+            fds,
+            NV12_FOURCC,
+            modifier,
+            strides,
+            offsets,
+            color_info,
+        )
+    }
 
-        self.remove_image(handle);
-
-        let yuv = color_info.to_yuv_transform();
-        let yuv_raw = YuvTransformRaw {
-            row0: [yuv.m[0][0], yuv.m[0][1], yuv.m[0][2], 0.0],
-            row1: [yuv.m[1][0], yuv.m[1][1], yuv.m[1][2], 0.0],
-            row2: [yuv.m[2][0], yuv.m[2][1], yuv.m[2][2], 0.0],
-            b: [yuv.b[0], yuv.b[1], yuv.b[2], 0.0],
-        };
-
-        if fds.len() != 2 {
-            return Err(anyhow::anyhow!(
-                "unsupported fd count {} - need exactly 2 for separate Y/UV planes",
-                fds.len()
-            ));
+    #[cfg(target_os = "linux")]
+    pub fn set_image_dmabuf_fourcc(
+        &mut self,
+        handle: u64,
+        w: u32,
+        h: u32,
+        fds: Vec<std::os::unix::io::OwnedFd>,
+        fourcc: u32,
+        modifier: u64,
+        strides: Vec<u32>,
+        offsets: Vec<u64>,
+        color_info: ColorInfo,
+    ) -> anyhow::Result<()> {
+        validate_image_handle(handle)?;
+        checked_image_bytes(w, h, 1)?;
+        if w == 0
+            || h == 0
+            || w > self.device.limits().max_texture_dimension_2d
+            || h > self.device.limits().max_texture_dimension_2d
+        {
+            anyhow::bail!("DMA-BUF dimensions are outside the device texture limit");
         }
-
+        if modifier == u64::MAX {
+            anyhow::bail!("DMA-BUF modifier is invalid");
+        }
+        if fds.len() != 2 || strides.len() != 2 || offsets.len() != 2 {
+            anyhow::bail!(
+                "DMA-BUF import requires two fds, strides, and offsets (got {}, {}, {})",
+                fds.len(),
+                strides.len(),
+                offsets.len()
+            );
+        }
+        let pixel_format = match fourcc {
+            0x3231_564e | 0x4e56_3132 => PixelFormat::Nv12,
+            0x3031_3050 | 0x5030_3130 => PixelFormat::P010,
+            _ => anyhow::bail!("unsupported DMA-BUF fourcc 0x{fourcc:08x}"),
+        };
+        if !self
+            .device
+            .features()
+            .contains(wgpu::Features::VULKAN_EXTERNAL_MEMORY_DMA_BUF)
+        {
+            anyhow::bail!("DMA-BUF import requires VULKAN_EXTERNAL_MEMORY_DMA_BUF");
+        }
+        if pixel_format == PixelFormat::P010
+            && !self
+                .device
+                .features()
+                .contains(wgpu::Features::TEXTURE_FORMAT_16BIT_NORM)
+        {
+            anyhow::bail!("P010 DMA-BUF requires TEXTURE_FORMAT_16BIT_NORM");
+        }
+        let bytes_per_pixel = if pixel_format == PixelFormat::P010 {
+            2
+        } else {
+            1
+        };
         let uv_w = w.div_ceil(2);
         let uv_h = h.div_ceil(2);
-
+        let y_file_size =
+            validate_dmabuf_plane(&fds[0], offsets[0], strides[0], w, h, bytes_per_pixel)?;
+        let uv_file_size = validate_dmabuf_plane(
+            &fds[1],
+            offsets[1],
+            strides[1],
+            uv_w,
+            uv_h,
+            bytes_per_pixel * 2,
+        )?;
+        let yuv_raw = make_yuv_transform_raw(color_info, pixel_format);
+        let (y_format, uv_format) = if pixel_format == PixelFormat::P010 {
+            (
+                wgpu::TextureFormat::R16Unorm,
+                wgpu::TextureFormat::Rg16Unorm,
+            )
+        } else {
+            (wgpu::TextureFormat::R8Unorm, wgpu::TextureFormat::Rg8Unorm)
+        };
         let hal_y_desc = wgpu::hal::TextureDescriptor {
             label: Some("dmabuf y"),
             size: wgpu::Extent3d {
@@ -3639,7 +4158,7 @@ impl WgpuSceneRenderer {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::R8Unorm,
+            format: y_format,
             usage: wgpu::wgt::TextureUses::RESOURCE,
             memory_flags: wgpu::hal::MemoryFlags::empty(),
             view_formats: vec![],
@@ -3654,37 +4173,28 @@ impl WgpuSceneRenderer {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rg8Unorm,
+            format: uv_format,
             usage: wgpu::wgt::TextureUses::RESOURCE,
             memory_flags: wgpu::hal::MemoryFlags::empty(),
             view_formats: vec![],
         };
-
         let wgpu_y_desc = wgpu::TextureDescriptor {
             label: Some("dmabuf y"),
-            size: wgpu::Extent3d {
-                width: w,
-                height: h,
-                depth_or_array_layers: 1,
-            },
+            size: hal_y_desc.size,
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::R8Unorm,
+            format: y_format,
             usage: wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         };
         let wgpu_uv_desc = wgpu::TextureDescriptor {
             label: Some("dmabuf uv"),
-            size: wgpu::Extent3d {
-                width: uv_w,
-                height: uv_h,
-                depth_or_array_layers: 1,
-            },
+            size: hal_uv_desc.size,
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rg8Unorm,
+            format: uv_format,
             usage: wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         };
@@ -3693,51 +4203,45 @@ impl WgpuSceneRenderer {
             let hal_guard = self
                 .device
                 .as_hal::<wgpu::hal::vulkan::Api>()
-                .ok_or_else(|| {
-                    log::warn!("as_hal::<vulkan::Api> returned None");
-                    anyhow::anyhow!("Device is not Vulkan")
-                })?;
-
-            let mut fds = fds;
-            let uv_fd = fds.remove(1);
-            let y_fd = fds.remove(0);
-
-            let yt = hal_guard
-                .texture_from_dmabuf_fd(y_fd, &hal_y_desc, modifier, strides[0] as u64, offsets[0])
-                .map_err(|e| anyhow::anyhow!("import Y dmabuf: {e:?}"))?;
-            log::info!("imported Y dmabuf OK");
-
-            let uvt = hal_guard
-                .texture_from_dmabuf_fd(
-                    uv_fd,
-                    &hal_uv_desc,
-                    modifier,
-                    strides[1] as u64,
-                    offsets[1],
-                )
-                .map_err(|e| anyhow::anyhow!("import UV dmabuf: {e:?}"))?;
-            log::info!("imported UV dmabuf OK");
-
+                .ok_or_else(|| anyhow::anyhow!("device is not Vulkan"))?;
+            let mut fds = fds.into_iter();
+            let y_fd = fds.next().expect("validated fd count");
+            let uv_fd = fds.next().expect("validated fd count");
+            let y_texture = hal_guard.texture_from_dmabuf_fd(
+                y_fd,
+                &hal_y_desc,
+                modifier,
+                strides[0] as u64,
+                offsets[0],
+            );
+            let y_texture =
+                y_texture.map_err(|error| anyhow::anyhow!("import Y DMA-BUF: {error:?}"))?;
+            let uv_texture = hal_guard.texture_from_dmabuf_fd(
+                uv_fd,
+                &hal_uv_desc,
+                modifier,
+                strides[1] as u64,
+                offsets[1],
+            );
+            let uv_texture =
+                uv_texture.map_err(|error| anyhow::anyhow!("import UV DMA-BUF: {error:?}"))?;
             drop(hal_guard);
-
             let tex_y = self
                 .device
                 .create_texture_from_hal::<wgpu::hal::vulkan::Api>(
-                    yt,
+                    y_texture,
                     &wgpu_y_desc,
                     wgpu::wgt::TextureUses::UNINITIALIZED,
                 );
-            let view_y = tex_y.create_view(&wgpu::TextureViewDescriptor::default());
-
             let tex_uv = self
                 .device
                 .create_texture_from_hal::<wgpu::hal::vulkan::Api>(
-                    uvt,
+                    uv_texture,
                     &wgpu_uv_desc,
                     wgpu::wgt::TextureUses::UNINITIALIZED,
                 );
+            let view_y = tex_y.create_view(&wgpu::TextureViewDescriptor::default());
             let view_uv = tex_uv.create_view(&wgpu::TextureViewDescriptor::default());
-
             (tex_y, view_y, tex_uv, view_uv)
         };
 
@@ -3749,9 +4253,8 @@ impl WgpuSceneRenderer {
         });
         self.queue
             .write_buffer(&yuv_buf, 0, bytemuck::bytes_of(&yuv_raw));
-
         let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("dmabuf nv12 bind"),
+            label: Some("dmabuf yuv bind"),
             layout: &self.image_bind_layout_nv12,
             entries: &[
                 wgpu::BindGroupEntry {
@@ -3776,11 +4279,30 @@ impl WgpuSceneRenderer {
                 },
             ],
         });
-
-        let bytes = (w as u64) * (h as u64)
-            + (uv_w as u64) * (uv_h as u64) * 2
-            + std::mem::size_of::<YuvTransformRaw>() as u64;
-
+        let bytes = y_file_size
+            .checked_add(uv_file_size)
+            .and_then(|value| value.checked_add(std::mem::size_of::<YuvTransformRaw>() as u64))
+            .ok_or_else(|| anyhow::anyhow!("DMA-BUF byte size overflow"))?;
+        self.evict_budget_excess();
+        let replaced_bytes = self
+            .images
+            .get(&handle)
+            .map(|image| match image {
+                ImageTex::Rgba { bytes, .. }
+                | ImageTex::Nv12 { bytes, .. }
+                | ImageTex::User { bytes, .. } => *bytes,
+            })
+            .unwrap_or(0);
+        let projected = self
+            .image_bytes_total
+            .saturating_sub(replaced_bytes)
+            .checked_add(bytes)
+            .ok_or_else(|| anyhow::anyhow!("DMA-BUF image budget overflow"))?;
+        if projected > self.image_budget_bytes {
+            anyhow::bail!("DMA-BUF image budget exceeded");
+        }
+        self.remove_image(handle);
+        self.image_bytes_total = self.image_bytes_total.saturating_add(bytes);
         self.images.insert(
             handle,
             ImageTex::Nv12 {
@@ -3790,14 +4312,23 @@ impl WgpuSceneRenderer {
                 yuv_buf,
                 w,
                 h,
+                pixel_format,
+                fourcc: Some(canonical_fourcc(pixel_format)),
                 color_info,
+                external: true,
                 last_used_frame: self.frame_index,
                 bytes,
             },
         );
-
         self.evict_budget_excess();
         Ok(())
+    }
+
+    pub fn image_fourcc(&self, handle: u64) -> Option<u32> {
+        match self.images.get(&handle) {
+            Some(ImageTex::Nv12 { fourcc, .. }) => *fourcc,
+            _ => None,
+        }
     }
 
     pub fn remove_image(&mut self, handle: u64) {
@@ -3809,7 +4340,11 @@ impl WgpuSceneRenderer {
             };
             self.image_bytes_total = self.image_bytes_total.saturating_sub(b);
         }
-        self.retained.remove(&handle);
+        if let Some(retained) = self.retained.remove(&handle) {
+            self.retained_bytes_total = self
+                .retained_bytes_total
+                .saturating_sub(retained.rgba.len() as u64);
+        }
     }
 
     fn evict_image_gpu(&mut self, handle: u64) -> u64 {
@@ -3825,13 +4360,15 @@ impl WgpuSceneRenderer {
         b
     }
 
-    fn revive_retained_image(&mut self, handle: u64) -> bool {
+    fn revive_retained_image(&mut self, handle: u64) -> anyhow::Result<bool> {
         if self.images.contains_key(&handle) {
-            return true;
+            return Ok(true);
         }
-        let Some(r) = self.retained.get(&handle).cloned() else {
-            return false;
+        let Some(r) = self.retained.get_mut(&handle) else {
+            return Ok(false);
         };
+        r.last_used_frame = self.frame_index;
+        let r = r.clone();
         let (tex, bind) = self.create_rgba_tex(r.w, r.h, r.format);
 
         self.queue.write_texture(
@@ -3854,8 +4391,8 @@ impl WgpuSceneRenderer {
             },
         );
 
-        let bytes = (r.w as u64) * (r.h as u64) * 4;
-        self.image_bytes_total += bytes;
+        let bytes = checked_image_bytes(r.w, r.h, 4)?;
+        self.image_bytes_total = self.image_bytes_total.saturating_add(bytes);
         self.images.insert(
             handle,
             ImageTex::Rgba {
@@ -3868,10 +4405,13 @@ impl WgpuSceneRenderer {
                 bytes,
             },
         );
-        true
+        Ok(true)
     }
 
     fn resolve_image_for_draw(&mut self, handle: u64) -> Option<(u32, u32, bool)> {
+        if let Some(retained) = self.retained.get_mut(&handle) {
+            retained.last_used_frame = self.frame_index;
+        }
         if let Some(t) = self.images.get_mut(&handle) {
             return match t {
                 ImageTex::Rgba {
@@ -3903,7 +4443,7 @@ impl WgpuSceneRenderer {
                 }
             };
         }
-        if self.revive_retained_image(handle)
+        if self.revive_retained_image(handle).unwrap_or(false)
             && let Some(ImageTex::Rgba {
                 w,
                 h,
@@ -3946,8 +4486,19 @@ impl WgpuSceneRenderer {
     /// `remove_coverage` handles you no longer emit (stale tiles also age
     /// out under the image eviction policy).
     pub fn register_coverage_a8(&mut self, w: u32, h: u32, coverage: &[u8]) -> u64 {
-        let expected = (w as usize) * (h as usize);
-        if coverage.len() < expected || w == 0 || h == 0 {
+        if validate_texture_dimensions(&self.device, w, h).is_err() {
+            log::error!("Coverage dimensions are outside the device limit");
+            return 0;
+        }
+        let Ok(expected_bytes) = checked_image_bytes(w, h, 1) else {
+            log::error!("Coverage dimensions overflow");
+            return 0;
+        };
+        let Ok(expected) = usize::try_from(expected_bytes) else {
+            log::error!("Coverage dimensions exceed addressable memory");
+            return 0;
+        };
+        if coverage.len() < expected {
             log::error!("Coverage buffer too small: {} < {expected}", coverage.len());
             return 0;
         }
@@ -4002,8 +4553,8 @@ impl WgpuSceneRenderer {
                 depth_or_array_layers: 1,
             },
         );
-        let bytes = (w as u64) * (h as u64);
-        self.image_bytes_total += bytes;
+        let bytes = checked_image_bytes(w, h, 1).unwrap_or(u64::MAX);
+        self.image_bytes_total = self.image_bytes_total.saturating_add(bytes);
         self.coverages.insert(
             handle,
             CoverageTex {
@@ -4036,6 +4587,27 @@ impl WgpuSceneRenderer {
         None
     }
 
+    fn evict_retained_excess(&mut self) {
+        let mut candidates: Vec<(u64, u64, u64)> = self
+            .retained
+            .iter()
+            .map(|(handle, image)| (*handle, image.last_used_frame, image.rgba.len() as u64))
+            .collect();
+        candidates.sort_by_key(|candidate| candidate.1);
+        for (handle, _last_used, bytes) in candidates {
+            if self.retained.len() <= MAX_RETAINED_IMAGES
+                && self.retained_bytes_total <= MAX_RETAINED_IMAGE_BYTES
+            {
+                break;
+            }
+            if let Some(image) = self.retained.remove(&handle) {
+                self.retained_bytes_total = self
+                    .retained_bytes_total
+                    .saturating_sub(bytes.min(image.rgba.len() as u64));
+            }
+        }
+    }
+
     fn evict_unused_images(&mut self) {
         let now = self.frame_index;
         let evict_after = self.image_evict_after_frames;
@@ -4044,6 +4616,9 @@ impl WgpuSceneRenderer {
         // sources stay so the image can be lazily re-uploaded when drawn again.
         let mut to_evict = Vec::new();
         for (h, t) in self.images.iter() {
+            if !t.evictable() {
+                continue;
+            }
             let last = match t {
                 ImageTex::Rgba {
                     last_used_frame, ..
@@ -4081,15 +4656,52 @@ impl WgpuSceneRenderer {
         self.evict_budget_excess();
     }
 
+    fn gpu_bytes_total(&self) -> u64 {
+        self.image_bytes_total
+            .saturating_add(self.layer_bytes_total)
+            .saturating_add(self.blend_snapshot_bytes_total)
+            .saturating_add(self.working_space_bytes)
+            .saturating_add(self.surface_resolve_bytes)
+    }
+
+    fn budget_exceeded(&self) -> bool {
+        self.image_bytes_total > self.image_budget_bytes
+            || self.gpu_bytes_total() > self.gpu_budget_bytes
+    }
+
     fn evict_budget_excess(&mut self) {
-        if self.image_bytes_total <= self.image_budget_bytes {
+        let image_over_budget = self.image_bytes_total > self.image_budget_bytes;
+        let gpu_over_budget = self.gpu_bytes_total() > self.gpu_budget_bytes;
+        if !image_over_budget && !gpu_over_budget {
+            return;
+        }
+        let mut coverage_candidates: Vec<(u64, u64)> = self
+            .coverages
+            .iter()
+            .map(|(handle, tile)| (*handle, tile.last_used_frame))
+            .collect();
+        coverage_candidates.sort_by_key(|candidate| candidate.1);
+        let now = self.frame_index;
+        for (handle, last_used) in coverage_candidates {
+            if !self.budget_exceeded() {
+                break;
+            }
+            if last_used == now {
+                continue;
+            }
+            self.remove_coverage(handle);
+        }
+        if !self.budget_exceeded() {
             return;
         }
         // Collect (handle, last_used, bytes)
         let mut candidates: Vec<(u64, u64, u64)> = self
             .images
             .iter()
-            .map(|(h, t)| {
+            .filter_map(|(h, t)| {
+                if !t.evictable() {
+                    return None;
+                }
                 let (last, bytes) = match t {
                     ImageTex::Rgba {
                         last_used_frame,
@@ -4107,19 +4719,17 @@ impl WgpuSceneRenderer {
                         ..
                     } => (*last_used_frame, *bytes),
                 };
-                (*h, last, bytes)
+                Some((*h, last, bytes))
             })
             .collect();
 
         // Sort by last_used ascending (LRU first)
         candidates.sort_by_key(|k| k.1);
 
-        let now = self.frame_index;
         for (h, last, _bytes) in candidates {
-            if self.image_bytes_total <= self.image_budget_bytes {
+            if !self.budget_exceeded() {
                 break;
             }
-            // Don't evict something used this frame
             if last == now {
                 continue;
             }
@@ -4129,11 +4739,20 @@ impl WgpuSceneRenderer {
                 self.remove_image(h);
             }
         }
+        if self.gpu_bytes_total() > self.gpu_budget_bytes {
+            log::warn!(
+                "renderer GPU resource budget exceeded: {} > {}",
+                self.gpu_bytes_total(),
+                self.gpu_budget_bytes
+            );
+        }
     }
 
     /// Set pixels per point (DPI scale) for callback `ScreenDescriptor` / `PaintCallbackInfo`.
     pub fn set_pixels_per_point(&mut self, ppp: f32) {
-        self.pixels_per_point = ppp.clamp(0.5, 8.0);
+        if ppp.is_finite() {
+            self.pixels_per_point = ppp.clamp(0.5, 8.0);
+        }
     }
 
     /// Enable or disable linear working-space rendering.
@@ -4146,11 +4765,19 @@ impl WgpuSceneRenderer {
         self.working_space = enabled;
         if enabled {
             self.ensure_display_pipeline();
+            self.recreate_msaa_and_depth_stencil();
             self.recreate_working_space_texture();
         } else {
             self.ws_tex = None;
             self.ws_view = None;
             self.ws_bind = None;
+            self.ws_msaa_tex = None;
+            self.ws_msaa_view = None;
+            self.surface_resolve_tex = None;
+            self.surface_resolve_view = None;
+            self.surface_resolve_bytes = 0;
+            self.working_space_bytes = 0;
+            self.recreate_msaa_and_depth_stencil();
         }
     }
 
@@ -4184,13 +4811,16 @@ impl WgpuSceneRenderer {
             });
         self.display_layout = Some(layout);
 
+        let display_source: Cow<'static, str> = if self.output_format.is_srgb() {
+            Cow::Borrowed(include_str!("shaders/display_transform_passthrough.wgsl"))
+        } else {
+            Cow::Borrowed(include_str!("shaders/display_transform.wgsl"))
+        };
         let shader = self
             .device
             .create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("display_transform.wgsl"),
-                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
-                    "shaders/display_transform.wgsl"
-                ))),
+                label: Some("display transform"),
+                source: wgpu::ShaderSource::Wgsl(display_source),
             });
 
         let pipeline_layout = self
@@ -4236,8 +4866,9 @@ impl WgpuSceneRenderer {
     /// Recreates MSAA, depth-stencil, and working-space textures to match the
     /// new size..
     pub fn resize(&mut self, width: u32, height: u32) {
-        self.output_width = width;
-        self.output_height = height;
+        let max = self.device.limits().max_texture_dimension_2d;
+        self.output_width = if width == 0 { 0 } else { width.min(max) };
+        self.output_height = if height == 0 { 0 } else { height.min(max) };
         self.recreate_msaa_and_depth_stencil();
         self.recreate_working_space_texture();
     }
@@ -4246,8 +4877,13 @@ impl WgpuSceneRenderer {
         if !self.working_space {
             return;
         }
-        let w = self.output_width.max(1);
-        let h = self.output_height.max(1);
+        self.working_space_bytes = 0;
+        let w = self
+            .output_width
+            .clamp(1, self.device.limits().max_texture_dimension_2d);
+        let h = self
+            .output_height
+            .clamp(1, self.device.limits().max_texture_dimension_2d);
 
         let tex = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("working space"),
@@ -4260,7 +4896,10 @@ impl WgpuSceneRenderer {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba16Float,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
         let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
@@ -4280,6 +4919,8 @@ impl WgpuSceneRenderer {
             ],
         });
 
+        self.working_space_bytes =
+            texture_storage_bytes(wgpu::TextureFormat::Rgba16Float, w, h).unwrap_or(0);
         self.ws_tex = Some(tex);
         self.ws_view = Some(view);
         self.ws_bind = Some(bind);
@@ -4308,6 +4949,56 @@ impl WgpuSceneRenderer {
             self.msaa_tex = None;
             self.msaa_view = None;
         }
+        if self.working_space && self.msaa_samples > 1 {
+            let tex = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("working space msaa color"),
+                size: wgpu::Extent3d {
+                    width: self.output_width.max(1),
+                    height: self.output_height.max(1),
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: self.msaa_samples,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba16Float,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            });
+            let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+            self.ws_msaa_tex = Some(tex);
+            self.ws_msaa_view = Some(view);
+        } else {
+            self.ws_msaa_tex = None;
+            self.ws_msaa_view = None;
+        }
+        self.surface_resolve_tex = None;
+        self.surface_resolve_view = None;
+        self.surface_resolve_bytes = 0;
+        if self.msaa_samples > 1 && !self.working_space {
+            let width = self.output_width.max(1);
+            let height = self.output_height.max(1);
+            let tex = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("surface resolve"),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: self.output_format,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING
+                    | wgpu::TextureUsages::COPY_SRC,
+                view_formats: &[],
+            });
+            let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+            self.surface_resolve_bytes =
+                texture_storage_bytes(self.output_format, width, height).unwrap_or(0);
+            self.surface_resolve_tex = Some(tex);
+            self.surface_resolve_view = Some(view);
+        }
 
         self.depth_stencil_tex = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("depth-stencil (stencil clips)"),
@@ -4328,22 +5019,73 @@ impl WgpuSceneRenderer {
             .create_view(&wgpu::TextureViewDescriptor::default());
     }
 
+    fn layer_target_format(&self) -> wgpu::TextureFormat {
+        if self.working_space {
+            wgpu::TextureFormat::Rgba16Float
+        } else {
+            self.output_format
+        }
+    }
+
     fn get_or_create_layer(
         &mut self,
         layer_id: u32,
         width: u32,
         height: u32,
         rect: repose_core::Rect,
-    ) {
+    ) -> bool {
+        if width == 0
+            || height == 0
+            || width > self.device.limits().max_texture_dimension_2d
+            || height > self.device.limits().max_texture_dimension_2d
+        {
+            return false;
+        }
         let needs_alloc = match self.layer_pool.get(&layer_id) {
-            Some(lt) => lt.width != width || lt.height != height,
+            Some(lt) => {
+                lt.width != width || lt.height != height || lt.format != self.layer_target_format()
+            }
             None => true,
         };
         if !needs_alloc {
             if let Some(lt) = self.layer_pool.get_mut(&layer_id) {
                 lt.rect_px = (rect.x, rect.y, rect.w, rect.h);
             }
-            return;
+            return true;
+        }
+        let color_bytes =
+            texture_storage_bytes(self.layer_target_format(), width.max(1), height.max(1))
+                .unwrap_or(MAX_GRAPHICS_LAYER_BYTES + 1);
+        let depth_bytes = checked_image_bytes(width.max(1), height.max(1), 4)
+            .unwrap_or(MAX_GRAPHICS_LAYER_BYTES + 1);
+        let bytes = color_bytes.saturating_add(depth_bytes);
+        let old_bytes = self
+            .layer_pool
+            .get(&layer_id)
+            .map_or(0, |layer| layer.bytes);
+        let count = self.layer_pool.len() + usize::from(!self.layer_pool.contains_key(&layer_id));
+        let total = self
+            .layer_bytes_total
+            .saturating_sub(old_bytes)
+            .saturating_add(bytes);
+        let projected_gpu = self
+            .gpu_bytes_total()
+            .saturating_sub(old_bytes)
+            .checked_add(bytes)
+            .unwrap_or(u64::MAX);
+        if count > MAX_GRAPHICS_LAYERS
+            || bytes > MAX_GRAPHICS_LAYER_BYTES
+            || total > MAX_GRAPHICS_LAYER_BYTES
+            || projected_gpu > self.gpu_budget_bytes
+        {
+            log::warn!("graphics layer budget exhausted; layer {layer_id} skipped");
+            if let Some(old) = self.layer_pool.remove(&layer_id) {
+                self.layer_bytes_total = self.layer_bytes_total.saturating_sub(old.bytes);
+            }
+            return false;
+        }
+        if let Some(old) = self.layer_pool.remove(&layer_id) {
+            self.layer_bytes_total = self.layer_bytes_total.saturating_sub(old.bytes);
         }
         let tex = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("graphics layer"),
@@ -4355,7 +5097,7 @@ impl WgpuSceneRenderer {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: self.output_format,
+            format: self.layer_target_format(),
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT
                 | wgpu::TextureUsages::TEXTURE_BINDING
                 | wgpu::TextureUsages::COPY_SRC,
@@ -4416,9 +5158,13 @@ impl WgpuSceneRenderer {
                 depth_stencil_view,
                 width,
                 height,
+                format: self.layer_target_format(),
+                bytes,
                 rect_px: (rect.x, rect.y, rect.w, rect.h),
             },
         );
+        self.layer_bytes_total = self.layer_bytes_total.saturating_add(bytes);
+        true
     }
 
     fn atlas_bind_group_mask(&self) -> wgpu::BindGroup {
@@ -4572,15 +5318,36 @@ impl WgpuSceneRenderer {
     }
 
     fn alloc_space_mask(&mut self, w: u32, h: u32) -> bool {
-        if self.atlas_mask.next_x + w + 1 >= self.atlas_mask.size {
+        let Some(x_end) = self
+            .atlas_mask
+            .next_x
+            .checked_add(w)
+            .and_then(|v| v.checked_add(1))
+        else {
+            return false;
+        };
+        if x_end >= self.atlas_mask.size {
             self.atlas_mask.next_x = 1;
-            self.atlas_mask.next_y += self.atlas_mask.row_h + 1;
+            let Some(next_y) = self
+                .atlas_mask
+                .next_y
+                .checked_add(self.atlas_mask.row_h)
+                .and_then(|v| v.checked_add(1))
+            else {
+                return false;
+            };
+            self.atlas_mask.next_y = next_y;
             self.atlas_mask.row_h = 0;
         }
-        if self.atlas_mask.next_y + h + 1 >= self.atlas_mask.size {
+        let Some(y_end) = self
+            .atlas_mask
+            .next_y
+            .checked_add(h)
+            .and_then(|v| v.checked_add(1))
+        else {
             return false;
-        }
-        true
+        };
+        y_end < self.atlas_mask.size
     }
 
     fn grow_mask_and_rebuild(&mut self) {
@@ -4619,15 +5386,36 @@ impl WgpuSceneRenderer {
     }
 
     fn alloc_space_color(&mut self, w: u32, h: u32) -> bool {
-        if self.atlas_color.next_x + w + 1 >= self.atlas_color.size {
+        let Some(x_end) = self
+            .atlas_color
+            .next_x
+            .checked_add(w)
+            .and_then(|v| v.checked_add(1))
+        else {
+            return false;
+        };
+        if x_end >= self.atlas_color.size {
             self.atlas_color.next_x = 1;
-            self.atlas_color.next_y += self.atlas_color.row_h + 1;
+            let Some(next_y) = self
+                .atlas_color
+                .next_y
+                .checked_add(self.atlas_color.row_h)
+                .and_then(|v| v.checked_add(1))
+            else {
+                return false;
+            };
+            self.atlas_color.next_y = next_y;
             self.atlas_color.row_h = 0;
         }
-        if self.atlas_color.next_y + h + 1 >= self.atlas_color.size {
+        let Some(y_end) = self
+            .atlas_color
+            .next_y
+            .checked_add(h)
+            .and_then(|v| v.checked_add(1))
+        else {
             return false;
-        }
-        true
+        };
+        y_end < self.atlas_color.size
     }
 
     fn grow_color_and_rebuild(&mut self) {
@@ -4894,27 +5682,30 @@ impl WgpuSurfaceBackend {
     /// configure it. Recovers from `CurrentSurfaceTexture::Lost`, where
     /// reconfiguring the old surface object cannot help.
     pub fn recreate_surface(&mut self, window: &Arc<winit::window::Window>) -> anyhow::Result<()> {
+        self.window = Some(window.clone());
+        let size = window.inner_size();
+        if size.width == 0 || size.height == 0 {
+            self.surface = None;
+            self.pending_reconfigure = false;
+            self.renderer.resize(0, 0);
+            anyhow::bail!("window has zero size; surface recreation deferred");
+        }
         let Some(instance) = self.instance.as_ref() else {
             anyhow::bail!("no wgpu instance retained; cannot recreate surface")
         };
-        let size = window.inner_size();
-        if size.width == 0 || size.height == 0 {
-            anyhow::bail!("window has zero size; defer surface recreation");
-        }
-        let surface = instance.create_surface(window.clone())?;
-        if let Some(config) = self.surface_config.as_mut() {
-            config.width = size.width;
-            config.height = size.height;
-        } else {
+        let Some(config) = self.surface_config.as_mut() else {
             anyhow::bail!("no surface config retained; cannot recreate surface")
-        }
-        let config = self.surface_config.as_ref().expect("checked above");
+        };
+        let max = self.renderer.device.limits().max_texture_dimension_2d;
+        let width = size.width.min(max);
+        let height = size.height.min(max);
+        config.width = width;
+        config.height = height;
+        let surface = instance.create_surface(window.clone())?;
         surface.configure(&self.renderer.device, config);
         self.surface = Some(surface);
-        self.renderer.output_width = size.width;
-        self.renderer.output_height = size.height;
-        self.renderer.recreate_msaa_and_depth_stencil();
-        self.renderer.recreate_working_space_texture();
+        self.pending_reconfigure = false;
+        self.renderer.resize(width, height);
         Ok(())
     }
 }
@@ -4923,8 +5714,13 @@ impl WgpuSurfaceBackend {
 impl RenderBackend for WgpuSurfaceBackend {
     fn configure_surface(&mut self, width: u32, height: u32) {
         if width == 0 || height == 0 {
+            self.renderer.resize(0, 0);
+            self.pending_reconfigure = true;
             return;
         }
+        let max = self.renderer.device.limits().max_texture_dimension_2d;
+        let width = width.min(max);
+        let height = height.min(max);
         if self.renderer.output_width == width && self.renderer.output_height == height {
             if let Some(ref mut config) = self.surface_config {
                 config.width = width;
@@ -4932,18 +5728,15 @@ impl RenderBackend for WgpuSurfaceBackend {
             }
             return;
         }
-        self.renderer.output_width = width;
-        self.renderer.output_height = height;
         if let Some(ref mut config) = self.surface_config {
             config.width = width;
             config.height = height;
         }
+        self.renderer.resize(width, height);
         if let (Some(surface), Some(config)) = (self.surface.as_ref(), self.surface_config.as_ref())
         {
             surface.configure(&self.renderer.device, config);
         }
-        self.renderer.recreate_msaa_and_depth_stencil();
-        self.renderer.recreate_working_space_texture();
     }
 
     fn frame(&mut self, scene: &Scene, _glyph_cfg: GlyphRasterConfig) -> bool {
@@ -4956,15 +5749,18 @@ impl RenderBackend for WgpuSurfaceBackend {
             self.pending_reconfigure = false;
         }
 
-        self.renderer.frame_index = self.renderer.frame_index.wrapping_add(1);
-        self.renderer.slug_cache.next_frame();
-
         if self.renderer.output_width == 0 || self.renderer.output_height == 0 {
+            request_frame();
+            return false;
+        }
+        if let Err(error) = self.renderer.begin_frame() {
+            log::warn!("begin renderer frame: {error:#}");
             request_frame();
             return false;
         }
 
         let Some(surface) = self.surface.as_ref() else {
+            self.renderer.end_frame();
             request_frame();
             return false;
         };
@@ -4974,11 +5770,23 @@ impl RenderBackend for WgpuSurfaceBackend {
                 self.pending_reconfigure = true;
                 f
             }
+            other @ (wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost) => {
+                self.surface = None;
+                let result = self
+                    .window
+                    .clone()
+                    .ok_or_else(|| anyhow::anyhow!("no window retained for surface recreation"))
+                    .and_then(|window| self.recreate_surface(&window));
+                if let Err(error) = result {
+                    log::warn!("surface {other:?}; recreation deferred: {error:#}");
+                }
+                self.renderer.end_frame();
+                request_frame();
+                return false;
+            }
             other => {
                 match other {
-                    wgpu::CurrentSurfaceTexture::Outdated
-                    | wgpu::CurrentSurfaceTexture::Lost
-                    | wgpu::CurrentSurfaceTexture::Validation => {
+                    wgpu::CurrentSurfaceTexture::Validation => {
                         log::warn!("surface {other:?}; reconfiguring next frame");
                         self.pending_reconfigure = true;
                     }
@@ -4988,6 +5796,7 @@ impl RenderBackend for WgpuSurfaceBackend {
                     }
                     _ => {}
                 }
+                self.renderer.end_frame();
                 request_frame();
                 return false;
             }
@@ -5014,15 +5823,13 @@ impl RenderBackend for WgpuSurfaceBackend {
                     label: Some("frame encoder"),
                 });
 
-        let clear_color = Some([
-            scene.clear_color.0 as f64 / 255.0,
-            scene.clear_color.1 as f64 / 255.0,
-            scene.clear_color.2 as f64 / 255.0,
-            scene.clear_color.3 as f64 / 255.0,
-        ]);
-
-        self.renderer
-            .render_scene_to_encoder(scene, &mut encoder, &swap_view, clear_color);
+        self.renderer.render_scene_to_encoder_with_texture(
+            scene,
+            &mut encoder,
+            &swap_view,
+            Some(&frame.texture),
+            None,
+        );
 
         //NOTE: The WebGL HAL present path (fullscreen triangle / blit) does not
         // restore gl.colorMask. Hence this is needed to prevent frames from going transparent.
@@ -5050,9 +5857,11 @@ impl RenderBackend for WgpuSurfaceBackend {
             .submit(std::iter::once(encoder.finish()));
         if let Err(e) = catch_unwind(AssertUnwindSafe(|| self.renderer.queue.present(frame))) {
             log::warn!("queue.present panicked: {:?}", e);
+            self.renderer.end_frame();
             request_frame();
             return false;
         }
+        self.renderer.end_frame();
         true
     }
 }
@@ -5070,6 +5879,229 @@ impl WgpuSceneRenderer {
     /// producer-owned blur layers — which is exact under rigid ancestors
     /// (translations commute) and the documented layer contract otherwise.
     #[allow(clippy::too_many_arguments)]
+    fn replay_active_clips(
+        &mut self,
+        clips: &[ActiveClip],
+        origin: (f32, f32),
+        target_size: (f32, f32),
+        pass: &mut Pass,
+        encoder: &mut wgpu::CommandEncoder,
+    ) -> Vec<ActiveClip> {
+        let mut current = repose_core::Rect {
+            x: 0.0,
+            y: 0.0,
+            w: target_size.0,
+            h: target_size.1,
+        };
+        let mut replayed = Vec::with_capacity(clips.len());
+        for (index, clip) in clips.iter().enumerate() {
+            let has_inverse = clips[..index].iter().any(ActiveClip::difference);
+            let mut blocked = clip.blocked();
+            if has_inverse && !blocked {
+                log::error!(
+                    "unsupported clip nesting: a Difference clip cannot contain another clip"
+                );
+                blocked = true;
+            }
+            let difference = clip.difference();
+            let mut command = None;
+            match clip {
+                ActiveClip::Rect {
+                    off: _,
+                    cnt: _,
+                    rect,
+                    radii,
+                    ..
+                } => {
+                    let local_rect = translated_rect(*rect, origin.0, origin.1);
+                    let next = if difference {
+                        current
+                    } else {
+                        intersect(current, local_rect)
+                    };
+                    let scissor = rect_to_scissor(
+                        next,
+                        target_size.0.max(1.0) as u32,
+                        target_size.1.max(1.0) as u32,
+                    );
+                    let has_area = local_rect.x.is_finite()
+                        && local_rect.y.is_finite()
+                        && local_rect.w.is_finite()
+                        && local_rect.h.is_finite()
+                        && local_rect.w > 0.0
+                        && local_rect.h > 0.0;
+                    if blocked || !has_area || (!difference && scissor.2 == 0) {
+                        blocked = blocked || !difference;
+                    } else {
+                        let ndc = rect_to_ndc(local_rect, target_size.0, target_size.1);
+                        let instance = ClipInstance {
+                            xywh: [ndc[0] + ndc[2] * 0.5, ndc[1] + ndc[3] * 0.5, ndc[2], ndc[3]],
+                            radii: *radii,
+                            fwd_mat: [1.0, 0.0, 0.0, 1.0],
+                        };
+                        let bytes = bytemuck::bytes_of(&instance);
+                        if self
+                            .clip_ring
+                            .grow_to_fit(
+                                &self.device,
+                                encoder,
+                                u64::try_from(bytes.len()).unwrap_or(u64::MAX),
+                            )
+                            .is_ok()
+                            && let Ok(new_off) = self.clip_ring.alloc_write(&self.queue, bytes)
+                        {
+                            command = Some(Cmd::ClipPush {
+                                off: new_off,
+                                cnt: 1,
+                                scissor,
+                                difference,
+                                applied: true,
+                            });
+                            replayed.push(ActiveClip::Rect {
+                                off: new_off,
+                                cnt: 1,
+                                rect: *rect,
+                                radii: *radii,
+                                difference,
+                                applied: true,
+                                blocked: false,
+                            });
+                        } else {
+                            blocked = blocked || !difference;
+                        }
+                    }
+                    current = next;
+                }
+                ActiveClip::Vector {
+                    voff,
+                    vcnt,
+                    ioff,
+                    icnt,
+                    mesh,
+                    affine,
+                    ..
+                } => {
+                    let mut local_affine = *affine;
+                    local_affine[2] -= origin.0;
+                    local_affine[5] -= origin.1;
+                    let aabb = mesh_aabb(mesh, local_affine);
+                    let next = if difference {
+                        current
+                    } else {
+                        intersect(current, aabb)
+                    };
+                    let scissor = rect_to_scissor(
+                        next,
+                        target_size.0.max(1.0) as u32,
+                        target_size.1.max(1.0) as u32,
+                    );
+                    let has_area = aabb.x.is_finite()
+                        && aabb.y.is_finite()
+                        && aabb.w.is_finite()
+                        && aabb.h.is_finite()
+                        && aabb.w > 0.0
+                        && aabb.h > 0.0
+                        && *vcnt > 0
+                        && *icnt > 0;
+                    if blocked || !has_area || (!difference && scissor.2 == 0) {
+                        blocked = blocked || !difference;
+                    } else if let Some(uoff) = self.alloc_mesh_uniform(mesh_uniform_from_paint(
+                        local_affine,
+                        &repose_core::PaintDesc::Solid,
+                    )) {
+                        command = Some(Cmd::VectorClipPush {
+                            voff: *voff,
+                            vcnt: *vcnt,
+                            ioff: *ioff,
+                            icnt: *icnt,
+                            uoff,
+                            scissor,
+                            difference,
+                            applied: true,
+                        });
+                        replayed.push(ActiveClip::Vector {
+                            voff: *voff,
+                            vcnt: *vcnt,
+                            ioff: *ioff,
+                            icnt: *icnt,
+                            uoff,
+                            mesh: mesh.clone(),
+                            affine: *affine,
+                            difference,
+                            applied: true,
+                            blocked: false,
+                        });
+                    } else {
+                        blocked = blocked || !difference;
+                    }
+                    current = next;
+                }
+            }
+            if blocked {
+                current = repose_core::Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 0.0,
+                    h: 0.0,
+                };
+            }
+            if command.is_none() {
+                replayed.push(match clip {
+                    ActiveClip::Rect {
+                        rect,
+                        radii,
+                        difference,
+                        ..
+                    } => ActiveClip::Rect {
+                        off: 0,
+                        cnt: 0,
+                        rect: *rect,
+                        radii: *radii,
+                        difference: *difference,
+                        applied: false,
+                        blocked,
+                    },
+                    ActiveClip::Vector {
+                        voff,
+                        vcnt,
+                        ioff,
+                        icnt,
+                        mesh,
+                        affine,
+                        difference,
+                        ..
+                    } => ActiveClip::Vector {
+                        voff: *voff,
+                        vcnt: *vcnt,
+                        ioff: *ioff,
+                        icnt: *icnt,
+                        uoff: 0,
+                        mesh: mesh.clone(),
+                        affine: *affine,
+                        difference: *difference,
+                        applied: false,
+                        blocked,
+                    },
+                });
+            }
+            if let Some(command) = command {
+                pass.cmds.push(command);
+            }
+            pass.active_scissor = if blocked {
+                None
+            } else {
+                let scissor = rect_to_scissor(
+                    current,
+                    target_size.0.max(1.0) as u32,
+                    target_size.1.max(1.0) as u32,
+                );
+                (scissor.2 > 0 && scissor.3 > 0).then_some(scissor)
+            };
+        }
+        replayed
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn push_perspective_layer(
         &mut self,
         node: Transform,
@@ -5079,11 +6111,14 @@ impl WgpuSceneRenderer {
         root_clip_rect: &mut repose_core::Rect,
         current_target_size: &mut (f32, f32),
         current_pass: &mut Pass,
+        active_clips: &mut Vec<ActiveClip>,
         passes: &mut Vec<Pass>,
         target_stack: &mut Vec<PassTarget>,
         flatten_stack: &mut Vec<FlattenRecord>,
         id_head: &mut u32,
+        pass_id_head: &mut u64,
         ids_used: &mut Vec<u32>,
+        encoder: &mut wgpu::CommandEncoder,
     ) {
         // Full projective map: affine ancestors over the node's map.
         // Ancestors are affine by construction (perspective always flattens
@@ -5091,8 +6126,18 @@ impl WgpuSceneRenderer {
         let map =
             Transform::compose_projective(&top.projective_matrix(), &node.projective_matrix());
         let scr = scissor_stack.last().copied().unwrap_or(*root_clip_rect);
-        let w = scr.w.ceil().max(1.0);
-        let h = scr.h.ceil().max(1.0);
+        let max_dimension = self.device.limits().max_texture_dimension_2d as f32;
+        if !scr.w.is_finite()
+            || !scr.h.is_finite()
+            || scr.w < 1.0
+            || scr.h < 1.0
+            || scr.w > max_dimension
+            || scr.h > max_dimension
+        {
+            return;
+        }
+        let w = scr.w.ceil();
+        let h = scr.h.ceil();
         let layer_rect = repose_core::Rect {
             x: scr.x,
             y: scr.y,
@@ -5112,7 +6157,7 @@ impl WgpuSceneRenderer {
         transform_stack.push(top);
         transform_stack.push(Transform::translate(-layer_rect.x, -layer_rect.y));
 
-        let saved_scissor = std::mem::replace(
+        let saved_scissor_stack = std::mem::replace(
             scissor_stack,
             vec![repose_core::Rect {
                 x: 0.0,
@@ -5132,15 +6177,27 @@ impl WgpuSceneRenderer {
         );
         let saved_size = std::mem::replace(current_target_size, (w, h));
         let prev_target = current_pass.target;
-        let saved = std::mem::replace(
-            current_pass,
-            Pass {
-                target: PassTarget::Layer(layer_id),
-                initial_scissor: (0, 0, w as u32, h as u32),
-                clear_color: Some([0.0, 0.0, 0.0, 0.0]),
-                cmds: Vec::new(),
-            },
+        let saved_active_scissor = current_pass.active_scissor;
+        let saved_clips = std::mem::take(active_clips);
+        let layer_pass_id = *pass_id_head;
+        *pass_id_head += 1;
+        let mut layer_pass = Pass {
+            id: layer_pass_id,
+            target: PassTarget::Layer(layer_id),
+            initial_scissor: (0, 0, w as u32, h as u32),
+            active_scissor: Some((0, 0, w as u32, h as u32)),
+            clear_color: Some([0.0, 0.0, 0.0, 0.0]),
+            cmds: Vec::new(),
+        };
+        let layer_clips = self.replay_active_clips(
+            &saved_clips,
+            (layer_rect.x, layer_rect.y),
+            (w, h),
+            &mut layer_pass,
+            encoder,
         );
+        *active_clips = layer_clips;
+        let saved = std::mem::replace(current_pass, layer_pass);
         passes.push(saved);
         target_stack.push(prev_target);
         self.get_or_create_layer(layer_id, w as u32, h as u32, layer_rect);
@@ -5150,9 +6207,11 @@ impl WgpuSceneRenderer {
             layer_id,
             map,
             layer_rect,
-            saved_scissor,
+            saved_scissor_stack,
             saved_root,
             saved_size,
+            saved_active_scissor,
+            saved_clips,
         });
     }
 
@@ -5166,17 +6225,25 @@ impl WgpuSceneRenderer {
         root_clip_rect: &mut repose_core::Rect,
         current_target_size: &mut (f32, f32),
         current_pass: &mut Pass,
+        active_clips: &mut Vec<ActiveClip>,
         passes: &mut Vec<Pass>,
         target_stack: &mut Vec<PassTarget>,
+        pass_id_head: &mut u64,
+        encoder: &mut wgpu::CommandEncoder,
     ) {
-        *scissor_stack = rec.saved_scissor;
+        *scissor_stack = rec.saved_scissor_stack;
         *root_clip_rect = rec.saved_root;
         *current_target_size = rec.saved_size;
+        *active_clips = rec.saved_clips;
+        let resumed_pass_id = *pass_id_head;
+        *pass_id_head += 1;
         let saved = std::mem::replace(
             current_pass,
             Pass {
+                id: resumed_pass_id,
                 target: target_stack.pop().unwrap_or(PassTarget::Surface),
-                initial_scissor: (0, 0, self.output_width, self.output_height),
+                initial_scissor: rec.saved_active_scissor.unwrap_or((0, 0, 1, 1)),
+                active_scissor: rec.saved_active_scissor,
                 clear_color: None,
                 cmds: Vec::new(),
             },
@@ -5217,7 +6284,9 @@ impl WgpuSceneRenderer {
             // layer pass still ran, but its output is correctly discarded).
             return;
         }
-        let layer = self.layer_pool.get(&rec.layer_id).expect("flatten layer");
+        let Some(layer) = self.layer_pool.get(&rec.layer_id) else {
+            return;
+        };
         let uv_u1 = layer.rect_px.2 / layer.width.max(1) as f32;
         let uv_v1 = layer.rect_px.3 / layer.height.max(1) as f32;
         let inst = ProjectiveInstance {
@@ -5230,12 +6299,21 @@ impl WgpuSceneRenderer {
             alpha: 1.0,
             _pad: [0.0; 3],
         };
-        self.projective_ring.grow_to_fit(
-            &self.device,
-            std::mem::size_of::<ProjectiveInstance>() as u64,
-        );
+        if self
+            .projective_ring
+            .grow_to_fit(
+                &self.device,
+                encoder,
+                std::mem::size_of::<ProjectiveInstance>() as u64,
+            )
+            .is_err()
+        {
+            return;
+        }
         let bytes = bytemuck::bytes_of(&inst);
-        let (off, _) = self.projective_ring.alloc_write(&self.queue, bytes);
+        let Ok(off) = self.projective_ring.alloc_write(&self.queue, bytes) else {
+            return;
+        };
         current_pass.cmds.push(Cmd::CompositeProjective {
             off,
             cnt: 1,
@@ -5243,7 +6321,33 @@ impl WgpuSceneRenderer {
         });
     }
 
-    fn upload_mesh_geometry(&mut self, mesh: &repose_core::VectorMeshData) -> (u64, u32, u64, u32) {
+    fn upload_mesh_geometry(
+        &mut self,
+        mesh: &repose_core::VectorMeshData,
+        encoder: &mut wgpu::CommandEncoder,
+    ) -> Option<(u64, u32, u64, u32)> {
+        if mesh.vertices.is_empty() || mesh.indices.is_empty() {
+            log::warn!("vector mesh has no geometry");
+            return None;
+        }
+        if mesh.indices.len() % 3 != 0 {
+            log::warn!("vector mesh index count is not a triangle list");
+            return None;
+        }
+        let vertex_count = u32::try_from(mesh.vertices.len()).ok()?;
+        let index_count = u32::try_from(mesh.indices.len()).ok()?;
+        if mesh.indices.iter().any(|&index| index >= vertex_count) {
+            log::warn!("vector mesh index is outside its vertex buffer");
+            return None;
+        }
+        if mesh.vertices.iter().any(|vertex| {
+            vertex.pos.iter().any(|value| !value.is_finite())
+                || vertex.color.iter().any(|value| !value.is_finite())
+                || vertex.uv.iter().any(|value| !value.is_finite())
+        }) {
+            log::warn!("vector mesh contains non-finite vertex data");
+            return None;
+        }
         let verts: Vec<MeshVertex> = mesh
             .vertices
             .iter()
@@ -5254,49 +6358,47 @@ impl WgpuSceneRenderer {
             })
             .collect();
         let vbytes = bytemuck::cast_slice(&verts);
+        let vlen = u64::try_from(vbytes.len()).ok()?;
         self.mesh_verts
-            .grow_to_fit(&self.device, vbytes.len() as u64);
-        let (voff, _) = self.mesh_verts.alloc_write(&self.queue, vbytes);
+            .grow_to_fit(&self.device, encoder, vlen)
+            .map_err(|error| log::error!("{error:#}"))
+            .ok()?;
+        let voff = self
+            .mesh_verts
+            .alloc_write(&self.queue, vbytes)
+            .map_err(|error| log::error!("{error:#}"))
+            .ok()?;
         let ibytes = bytemuck::cast_slice(&mesh.indices);
+        let ilen = u64::try_from(ibytes.len()).ok()?;
         self.mesh_indices
-            .grow_to_fit(&self.device, ibytes.len() as u64);
-        let (ioff, _) = self.mesh_indices.alloc_write(&self.queue, ibytes);
-        (voff, verts.len() as u32, ioff, mesh.indices.len() as u32)
+            .grow_to_fit(&self.device, encoder, ilen)
+            .map_err(|error| log::error!("{error:#}"))
+            .ok()?;
+        let ioff = self
+            .mesh_indices
+            .alloc_write(&self.queue, ibytes)
+            .map_err(|error| log::error!("{error:#}"))
+            .ok()?;
+        Some((voff, vertex_count, ioff, index_count))
     }
 
-    fn alloc_mesh_uniform(&mut self, u: MeshUniform) -> u64 {
-        if self.mesh_uniform_head + MESH_UNIFORM_SLOT > MESH_UNIFORM_CAP {
-            log::warn!("mesh uniform buffer overflow; regenerating");
-            self.recreate_mesh_uniform_buffer();
+    fn alloc_mesh_uniform(&mut self, u: MeshUniform) -> Option<u64> {
+        let size = std::mem::size_of::<MeshUniform>() as u64;
+        let next = self
+            .mesh_uniform_head
+            .checked_add(self.mesh_uniform_alignment)?;
+        if next > self.mesh_uniform_cap || next > u64::from(u32::MAX) {
+            log::warn!("mesh uniform buffer exhausted; remaining meshes skipped");
+            return None;
         }
         let slot = self.mesh_uniform_head;
+        if slot.checked_add(size)? > self.mesh_uniform_cap {
+            return None;
+        }
         self.queue
             .write_buffer(&self.mesh_uniform_buf, slot, bytemuck::bytes_of(&u));
-        self.mesh_uniform_head = slot + MESH_UNIFORM_SLOT;
-        slot
-    }
-
-    fn recreate_mesh_uniform_buffer(&mut self) {
-        let new_cap = self.mesh_uniform_head + MESH_UNIFORM_SLOT;
-        self.mesh_uniform_buf = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("mesh uniform buffer"),
-            size: new_cap,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        self.mesh_bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("mesh uniform bind"),
-            layout: &self.mesh_bind_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                    buffer: &self.mesh_uniform_buf,
-                    offset: 0,
-                    size: NonZero::new(MESH_UNIFORM_SLOT),
-                }),
-            }],
-        });
-        self.mesh_uniform_head = 0;
+        self.mesh_uniform_head = next;
+        Some(slot)
     }
 
     /// Render one backdrop-dependent blend mesh: isolate the mesh into a
@@ -5319,45 +6421,57 @@ impl WgpuSceneRenderer {
         blend: repose_core::BlendMode,
         current_transform: &repose_core::Transform,
         current_pass: &mut Pass,
+        active_clips: &[ActiveClip],
         passes: &mut Vec<Pass>,
-        target_stack: &mut Vec<PassTarget>,
         id_head: &mut u32,
+        pass_id_head: &mut u64,
         ids_used: &mut Vec<u32>,
-        current_target_size: &mut (f32, f32),
+        scissor: (u32, u32, u32, u32),
+        encoder: &mut wgpu::CommandEncoder,
         fb_w: f32,
         fb_h: f32,
     ) {
-        let parent_target = target_stack.last().copied().unwrap_or(PassTarget::Surface);
-        // Layer parents store surface-positioned rects (`rect_px`) with
-        // layer-local content, so a surface-space aabb maps into the layer
-        // by subtracting the layer origin. Surface parents are identity.
-        let parent_origin = match parent_target {
-            PassTarget::Surface => (0.0, 0.0),
+        if scissor.2 == 0 || scissor.3 == 0 || active_clips.iter().any(ActiveClip::blocked) {
+            return;
+        }
+        let parent_target = current_pass.target;
+        let (parent_w, parent_h) = match parent_target {
+            PassTarget::Surface => (fb_w, fb_h),
             PassTarget::Layer(id) => match self.layer_pool.get(&id) {
-                Some(lt) => (lt.rect_px.0, lt.rect_px.1),
-                None => (0.0, 0.0),
+                Some(layer) => (layer.width as f32, layer.height as f32),
+                None => return,
             },
         };
         let affine = combine_mesh_affine(current_transform, transform);
-        let aabb = mesh_aabb(&mesh, affine);
-        if aabb.w <= 0.0 || aabb.h <= 0.0 {
+        let local_rect = intersect(
+            mesh_aabb(&mesh, affine),
+            repose_core::Rect {
+                x: 0.0,
+                y: 0.0,
+                w: parent_w,
+                h: parent_h,
+            },
+        );
+        if !local_rect.x.is_finite()
+            || !local_rect.y.is_finite()
+            || !local_rect.w.is_finite()
+            || !local_rect.h.is_finite()
+            || local_rect.w <= 0.0
+            || local_rect.h <= 0.0
+            || local_rect.w > self.device.limits().max_texture_dimension_2d as f32
+            || local_rect.h > self.device.limits().max_texture_dimension_2d as f32
+        {
             return;
         }
-        // Surface-space bbox -> parent-target pixels.
-        let local_rect = repose_core::Rect {
-            x: aabb.x - parent_origin.0,
-            y: aabb.y - parent_origin.1,
-            w: aabb.w,
-            h: aabb.h,
-        };
-        let w = local_rect.w.ceil().max(1.0);
-        let h = local_rect.h.ceil().max(1.0);
         let layer_rect = repose_core::Rect {
-            x: local_rect.x,
-            y: local_rect.y,
-            w,
-            h,
+            x: local_rect.x.floor(),
+            y: local_rect.y.floor(),
+            w: (local_rect.x + local_rect.w).ceil() - local_rect.x.floor(),
+            h: (local_rect.y + local_rect.h).ceil() - local_rect.y.floor(),
         };
+        let w = layer_rect.w;
+        let h = layer_rect.h;
+        let local_rect = layer_rect;
         let layer_id = *id_head;
         *id_head = id_head.wrapping_add(1);
         ids_used.push(layer_id);
@@ -5365,14 +6479,44 @@ impl WgpuSceneRenderer {
         // Snapshot the parent target region before compositing: the blend
         // shader samples it as the backdrop. The copy runs at execution
         // time, after all earlier passes have rendered.
-        self.alloc_blend_snapshot(layer_id, w as u32, h as u32);
-        self.blend_copies
-            .push((layer_id, parent_target, layer_rect));
+        let snapshot_format = match parent_target {
+            PassTarget::Surface if self.working_space => wgpu::TextureFormat::Rgba16Float,
+            PassTarget::Surface => self.output_format,
+            PassTarget::Layer(_) => self.layer_target_format(),
+        };
+        if !self.alloc_blend_snapshot(layer_id, w as u32, h as u32, snapshot_format) {
+            log::warn!("blend snapshot budget exhausted; blend skipped");
+            return;
+        }
+        let source_pass_id = *pass_id_head;
+        *pass_id_head += 1;
+        let resumed_pass_id = *pass_id_head;
+        *pass_id_head += 1;
+        self.blend_copies.push(BlendCopy {
+            pass_id: resumed_pass_id,
+            blend_id: layer_id,
+            target: parent_target,
+            region: layer_rect,
+        });
 
         // Render the mesh alone into the layer (layer-local shift so the
         // layer owns exactly the mesh bbox), then resume the parent pass.
         // The composite runs in the resumed parent pass.
-        let mut layer_cmds = Vec::new();
+        let mut layer_pass = Pass {
+            id: source_pass_id,
+            target: PassTarget::Layer(layer_id),
+            initial_scissor: (0, 0, w as u32, h as u32),
+            active_scissor: Some((0, 0, w as u32, h as u32)),
+            clear_color: Some([0.0, 0.0, 0.0, 0.0]),
+            cmds: Vec::new(),
+        };
+        self.replay_active_clips(
+            active_clips,
+            (local_rect.x, local_rect.y),
+            (w, h),
+            &mut layer_pass,
+            encoder,
+        );
         self.get_or_create_layer(layer_id, w as u32, h as u32, layer_rect);
         let shift = repose_core::Transform::translate(-local_rect.x, -local_rect.y);
         let local = current_transform.combine(&shift);
@@ -5382,36 +6526,26 @@ impl WgpuSceneRenderer {
             transform,
             &paint,
             repose_core::BlendMode::Alpha,
-            &mut layer_cmds,
+            &mut layer_pass.cmds,
+            encoder,
         );
         let saved = std::mem::replace(
             current_pass,
             Pass {
+                id: resumed_pass_id,
                 target: parent_target,
-                initial_scissor: (0, 0, self.output_width, self.output_height),
+                initial_scissor: scissor,
+                active_scissor: Some(scissor),
                 clear_color: None,
                 cmds: Vec::new(),
             },
         );
-        passes.push(Pass {
-            target: PassTarget::Layer(layer_id),
-            initial_scissor: (0, 0, w as u32, h as u32),
-            clear_color: Some([0.0, 0.0, 0.0, 0.0]),
-            cmds: layer_cmds,
-        });
+        passes.push(layer_pass);
         passes.push(saved);
-        *current_target_size = (fb_w, fb_h);
 
         // Composite quad over the mesh bbox in the parent target's pixel
         // space. The executor maps this NDC against `parent`, so layer
         // parents at any origin work.
-        let (parent_w, parent_h) = match parent_target {
-            PassTarget::Surface => (fb_w, fb_h),
-            PassTarget::Layer(id) => match self.layer_pool.get(&id) {
-                Some(lt) => (lt.width as f32, lt.height as f32),
-                None => (fb_w, fb_h),
-            },
-        };
         let ndc = {
             let cx = local_rect.x + local_rect.w * 0.5;
             let cy = local_rect.y + local_rect.h * 0.5;
@@ -5429,40 +6563,80 @@ impl WgpuSceneRenderer {
             mode: blend.shader_mode(),
             _pad: [0.0; 3],
         };
-        self.blend_ring
-            .grow_to_fit(&self.device, std::mem::size_of::<BlendInstance>() as u64);
+        if self
+            .blend_ring
+            .grow_to_fit(
+                &self.device,
+                encoder,
+                std::mem::size_of::<BlendInstance>() as u64,
+            )
+            .is_err()
+        {
+            return;
+        }
         let bytes = bytemuck::bytes_of(&inst);
-        let (off, _) = self.blend_ring.alloc_write(&self.queue, bytes);
+        let Ok(off) = self.blend_ring.alloc_write(&self.queue, bytes) else {
+            return;
+        };
         current_pass.cmds.push(Cmd::BlendLayer {
             off,
             cnt: 1,
             src_layer: layer_id,
             dst_layer: Some(layer_id),
             parent: parent_target,
+            scissor,
         });
     }
 
     /// Allocate (or reuse) the backdrop snapshot texture for an isolated
     /// blend layer.
-    fn alloc_blend_snapshot(&mut self, layer_id: u32, w: u32, h: u32) {
+    fn alloc_blend_snapshot(
+        &mut self,
+        layer_id: u32,
+        w: u32,
+        h: u32,
+        format: wgpu::TextureFormat,
+    ) -> bool {
         let reuse = self
             .blend_snapshots
             .get(&layer_id)
             .is_some_and(|s| s.width == w && s.height == h);
         if reuse {
-            return;
+            return true;
+        }
+        if w == 0 || h == 0 {
+            return false;
+        }
+        let Ok(bytes) = texture_storage_bytes(format, w, h) else {
+            return false;
+        };
+        let old_bytes = self
+            .blend_snapshots
+            .get(&layer_id)
+            .map_or(0, |snapshot| snapshot.bytes);
+        let projected = self
+            .gpu_bytes_total()
+            .saturating_sub(old_bytes)
+            .checked_add(bytes)
+            .unwrap_or(u64::MAX);
+        if bytes > MAX_BLEND_SNAPSHOT_BYTES || projected > self.gpu_budget_bytes {
+            return false;
+        }
+        if let Some(old) = self.blend_snapshots.remove(&layer_id) {
+            self.blend_snapshot_bytes_total =
+                self.blend_snapshot_bytes_total.saturating_sub(old.bytes);
         }
         let tex = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("blend backdrop snapshot"),
             size: wgpu::Extent3d {
-                width: w.max(1),
-                height: h.max(1),
+                width: w,
+                height: h,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: self.output_format,
+            format,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
@@ -5481,7 +6655,7 @@ impl WgpuSceneRenderer {
                 },
             ],
         });
-        let _ = view;
+        self.blend_snapshot_bytes_total = self.blend_snapshot_bytes_total.saturating_add(bytes);
         self.blend_snapshots.insert(
             layer_id,
             BlendSnapshot {
@@ -5489,8 +6663,18 @@ impl WgpuSceneRenderer {
                 bind,
                 width: w,
                 height: h,
+                bytes,
             },
         );
+        true
+    }
+
+    fn remove_blend_snapshot(&mut self, layer_id: u32) {
+        if let Some(snapshot) = self.blend_snapshots.remove(&layer_id) {
+            self.blend_snapshot_bytes_total = self
+                .blend_snapshot_bytes_total
+                .saturating_sub(snapshot.bytes);
+        }
     }
 
     fn blend_snapshot_texture(&self, layer_id: u32) -> Option<wgpu::Texture> {
@@ -5508,10 +6692,15 @@ impl WgpuSceneRenderer {
         paint: &repose_core::PaintDesc,
         blend: repose_core::BlendMode,
         cmds: &mut Vec<Cmd>,
+        encoder: &mut wgpu::CommandEncoder,
     ) {
         let affine = combine_mesh_affine(current_transform, transform);
-        let (voff, vcnt, ioff, icnt) = self.upload_mesh_geometry(mesh);
-        let uoff = self.alloc_mesh_uniform(mesh_uniform_from_paint(affine, paint));
+        let Some((voff, vcnt, ioff, icnt)) = self.upload_mesh_geometry(mesh, encoder) else {
+            return;
+        };
+        let Some(uoff) = self.alloc_mesh_uniform(mesh_uniform_from_paint(affine, paint)) else {
+            return;
+        };
         cmds.push(Cmd::VectorMesh {
             voff,
             vcnt,
@@ -5520,6 +6709,46 @@ impl WgpuSceneRenderer {
             uoff,
             blend,
         });
+    }
+
+    pub fn begin_frame(&mut self) -> anyhow::Result<()> {
+        if self.frame_active {
+            self.last_render_error = Some("renderer frame is already active".into());
+            anyhow::bail!("renderer frame is already active");
+        }
+        self.last_render_error = None;
+        self.frame_active = true;
+        self.frame_index = self.frame_index.wrapping_add(1);
+        self.slug_cache.next_frame();
+        if let Some(composite) = self.callback_resources.get_mut::<DepthComposite>() {
+            composite.begin_frame();
+        }
+        for resources in self.callback_scoped_resources.values_mut() {
+            if let Some(composite) = resources.get_mut::<DepthComposite>() {
+                composite.begin_frame();
+            }
+        }
+        Ok(())
+    }
+
+    pub fn end_frame(&mut self) {
+        if !self.frame_active {
+            return;
+        }
+        if let Some(composite) = self.callback_resources.get_mut::<DepthComposite>() {
+            composite.end_frame();
+        }
+        for resources in self.callback_scoped_resources.values_mut() {
+            if let Some(composite) = resources.get_mut::<DepthComposite>() {
+                composite.end_frame();
+            }
+        }
+        self.evict_unused_images();
+        self.frame_active = false;
+    }
+
+    pub fn last_render_error(&self) -> Option<&str> {
+        self.last_render_error.as_deref()
     }
 
     pub fn render_scene_to_encoder(
@@ -5562,10 +6791,10 @@ impl WgpuSceneRenderer {
                 (rect.x, rect.y + rect.h),
                 (rect.x + rect.w, rect.y + rect.h),
             ];
-            let mut min_x = f32::MAX;
-            let mut min_y = f32::MAX;
-            let mut max_x = f32::MIN;
-            let mut max_y = f32::MIN;
+            let mut min_x = f32::INFINITY;
+            let mut min_y = f32::INFINITY;
+            let mut max_x = f32::NEG_INFINITY;
+            let mut max_y = f32::NEG_INFINITY;
             for (x, y) in corners {
                 let wx = m[0] * x + m[1] * y + tx;
                 let wy = m[2] * x + m[3] * y + ty;
@@ -5635,33 +6864,52 @@ impl WgpuSceneRenderer {
         }
 
         fn to_scissor(r: &repose_core::Rect, fb_w: u32, fb_h: u32) -> (u32, u32, u32, u32) {
-            let mut x = r.x.floor() as i64;
-            let mut y = r.y.floor() as i64;
-            let fb_wi = fb_w as i64;
-            let fb_hi = fb_h as i64;
-            x = x.clamp(0, fb_wi.saturating_sub(1));
-            y = y.clamp(0, fb_hi.saturating_sub(1));
-            let w_req = r.w.ceil().max(1.0) as i64;
-            let h_req = r.h.ceil().max(1.0) as i64;
-            let w = (w_req).min(fb_wi - x).max(1);
-            let h = (h_req).min(fb_hi - y).max(1);
-            (x as u32, y as u32, w as u32, h as u32)
+            if fb_w == 0
+                || fb_h == 0
+                || !r.x.is_finite()
+                || !r.y.is_finite()
+                || !r.w.is_finite()
+                || !r.h.is_finite()
+                || r.w <= 0.0
+                || r.h <= 0.0
+            {
+                return (0, 0, 0, 0);
+            }
+            let x0 = r.x.floor().max(0.0).min(fb_w as f32);
+            let y0 = r.y.floor().max(0.0).min(fb_h as f32);
+            let x1 = (r.x + r.w).ceil().max(x0).min(fb_w as f32);
+            let y1 = (r.y + r.h).ceil().max(y0).min(fb_h as f32);
+            if x1 <= x0 || y1 <= y0 {
+                return (0, 0, 0, 0);
+            }
+            (x0 as u32, y0 as u32, (x1 - x0) as u32, (y1 - y0) as u32)
         }
 
         let fb_w = self.output_width as f32;
         let fb_h = self.output_height as f32;
 
         let mut passes: Vec<Pass> = Vec::with_capacity(1);
-        let clear_color = clear_color_override.unwrap_or_else(|| {
-            // Scene clear colors are sRGB bytes like every other `Color`;
-            // linearize so the sRGB target re-encodes them exactly (passing
-            // raw bytes double-encoded: (10,20,30) read back (56,79,96)).
-            let lin = scene.clear_color.to_linear();
-            [lin[0] as f64, lin[1] as f64, lin[2] as f64, lin[3] as f64]
-        });
+        let clear_color = clear_color_override
+            .map(|color| {
+                let alpha = color[3];
+                [color[0] * alpha, color[1] * alpha, color[2] * alpha, alpha]
+            })
+            .unwrap_or_else(|| {
+                let color = scene.clear_color.to_linear();
+                let alpha = color[3] as f64;
+                [
+                    color[0] as f64 * alpha,
+                    color[1] as f64 * alpha,
+                    color[2] as f64 * alpha,
+                    alpha,
+                ]
+            });
+        let mut next_pass_id = 0u64;
         let mut current_pass: Pass = Pass {
+            id: next_pass_id,
             target: PassTarget::Surface,
             initial_scissor: (0, 0, self.output_width, self.output_height),
+            active_scissor: Some((0, 0, self.output_width, self.output_height)),
             clear_color: Some([
                 clear_color[0] as f32,
                 clear_color[1] as f32,
@@ -5670,9 +6918,9 @@ impl WgpuSceneRenderer {
             ]),
             cmds: Vec::with_capacity(scene.nodes.len()),
         };
+        next_pass_id += 1;
         let mut target_stack: Vec<PassTarget> = Vec::new();
-        let mut layer_alphas: Vec<(u32, f32, (u32, u32, u32, u32))> = Vec::new();
-        let mut layer_blurs: Vec<(u32, f32, f32)> = Vec::new();
+        let mut layer_stack: Vec<LayerState> = Vec::new();
         let mut current_target_size: (f32, f32) = (fb_w, fb_h);
 
         struct Batch {
@@ -5727,6 +6975,7 @@ impl WgpuSceneRenderer {
                 nv12_pipe: &mut InstancedPipe<Nv12Instance>,
                 device: &wgpu::Device,
                 queue: &wgpu::Queue,
+                encoder: &mut wgpu::CommandEncoder,
                 cmds: &mut Vec<Cmd>,
             ) {
                 let (rects, borders, ellipses, e_borders, arcs) = pipes;
@@ -5735,7 +6984,9 @@ impl WgpuSceneRenderer {
                 macro_rules! flush_one {
                     ($buf:ident, $pipe:expr, $variant:ident) => {
                         if !self.$buf.is_empty() {
-                            if let Some((off, cnt)) = $pipe.upload(device, queue, &self.$buf) {
+                            if let Some((off, cnt)) =
+                                $pipe.upload(device, queue, encoder, &self.$buf)
+                            {
                                 cmds.push(Cmd::$variant { off, cnt });
                             }
                             self.$buf.clear();
@@ -5752,7 +7003,8 @@ impl WgpuSceneRenderer {
                 flush_one!(colors, colors, GlyphsColor);
 
                 if !self.nv12s.is_empty() {
-                    if let Some((off, cnt)) = nv12_pipe.upload(device, queue, &self.nv12s) {
+                    if let Some((off, cnt)) = nv12_pipe.upload(device, queue, encoder, &self.nv12s)
+                    {
                         let _ = (off, cnt);
                     }
                     self.nv12s.clear();
@@ -5775,14 +7027,24 @@ impl WgpuSceneRenderer {
         self.mesh_verts.reset();
         self.mesh_indices.reset();
         self.mesh_uniform_head = 0;
-        self.mesh_clip_stack.clear();
         self.projective_ring.reset();
         self.blend_ring.reset();
         // Translator-owned flatten layers are single-frame by construction:
         // drop last frame's textures before translating (their composites
         // were submitted last frame, so GPU-side refs are independent).
-        for id in self.flatten_layer_ids.drain(..) {
-            self.layer_pool.remove(&id);
+        for id in self
+            .flatten_layer_ids
+            .drain(..)
+            .chain(self.producer_layer_ids.drain(..))
+        {
+            if let Some(layer) = self.layer_pool.remove(&id) {
+                self.layer_bytes_total = self.layer_bytes_total.saturating_sub(layer.bytes);
+            }
+        }
+        for snapshot in self.blend_snapshots.values() {
+            self.blend_snapshot_bytes_total = self
+                .blend_snapshot_bytes_total
+                .saturating_sub(snapshot.bytes);
         }
         self.blend_snapshots.clear();
         self.blend_copies.clear();
@@ -5793,18 +7055,13 @@ impl WgpuSceneRenderer {
         let mut flatten_id_head: u32 = FLATTEN_ID_BASE;
         let mut flatten_ids_used: Vec<u32> = Vec::new();
         let mut scissor_stack: Vec<repose_core::Rect> = Vec::with_capacity(8);
-        // NOTE: Records the clip instance range + flags of each active rounded-rect clip
-        // so PopClip can re-stamp the stencil with a decrement pass (mirroring
-        // VectorClipPop). Keys: (off, cnt, difference, rounded).
-        let mut clip_cmd_stack: Vec<(u64, u32, bool)> = Vec::with_capacity(8);
+        let mut active_clips: Vec<ActiveClip> = Vec::with_capacity(8);
         let mut root_clip_rect = repose_core::Rect {
             x: 0.0,
             y: 0.0,
             w: fb_w,
             h: fb_h,
         };
-        let mut saved_scissor_stack: Vec<repose_core::Rect> = Vec::new();
-        let mut saved_root_clip_rect = root_clip_rect;
 
         let mut current_prim: Option<&'static str> = None;
 
@@ -5832,6 +7089,7 @@ impl WgpuSceneRenderer {
                         &mut self.nv12,
                         &self.device,
                         &self.queue,
+                        encoder,
                         &mut current_pass.cmds,
                     )
                 }
@@ -5935,7 +7193,7 @@ impl WgpuSceneRenderer {
                         current_target_size.1,
                     );
                     let pad_px = width.0 * 0.5 + 2.0;
-                    let pad = (pad_px / current_target_size.0) * 2.0;
+                    let pad = (pad_px / current_target_size.0.max(1.0)) * 2.0;
                     let (brush_type, grad_kind, color0, color1, grad_p0, grad_p1, tile_mode) =
                         brush_to_shape_fields(brush, rect, current_transform);
                     batch.e_borders.push(EllipseBorderInstance {
@@ -5961,15 +7219,29 @@ impl WgpuSceneRenderer {
                     brush,
                     cap,
                 } => {
+                    if !start_angle.is_finite()
+                        || !sweep_angle.is_finite()
+                        || !stroke_width.0.is_finite()
+                        || !rect.x.is_finite()
+                        || !rect.y.is_finite()
+                        || !rect.w.is_finite()
+                        || !rect.h.is_finite()
+                        || rect.w <= 0.0
+                        || rect.h <= 0.0
+                        || stroke_width.0 <= 0.0
+                        || sweep_angle.abs() <= 1e-6
+                    {
+                        continue;
+                    }
                     flush_if_prim_changed!("arc", &self.arcs);
                     let (ndc, fwd_mat) = rect_to_instance_ndc(
                         *rect,
                         current_transform,
-                        current_target_size.0,
-                        current_target_size.1,
+                        current_target_size.0.max(1.0),
+                        current_target_size.1.max(1.0),
                     );
                     let pad_px = stroke_width.0 * 0.5 + 2.0;
-                    let pad = (pad_px / current_target_size.0) * 2.0;
+                    let pad = (pad_px / current_target_size.0.max(1.0)) * 2.0;
                     let cap_val = match cap {
                         StrokeCap::Butt => 0.0,
                         StrokeCap::Round => 1.0,
@@ -5977,10 +7249,15 @@ impl WgpuSceneRenderer {
                     };
                     let (brush_type, grad_kind, color0, color1, grad_p0, grad_p1, tile_mode) =
                         brush_to_shape_fields(brush, rect, current_transform);
+                    let (start, sweep) = if *sweep_angle < 0.0 {
+                        (*start_angle + *sweep_angle, -*sweep_angle)
+                    } else {
+                        (*start_angle, *sweep_angle)
+                    };
                     batch.arcs.push(ArcInstance {
                         xywh: ndc,
-                        start_angle: *start_angle,
-                        sweep_angle: *sweep_angle,
+                        start_angle: start,
+                        sweep_angle: sweep,
                         stroke: stroke_width.0,
                         pad,
                         brush_type,
@@ -6272,12 +7549,21 @@ impl WgpuSceneRenderer {
                     // Upload slug vertices if any
                     if !slug_verts_local.is_empty() {
                         let bytes = bytemuck::cast_slice(&slug_verts_local);
-                        self.slug_ring.grow_to_fit(&self.device, bytes.len() as u64);
-                        let (off, _) = self.slug_ring.alloc_write(&self.queue, bytes);
-                        current_pass.cmds.push(Cmd::GlyphsVector {
-                            off,
-                            cnt: slug_verts_local.len() as u32,
-                        });
+                        let byte_len = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
+                        let Ok(count) = u32::try_from(slug_verts_local.len()) else {
+                            slug_verts_local.clear();
+                            continue;
+                        };
+                        if self
+                            .slug_ring
+                            .grow_to_fit(&self.device, encoder, byte_len)
+                            .is_ok()
+                            && let Ok(off) = self.slug_ring.alloc_write(&self.queue, bytes)
+                        {
+                            current_pass
+                                .cmds
+                                .push(Cmd::GlyphsVector { off, cnt: count });
+                        }
                         slug_verts_local.clear();
                     }
 
@@ -6469,26 +7755,33 @@ impl WgpuSceneRenderer {
                     );
 
                     if is_nv12 {
-                        let uv_x_offset = if let Some(ImageTex::Nv12 { w, color_info, .. }) =
-                            self.images.get(handle)
-                        {
-                            match color_info.chroma_siting {
-                                ChromaSiting::Center | ChromaSiting::TopLeft => 0.0,
-                                ChromaSiting::Left => -1.0 / *w as f32,
-                            }
-                        } else {
-                            0.0
-                        };
+                        let (uv_x_offset, uv_y_offset) =
+                            if let Some(ImageTex::Nv12 {
+                                w, h, color_info, ..
+                            }) = self.images.get(handle)
+                            {
+                                let chroma_w = w.div_ceil(2).max(1) as f32;
+                                let chroma_h = h.div_ceil(2).max(1) as f32;
+                                match color_info.chroma_siting {
+                                    ChromaSiting::Center => (0.0, 0.0),
+                                    ChromaSiting::Left => (-0.5 / chroma_w, 0.0),
+                                    ChromaSiting::TopLeft => (-0.5 / chroma_w, -0.5 / chroma_h),
+                                }
+                            } else {
+                                (0.0, 0.0)
+                            };
 
                         let inst = Nv12Instance {
                             xywh: ndc_center,
                             uv: uv_rect,
                             color: tint.to_linear(),
                             uv_x_offset,
+                            uv_y_offset,
                             fwd_mat,
-                            _pad: [0.0],
                         };
-                        if let Some((off, _)) = self.nv12.upload(&self.device, &self.queue, &[inst])
+                        if let Some((off, _)) =
+                            self.nv12
+                                .upload(&self.device, &self.queue, encoder, &[inst])
                         {
                             current_pass.cmds.push(Cmd::ImageNv12 {
                                 off,
@@ -6505,7 +7798,8 @@ impl WgpuSceneRenderer {
                             fwd_mat,
                         };
                         if let Some((off, _)) =
-                            self.glyph_color.upload(&self.device, &self.queue, &[inst])
+                            self.glyph_color
+                                .upload(&self.device, &self.queue, encoder, &[inst])
                         {
                             current_pass.cmds.push(Cmd::ImageRgba {
                                 off,
@@ -6548,7 +7842,8 @@ impl WgpuSceneRenderer {
                         fwd_mat,
                     };
                     if let Some((off, _)) =
-                        self.glyph_color.upload(&self.device, &self.queue, &[inst])
+                        self.glyph_color
+                            .upload(&self.device, &self.queue, encoder, &[inst])
                     {
                         current_pass.cmds.push(Cmd::Coverage {
                             off,
@@ -6558,14 +7853,12 @@ impl WgpuSceneRenderer {
                     }
                 }
                 SceneNode::PushClip { rect, radius, op } => {
-                    flush_batch!(); // flush content before entering clip
+                    flush_batch!();
 
                     let is_diff = matches!(op, repose_core::ClipOp::Difference);
-
                     let t_identity = Transform::identity();
                     let current_transform = transform_stack.last().unwrap_or(&t_identity);
                     let transformed = affine_aabb(current_transform, rect);
-
                     let top = scissor_stack.last().copied().unwrap_or(root_clip_rect);
                     let next_scissor = if is_diff {
                         top
@@ -6578,62 +7871,122 @@ impl WgpuSceneRenderer {
                         current_target_size.0 as u32,
                         current_target_size.1 as u32,
                     );
-
-                    let clip_ndc_tl = to_ndc(
-                        transformed.x,
-                        transformed.y,
-                        transformed.w,
-                        transformed.h,
-                        current_target_size.0,
-                        current_target_size.1,
-                    );
-                    let inst = ClipInstance {
-                        xywh: [
-                            clip_ndc_tl[0] + clip_ndc_tl[2] * 0.5,
-                            clip_ndc_tl[1] + clip_ndc_tl[3] * 0.5,
-                            clip_ndc_tl[2],
-                            clip_ndc_tl[3],
-                        ],
-                        radii: radius.map(|r| r.0),
-                        fwd_mat: [1.0, 0.0, 0.0, 1.0],
+                    let has_inverse = active_clips.iter().any(ActiveClip::difference);
+                    let mut blocked =
+                        current_pass.active_scissor.is_none() || (has_inverse && !is_diff);
+                    if has_inverse && is_diff {
+                        log::error!(
+                            "unsupported clip nesting: Difference cannot contain a Difference clip"
+                        );
+                        blocked = true;
+                    }
+                    let has_area = transformed.x.is_finite()
+                        && transformed.y.is_finite()
+                        && transformed.w.is_finite()
+                        && transformed.h.is_finite()
+                        && transformed.w > 0.0
+                        && transformed.h > 0.0;
+                    let mut applied = false;
+                    let mut off = 0;
+                    if !blocked && has_area && (is_diff || scissor.2 > 0 && scissor.3 > 0) {
+                        let clip_ndc_tl = to_ndc(
+                            transformed.x,
+                            transformed.y,
+                            transformed.w,
+                            transformed.h,
+                            current_target_size.0,
+                            current_target_size.1,
+                        );
+                        let inst = ClipInstance {
+                            xywh: [
+                                clip_ndc_tl[0] + clip_ndc_tl[2] * 0.5,
+                                clip_ndc_tl[1] + clip_ndc_tl[3] * 0.5,
+                                clip_ndc_tl[2],
+                                clip_ndc_tl[3],
+                            ],
+                            radii: radius.map(|r| r.0),
+                            fwd_mat: [1.0, 0.0, 0.0, 1.0],
+                        };
+                        let bytes = bytemuck::bytes_of(&inst);
+                        if self
+                            .clip_ring
+                            .grow_to_fit(
+                                &self.device,
+                                encoder,
+                                u64::try_from(bytes.len()).unwrap_or(u64::MAX),
+                            )
+                            .is_ok()
+                            && let Ok(new_off) = self.clip_ring.alloc_write(&self.queue, bytes)
+                        {
+                            off = new_off;
+                            applied = true;
+                            current_pass.cmds.push(Cmd::ClipPush {
+                                off,
+                                cnt: 1,
+                                scissor,
+                                difference: is_diff,
+                                applied,
+                            });
+                        } else {
+                            blocked = !is_diff;
+                        }
+                    } else if !is_diff {
+                        blocked = true;
+                    }
+                    current_pass.active_scissor = if blocked {
+                        None
+                    } else {
+                        (scissor.2 > 0 && scissor.3 > 0).then_some(scissor)
                     };
-                    let bytes = bytemuck::bytes_of(&inst);
-                    self.clip_ring.grow_to_fit(&self.device, bytes.len() as u64);
-                    let (off, _) = self.clip_ring.alloc_write(&self.queue, bytes);
-
-                    let rounded = radius.iter().any(|&r| r.0 > 0.5);
-
-                    current_pass.cmds.push(Cmd::ClipPush {
+                    active_clips.push(ActiveClip::Rect {
                         off,
-                        cnt: 1,
-                        scissor,
+                        cnt: u32::from(applied),
+                        rect: transformed,
+                        radii: radius.map(|r| r.0),
                         difference: is_diff,
-                        rounded,
+                        applied,
+                        blocked,
                     });
-                    clip_cmd_stack.push((off, 1, is_diff));
                 }
                 SceneNode::PopClip => {
                     flush_batch!();
 
-                    if !scissor_stack.is_empty() {
-                        scissor_stack.pop();
+                    if scissor_stack.is_empty() || active_clips.is_empty() {
+                        log::error!("PopClip does not match an active clip");
                     } else {
-                        log::warn!("PopClip with empty stack");
+                        scissor_stack.pop();
                     }
-
+                    let clip = active_clips.pop();
                     let top = scissor_stack.last().copied().unwrap_or(root_clip_rect);
                     let scissor = to_scissor(
                         &top,
                         current_target_size.0 as u32,
                         current_target_size.1 as u32,
                     );
-                    let (off, cnt, difference) = clip_cmd_stack.pop().unwrap_or((0, 0, false));
-                    current_pass.cmds.push(Cmd::ClipPop {
-                        off,
-                        cnt,
-                        scissor,
-                        difference,
-                    });
+                    current_pass.active_scissor =
+                        (scissor.2 > 0 && scissor.3 > 0).then_some(scissor);
+                    match clip {
+                        Some(ActiveClip::Rect {
+                            off,
+                            cnt,
+                            difference,
+                            applied,
+                            ..
+                        }) if applied && cnt > 0 => {
+                            current_pass.cmds.push(Cmd::ClipPop {
+                                off,
+                                cnt,
+                                scissor,
+                                difference,
+                                applied: true,
+                            });
+                        }
+                        Some(ActiveClip::Vector { .. }) => {
+                            log::error!("PopClip matched a vector clip");
+                        }
+                        None => {}
+                        _ => {}
+                    }
                 }
                 SceneNode::Shadow {
                     rect,
@@ -6681,11 +8034,14 @@ impl WgpuSceneRenderer {
                             &mut root_clip_rect,
                             &mut current_target_size,
                             &mut current_pass,
+                            &mut active_clips,
                             &mut passes,
                             &mut target_stack,
                             &mut flatten_stack,
                             &mut flatten_id_head,
+                            &mut next_pass_id,
                             &mut flatten_ids_used,
+                            encoder,
                         );
                     } else {
                         let combined = current_transform.combine(transform);
@@ -6708,8 +8064,11 @@ impl WgpuSceneRenderer {
                                 &mut root_clip_rect,
                                 &mut current_target_size,
                                 &mut current_pass,
+                                &mut active_clips,
                                 &mut passes,
                                 &mut target_stack,
+                                &mut next_pass_id,
+                                encoder,
                             );
                             continue;
                         }
@@ -6722,139 +8081,184 @@ impl WgpuSceneRenderer {
                     alpha,
                     blur_radius_x,
                     blur_radius_y,
-                    rectangle_edge: _,
+                    rectangle_edge,
                 } => {
                     flush_batch!();
-                    // Layer rect is already snapped to whole pixels in layout;
-                    // round() keeps any bypass of that snap consistent.
-                    let w = (rect.w.round().max(1.0)) as u32;
-                    let h = (rect.h.round().max(1.0)) as u32;
-                    saved_scissor_stack =
+                    let width_f = rect.w.round();
+                    let height_f = rect.h.round();
+                    let max_dimension = self.device.limits().max_texture_dimension_2d as f32;
+                    if !width_f.is_finite()
+                        || !height_f.is_finite()
+                        || width_f < 1.0
+                        || height_f < 1.0
+                        || width_f > max_dimension
+                        || height_f > max_dimension
+                    {
+                        log::warn!("BeginLayer dimensions are invalid");
+                        continue;
+                    }
+                    let width = width_f as u32;
+                    let height = height_f as u32;
+                    let parent_scissors =
                         std::mem::replace(&mut scissor_stack, Vec::with_capacity(8));
-                    saved_root_clip_rect = std::mem::replace(
+                    let parent_root_clip = std::mem::replace(
                         &mut root_clip_rect,
                         repose_core::Rect {
                             x: 0.0,
                             y: 0.0,
-                            w: w as f32,
-                            h: h as f32,
+                            w: width as f32,
+                            h: height as f32,
                         },
                     );
                     scissor_stack.push(root_clip_rect);
-                    // Close out the current pass, start a new one for the layer.
-                    let prev_target = current_pass.target;
-                    let prev_scissor = current_pass.initial_scissor;
-                    let saved = std::mem::replace(
-                        &mut current_pass,
-                        Pass {
-                            target: PassTarget::Layer(*layer_id),
-                            initial_scissor: (0, 0, w, h),
-                            clear_color: Some([0.0, 0.0, 0.0, 0.0]),
-                            cmds: Vec::new(),
-                        },
+                    let layer_pass_id = next_pass_id;
+                    next_pass_id += 1;
+                    let parent_clips = std::mem::take(&mut active_clips);
+                    let mut layer_pass = Pass {
+                        id: layer_pass_id,
+                        target: PassTarget::Layer(*layer_id),
+                        initial_scissor: (0, 0, width, height),
+                        active_scissor: Some((0, 0, width, height)),
+                        clear_color: Some([0.0, 0.0, 0.0, 0.0]),
+                        cmds: Vec::new(),
+                    };
+                    active_clips = self.replay_active_clips(
+                        &parent_clips,
+                        (rect.x, rect.y),
+                        (width as f32, height as f32),
+                        &mut layer_pass,
+                        encoder,
                     );
-                    passes.push(saved);
-                    target_stack.push(prev_target);
-                    let _ = prev_scissor; // initial_scissor of resumed pass is restored at EndLayer
-                    // Get or create the layer's offscreen texture now so that
-                    // subsequent scissor ops / draws have a valid target.
-                    self.get_or_create_layer(*layer_id, w, h, *rect);
-                    current_target_size = (w as f32, h as f32);
-                    layer_alphas.push((*layer_id, *alpha, current_pass.initial_scissor));
-                    // Store blur info for post-processing after EndLayer
-                    if blur_radius_x.0 > 0.0 || blur_radius_y.0 > 0.0 {
-                        layer_blurs.push((*layer_id, blur_radius_x.0, blur_radius_y.0));
+                    let saved = std::mem::replace(&mut current_pass, layer_pass);
+                    let parent_transform = *current_transform;
+                    if let Some(top) = transform_stack.last_mut() {
+                        *top = Transform::identity();
                     }
+                    layer_stack.push(LayerState {
+                        layer_id: *layer_id,
+                        parent_target: saved.target,
+                        parent_scissors,
+                        parent_root_clip,
+                        parent_size: current_target_size,
+                        parent_transform,
+                        parent_scissor: saved.active_scissor,
+                        parent_clips,
+                        alpha: *alpha,
+                        blur: (blur_radius_x.0, blur_radius_y.0),
+                        rectangle_edge: *rectangle_edge,
+                    });
+                    passes.push(saved);
+                    if self.get_or_create_layer(*layer_id, width, height, *rect)
+                        && !self.producer_layer_ids.contains(layer_id)
+                    {
+                        self.producer_layer_ids.push(*layer_id);
+                    }
+                    current_target_size = (width as f32, height as f32);
                 }
                 SceneNode::EndLayer { layer_id } => {
                     flush_batch!();
-                    scissor_stack = std::mem::take(&mut saved_scissor_stack);
-                    root_clip_rect = saved_root_clip_rect;
-                    // Finish the layer's pass, start a new one on the previous target.
+                    if layer_stack.last().map(|state| state.layer_id) != Some(*layer_id) {
+                        log::warn!("EndLayer {} does not match active layer", layer_id);
+                        continue;
+                    }
+                    let state = layer_stack.pop().expect("checked above");
+                    scissor_stack = state.parent_scissors;
+                    root_clip_rect = state.parent_root_clip;
+                    active_clips = state.parent_clips;
+                    if let Some(top) = transform_stack.last_mut() {
+                        *top = state.parent_transform;
+                    }
+                    current_target_size = state.parent_size;
+                    let resumed_pass_id = next_pass_id;
+                    next_pass_id += 1;
                     let saved = std::mem::replace(
                         &mut current_pass,
                         Pass {
-                            target: target_stack.pop().unwrap_or(PassTarget::Surface),
-                            initial_scissor: (0, 0, self.output_width, self.output_height),
-                            clear_color: None, // LoadOp::Load - don't wipe earlier surface content
+                            id: resumed_pass_id,
+                            target: state.parent_target,
+                            initial_scissor: state.parent_scissor.unwrap_or((0, 0, 1, 1)),
+                            active_scissor: state.parent_scissor,
+                            clear_color: None,
                             cmds: Vec::new(),
                         },
                     );
                     passes.push(saved);
-                    current_target_size = (fb_w, fb_h);
-                    // Issue a composite quad for the just-finished layer in the new pass.
-                    if let Some((_, layer_alpha, _)) = layer_alphas
-                        .iter()
-                        .find(|(id, _, _)| id == layer_id)
-                        .copied()
-                    {
-                        let layer = self.layer_pool.get(layer_id).expect("layer target");
-                        let ndc_tl = to_ndc(
-                            layer.rect_px.0,
-                            layer.rect_px.1,
-                            layer.rect_px.2,
-                            layer.rect_px.3,
-                            fb_w,
-                            fb_h,
-                        );
-                        let uv_u1 = layer.rect_px.2 / layer.width.max(1) as f32;
-                        let uv_v1 = layer.rect_px.3 / layer.height.max(1) as f32;
-                        // Check if this layer needs content blur
-                        let blur_px_val = layer_blurs
-                            .iter()
-                            .find(|(id, _, _)| id == layer_id)
-                            .map(|(_, bx, by)| (*bx, *by));
-                        if let Some((blur_x, blur_y)) =
-                            blur_px_val.filter(|(bx, by)| *bx > 0.0 || *by > 0.0)
-                        {
-                            // Content blur: draw blurred version using the blur_content pipeline
-                            let bw_uv = (blur_x * 1.5) / layer.width.max(1) as f32;
-                            let bh_uv = (blur_y * 1.5) / layer.height.max(1) as f32;
-                            let inst = BlurInstance {
-                                xywh: [
-                                    ndc_tl[0] + ndc_tl[2] * 0.5,
-                                    ndc_tl[1] + ndc_tl[3] * 0.5,
-                                    ndc_tl[2],
-                                    ndc_tl[3],
-                                ],
-                                uv: [0.0, 0.0, uv_u1, uv_v1],
-                                color: [1.0, 1.0, 1.0, layer_alpha],
-                                blur_uv: [bw_uv, bh_uv],
-                                fwd_mat: [1.0, 0.0, 0.0, 1.0],
-                            };
-                            self.blur_ring.grow_to_fit(
+                    let Some(layer) = self.layer_pool.get(layer_id).cloned() else {
+                        continue;
+                    };
+                    let layer_rect = repose_core::Rect {
+                        x: layer.rect_px.0,
+                        y: layer.rect_px.1,
+                        w: layer.rect_px.2,
+                        h: layer.rect_px.3,
+                    };
+                    let local_layer_rect = affine_aabb(&state.parent_transform, &layer_rect);
+                    let (parent_width, parent_height) = state.parent_size;
+                    if state.blur.0 > 0.0 || state.blur.1 > 0.0 {
+                        let blur_x = state.blur.0 * 1.5;
+                        let blur_y = state.blur.1 * 1.5;
+                        let rect = repose_core::Rect {
+                            x: local_layer_rect.x - blur_x,
+                            y: local_layer_rect.y - blur_y,
+                            w: local_layer_rect.w + blur_x * 2.0,
+                            h: local_layer_rect.h + blur_y * 2.0,
+                        };
+                        let ndc =
+                            to_ndc(rect.x, rect.y, rect.w, rect.h, parent_width, parent_height);
+                        let inst = BlurInstance {
+                            xywh: [ndc[0] + ndc[2] * 0.5, ndc[1] + ndc[3] * 0.5, ndc[2], ndc[3]],
+                            uv: [0.0, 0.0, 1.0, 1.0],
+                            color: [1.0, 1.0, 1.0, state.alpha],
+                            blur_uv: [
+                                (state.blur.0 * 1.5) / layer.width.max(1) as f32,
+                                (state.blur.1 * 1.5) / layer.height.max(1) as f32,
+                            ],
+                            fwd_mat: [1.0, 0.0, 0.0, 1.0],
+                            edge_mode: if state.rectangle_edge { 0 } else { 1 },
+                            _pad: [0.0; 3],
+                        };
+                        if self
+                            .blur_ring
+                            .grow_to_fit(
                                 &self.device,
+                                encoder,
                                 std::mem::size_of::<BlurInstance>() as u64,
-                            );
-                            let bytes = bytemuck::bytes_of(&inst);
-                            let (off, _) = self.blur_ring.alloc_write(&self.queue, bytes);
+                            )
+                            .is_ok()
+                            && let Ok(off) = self
+                                .blur_ring
+                                .alloc_write(&self.queue, bytemuck::bytes_of(&inst))
+                        {
                             current_pass.cmds.push(Cmd::CompositeBlur {
                                 off,
                                 cnt: 1,
                                 layer_id: *layer_id,
                             });
-                        } else {
-                            // Normal sharp composite
-                            let inst = GlyphInstance {
-                                xywh: [
-                                    ndc_tl[0] + ndc_tl[2] * 0.5,
-                                    ndc_tl[1] + ndc_tl[3] * 0.5,
-                                    ndc_tl[2],
-                                    ndc_tl[3],
-                                ],
-                                uv: [0.0, uv_v1, uv_u1, 0.0],
-                                color: [1.0, 1.0, 1.0, layer_alpha],
-                                fwd_mat: [1.0, 0.0, 0.0, 1.0],
-                            };
-                            if let Some((off, cnt)) =
-                                self.glyph_color.upload(&self.device, &self.queue, &[inst])
-                            {
-                                current_pass.cmds.push(Cmd::CompositeLayer {
-                                    off,
-                                    cnt,
-                                    layer_id: *layer_id,
-                                });
-                            }
+                        }
+                    } else {
+                        let ndc = to_ndc(
+                            local_layer_rect.x,
+                            local_layer_rect.y,
+                            local_layer_rect.w,
+                            local_layer_rect.h,
+                            parent_width,
+                            parent_height,
+                        );
+                        let inst = GlyphInstance {
+                            xywh: [ndc[0] + ndc[2] * 0.5, ndc[1] + ndc[3] * 0.5, ndc[2], ndc[3]],
+                            uv: [0.0, 1.0, 1.0, 0.0],
+                            color: [1.0, 1.0, 1.0, state.alpha],
+                            fwd_mat: [1.0, 0.0, 0.0, 1.0],
+                        };
+                        if let Some((off, cnt)) =
+                            self.glyph_color
+                                .upload(&self.device, &self.queue, encoder, &[inst])
+                        {
+                            current_pass.cmds.push(Cmd::CompositeLayer {
+                                off,
+                                cnt,
+                                layer_id: *layer_id,
+                            });
                         }
                     }
                 }
@@ -6866,18 +8270,24 @@ impl WgpuSceneRenderer {
                 } => {
                     flush_batch!();
                     if let Some(layer) = self.layer_pool.get(layer_id).cloned() {
-                        // Shadow rect = layer rect + offset.
-                        let sx = layer.rect_px.0 + offset_px.0.0;
-                        let sy = layer.rect_px.1 + offset_px.1.0;
-                        let sw = layer.rect_px.2;
-                        let sh = layer.rect_px.3;
-                        // The blur in UV space is 1.5 * blur_px / texture_size
-                        // (the 1.5 matches the 3x3 Gaussian span).
-                        let bw_uv = (blur_px.0 * 1.5) / layer.width.max(1) as f32;
-                        let bh_uv = (blur_px.0 * 1.5) / layer.height.max(1) as f32;
-                        let shadow_u1 = layer.rect_px.2 / layer.width.max(1) as f32;
-                        let shadow_v1 = layer.rect_px.3 / layer.height.max(1) as f32;
-                        let ndc_tl = to_ndc(sx, sy, sw, sh, fb_w, fb_h);
+                        let layer_rect = repose_core::Rect {
+                            x: layer.rect_px.0,
+                            y: layer.rect_px.1,
+                            w: layer.rect_px.2,
+                            h: layer.rect_px.3,
+                        };
+                        let local_layer_rect =
+                            affine_aabb(transform_stack.last().unwrap_or(&t_identity), &layer_rect);
+                        let blur_x = blur_px.0.max(0.0) * 1.5;
+                        let blur_y = blur_px.0.max(0.0) * 1.5;
+                        let sx = local_layer_rect.x + offset_px.0.0 - blur_x;
+                        let sy = local_layer_rect.y + offset_px.1.0 - blur_y;
+                        let sw = local_layer_rect.w + blur_x * 2.0;
+                        let sh = local_layer_rect.h + blur_y * 2.0;
+                        let bw_uv = blur_x / layer.width.max(1) as f32;
+                        let bh_uv = blur_y / layer.height.max(1) as f32;
+                        let ndc_tl =
+                            to_ndc(sx, sy, sw, sh, current_target_size.0, current_target_size.1);
                         let inst = BlurInstance {
                             xywh: [
                                 ndc_tl[0] + ndc_tl[2] * 0.5,
@@ -6885,25 +8295,31 @@ impl WgpuSceneRenderer {
                                 ndc_tl[2],
                                 ndc_tl[3],
                             ],
-                            uv: [0.0, 0.0, shadow_u1, shadow_v1],
-                            color: [
-                                color.0 as f32 / 255.0,
-                                color.1 as f32 / 255.0,
-                                color.2 as f32 / 255.0,
-                                color.3 as f32 / 255.0,
-                            ],
+                            uv: [0.0, 0.0, 1.0, 1.0],
+                            color: color.to_linear(),
                             blur_uv: [bw_uv, bh_uv],
                             fwd_mat: [1.0, 0.0, 0.0, 1.0],
+                            edge_mode: 0,
+                            _pad: [0.0; 3],
                         };
-                        self.blur_ring
-                            .grow_to_fit(&self.device, std::mem::size_of::<BlurInstance>() as u64);
-                        let bytes = bytemuck::bytes_of(&inst);
-                        let (off, _) = self.blur_ring.alloc_write(&self.queue, bytes);
-                        current_pass.cmds.push(Cmd::CompositeShadow {
-                            off,
-                            cnt: 1,
-                            layer_id: *layer_id,
-                        });
+                        if self
+                            .blur_ring
+                            .grow_to_fit(
+                                &self.device,
+                                encoder,
+                                std::mem::size_of::<BlurInstance>() as u64,
+                            )
+                            .is_ok()
+                            && let Ok(off) = self
+                                .blur_ring
+                                .alloc_write(&self.queue, bytemuck::bytes_of(&inst))
+                        {
+                            current_pass.cmds.push(Cmd::CompositeShadow {
+                                off,
+                                cnt: 1,
+                                layer_id: *layer_id,
+                            });
+                        }
                     }
                 }
                 SceneNode::VectorMesh {
@@ -6914,7 +8330,40 @@ impl WgpuSceneRenderer {
                     blend,
                 } => {
                     flush_batch!();
-                    if blend.needs_isolation() {
+                    let paint_alpha = match paint {
+                        repose_core::PaintDesc::Linear {
+                            start_color,
+                            end_color,
+                            ..
+                        }
+                        | repose_core::PaintDesc::Radial {
+                            start_color,
+                            end_color,
+                            ..
+                        }
+                        | repose_core::PaintDesc::Sweep {
+                            start_color,
+                            end_color,
+                            ..
+                        } => Some(start_color.3.min(end_color.3) as f32 / 255.0),
+                        _ => None,
+                    };
+                    let translucent_fixed_blend =
+                        matches!(
+                            blend,
+                            repose_core::BlendMode::Add
+                                | repose_core::BlendMode::Multiply
+                                | repose_core::BlendMode::Screen
+                                | repose_core::BlendMode::Darken
+                                | repose_core::BlendMode::Lighten
+                        ) && (mesh.vertices.iter().any(|vertex| vertex.color[3] < 0.9999)
+                            || paint_alpha.is_some_and(|alpha| alpha < 0.9999));
+                    if blend.needs_isolation() || translucent_fixed_blend {
+                        let blend_scissor = to_scissor(
+                            &scissor_stack.last().copied().unwrap_or(root_clip_rect),
+                            current_target_size.0 as u32,
+                            current_target_size.1 as u32,
+                        );
                         self.emit_isolated_blend(
                             mesh.clone(),
                             *transform,
@@ -6922,11 +8371,13 @@ impl WgpuSceneRenderer {
                             *blend,
                             current_transform,
                             &mut current_pass,
+                            &active_clips,
                             &mut passes,
-                            &mut target_stack,
                             &mut flatten_id_head,
+                            &mut next_pass_id,
                             &mut flatten_ids_used,
-                            &mut current_target_size,
+                            blend_scissor,
+                            encoder,
                             fb_w,
                             fb_h,
                         );
@@ -6940,14 +8391,20 @@ impl WgpuSceneRenderer {
                             paint,
                             *blend,
                             &mut current_pass.cmds,
+                            encoder,
                         );
                     }
                 }
                 SceneNode::VectorOverlay { meshes } => {
                     flush_batch!();
                     for m in meshes.iter() {
-                        let (voff, vcnt, ioff, icnt) = self.upload_mesh_geometry(m);
-                        let uoff = self.alloc_mesh_uniform(MeshUniform::identity());
+                        let Some((voff, vcnt, ioff, icnt)) = self.upload_mesh_geometry(m, encoder)
+                        else {
+                            continue;
+                        };
+                        let Some(uoff) = self.alloc_mesh_uniform(MeshUniform::identity()) else {
+                            continue;
+                        };
                         current_pass.cmds.push(Cmd::VectorOverlay {
                             voff,
                             vcnt,
@@ -6966,9 +8423,6 @@ impl WgpuSceneRenderer {
                         combine_mesh_affine(current_transform, [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
                     let aabb = mesh_aabb(mesh, affine);
                     let top = scissor_stack.last().copied().unwrap_or(root_clip_rect);
-                    // An intersect mask can only remove pixels, so the scissor
-                    // tightens; a difference mask removes the *inside*, so the
-                    // scissor stays (content outside the mask must still draw).
                     let next = if difference {
                         top
                     } else {
@@ -6980,50 +8434,110 @@ impl WgpuSceneRenderer {
                         current_target_size.0 as u32,
                         current_target_size.1 as u32,
                     );
-                    let (voff, vcnt, ioff, icnt) = self.upload_mesh_geometry(mesh);
-                    let uoff = self.alloc_mesh_uniform(mesh_uniform_from_paint(
-                        affine,
-                        &repose_core::PaintDesc::Solid,
-                    ));
-                    current_pass.cmds.push(Cmd::VectorClipPush {
-                        voff,
-                        vcnt,
-                        ioff,
-                        icnt,
+                    let has_inverse = active_clips.iter().any(ActiveClip::difference);
+                    let mut blocked = current_pass.active_scissor.is_none() || has_inverse;
+                    if has_inverse {
+                        log::error!(
+                            "unsupported clip nesting: a Difference clip cannot contain another vector clip"
+                        );
+                    }
+                    let has_area = aabb.x.is_finite()
+                        && aabb.y.is_finite()
+                        && aabb.w.is_finite()
+                        && aabb.h.is_finite()
+                        && aabb.w > 0.0
+                        && aabb.h > 0.0;
+                    let mut applied = false;
+                    let mut geometry = (0, 0, 0, 0);
+                    let mut uoff = 0;
+                    if !blocked && has_area && (difference || scissor.2 > 0 && scissor.3 > 0) {
+                        if let Some((voff, vcnt, ioff, icnt)) =
+                            self.upload_mesh_geometry(mesh, encoder)
+                            && let Some(slot) = self.alloc_mesh_uniform(mesh_uniform_from_paint(
+                                affine,
+                                &repose_core::PaintDesc::Solid,
+                            ))
+                        {
+                            geometry = (voff, vcnt, ioff, icnt);
+                            uoff = slot;
+                            applied = true;
+                            current_pass.cmds.push(Cmd::VectorClipPush {
+                                voff,
+                                vcnt,
+                                ioff,
+                                icnt,
+                                uoff,
+                                scissor,
+                                difference,
+                                applied,
+                            });
+                        } else {
+                            blocked = !difference;
+                        }
+                    } else if !difference {
+                        blocked = true;
+                    }
+                    current_pass.active_scissor = if blocked {
+                        None
+                    } else {
+                        (scissor.2 > 0 && scissor.3 > 0).then_some(scissor)
+                    };
+                    active_clips.push(ActiveClip::Vector {
+                        voff: geometry.0,
+                        vcnt: geometry.1,
+                        ioff: geometry.2,
+                        icnt: geometry.3,
                         uoff,
-                        scissor,
+                        mesh: mesh.clone(),
+                        affine,
                         difference,
+                        applied,
+                        blocked,
                     });
-                    self.mesh_clip_stack
-                        .push((voff, vcnt, ioff, icnt, uoff, difference));
                 }
                 SceneNode::PopVectorClip => {
                     flush_batch!();
-                    if !scissor_stack.is_empty() {
-                        scissor_stack.pop();
+                    if scissor_stack.is_empty() || active_clips.is_empty() {
+                        log::error!("PopVectorClip does not match an active clip");
                     } else {
-                        log::warn!("PopVectorClip with empty scissor stack");
+                        scissor_stack.pop();
                     }
-                    if let Some((voff, vcnt, ioff, icnt, uoff, difference)) =
-                        self.mesh_clip_stack.pop()
-                    {
-                        let top = scissor_stack.last().copied().unwrap_or(root_clip_rect);
-                        let scissor = to_scissor(
-                            &top,
-                            current_target_size.0 as u32,
-                            current_target_size.1 as u32,
-                        );
-                        current_pass.cmds.push(Cmd::VectorClipPop {
+                    let clip = active_clips.pop();
+                    let top = scissor_stack.last().copied().unwrap_or(root_clip_rect);
+                    let scissor = to_scissor(
+                        &top,
+                        current_target_size.0 as u32,
+                        current_target_size.1 as u32,
+                    );
+                    current_pass.active_scissor =
+                        (scissor.2 > 0 && scissor.3 > 0).then_some(scissor);
+                    match clip {
+                        Some(ActiveClip::Vector {
                             voff,
                             vcnt,
                             ioff,
                             icnt,
                             uoff,
-                            scissor,
                             difference,
-                        });
-                    } else {
-                        log::warn!("PopVectorClip with empty clip stack");
+                            applied,
+                            ..
+                        }) if applied && vcnt > 0 && icnt > 0 => {
+                            current_pass.cmds.push(Cmd::VectorClipPop {
+                                voff,
+                                vcnt,
+                                ioff,
+                                icnt,
+                                uoff,
+                                scissor,
+                                difference,
+                                applied: true,
+                            });
+                        }
+                        Some(ActiveClip::Rect { .. }) => {
+                            log::error!("PopVectorClip matched a rounded-rect clip");
+                        }
+                        None => {}
+                        _ => {}
                     }
                 }
                 SceneNode::Callback { rect, payload } => {
@@ -7033,8 +8547,24 @@ impl WgpuSceneRenderer {
                         .copied()
                         .unwrap_or(Transform::identity());
                     let transformed = affine_aabb(&t, rect);
+                    let top = scissor_stack.last().copied().unwrap_or(root_clip_rect);
+                    let clip_rect = intersect(transformed, top);
+                    let scissor = to_scissor(
+                        &clip_rect,
+                        current_target_size.0 as u32,
+                        current_target_size.1 as u32,
+                    );
+                    let restore_scissor = to_scissor(
+                        &top,
+                        current_target_size.0 as u32,
+                        current_target_size.1 as u32,
+                    );
                     current_pass.cmds.push(Cmd::Callback {
                         rect: transformed,
+                        clip_rect,
+                        scissor,
+                        restore_scissor,
+                        callback_id: Arc::as_ptr(payload) as *const () as usize,
                         payload: payload.clone(),
                     });
                 }
@@ -7043,10 +8573,11 @@ impl WgpuSceneRenderer {
         }
 
         flush_batch!();
+        passes.push(current_pass);
 
         {
             let mut seen: std::collections::HashSet<usize> = std::collections::HashSet::new();
-            let mut prepare_list: Vec<Arc<Callback>> = Vec::new();
+            let mut prepare_list: Vec<(usize, Arc<Callback>)> = Vec::new();
             for node in &scene.nodes {
                 if let SceneNode::Callback { payload, .. } = node
                     && payload.downcast_ref::<Callback>().is_some()
@@ -7055,46 +8586,148 @@ impl WgpuSceneRenderer {
                     if seen.insert(ptr)
                         && let Ok(cb_arc) = payload.clone().downcast::<Callback>()
                     {
-                        prepare_list.push(cb_arc);
+                        prepare_list.push((ptr, cb_arc));
                     }
                 }
             }
             if !prepare_list.is_empty() {
-                let screen_desc = ScreenDescriptor {
+                let mut callback_targets: HashMap<usize, Vec<(PassTarget, ScreenDescriptor)>> =
+                    HashMap::new();
+                for pass in &passes {
+                    let (size, target_format, sample_count) = match pass.target {
+                        PassTarget::Surface => (
+                            [self.output_width, self.output_height],
+                            if self.working_space {
+                                wgpu::TextureFormat::Rgba16Float
+                            } else {
+                                self.output_format
+                            },
+                            self.msaa_samples.max(1),
+                        ),
+                        PassTarget::Layer(layer_id) => {
+                            let layer = self.layer_pool.get(&layer_id);
+                            (
+                                layer.map_or([self.output_width, self.output_height], |layer| {
+                                    [layer.width, layer.height]
+                                }),
+                                self.layer_target_format(),
+                                1,
+                            )
+                        }
+                    };
+                    for command in &pass.cmds {
+                        if let Cmd::Callback { payload, .. } = command {
+                            let descriptor = ScreenDescriptor {
+                                size_in_pixels: size,
+                                pixels_per_point: self.pixels_per_point,
+                                target_format,
+                                sample_count,
+                            };
+                            let targets = callback_targets
+                                .entry(Arc::as_ptr(payload) as *const () as usize)
+                                .or_default();
+                            if !targets.iter().any(|(target, target_desc)| {
+                                *target == pass.target
+                                    && target_desc.size_in_pixels == descriptor.size_in_pixels
+                                    && target_desc.pixels_per_point == descriptor.pixels_per_point
+                                    && target_desc.target_format == descriptor.target_format
+                                    && target_desc.sample_count == descriptor.sample_count
+                            }) {
+                                targets.push((pass.target, descriptor));
+                            }
+                        }
+                    }
+                }
+
+                let default_descriptor = ScreenDescriptor {
                     size_in_pixels: [self.output_width, self.output_height],
                     pixels_per_point: self.pixels_per_point,
-                    target_format: self.output_format,
+                    target_format: if self.working_space {
+                        wgpu::TextureFormat::Rgba16Float
+                    } else {
+                        self.output_format
+                    },
                     sample_count: self.msaa_samples.max(1),
                 };
-                let mut user_cmd_bufs: Vec<wgpu::CommandBuffer> = Vec::new();
-                for cb in &prepare_list {
-                    user_cmd_bufs.extend(cb.0.prepare(
-                        &self.device,
-                        &self.queue,
-                        encoder,
-                        &screen_desc,
-                        &mut self.callback_resources,
-                    ));
+                let mut prepare_encoder =
+                    self.device
+                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                            label: Some("callback prepare"),
+                        });
+                let mut finish_encoder =
+                    self.device
+                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                            label: Some("callback finish prepare"),
+                        });
+                let mut prepare_buffers = Vec::new();
+                let mut finish_buffers = Vec::new();
+                for (key, cb) in &prepare_list {
+                    let descriptors = callback_targets
+                        .get(&key)
+                        .cloned()
+                        .unwrap_or_else(|| vec![(PassTarget::Surface, default_descriptor)]);
+                    for (target, screen_desc) in descriptors {
+                        let scope = CallbackScopeKey {
+                            callback: *key,
+                            target,
+                            width: screen_desc.size_in_pixels[0],
+                            height: screen_desc.size_in_pixels[1],
+                            target_format: screen_desc.target_format,
+                            sample_count: screen_desc.sample_count,
+                            pixels_per_point_bits: screen_desc.pixels_per_point.to_bits(),
+                        };
+                        if !self.callback_scoped_resources.contains_key(&scope)
+                            && self.callback_scoped_resources.len() >= MAX_CALLBACK_SCOPES
+                            && let Some(oldest) =
+                                self.callback_scoped_resources.keys().next().copied()
+                        {
+                            self.callback_scoped_resources.remove(&oldest);
+                        }
+                        let resources = self.callback_scoped_resources.entry(scope).or_default();
+                        prepare_buffers.extend(cb.0.prepare(
+                            &self.device,
+                            &self.queue,
+                            &mut prepare_encoder,
+                            &screen_desc,
+                            resources,
+                        ));
+                    }
                 }
-                for cb in &prepare_list {
-                    user_cmd_bufs.extend(cb.0.finish_prepare(
-                        &self.device,
-                        &self.queue,
-                        encoder,
-                        &screen_desc,
-                        &mut self.callback_resources,
-                    ));
+                for (key, cb) in &prepare_list {
+                    let descriptors = callback_targets
+                        .get(&key)
+                        .cloned()
+                        .unwrap_or_else(|| vec![(PassTarget::Surface, default_descriptor)]);
+                    for (target, screen_desc) in descriptors {
+                        let scope = CallbackScopeKey {
+                            callback: *key,
+                            target,
+                            width: screen_desc.size_in_pixels[0],
+                            height: screen_desc.size_in_pixels[1],
+                            target_format: screen_desc.target_format,
+                            sample_count: screen_desc.sample_count,
+                            pixels_per_point_bits: screen_desc.pixels_per_point.to_bits(),
+                        };
+                        if let Some(resources) = self.callback_scoped_resources.get_mut(&scope) {
+                            finish_buffers.extend(cb.0.finish_prepare(
+                                &self.device,
+                                &self.queue,
+                                &mut finish_encoder,
+                                &screen_desc,
+                                resources,
+                            ));
+                        }
+                    }
                 }
-                // NOTE: For now submit immediately via queue
-                // so they execute before main render pass.
-                if !user_cmd_bufs.is_empty() {
-                    self.queue.submit(user_cmd_bufs);
-                }
+                let mut callback_buffers =
+                    Vec::with_capacity(2 + prepare_buffers.len() + finish_buffers.len());
+                callback_buffers.push(prepare_encoder.finish());
+                callback_buffers.extend(prepare_buffers);
+                callback_buffers.push(finish_encoder.finish());
+                callback_buffers.extend(finish_buffers);
+                self.queue.submit(callback_buffers);
             }
         }
-
-        // Push the final pass.
-        passes.push(current_pass);
 
         let globals_bytes = std::mem::size_of::<Globals>() as u64;
         let globals_staging = self.device.create_buffer(&wgpu::BufferDescriptor {
@@ -7141,32 +8774,79 @@ impl WgpuSceneRenderer {
                 .any(|c| matches!(c, Cmd::BlendLayer { .. }));
             if needs_snapshot {
                 let copies = std::mem::take(&mut self.blend_copies);
+                let has_surface_copy = copies.iter().any(|copy| copy.target == PassTarget::Surface);
+                let mut resolved_surface = None;
+                if has_surface_copy
+                    && !self.working_space
+                    && let (Some(msaa_view), Some(resolve_view)) =
+                        (self.msaa_view.as_ref(), self.surface_resolve_view.as_ref())
+                {
+                    let resolve_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("surface blend resolve"),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view: msaa_view,
+                            resolve_target: Some(resolve_view),
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Load,
+                                store: wgpu::StoreOp::Store,
+                            },
+                            depth_slice: None,
+                        })],
+                        depth_stencil_attachment: None,
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                        multiview_mask: None,
+                    });
+                    drop(resolve_pass);
+                    resolved_surface = self.surface_resolve_tex.clone();
+                }
                 let mut remaining = Vec::with_capacity(copies.len());
-                for (blend_id, target, region) in copies {
+                for copy in copies {
+                    if copy.pass_id != pass.id {
+                        remaining.push(copy);
+                        continue;
+                    }
+                    let BlendCopy {
+                        blend_id,
+                        target,
+                        region,
+                        ..
+                    } = copy;
                     let (src_tex, tw, th) = match target {
                         PassTarget::Layer(parent_id) => match self.layer_pool.get(&parent_id) {
                             Some(lt) => (lt.texture.clone(), lt.width, lt.height),
                             None => continue,
                         },
-                        PassTarget::Surface => match &snapshot_source {
-                            Some(t) => (t.clone(), self.output_width, self.output_height),
-                            None => {
-                                remaining.push((blend_id, target, region));
-                                continue;
+                        PassTarget::Surface => {
+                            let texture = if self.working_space {
+                                self.ws_tex.clone()
+                            } else if self.msaa_view.is_some() {
+                                resolved_surface.clone()
+                            } else {
+                                snapshot_source.clone()
+                            };
+                            match texture {
+                                Some(texture) => (texture, self.output_width, self.output_height),
+                                None => {
+                                    self.remove_blend_snapshot(blend_id);
+                                    continue;
+                                }
                             }
-                        },
+                        }
                     };
                     let Some(dst_tex) = self.blend_snapshot_texture(blend_id) else {
                         continue;
                     };
-                    let sx = (region.x.max(0.0) as u32).min(tw.saturating_sub(1));
-                    let sy = (region.y.max(0.0) as u32).min(th.saturating_sub(1));
-                    let cw = (region.w.ceil() as u32)
-                        .max(1)
-                        .min(tw.saturating_sub(sx).max(1));
-                    let ch = (region.h.ceil() as u32)
-                        .max(1)
-                        .min(th.saturating_sub(sy).max(1));
+                    if !src_tex.usage().contains(wgpu::TextureUsages::COPY_SRC)
+                        || !dst_tex.usage().contains(wgpu::TextureUsages::COPY_DST)
+                    {
+                        self.remove_blend_snapshot(blend_id);
+                        continue;
+                    }
+                    let Some((sx, sy, cw, ch)) = checked_copy_region(region, tw, th) else {
+                        self.remove_blend_snapshot(blend_id);
+                        continue;
+                    };
                     encoder.copy_texture_to_texture(
                         wgpu::TexelCopyTextureInfo {
                             texture: &src_tex,
@@ -7189,35 +8869,46 @@ impl WgpuSceneRenderer {
                 }
                 self.blend_copies = remaining;
             }
-            let (color_view, resolve_target, depth_stencil_view, is_layer) = match pass.target {
-                PassTarget::Surface => {
-                    let swap_view = target_view.clone();
-                    let use_ws = self.working_space && self.ws_view.is_some();
-                    let (color, resolve) = if use_ws {
-                        let ws_view = self.ws_view.as_ref().unwrap();
-                        if let Some(msaa_view) = &self.msaa_view {
-                            // MSAA resolves to working-space texture
-                            (msaa_view.clone(), Some(ws_view.clone()))
+            let (color_view, resolve_target, depth_stencil_view, is_layer, working_target) =
+                match pass.target {
+                    PassTarget::Surface => {
+                        let swap_view = target_view.clone();
+                        let use_ws = self.working_space && self.ws_view.is_some();
+                        let (color, resolve) = if use_ws {
+                            let ws_view = self.ws_view.as_ref().unwrap();
+                            if let Some(msaa_view) = &self.ws_msaa_view {
+                                (msaa_view.clone(), Some(ws_view.clone()))
+                            } else {
+                                (ws_view.clone(), None)
+                            }
+                        } else if let Some(msaa_view) = &self.msaa_view {
+                            (msaa_view.clone(), Some(swap_view))
                         } else {
-                            // Direct render to working-space texture
-                            (ws_view.clone(), None)
-                        }
-                    } else if let Some(msaa_view) = &self.msaa_view {
-                        (msaa_view.clone(), Some(swap_view))
-                    } else {
-                        (swap_view, None)
-                    };
-                    (color, resolve, self.depth_stencil_view.clone(), false)
-                }
-                PassTarget::Layer(layer_id) => {
-                    if let Some(lt) = self.layer_pool.get(&layer_id) {
-                        (lt.view.clone(), None, lt.depth_stencil_view.clone(), true)
-                    } else {
-                        log::warn!("missing layer target {layer_id}");
-                        continue;
+                            (swap_view, None)
+                        };
+                        (
+                            color,
+                            resolve,
+                            self.depth_stencil_view.clone(),
+                            false,
+                            use_ws,
+                        )
                     }
-                }
-            };
+                    PassTarget::Layer(layer_id) => {
+                        if let Some(lt) = self.layer_pool.get(&layer_id) {
+                            (
+                                lt.view.clone(),
+                                None,
+                                lt.depth_stencil_view.clone(),
+                                true,
+                                false,
+                            )
+                        } else {
+                            log::warn!("missing layer target {layer_id}");
+                            continue;
+                        }
+                    }
+                };
 
             encoder.copy_buffer_to_buffer(
                 &globals_staging,
@@ -7248,9 +8939,21 @@ impl WgpuSceneRenderer {
                 tw,
                 th,
             );
+            let mut active_scissor = pass
+                .active_scissor
+                .map(|scissor| clamp_scissor(scissor.0, scissor.1, scissor.2, scissor.3, tw, th));
+            if active_scissor.is_some_and(|scissor| scissor.2 == 0 || scissor.3 == 0) {
+                active_scissor = None;
+            }
 
             let pipes: &Pipelines = if is_layer {
-                &self.layer_pipes
+                if self.working_space {
+                    &self.working_space_layer_pipes
+                } else {
+                    &self.layer_pipes
+                }
+            } else if working_target {
+                &self.working_space_pipes
             } else {
                 &self.surface_pipes
             };
@@ -7278,8 +8981,8 @@ impl WgpuSceneRenderer {
                     view: &depth_stencil_view,
                     depth_ops: None,
                     stencil_ops: Some(wgpu::Operations {
-                        load: if is_layer || pass.clear_color.is_some() {
-                            wgpu::LoadOp::Clear(0)
+                        load: if pass.clear_color.is_some() {
+                            wgpu::LoadOp::Clear(STENCIL_BASE)
                         } else {
                             wgpu::LoadOp::Load
                         },
@@ -7292,12 +8995,17 @@ impl WgpuSceneRenderer {
             });
 
             rpass.set_bind_group(0, &self.globals_bind, &[]);
-            rpass.set_stencil_reference(clip_depth);
+            rpass.set_stencil_reference(STENCIL_BASE + clip_depth);
+            let initial_draw_scissor = if initial_scissor.2 == 0 || initial_scissor.3 == 0 {
+                (0, 0, 1, 1)
+            } else {
+                initial_scissor
+            };
             rpass.set_scissor_rect(
-                initial_scissor.0,
-                initial_scissor.1,
-                initial_scissor.2,
-                initial_scissor.3,
+                initial_draw_scissor.0,
+                initial_draw_scissor.1,
+                initial_draw_scissor.2,
+                initial_draw_scissor.3,
             );
 
             macro_rules! draw_simple {
@@ -7335,41 +9043,47 @@ impl WgpuSceneRenderer {
             }
 
             for cmd in pass.cmds {
+                if active_scissor.is_none()
+                    && !matches!(
+                        &cmd,
+                        Cmd::ClipPush { .. }
+                            | Cmd::ClipPop { .. }
+                            | Cmd::VectorClipPush { .. }
+                            | Cmd::VectorClipPop { .. }
+                    )
+                {
+                    continue;
+                }
                 match cmd {
                     Cmd::ClipPush {
                         off,
                         cnt: n,
                         scissor,
                         difference,
-                        rounded: _,
+                        applied,
                     } => {
                         let scissor =
                             clamp_scissor(scissor.0, scissor.1, scissor.2, scissor.3, tw, th);
-                        rpass.set_scissor_rect(scissor.0, scissor.1, scissor.2, scissor.3);
-                        rpass.set_stencil_reference(clip_depth);
+                        let usable = applied && scissor.2 > 0 && scissor.3 > 0;
+                        if usable {
+                            rpass.set_scissor_rect(scissor.0, scissor.1, scissor.2, scissor.3);
+                            active_scissor = Some(scissor);
+                            rpass.set_pipeline(if difference {
+                                &pipes.clip_dec
+                            } else {
+                                &pipes.clip_bin
+                            });
 
-                        if difference {
-                            rpass.set_pipeline(&pipes.clip_dec);
+                            let bytes = (n as u64) * std::mem::size_of::<ClipInstance>() as u64;
+                            rpass.set_vertex_buffer(0, self.clip_ring.buf.slice(off..off + bytes));
+                            rpass.draw(0..6, 0..n);
+                            if !difference {
+                                clip_depth = (clip_depth + 1).min(STENCIL_MAX_DEPTH);
+                            }
                         } else {
-                            // Deliberately whole-pixel (bin) gating at every
-                            // sample count. Clipped content blends with its
-                            // own smooth AA identically on all samples, while
-                            // alpha-to-coverage gates per-sample and leaves a
-                            // GPU-sample-pattern-dependent bright rim along
-                            // rounded corners at fractional geometry. MSAA
-                            // still smooths every content edge inside the
-                            // clip region.
-                            rpass.set_pipeline(&pipes.clip_bin);
+                            active_scissor = None;
                         }
-
-                        let bytes = (n as u64) * std::mem::size_of::<ClipInstance>() as u64;
-                        rpass.set_vertex_buffer(0, self.clip_ring.buf.slice(off..off + bytes));
-                        rpass.draw(0..6, 0..n);
-
-                        if !difference {
-                            clip_depth = (clip_depth + 1).min(255);
-                            rpass.set_stencil_reference(clip_depth);
-                        }
+                        rpass.set_stencil_reference(STENCIL_BASE + clip_depth);
                     }
 
                     Cmd::ClipPop {
@@ -7377,22 +9091,30 @@ impl WgpuSceneRenderer {
                         cnt: n,
                         scissor,
                         difference,
+                        applied,
                     } => {
                         let scissor =
                             clamp_scissor(scissor.0, scissor.1, scissor.2, scissor.3, tw, th);
-                        rpass.set_scissor_rect(scissor.0, scissor.1, scissor.2, scissor.3);
-
-                        if !difference && n > 0 {
-                            rpass.set_stencil_reference(clip_depth);
-                            rpass.set_pipeline(&pipes.clip_dec);
+                        if scissor.2 > 0 && scissor.3 > 0 {
+                            rpass.set_scissor_rect(scissor.0, scissor.1, scissor.2, scissor.3);
+                            active_scissor = Some(scissor);
+                        } else {
+                            active_scissor = None;
+                        }
+                        if applied && n > 0 && scissor.2 > 0 && scissor.3 > 0 {
+                            rpass.set_pipeline(if difference {
+                                &pipes.clip_bin
+                            } else {
+                                &pipes.clip_dec
+                            });
                             let bytes = (n as u64) * std::mem::size_of::<ClipInstance>() as u64;
                             rpass.set_vertex_buffer(0, self.clip_ring.buf.slice(off..off + bytes));
                             rpass.draw(0..6, 0..n);
-                            clip_depth = clip_depth.saturating_sub(1);
-                        } else if !difference {
-                            clip_depth = clip_depth.saturating_sub(1);
+                            if !difference {
+                                clip_depth = clip_depth.saturating_sub(1);
+                            }
                         }
-                        rpass.set_stencil_reference(clip_depth);
+                        rpass.set_stencil_reference(STENCIL_BASE + clip_depth);
                     }
 
                     Cmd::Rect { off, cnt: n } => {
@@ -7581,6 +9303,7 @@ impl WgpuSceneRenderer {
                         src_layer,
                         dst_layer,
                         parent,
+                        scissor,
                     } => {
                         let src = self.layer_pool.get(&src_layer).cloned();
                         // Backdrop is the snapshot copied from the parent
@@ -7601,12 +9324,19 @@ impl WgpuSceneRenderer {
                         {
                             let bytes = (n as u64) * std::mem::size_of::<BlendInstance>() as u64;
                             rpass.set_pipeline(&pipes.blend_layer);
-                            rpass.set_scissor_rect(0, 0, tw, th);
-                            rpass.set_bind_group(0, &self.globals_bind, &[]);
-                            rpass.set_bind_group(1, &src_lt.bind, &[]);
-                            rpass.set_bind_group(2, &dst_snap.bind, &[]);
-                            rpass.set_vertex_buffer(0, self.blend_ring.buf.slice(off..off + bytes));
-                            rpass.draw(0..6, 0..n);
+                            let scissor =
+                                clamp_scissor(scissor.0, scissor.1, scissor.2, scissor.3, tw, th);
+                            if scissor.2 > 0 && scissor.3 > 0 {
+                                rpass.set_scissor_rect(scissor.0, scissor.1, scissor.2, scissor.3);
+                                rpass.set_bind_group(0, &self.globals_bind, &[]);
+                                rpass.set_bind_group(1, &src_lt.bind, &[]);
+                                rpass.set_bind_group(2, &dst_snap.bind, &[]);
+                                rpass.set_vertex_buffer(
+                                    0,
+                                    self.blend_ring.buf.slice(off..off + bytes),
+                                );
+                                rpass.draw(0..6, 0..n);
+                            }
                         }
                     }
 
@@ -7647,20 +9377,27 @@ impl WgpuSceneRenderer {
                         uoff,
                         scissor,
                         difference,
+                        applied,
                     } => {
                         let scissor =
                             clamp_scissor(scissor.0, scissor.1, scissor.2, scissor.3, tw, th);
-                        rpass.set_scissor_rect(scissor.0, scissor.1, scissor.2, scissor.3);
-                        rpass.set_stencil_reference(clip_depth);
-                        draw_indexed_mesh!(&pipes.mesh_clip_inc, uoff, voff, vcnt, ioff, icnt);
-                        if !difference {
-                            clip_depth = (clip_depth + 1).min(255);
-                            rpass.set_stencil_reference(clip_depth);
+                        let usable = applied && scissor.2 > 0 && scissor.3 > 0;
+                        if usable {
+                            rpass.set_scissor_rect(scissor.0, scissor.1, scissor.2, scissor.3);
+                            active_scissor = Some(scissor);
+                            let pipe = if difference {
+                                &pipes.mesh_clip_dec
+                            } else {
+                                &pipes.mesh_clip_inc
+                            };
+                            draw_indexed_mesh!(pipe, uoff, voff, vcnt, ioff, icnt);
+                            if !difference {
+                                clip_depth = (clip_depth + 1).min(STENCIL_MAX_DEPTH);
+                            }
+                        } else {
+                            active_scissor = None;
                         }
-                        // Difference masks increment without bumping the depth:
-                        // content keeps testing `Equal(depth)`, which now fails
-                        // exactly inside the mask. Exact for a lone mask and
-                        // for a mask inside intersect clips.
+                        rpass.set_stencil_reference(STENCIL_BASE + clip_depth);
                     }
 
                     Cmd::VectorClipPop {
@@ -7671,51 +9408,86 @@ impl WgpuSceneRenderer {
                         uoff,
                         scissor,
                         difference,
+                        applied,
                     } => {
-                        // Decrement the mask while the stencil reference is
-                        // still at the depth it was incremented to, so the
-                        // equal-compare fires; then step the clip depth down.
-                        // A difference mask incremented *above* the depth, so
-                        // test depth+1 and leave the depth unchanged.
-                        if difference {
-                            rpass.set_stencil_reference((clip_depth + 1).min(255));
-                        } else {
-                            rpass.set_stencil_reference(clip_depth);
-                        }
                         let scissor =
                             clamp_scissor(scissor.0, scissor.1, scissor.2, scissor.3, tw, th);
-                        rpass.set_scissor_rect(scissor.0, scissor.1, scissor.2, scissor.3);
-                        draw_indexed_mesh!(&pipes.mesh_clip_dec, uoff, voff, vcnt, ioff, icnt);
-                        if !difference {
-                            clip_depth = clip_depth.saturating_sub(1);
+                        if scissor.2 > 0 && scissor.3 > 0 {
+                            rpass.set_scissor_rect(scissor.0, scissor.1, scissor.2, scissor.3);
+                            active_scissor = Some(scissor);
+                        } else {
+                            active_scissor = None;
                         }
-                        rpass.set_stencil_reference(clip_depth);
+                        if applied && vcnt > 0 && scissor.2 > 0 && scissor.3 > 0 {
+                            let pipe = if difference {
+                                &pipes.mesh_clip_inc
+                            } else {
+                                &pipes.mesh_clip_dec
+                            };
+                            draw_indexed_mesh!(pipe, uoff, voff, vcnt, ioff, icnt);
+                            if !difference {
+                                clip_depth = clip_depth.saturating_sub(1);
+                            }
+                        }
+                        rpass.set_stencil_reference(STENCIL_BASE + clip_depth);
                     }
 
-                    Cmd::Callback { rect, payload } => {
+                    Cmd::Callback {
+                        rect,
+                        clip_rect,
+                        scissor,
+                        restore_scissor,
+                        callback_id,
+                        payload,
+                    } => {
                         if let Some(cb) = payload.downcast_ref::<Callback>() {
                             let vp_x = rect.x.floor().max(0.0);
                             let vp_y = rect.y.floor().max(0.0);
                             let vp_w = rect.w.ceil().max(1.0);
                             let vp_h = rect.h.ceil().max(1.0);
-                            if vp_w > 0.0 && vp_h > 0.0 {
+                            if vp_w > 0.0 && vp_h > 0.0 && clip_rect.w > 0.0 && clip_rect.h > 0.0 {
+                                rpass.set_scissor_rect(scissor.0, scissor.1, scissor.2, scissor.3);
                                 rpass.set_viewport(vp_x, vp_y, vp_w, vp_h, 0.0, 1.0);
                                 let info = repose_core::PaintCallbackInfo {
                                     viewport: rect,
-                                    clip_rect: rect,
+                                    clip_rect,
                                     pixels_per_point: self.pixels_per_point,
                                     screen_size_px: [tw, th],
                                 };
-                                let rpass_static: &mut wgpu::RenderPass<'static> = unsafe {
-                                    std::mem::transmute::<
-                                        &mut wgpu::RenderPass<'_>,
-                                        &mut wgpu::RenderPass<'static>,
-                                    >(&mut rpass)
+                                let descriptor = ScreenDescriptor {
+                                    size_in_pixels: [tw, th],
+                                    pixels_per_point: self.pixels_per_point,
+                                    target_format: if is_layer {
+                                        self.layer_target_format()
+                                    } else if working_target {
+                                        wgpu::TextureFormat::Rgba16Float
+                                    } else {
+                                        self.output_format
+                                    },
+                                    sample_count: if is_layer { 1 } else { self.msaa_samples },
                                 };
-                                cb.0.paint(info, rpass_static, &self.callback_resources);
+                                let mut scope =
+                                    callback_scope_key(&payload, pass.target, &descriptor);
+                                scope.callback = callback_id;
+                                let resources = self
+                                    .callback_scoped_resources
+                                    .get(&scope)
+                                    .unwrap_or(&self.callback_resources);
+                                let mut callback_pass = CallbackRenderPass::new(
+                                    &mut rpass,
+                                    descriptor.target_format,
+                                    descriptor.sample_count,
+                                );
+                                cb.0.paint(info, &mut callback_pass, resources);
                                 rpass.set_viewport(0.0, 0.0, tw as f32, th as f32, 0.0, 1.0);
+                                let restore = if restore_scissor.2 > 0 && restore_scissor.3 > 0 {
+                                    restore_scissor
+                                } else {
+                                    (0, 0, 1, 1)
+                                };
+                                rpass.set_scissor_rect(restore.0, restore.1, restore.2, restore.3);
                                 rpass.set_bind_group(0, &self.globals_bind, &[]);
-                                rpass.set_stencil_reference(clip_depth);
+                                rpass.set_stencil_reference(STENCIL_BASE + clip_depth);
                             }
                         } else {
                             log::warn!("Unknown paint callback payload");
@@ -7757,9 +9529,6 @@ impl WgpuSceneRenderer {
             display_pass.set_bind_group(1, ws_bind, &[]);
             display_pass.draw(0..3, 0..1);
         }
-
-        // Frame end maintenance: Evict unused images
-        self.evict_unused_images();
     }
 
     /// Render a scene into an externally-provided texture view.
@@ -7776,23 +9545,261 @@ impl WgpuSceneRenderer {
     ) {
         self.resize(width, height);
 
-        self.frame_index = self.frame_index.wrapping_add(1);
-        self.slug_cache.next_frame();
+        if let Err(error) = self.begin_frame() {
+            log::error!("render_to_view: {error:#}");
+            return;
+        }
 
         if width == 0 || height == 0 {
+            self.end_frame();
             return;
         }
 
         self.render_scene_to_encoder(scene, encoder, target_view, clear_color);
+        self.end_frame();
     }
 }
 
+#[cfg(target_os = "linux")]
+fn validate_dmabuf_plane(
+    fd: &std::os::unix::io::OwnedFd,
+    offset: u64,
+    stride: u32,
+    width: u32,
+    height: u32,
+    bytes_per_pixel: u32,
+) -> anyhow::Result<u64> {
+    if width == 0 || height == 0 || bytes_per_pixel == 0 {
+        anyhow::bail!("DMA-BUF plane dimensions and bytes per pixel must be non-zero");
+    }
+    if offset % 4 != 0 || stride % 4 != 0 {
+        anyhow::bail!("DMA-BUF offset and stride must be 4-byte aligned");
+    }
+    let row_bytes = (width as u64)
+        .checked_mul(bytes_per_pixel as u64)
+        .ok_or_else(|| anyhow::anyhow!("DMA-BUF row size overflow"))?;
+    if (stride as u64) < row_bytes {
+        anyhow::bail!(
+            "DMA-BUF stride {} is smaller than row size {row_bytes}",
+            stride
+        );
+    }
+    let span = (height as u64 - 1)
+        .checked_mul(stride as u64)
+        .and_then(|value| value.checked_add(row_bytes))
+        .ok_or_else(|| anyhow::anyhow!("DMA-BUF plane size overflow"))?;
+    let file = std::fs::File::from(
+        fd.try_clone()
+            .map_err(|error| anyhow::anyhow!("duplicate DMA-BUF fd: {error}"))?,
+    );
+    let file_size = file
+        .metadata()
+        .map_err(|error| anyhow::anyhow!("stat DMA-BUF fd: {error}"))?
+        .len();
+    if offset > file_size || span > file_size - offset {
+        anyhow::bail!("DMA-BUF plane offset/size {offset}+{span} exceeds file size {file_size}");
+    }
+    Ok(file_size)
+}
+
+fn is_filterable_color_format(format: wgpu::TextureFormat) -> bool {
+    matches!(
+        format,
+        wgpu::TextureFormat::Rgba8Unorm
+            | wgpu::TextureFormat::Rgba8UnormSrgb
+            | wgpu::TextureFormat::Bgra8Unorm
+            | wgpu::TextureFormat::Bgra8UnormSrgb
+            | wgpu::TextureFormat::Rgba16Unorm
+            | wgpu::TextureFormat::Rgba16Float
+            | wgpu::TextureFormat::Rgba32Float
+            | wgpu::TextureFormat::Rgb10a2Unorm
+    )
+}
+
+fn native_format_supported(format: wgpu::TextureFormat, features: wgpu::Features) -> bool {
+    if !is_filterable_color_format(format) {
+        return false;
+    }
+    match format {
+        wgpu::TextureFormat::Rgba16Unorm => {
+            features.contains(wgpu::Features::TEXTURE_FORMAT_16BIT_NORM)
+        }
+        wgpu::TextureFormat::Rgba32Float => features.contains(wgpu::Features::FLOAT32_FILTERABLE),
+        _ => true,
+    }
+}
+
+fn validate_sampler_descriptor(
+    device: &wgpu::Device,
+    sampler: &wgpu::SamplerDescriptor<'_>,
+) -> anyhow::Result<()> {
+    if sampler.compare.is_some()
+        || !matches!(
+            sampler.mag_filter,
+            wgpu::FilterMode::Nearest | wgpu::FilterMode::Linear
+        )
+        || !matches!(
+            sampler.min_filter,
+            wgpu::FilterMode::Nearest | wgpu::FilterMode::Linear
+        )
+        || sampler.anisotropy_clamp == 0
+        || !sampler.lod_min_clamp.is_finite()
+        || !sampler.lod_max_clamp.is_finite()
+        || sampler.lod_min_clamp < 0.0
+        || sampler.lod_max_clamp < sampler.lod_min_clamp
+    {
+        anyhow::bail!("native sampler must be non-comparison linear filtering with finite LODs");
+    }
+    if matches!(sampler.address_mode_u, wgpu::AddressMode::ClampToBorder)
+        || matches!(sampler.address_mode_v, wgpu::AddressMode::ClampToBorder)
+        || matches!(sampler.address_mode_w, wgpu::AddressMode::ClampToBorder)
+    {
+        if !device
+            .features()
+            .contains(wgpu::Features::ADDRESS_MODE_CLAMP_TO_BORDER)
+        {
+            anyhow::bail!("native sampler uses unsupported clamp-to-border addressing");
+        }
+    }
+    Ok(())
+}
+
+fn validate_texture_dimensions(
+    device: &wgpu::Device,
+    width: u32,
+    height: u32,
+) -> anyhow::Result<()> {
+    if width == 0
+        || height == 0
+        || width > device.limits().max_texture_dimension_2d
+        || height > device.limits().max_texture_dimension_2d
+    {
+        anyhow::bail!("texture dimensions are outside the device limit");
+    }
+    Ok(())
+}
+
+fn validate_image_handle(handle: u64) -> anyhow::Result<()> {
+    if handle == 0 {
+        anyhow::bail!("image handle 0 is reserved");
+    }
+    Ok(())
+}
+
+fn checked_image_bytes(w: u32, h: u32, bytes_per_pixel: u32) -> anyhow::Result<u64> {
+    if w == 0 || h == 0 || bytes_per_pixel == 0 {
+        anyhow::bail!("image dimensions and bytes per pixel must be non-zero");
+    }
+    (w as u64)
+        .checked_mul(h as u64)
+        .and_then(|size| size.checked_mul(bytes_per_pixel as u64))
+        .ok_or_else(|| anyhow::anyhow!("image byte size overflow"))
+}
+
+fn texture_storage_bytes(
+    format: wgpu::TextureFormat,
+    width: u32,
+    height: u32,
+) -> anyhow::Result<u64> {
+    if width == 0 || height == 0 {
+        anyhow::bail!("texture dimensions must be non-zero");
+    }
+    let bytes = format.theoretical_memory_footprint(wgpu::Extent3d {
+        width,
+        height,
+        depth_or_array_layers: 1,
+    });
+    if bytes == 0 {
+        anyhow::bail!("texture format has no storage size");
+    }
+    Ok(bytes)
+}
+
+fn checked_image_bytes_usize(w: u32, h: u32, bytes_per_pixel: u32) -> anyhow::Result<usize> {
+    usize::try_from(checked_image_bytes(w, h, bytes_per_pixel)?)
+        .map_err(|_| anyhow::anyhow!("image byte size exceeds addressable memory"))
+}
+
 fn clamp_scissor(x: u32, y: u32, w: u32, h: u32, tw: u32, th: u32) -> (u32, u32, u32, u32) {
-    let x = x.min(tw.saturating_sub(1));
-    let y = y.min(th.saturating_sub(1));
-    let w = w.min(tw.saturating_sub(x)).max(1);
-    let h = h.min(th.saturating_sub(y)).max(1);
+    if w == 0 || h == 0 || tw == 0 || th == 0 {
+        return (0, 0, 0, 0);
+    }
+    let x = x.min(tw - 1);
+    let y = y.min(th - 1);
+    let w = w.min(tw - x);
+    let h = h.min(th - y);
     (x, y, w, h)
+}
+
+fn rect_to_scissor(r: repose_core::Rect, width: u32, height: u32) -> (u32, u32, u32, u32) {
+    if width == 0
+        || height == 0
+        || !r.x.is_finite()
+        || !r.y.is_finite()
+        || !r.w.is_finite()
+        || !r.h.is_finite()
+        || r.w <= 0.0
+        || r.h <= 0.0
+    {
+        return (0, 0, 0, 0);
+    }
+    let x0 = r.x.floor().max(0.0).min(width as f32);
+    let y0 = r.y.floor().max(0.0).min(height as f32);
+    let x1 = (r.x + r.w).ceil().max(x0).min(width as f32);
+    let y1 = (r.y + r.h).ceil().max(y0).min(height as f32);
+    if x1 <= x0 || y1 <= y0 {
+        return (0, 0, 0, 0);
+    }
+    (x0 as u32, y0 as u32, (x1 - x0) as u32, (y1 - y0) as u32)
+}
+
+fn rect_to_ndc(r: repose_core::Rect, width: f32, height: f32) -> [f32; 4] {
+    if width <= 0.0 || height <= 0.0 || !r.x.is_finite() || !r.y.is_finite() {
+        return [0.0, 0.0, 0.0, 0.0];
+    }
+    let x0 = r.x / width * 2.0 - 1.0;
+    let y0 = 1.0 - r.y / height * 2.0;
+    let x1 = (r.x + r.w) / width * 2.0 - 1.0;
+    let y1 = 1.0 - (r.y + r.h) / height * 2.0;
+    [x0.min(x1), y0.min(y1), (x1 - x0).abs(), (y1 - y0).abs()]
+}
+
+fn translated_rect(rect: repose_core::Rect, x: f32, y: f32) -> repose_core::Rect {
+    repose_core::Rect {
+        x: rect.x - x,
+        y: rect.y - y,
+        w: rect.w,
+        h: rect.h,
+    }
+}
+
+fn checked_copy_region(
+    region: repose_core::Rect,
+    target_width: u32,
+    target_height: u32,
+) -> Option<(u32, u32, u32, u32)> {
+    if target_width == 0
+        || target_height == 0
+        || !region.x.is_finite()
+        || !region.y.is_finite()
+        || !region.w.is_finite()
+        || !region.h.is_finite()
+        || region.w <= 0.0
+        || region.h <= 0.0
+    {
+        return None;
+    }
+    let x0 = region.x.floor().max(0.0).min(target_width as f32) as u32;
+    let y0 = region.y.floor().max(0.0).min(target_height as f32) as u32;
+    let x1 = (region.x + region.w)
+        .ceil()
+        .max(x0 as f32)
+        .min(target_width as f32) as u32;
+    let y1 = (region.y + region.h)
+        .ceil()
+        .max(y0 as f32)
+        .min(target_height as f32) as u32;
+    (x1 > x0 && y1 > y0).then_some((x0, y0, x1 - x0, y1 - y0))
 }
 
 fn intersect(a: repose_core::Rect, b: repose_core::Rect) -> repose_core::Rect {
@@ -7805,5 +9812,109 @@ fn intersect(a: repose_core::Rect, b: repose_core::Rect) -> repose_core::Rect {
         y: y0,
         w: (x1 - x0).max(0.0),
         h: (y1 - y0).max(0.0),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ring_alignment_rejects_bad_input() {
+        assert_eq!(align_up(0, 4).unwrap(), 0);
+        assert_eq!(align_up(1, 4).unwrap(), 4);
+        assert!(align_up(1, 3).is_err());
+        assert!(align_up(u64::MAX, 4).is_err());
+    }
+
+    #[test]
+    fn empty_and_negative_rects_are_suppressed() {
+        assert_eq!(
+            rect_to_scissor(
+                repose_core::Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 0.0,
+                    h: 4.0,
+                },
+                16,
+                16,
+            ),
+            (0, 0, 0, 0)
+        );
+        assert_eq!(
+            rect_to_scissor(
+                repose_core::Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: -1.0,
+                    h: 4.0,
+                },
+                16,
+                16,
+            ),
+            (0, 0, 0, 0)
+        );
+    }
+
+    #[test]
+    fn copy_region_is_checked() {
+        assert_eq!(
+            checked_copy_region(
+                repose_core::Rect {
+                    x: 2.25,
+                    y: 3.5,
+                    w: 4.0,
+                    h: 5.0,
+                },
+                16,
+                16,
+            ),
+            Some((2, 3, 5, 6))
+        );
+        assert_eq!(
+            checked_copy_region(
+                repose_core::Rect {
+                    x: 20.0,
+                    y: 0.0,
+                    w: 2.0,
+                    h: 2.0,
+                },
+                16,
+                16,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn p010_uses_ten_bit_sample_range() {
+        let raw = make_yuv_transform_raw(ColorInfo::default(), PixelFormat::P010);
+        let expected = 65535.0 / (64.0 * 1020.0);
+        assert!((raw.b[3] - expected).abs() < 1e-6);
+        assert_eq!(canonical_fourcc(PixelFormat::P010), P010_FOURCC);
+        assert_eq!(canonical_fourcc(PixelFormat::Nv12), NV12_FOURCC);
+        assert_eq!(
+            make_yuv_transform_raw(
+                ColorInfo {
+                    transfer: repose_core::color::Transfer::Pq,
+                    ..ColorInfo::default()
+                },
+                PixelFormat::Nv12,
+            )
+            .transfer[0],
+            3.0
+        );
+        assert_eq!(
+            make_yuv_transform_raw(
+                ColorInfo {
+                    transfer: repose_core::color::Transfer::Hlg,
+                    ..ColorInfo::default()
+                },
+                PixelFormat::Nv12,
+            )
+            .transfer[0],
+            4.0
+        );
     }
 }

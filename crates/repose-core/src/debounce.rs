@@ -73,14 +73,18 @@ where
         let slot = slot.clone();
         move || {
             let v = source.get();
-            *pending.borrow_mut() = Some(v.clone());
+            let old_value = pending.borrow_mut().replace(v.clone());
+            drop(old_value);
             let out_c = out_clone.clone();
             let pending_c = pending.clone();
-            *slot.borrow_mut() = Some(timer::delay(delay_c, move || {
-                if let Some(val) = pending_c.borrow_mut().take() {
+            let handle = timer::delay(delay_c, move || {
+                let value = pending_c.borrow_mut().take();
+                if let Some(val) = value {
                     out_c.set_neq(val);
                 }
-            }));
+            });
+            let old_handle = slot.borrow_mut().replace(handle);
+            drop(old_handle);
         }
     });
 
@@ -89,7 +93,8 @@ where
     crate::scoped_effect(move || {
         crate::on_unmount(move || {
             reactive::remove_observer(obs_id);
-            *slot.borrow_mut() = None;
+            let old_handle = slot.borrow_mut().take();
+            drop(old_handle);
         })
     });
 

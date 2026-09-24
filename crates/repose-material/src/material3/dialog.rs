@@ -2,7 +2,7 @@
 
 use std::rc::Rc;
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 use repose_core::*;
 use repose_ui::overlay::{OverlayGuard, ambient_overlay};
@@ -17,6 +17,9 @@ use super::{TimePicker, TimePickerConfig, TimePickerState};
 pub struct DialogState {
     visible: Signal<bool>,
     id: u64,
+    scrim_color: RefCell<Option<Color>>,
+    opener_focus: Rc<RefCell<Option<FocusRequester>>>,
+    focus_disposer: RefCell<Option<Dispose>>,
 }
 
 impl Default for DialogState {
@@ -25,11 +28,22 @@ impl Default for DialogState {
     }
 }
 
+impl Drop for DialogState {
+    fn drop(&mut self) {
+        if let Some(disposer) = self.focus_disposer.borrow_mut().take() {
+            disposer.run();
+        }
+    }
+}
+
 impl DialogState {
     pub fn new() -> Self {
         Self {
             visible: signal(false),
             id: unique_component_id(),
+            scrim_color: RefCell::new(None),
+            opener_focus: Rc::new(RefCell::new(None)),
+            focus_disposer: RefCell::new(None),
         }
     }
 
@@ -42,11 +56,33 @@ impl DialogState {
     }
 
     pub fn show(&self) {
-        self.visible.set(true);
+        self.visible.set_neq(true);
     }
 
     pub fn dismiss(&self) {
-        self.visible.set(false);
+        self.visible.set_neq(false);
+    }
+
+    pub fn set_opener_focus(&self, requester: FocusRequester) {
+        *self.opener_focus.borrow_mut() = Some(requester);
+    }
+
+    pub fn show_from(&self, opener: FocusRequester) {
+        self.set_opener_focus(opener);
+        self.show();
+    }
+
+    pub(crate) fn restore_opener_focus(&self) -> bool {
+        let Some(requester) = self.opener_focus.borrow_mut().take() else {
+            return false;
+        };
+        FocusManager::new(Vec::new(), None).clear_focus(false);
+        requester.request_focus();
+        true
+    }
+
+    pub(crate) fn set_scrim_color(&self, color: Option<Color>) {
+        *self.scrim_color.borrow_mut() = color;
     }
 }
 
@@ -120,6 +156,96 @@ fn clamp_dialog_modifier(mut m: Modifier, platform_max_w: Dp, platform_max_h: Dp
     m
 }
 
+fn attach_focus_requester(
+    view: &mut View,
+    requester: &FocusRequester,
+    accepted: Option<&Rc<Cell<bool>>>,
+) -> bool {
+    let modifier = &view.modifier;
+    let enabled = !modifier.disabled
+        && modifier
+            .text_input
+            .as_ref()
+            .map(|input| input.enabled)
+            .unwrap_or(true);
+    let focusable = modifier
+        .focusable
+        .unwrap_or(modifier.click || modifier.on_action.is_some() || modifier.text_input.is_some());
+    let candidate = enabled
+        && focusable
+        && (modifier.text_input.is_some()
+            || modifier.on_action.is_some()
+            || modifier.click
+            || modifier.focusable == Some(true));
+    if candidate {
+        let previous_callback = view.modifier.on_focus_changed.take();
+        let accepted = accepted.cloned();
+        view.modifier.on_focus_changed = Some(Rc::new(move |focused| {
+            if focused && let Some(accepted) = &accepted {
+                accepted.set(false);
+            }
+            if let Some(callback) = &previous_callback {
+                callback(focused);
+            }
+        }));
+        view.modifier.focus_requester = Some(requester.clone());
+        return true;
+    }
+    view.children
+        .iter_mut()
+        .any(|child| attach_focus_requester(child, requester, accepted))
+}
+
+fn dialog_preview_key(
+    state: Rc<DialogState>,
+    props: Rc<RefCell<DialogProperties>>,
+    event: KeyEvent,
+) -> bool {
+    let action = repose_core::shortcuts::resolve_action(repose_core::shortcuts::KeyChord::new(
+        event.key.clone(),
+        event.modifiers,
+    ));
+    let is_back =
+        event.key == Key::Escape || matches!(action, Some(repose_core::shortcuts::Action::Back));
+    if is_back {
+        if event.event_type == KeyEventType::Down && !event.is_repeat {
+            let (dismiss, callback) = {
+                let p = props.borrow();
+                (p.dismiss_on_back_press, p.on_dismiss_request.clone())
+            };
+            if dismiss {
+                if let Some(callback) = callback {
+                    callback();
+                } else {
+                    state.dismiss();
+                }
+            }
+        }
+        return true;
+    }
+    if event.event_type != KeyEventType::Down || event.is_repeat {
+        return false;
+    }
+    match action {
+        Some(
+            repose_core::shortcuts::Action::Copy
+            | repose_core::shortcuts::Action::Cut
+            | repose_core::shortcuts::Action::Paste
+            | repose_core::shortcuts::Action::SelectAll
+            | repose_core::shortcuts::Action::Undo
+            | repose_core::shortcuts::Action::Redo
+            | repose_core::shortcuts::Action::FocusNext
+            | repose_core::shortcuts::Action::FocusPrevious
+            | repose_core::shortcuts::Action::FocusLeft
+            | repose_core::shortcuts::Action::FocusRight
+            | repose_core::shortcuts::Action::FocusUp
+            | repose_core::shortcuts::Action::FocusDown,
+        ) => false,
+        Some(_) => true,
+        None => false,
+    }
+}
+
 /// A modal dialog rendered in the overlay layer with scrim and spring animation.
 ///
 /// Unlike the inline `AlertDialog`, this version renders outside the layout tree
@@ -156,15 +282,63 @@ pub fn Dialog(
 
     let scroll_state: Rc<repose_core::scroll::ScrollState> =
         remember_with_key(state.key("scroll"), repose_core::scroll::ScrollState::new);
+    let focus_requester = remember_with_key(state.key("focus"), FocusRequester::new);
+    let focus_pending: Rc<Cell<bool>> =
+        remember_with_key(state.key("focus_pending"), || Cell::new(false));
+    let focus_requested: Rc<Cell<bool>> =
+        remember_with_key(state.key("focus_requested"), || Cell::new(false));
+    let was_visible: Rc<Cell<bool>> =
+        remember_with_key(state.key("was_visible"), || Cell::new(false));
+    let visible_now = state.is_visible();
+    if visible_now && !was_visible.get() {
+        focus_pending.set(true);
+        focus_requested.set(false);
+        *focus_requester.target.borrow_mut() = None;
+    } else if !visible_now && was_visible.get() {
+        let owned_focus = !focus_pending.get();
+        focus_pending.set(true);
+        focus_requested.set(false);
+        *focus_requester.target.borrow_mut() = None;
+        if owned_focus && !state.restore_opener_focus() {
+            FocusManager::new(Vec::new(), None).clear_focus(false);
+        }
+    }
+    was_visible.set(visible_now);
+    let focus_cleanup = {
+        let focus_requester = focus_requester.clone();
+        let focus_pending = focus_pending.clone();
+        let opener_focus = state.opener_focus.clone();
+        move || {
+            on_unmount(move || {
+                *focus_requester.target.borrow_mut() = None;
+                if !focus_pending.get() {
+                    FocusManager::new(Vec::new(), None).clear_focus(false);
+                    if let Some(requester) = opener_focus.borrow_mut().take() {
+                        requester.request_focus();
+                    }
+                }
+                request_frame();
+            })
+        }
+    };
+    let disposer = if current_scope().is_some() {
+        effect_once_with_key(state.key("focus_lifecycle"), focus_cleanup)
+    } else {
+        focus_cleanup()
+    };
+    *state.focus_disposer.borrow_mut() = Some(disposer);
 
     let platform_state: Rc<RefCell<(Dp, Dp, PaddingValues)>> =
         remember_with_key(state.key("plat"), || {
+            let properties = props.borrow();
             let insets = window_insets();
             let mut pad = PaddingValues::default();
-            pad.left = Px(insets.left).to_dp();
-            pad.right = Px(insets.right).to_dp();
-            pad.top = Px(insets.top).to_dp();
-            pad.bottom = Px(insets.bottom).to_dp() + Px(insets.ime_bottom).to_dp();
+            if properties.use_platform_insets {
+                pad.left = Px(insets.left).to_dp();
+                pad.right = Px(insets.right).to_dp();
+                pad.top = Px(insets.top).to_dp();
+                pad.bottom = Px(insets.bottom).to_dp() + Px(insets.ime_bottom).to_dp();
+            }
             let win_w = {
                 let w = get_window_container_width();
                 if w.is_finite() && w > 10.0 {
@@ -183,9 +357,13 @@ pub fn Dialog(
             };
             let avail_w = (win_w - pad.left - pad.right).max(Dp::ZERO);
             let avail_h = (win_h - pad.top - pad.bottom).max(Dp::ZERO);
-            let platform_max_w = preferred_dialog_width_dp(win_w, win_h)
-                .min(avail_w)
-                .min(super::DialogDefaults::MAX_WIDTH);
+            let platform_max_w = if properties.use_platform_default_width {
+                preferred_dialog_width_dp(win_w, win_h)
+                    .min(avail_w)
+                    .min(super::DialogDefaults::MAX_WIDTH)
+            } else {
+                avail_w.min(super::DialogDefaults::MAX_WIDTH)
+            };
             RefCell::new((platform_max_w, avail_h, pad))
         });
 
@@ -193,7 +371,7 @@ pub fn Dialog(
     let anim_key = state.key("anim");
     let anim = remember_state_with_key(anim_key.clone(), || AnimatedValue::new(0.0, spec));
     let last_target = remember_state_with_key(state.key("atarget"), || f32::NAN);
-    let anim_target = if state.is_visible() { 1.0 } else { 0.0 };
+    let anim_target = if visible_now { 1.0 } else { 0.0 };
 
     {
         repose_core::animation_driver::touch(&anim_key);
@@ -229,10 +407,10 @@ pub fn Dialog(
 
     let progress = *anim.borrow().get();
     // HACK (compared to jetpack compose): First-frame kick
-    if state.is_visible() && progress < 0.01 {
+    if visible_now && progress < 0.01 {
         request_frame();
     }
-    let visible = state.is_visible() || progress > 0.01;
+    let visible = visible_now || progress > 0.01;
 
     if visible {
         if overlay_guard.borrow().is_none()
@@ -245,10 +423,17 @@ pub fn Dialog(
                 let current_content = current_content.clone();
                 let props = props.clone();
                 let scroll_state = scroll_state.clone();
+                let focus_requester = focus_requester.clone();
+                let focus_pending = focus_pending.clone();
+                let focus_requested = focus_requested.clone();
                 move || {
                     let progress_outer = *anim.borrow().get();
                     let alpha_outer = progress_outer.min(1.0);
-                    let scrim_color = AlertDialogDefaults::scrim_color();
+                    let scrim_color = state
+                        .scrim_color
+                        .borrow()
+                        .clone()
+                        .unwrap_or_else(AlertDialogDefaults::scrim_color);
                     let scrim_alpha = (scrim_color.3 as f32 / 255.0) * alpha_outer;
                     let scrim = Box(Modifier::new()
                         .fill_max_size()
@@ -330,11 +515,37 @@ pub fn Dialog(
                         },
                     );
 
-                    let content = current_content.borrow().clone();
+                    let mut content = current_content.borrow().clone();
                     let progress = *anim.borrow().get();
                     let alpha = progress.min(1.0);
                     let scale = 0.8 + 0.2 * progress;
                     let th = theme();
+                    let content = if attach_focus_requester(
+                        &mut content,
+                        &focus_requester,
+                        Some(&focus_pending),
+                    ) {
+                        content
+                    } else {
+                        let focus_pending = focus_pending.clone();
+                        Box(Modifier::new()
+                            .focusable(true)
+                            .focus_requester((*focus_requester).clone())
+                            .on_focus_changed(move |focused| {
+                                if focused {
+                                    focus_pending.set(false);
+                                }
+                            }))
+                        .child(content)
+                    };
+                    if focus_pending.get() && !focus_requested.get() {
+                        if focus_requester.target.borrow().is_some() {
+                            focus_requester.request_focus();
+                            focus_requested.set(true);
+                        } else {
+                            request_frame();
+                        }
+                    }
 
                     let (platform_max_w, platform_max_h, pad) = *platform_state.borrow();
 
@@ -352,29 +563,16 @@ pub fn Dialog(
                             .transform_origin(0.5, 0.5)
                             .focus_group()
                             .clickable()
-                            .focusable(false)
-                            .on_key_event({
+                            .focusable(true)
+                            .semantics(Semantics {
+                                role: Role::Container,
+                                label: Some("Dialog".into()),
+                                ..Default::default()
+                            })
+                            .on_preview_key_event({
                                 let s = state.clone();
-                                let props2 = props.clone();
-                                move |ke| {
-                                    use repose_core::input::{Key, KeyEventType};
-                                    if ke.key == Key::Escape && ke.event_type == KeyEventType::Down
-                                    {
-                                        let (dismiss, cb) = {
-                                            let p = props2.borrow();
-                                            (p.dismiss_on_back_press, p.on_dismiss_request.clone())
-                                        };
-                                        if dismiss {
-                                            if let Some(cb) = cb {
-                                                cb();
-                                            } else {
-                                                s.dismiss();
-                                            }
-                                            return true;
-                                        }
-                                    }
-                                    false
-                                }
+                                let p = props.clone();
+                                move |ke| dialog_preview_key(s.clone(), p.clone(), ke)
                             }),
                         platform_max_w,
                         platform_max_h,
@@ -391,6 +589,23 @@ pub fn Dialog(
                     .child(content);
 
                     let dialog = Box(dialog_mod).child(scrollable_body);
+                    let focus_probe = {
+                        let focus_requester = focus_requester.clone();
+                        let focus_pending = focus_pending.clone();
+                        let focus_requested = focus_requested.clone();
+                        Box(Modifier::new()
+                            .size(Dp(0.0), Dp(0.0))
+                            .hit_passthrough()
+                            .on_globally_positioned(move |_| {
+                                if focus_pending.get()
+                                    && !focus_requested.get()
+                                    && focus_requester.target.borrow().is_some()
+                                {
+                                    focus_requester.request_focus();
+                                    focus_requested.set(true);
+                                }
+                            }))
+                    };
 
                     let dialog_container = Box(Modifier::new()
                         .fill_max_size()
@@ -400,7 +615,7 @@ pub fn Dialog(
                         .justify_content(JustifyContent::SAFE_CENTER)
                         .align_items(AlignItems::SAFE_CENTER)
                         .hit_passthrough())
-                    .child(dialog);
+                    .child((dialog, focus_probe));
 
                     ZStack(Modifier::new().fill_max_size().absolute()).child((
                         scrim,
@@ -410,7 +625,7 @@ pub fn Dialog(
                 }
             });
 
-            *overlay_guard.borrow_mut() = Some(overlay.show_guard(builder, 900.0, false));
+            *overlay_guard.borrow_mut() = Some(overlay.show_guard(builder, 1000.0, false));
         }
     } else {
         *overlay_guard.borrow_mut() = None;
@@ -459,6 +674,8 @@ pub fn AlertDialog(
     dismiss_button: Option<View>,
     config: AlertDialogConfig,
 ) -> View {
+    state.set_scrim_color(Some(config.scrim_color));
+
     let content = Box(Modifier::new()
         .background(config.container_color)
         .clip_rounded(
@@ -471,6 +688,7 @@ pub fn AlertDialog(
         text,
         confirm_button,
         dismiss_button,
+        config.horizontal_padding,
     ));
 
     Dialog(
@@ -478,6 +696,14 @@ pub fn AlertDialog(
         Modifier::new()
             .min_width(config.min_width)
             .max_width(config.max_width)
+            .state_elevation(StateElevation {
+                default: config.tonal_elevation,
+                hovered: config.tonal_elevation,
+                focused: config.tonal_elevation,
+                pressed: config.tonal_elevation,
+                dragged: config.tonal_elevation,
+                disabled: Dp::ZERO,
+            })
             .then(config.modifier),
         DialogProperties::default(),
         content,
@@ -490,6 +716,8 @@ pub struct DatePickerDialogConfig {
     pub modifier: Modifier,
     pub shape_radius: Option<Dp>,
     pub colors: super::DatePickerColors,
+    pub confirm_label: String,
+    pub dismiss_label: String,
 }
 
 impl Default for DatePickerDialogConfig {
@@ -498,6 +726,8 @@ impl Default for DatePickerDialogConfig {
             modifier: Modifier::new(),
             shape_radius: None,
             colors: super::DatePickerColors::default(),
+            confirm_label: super::DatePickerDefaults::CONFIRM_LABEL.to_string(),
+            dismiss_label: super::DatePickerDefaults::DISMISS_LABEL.to_string(),
         }
     }
 }
@@ -505,8 +735,8 @@ impl Default for DatePickerDialogConfig {
 /// M3 Date Picker Dialog - wraps [`DatePicker`] inside a modal [`Dialog`]
 /// with confirm/cancel buttons. Equivalent to Compose's `DatePickerDialog`.
 ///
-/// The `on_confirm` callback fires when a day is clicked or the OK button is pressed.
-/// The `on_dismiss` fires on Cancel or scrim tap.
+/// The `on_confirm` callback fires when the OK button is pressed.
+/// The `on_dismiss` callback fires on Cancel, Escape, or scrim tap.
 pub fn DatePickerDialog(
     state: Rc<DialogState>,
     picker_state: Rc<DatePickerState>,
@@ -514,6 +744,19 @@ pub fn DatePickerDialog(
     on_dismiss: Rc<dyn Fn()>,
     config: DatePickerDialogConfig,
 ) -> View {
+    state.set_scrim_color(None);
+    let dismiss_state = state.clone();
+    let dismiss_callback = on_dismiss.clone();
+    let dismiss = Rc::new(move || {
+        dismiss_state.dismiss();
+        dismiss_callback();
+    }) as Rc<dyn Fn()>;
+    let confirm_state = state.clone();
+    let confirm_callback = on_confirm.clone();
+    let confirm = Rc::new(move |year, month, day| {
+        confirm_state.dismiss();
+        confirm_callback(year, month, day);
+    }) as Rc<dyn Fn(i32, u32, u32)>;
     let content = Box(Modifier::new()
         .background(config.colors.container_color)
         .clip_rounded(
@@ -523,15 +766,25 @@ pub fn DatePickerDialog(
         ))
     .child(Column(Modifier::new()).child((DatePicker(
         picker_state.clone(),
-        on_confirm,
-        on_dismiss,
+        confirm,
+        dismiss.clone(),
         DatePickerConfig {
             colors: config.colors,
+            confirm_label: config.confirm_label,
+            dismiss_label: config.dismiss_label,
             ..DatePickerConfig::default()
         },
     ),)));
 
-    Dialog(state, config.modifier, DialogProperties::default(), content)
+    Dialog(
+        state,
+        config.modifier,
+        DialogProperties {
+            on_dismiss_request: Some(dismiss.clone()),
+            ..DialogProperties::default()
+        },
+        content,
+    )
 }
 
 /// Configuration for [`TimePickerDialog`].
@@ -541,6 +794,8 @@ pub struct TimePickerDialogConfig {
     pub shape_radius: Option<Dp>,
     pub container_color: Color,
     pub colors: super::TimePickerColors,
+    pub confirm_label: String,
+    pub dismiss_label: String,
 }
 
 impl Default for TimePickerDialogConfig {
@@ -550,6 +805,8 @@ impl Default for TimePickerDialogConfig {
             shape_radius: None,
             container_color: theme().surface_container_high,
             colors: super::TimePickerColors::default(),
+            confirm_label: super::TimePickerDefaults::CONFIRM_LABEL.to_string(),
+            dismiss_label: super::TimePickerDefaults::DISMISS_LABEL.to_string(),
         }
     }
 }
@@ -566,6 +823,19 @@ pub fn TimePickerDialog(
     on_dismiss: Rc<dyn Fn()>,
     config: TimePickerDialogConfig,
 ) -> View {
+    state.set_scrim_color(None);
+    let dismiss_state = state.clone();
+    let dismiss_callback = on_dismiss.clone();
+    let dismiss = Rc::new(move || {
+        dismiss_state.dismiss();
+        dismiss_callback();
+    }) as Rc<dyn Fn()>;
+    let confirm_state = state.clone();
+    let confirm_callback = on_confirm.clone();
+    let confirm = Rc::new(move |hour, minute| {
+        confirm_state.dismiss();
+        confirm_callback(hour, minute);
+    }) as Rc<dyn Fn(u32, u32)>;
     let content = Box(Modifier::new()
         .background(config.container_color)
         .clip_rounded(
@@ -575,13 +845,23 @@ pub fn TimePickerDialog(
         ))
     .child(Column(Modifier::new()).child((TimePicker(
         picker_state.clone(),
-        on_confirm,
-        on_dismiss,
+        confirm,
+        dismiss.clone(),
         TimePickerConfig {
             colors: config.colors,
+            confirm_label: config.confirm_label,
+            dismiss_label: config.dismiss_label,
             ..TimePickerConfig::default()
         },
     ),)));
 
-    Dialog(state, config.modifier, DialogProperties::default(), content)
+    Dialog(
+        state,
+        config.modifier,
+        DialogProperties {
+            on_dismiss_request: Some(dismiss.clone()),
+            ..DialogProperties::default()
+        },
+        content,
+    )
 }

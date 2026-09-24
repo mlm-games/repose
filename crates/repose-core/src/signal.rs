@@ -64,14 +64,15 @@ impl<T> Signal<T> {
     where
         T: PartialEq + Clone,
     {
-        let id = {
+        let (id, old) = {
             let mut inner = self.0.borrow_mut();
             if inner.value == v {
                 return;
             }
-            inner.value = v;
-            inner.id
+            let old = std::mem::replace(&mut inner.value, v);
+            (inner.id, old)
         };
+        drop(old);
         self.notify_and_request_frame(id);
     }
 
@@ -84,11 +85,12 @@ impl<T> Signal<T> {
     where
         T: Clone,
     {
-        let id = {
+        let (id, old) = {
             let mut inner = self.0.borrow_mut();
-            inner.value = v;
-            inner.id
+            let old = std::mem::replace(&mut inner.value, v);
+            (inner.id, old)
         };
+        drop(old);
         self.notify_and_request_frame(id);
     }
 
@@ -147,34 +149,42 @@ impl<T> Signal<T> {
     }
 
     pub fn subscribe(&self, f: impl Fn(&T) + 'static) -> SubId {
-        let mut inner = self.0.borrow_mut();
-        if let Some(free_id) = inner.free_list.pop() {
-            inner.subs[free_id] = Some(Rc::new(f));
-            free_id
-        } else {
-            inner.subs.push(Some(Rc::new(f)));
-            inner.subs.len() - 1
-        }
+        let (id, old) = {
+            let mut inner = self.0.borrow_mut();
+            if let Some(free_id) = inner.free_list.pop() {
+                let old = inner.subs[free_id].replace(Rc::new(f));
+                (free_id, old)
+            } else {
+                inner.subs.push(Some(Rc::new(f)));
+                (inner.subs.len() - 1, None)
+            }
+        };
+        drop(old);
+        id
     }
 
     /// Remove a subscriber by id. Returns true if removed.
     pub fn unsubscribe(&self, id: SubId) -> bool {
-        let mut inner = self.0.borrow_mut();
-        if id < inner.subs.len() && inner.subs[id].is_some() {
-            inner.subs[id] = None;
-            inner.free_list.push(id);
-            while inner.subs.last().is_some_and(|s| s.is_none()) {
-                let popped = inner.subs.len() - 1;
-                inner.subs.pop();
-                // Remove from free_list if it was the tail we just popped
-                if let Some(pos) = inner.free_list.iter().position(|&x| x == popped) {
-                    inner.free_list.swap_remove(pos);
+        let old = {
+            let mut inner = self.0.borrow_mut();
+            if id < inner.subs.len() && inner.subs[id].is_some() {
+                let old = inner.subs[id].take();
+                inner.free_list.push(id);
+                while inner.subs.last().is_some_and(|s| s.is_none()) {
+                    let popped = inner.subs.len() - 1;
+                    inner.subs.pop();
+                    if let Some(pos) = inner.free_list.iter().position(|&x| x == popped) {
+                        inner.free_list.swap_remove(pos);
+                    }
                 }
+                old
+            } else {
+                None
             }
-            true
-        } else {
-            false
-        }
+        };
+        let removed = old.is_some();
+        drop(old);
+        removed
     }
 
     /// Subscribe and get a guard that auto-unsubscribes on drop.

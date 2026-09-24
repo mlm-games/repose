@@ -7,8 +7,6 @@ use crate::fallback_data::{
 };
 
 // constants matching the Kotlin source
-#[allow(dead_code)]
-const FONT_FALLBACK_BASE_URL: &str = "https://fonts.gstatic.com/s/";
 const PREFIX_DIGIT_0: u32 = 48;
 const PREFIX_RADIX: u32 = 10;
 const FONT_INDEX_DIGIT_0: u32 = 97; // 'a'
@@ -18,6 +16,11 @@ const RANGE_SIZE_RADIX: u32 = 26;
 const RANGE_VALUE_DIGIT_0: u32 = 65; // 'A'
 const RANGE_VALUE_RADIX: u32 = 26;
 const MAX_CODE_POINT: u32 = 0x10FFFF;
+
+#[cfg(target_arch = "wasm32")]
+fn direct_font_url(font: &NotoFont) -> String {
+    font.url.to_owned()
+}
 
 pub struct IndexedNotoFont {
     pub index: usize,
@@ -40,14 +43,15 @@ pub struct UnicodePropertyLookup {
 }
 
 impl UnicodePropertyLookup {
-    pub fn lookup(&self, value: u32) -> &FallbackFontComponent {
-        // Kotlin binary search: while true if start==end return values[start]
-        // else mid, if value >= boundaries[mid] start=mid+1 else end=mid
+    pub fn lookup(&self, value: u32) -> Option<&FallbackFontComponent> {
+        if value > MAX_CODE_POINT {
+            return None;
+        }
         let mut start: usize = 0;
         let mut end: usize = self.boundaries.len();
         loop {
             if start == end {
-                return &self.values[start];
+                return self.values.get(start);
             }
             let mid = start + (end - start) / 2;
             if value >= self.boundaries[mid] {
@@ -215,12 +219,15 @@ impl NotoFontDownloader {
         // To know which component each codepoint maps to, we can binary search boundaries manually (lookup) but need index.
         // Instead, we can get lookup index by performing same binary search returning idx.
 
-        fn lookup_idx(boundaries: &[u32], value: u32) -> usize {
+        fn lookup_idx(boundaries: &[u32], value: u32) -> Option<usize> {
+            if value > MAX_CODE_POINT {
+                return None;
+            }
             let mut start = 0usize;
             let mut end = boundaries.len();
             loop {
                 if start == end {
-                    return start;
+                    return Some(start);
                 }
                 let mid = start + (end - start) / 2;
                 if value >= boundaries[mid] {
@@ -233,13 +240,19 @@ impl NotoFontDownloader {
 
         let mut missing: Vec<u32> = Vec::new();
         let mut required_component_indices: Vec<usize> = Vec::new();
+        let mut codepoints: Vec<u32> = codepoints.iter().copied().collect();
+        codepoints.sort_unstable();
 
-        for &cp in codepoints {
+        for cp in codepoints {
             if self.code_points_with_no_known_font.contains(&cp) || cp > MAX_CODE_POINT {
                 continue;
             }
-            let idx = lookup_idx(&self.lookup.boundaries, cp);
-            let comp = &mut components[idx];
+            let Some(idx) = lookup_idx(&self.lookup.boundaries, cp) else {
+                continue;
+            };
+            let Some(comp) = components.get_mut(idx) else {
+                continue;
+            };
             if comp.fonts.is_empty() {
                 missing.push(cp);
             } else {
@@ -290,6 +303,7 @@ impl NotoFontDownloader {
 
         // Convert candidate set to vec for iteration
         let mut candidate_vec: Vec<usize> = candidate_font_indices.into_iter().collect();
+        candidate_vec.sort_unstable();
 
         let mut selected: Vec<&'static NotoFont> = Vec::new();
 
@@ -461,7 +475,6 @@ pub mod wasm_fallback {
     use wasm_bindgen_futures::JsFuture;
     use web_sys::{Request, Response};
 
-    const BATCH_WINDOW_MS: u32 = 60;
     const MAX_BATCH_SIZE: usize = 10;
 
     thread_local! {
@@ -493,37 +506,48 @@ pub mod wasm_fallback {
             }
             self.queued.push(codepoints);
         }
+    }
 
-        fn drain_channel(&mut self) {
-            self.queued.clear();
+    fn start_worker(global: Rc<RefCell<WebFallbackFontDownloader>>) {
+        let should_start = {
+            let mut state = global.borrow_mut();
+            if state.is_running {
+                false
+            } else {
+                state.is_running = true;
+                true
+            }
+        };
+        if should_start {
+            wasm_bindgen_futures::spawn_local(async move {
+                run_worker(global).await;
+            });
         }
+    }
+
+    fn enqueue(codepoints: HashSet<u32>) {
+        let global = GLOBAL.with(|global| {
+            let mut state = global.borrow_mut();
+            if let Some(queued) = state.queued.last_mut() {
+                queued.extend(codepoints);
+            } else {
+                state.submit(codepoints);
+            }
+            global.clone()
+        });
+        start_worker(global);
     }
 
     pub fn submit_unresolved(codepoints: Vec<u32>) {
         if codepoints.is_empty() {
             return;
         }
-        // For backwards compat, also push directly if not installed
-        let is_installed = INSTALLED.with(|v| *v.borrow());
-        if is_installed {
-            // Use registry to dedupe globally like compose
-            crate::unresolved::web_unresolved_registry().add_unresolved_vec(codepoints);
-        } else {
-            let set: HashSet<u32> = codepoints.into_iter().collect();
-            GLOBAL.with(|g| {
-                let mut mgr = g.borrow_mut();
-                mgr.submit(set.clone());
-                if !mgr.is_running {
-                    mgr.is_running = true;
-                    let g_clone = g.clone();
-                    wasm_bindgen_futures::spawn_local(async move {
-                        run_loop(g_clone).await;
-                    });
-                }
-            });
-            // Also seed registry so future installs see pending
-            crate::unresolved::web_unresolved_registry()
-                .add_unresolved_codepoints(&set.into_iter().collect::<Vec<_>>());
+        let set: HashSet<u32> = codepoints.into_iter().collect();
+        let installed = INSTALLED.with(|installed| *installed.borrow());
+        crate::unresolved::web_unresolved_registry()
+            .add_unresolved_vec(set.iter().copied().collect());
+        if !installed {
+            enqueue(set);
         }
     }
 
@@ -545,18 +569,7 @@ pub mod wasm_fallback {
         struct RegistryListener;
         impl crate::unresolved::UnresolvedListener for RegistryListener {
             fn on_unresolved_codepoints(&self, codepoints: &HashSet<u32>) {
-                let set = codepoints.clone();
-                GLOBAL.with(|g| {
-                    let mut mgr = g.borrow_mut();
-                    mgr.submit(set);
-                    if !mgr.is_running {
-                        mgr.is_running = true;
-                        let g_clone = g.clone();
-                        wasm_bindgen_futures::spawn_local(async move {
-                            run_loop(g_clone).await;
-                        });
-                    }
-                });
+                enqueue(codepoints.clone());
             }
             fn on_new_font_installed(&self) {
                 // In compose ParagraphLayouter invalidates paragraph on new font
@@ -569,152 +582,93 @@ pub mod wasm_fallback {
         crate::unresolved::web_unresolved_registry().add_listener(listener.clone());
         // so Weak in registry doesn't die (was a bug prev.: listener dropped after fn)
         LISTENER_KEEP.with(|c| *c.borrow_mut() = Some(listener));
+        let pending = crate::unresolved::web_unresolved_registry().snapshot();
+        if !pending.is_empty() {
+            enqueue(pending);
+        }
     }
 
-    async fn run_loop(global: Rc<RefCell<WebFallbackFontDownloader>>) {
+    async fn run_worker(global: Rc<RefCell<WebFallbackFontDownloader>>) {
         loop {
             let batch = {
-                // wait for at least one
-                loop {
-                    let has = global.borrow().queued.len() > 0;
-                    if has {
-                        break;
-                    }
-                    gloo_timers_approx_delay(16).await;
+                let mut state = global.borrow_mut();
+                if state.queued.is_empty() {
+                    state.is_running = false;
+                    return;
                 }
-                let mut batch_set = HashSet::new();
-                // FIFO: take oldest first (mirrors Channel receive order), not LIFO pop()
-                {
-                    let mut mgr = global.borrow_mut();
-                    if !mgr.queued.is_empty() {
-                        let first = mgr.queued.remove(0);
-                        batch_set.extend(first);
-                    }
+                let mut batch = state.queued.remove(0);
+                let mut count = 1;
+                while count < MAX_BATCH_SIZE && !state.queued.is_empty() {
+                    batch.extend(state.queued.remove(0));
+                    count += 1;
                 }
-                // collect up to 9 more within 60ms window (mirrors repeat(9) withTimeoutOrNull)
-                let mut collected = 1;
-                let start = js_sys::Date::now();
-                while collected < MAX_BATCH_SIZE {
-                    let elapsed = js_sys::Date::now() - start;
-                    if elapsed >= BATCH_WINDOW_MS as f64 {
-                        break;
-                    }
-                    let maybe = {
-                        let mut mgr = global.borrow_mut();
-                        if !mgr.queued.is_empty() {
-                            Some(mgr.queued.remove(0))
-                        } else {
-                            None
-                        }
-                    };
-                    if let Some(s) = maybe {
-                        batch_set.extend(s);
-                        collected += 1;
-                    } else {
-                        let remaining = (BATCH_WINDOW_MS as f64 - elapsed).max(0.0) as u32;
-                        let wait = remaining.min(10);
-                        if wait > 0 {
-                            gloo_timers_approx_delay(wait).await;
-                        }
-                        if global.borrow().queued.is_empty() {
-                            if js_sys::Date::now() - start >= BATCH_WINDOW_MS as f64 {
-                                break;
-                            }
-                        }
-                    }
-                }
-                batch_set
+                batch
             };
 
             if batch.is_empty() {
                 continue;
             }
 
-            // Attempt download (mirrors downloader.downloadFallbackFont)
             let fonts_to_download: Vec<&'static NotoFont> = {
-                let mut mgr = global.borrow_mut();
-                let lang = web_sys::window()
-                    .and_then(|w| w.navigator().language())
+                let mut state = global.borrow_mut();
+                let language = web_sys::window()
+                    .and_then(|window| window.navigator().language())
                     .unwrap_or_else(|| "en".to_string());
-                let res = mgr.downloader.get_fonts_to_download(&batch, &lang);
-                res
+                state.downloader.get_fonts_to_download(&batch, &language)
             };
 
             if fonts_to_download.is_empty() {
-                // No fonts needed (e.g., PUA), drain and continue, don't retry
                 continue;
             }
 
             let mut successes: Vec<Vec<u8>> = Vec::new();
-            let mut any_success = false;
-            let mut all_failed = true;
-
-            use std::collections::HashSet;
+            let mut failed = false;
             let mut seen_urls: HashSet<String> = HashSet::new();
             for font in &fonts_to_download {
-                let url = if font.name.starts_with("Noto Color Emoji") {
-                    // HACK: Use full ttf from jsDelivr (CORS, 10MB) instead of gstatic woff2 subsets (woff2 decode not supported by fontique/read-fonts)
-                    "https://cdn.jsdelivr.net/gh/googlefonts/noto-emoji@main/fonts/NotoColorEmoji.ttf".to_string()
-                } else {
-                    format!("{}{}", FONT_FALLBACK_BASE_URL, font.url)
-                };
+                let url = direct_font_url(font);
                 if !seen_urls.insert(url.clone()) {
                     continue;
                 }
                 match fetch_bytes(&url).await {
-                    Ok(bytes) => {
-                        successes.push(bytes);
-                        any_success = true;
-                        all_failed = false;
-                    }
-                    Err(_) => {}
+                    Ok(bytes) => successes.push(bytes),
+                    Err(_) => failed = true,
                 }
             }
 
-            if all_failed && !any_success {
+            let mut any_success = false;
+            for bytes in successes {
+                if crate::register_font_data_if_usable(&bytes) {
+                    any_success = true;
+                } else {
+                    failed = true;
+                }
+            }
+
+            if failed || !any_success {
                 let backoff = {
-                    let mut mgr = global.borrow_mut();
-                    let pause = mgr.error_count * 5;
-                    mgr.error_count += 1;
+                    let mut state = global.borrow_mut();
+                    let pause = state.error_count.saturating_mul(5).min(60);
+                    state.error_count = state.error_count.saturating_add(1);
                     pause
                 };
-                // Non-blocking retry like compose scope.launch { delay(pause); submit(batch) }
-                let batch_clone = batch.clone();
-                wasm_bindgen_futures::spawn_local(async move {
-                    if backoff > 0 {
-                        gloo_timers_approx_delay(backoff * 1000).await;
-                    }
-                    GLOBAL.with(|g| {
-                        g.borrow_mut().submit(batch_clone);
-                    });
-                });
+                if backoff > 0 {
+                    gloo_timers_approx_delay(backoff.saturating_mul(1000)).await;
+                }
+                global.borrow_mut().queued.push(batch);
                 continue;
             }
 
-            // Success path: reset errorCount, drainChannel(), onFontsLoaded()
-            {
-                let mut mgr = global.borrow_mut();
-                mgr.error_count = 0;
-                // drainChannel() – mirrors compose after success
-                mgr.drain_channel();
-            }
-
-            for bytes in &successes {
-                crate::register_font_data(&bytes);
-            }
-
-            if any_success {
-                crate::unresolved::web_unresolved_registry().on_new_font_installed();
-                // ensure caches cleared and frame bumped (register does, but double-safe)
-                crate::clear_caches_for_fallback();
-                crate::bump_frame_for_fallback();
-            }
+            global.borrow_mut().error_count = 0;
+            crate::unresolved::web_unresolved_registry().on_new_font_installed();
         }
     }
 
     async fn gloo_timers_approx_delay(ms: u32) -> () {
         let promise = js_sys::Promise::new(&mut |resolve, _reject| {
-            let window = web_sys::window().unwrap();
+            let Some(window) = web_sys::window() else {
+                let _ = resolve.call0(&JsValue::NULL);
+                return;
+            };
             let _ =
                 window.set_timeout_with_callback_and_timeout_and_arguments_0(&resolve, ms as i32);
         });
@@ -722,15 +676,16 @@ pub mod wasm_fallback {
     }
 
     async fn fetch_bytes(url: &str) -> Result<Vec<u8>, JsValue> {
-        // Use RequestInit with CORS mode so cross-origin fetch to fonts.gstatic.com
-        let mut opts = web_sys::RequestInit::new();
+        let opts = web_sys::RequestInit::new();
         opts.set_method("GET");
         opts.set_mode(web_sys::RequestMode::Cors);
         opts.set_cache(web_sys::RequestCache::Default);
         let request = Request::new_with_str_and_init(url, &opts)?;
         let window = web_sys::window().ok_or_else(|| JsValue::from_str("no window"))?;
         let resp_value = JsFuture::from(window.fetch_with_request(&request)).await?;
-        let resp: Response = resp_value.dyn_into().unwrap();
+        let resp: Response = resp_value
+            .dyn_into()
+            .map_err(|_| JsValue::from_str("fetch did not return a Response"))?;
         if !resp.ok() {
             return Err(JsValue::from_str(&format!(
                 "fetch failed status {}",
@@ -743,7 +698,6 @@ pub mod wasm_fallback {
         Ok(bytes)
     }
 
-    // Public API for init
     pub fn ensure_fallback_initialized() {
         install_fallback_font_downloader();
     }

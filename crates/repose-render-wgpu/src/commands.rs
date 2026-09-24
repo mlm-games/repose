@@ -68,15 +68,15 @@ pub fn apply_render_commands(renderer: &mut WgpuSceneRenderer, cmds: Vec<RenderC
                 w,
                 h,
                 fds,
-                fourcc: _,
+                fourcc,
                 modifier,
                 strides,
                 offsets,
                 color_info,
             } => {
-                if let Err(e) = renderer
-                    .set_image_dmabuf(handle, w, h, fds, modifier, strides, offsets, color_info)
-                {
+                if let Err(e) = renderer.set_image_dmabuf_fourcc(
+                    handle, w, h, fds, fourcc, modifier, strides, offsets, color_info,
+                ) {
                     log::warn!("repose-render: SetImageDmabuf({handle}): {e:#}");
                 }
             }

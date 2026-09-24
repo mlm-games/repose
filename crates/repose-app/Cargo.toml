@@ -2,7 +2,9 @@
 name = "repose-app"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
 description = "Embeddable Repose runtime with composition, input handling, and frame output"
 
 [dependencies]

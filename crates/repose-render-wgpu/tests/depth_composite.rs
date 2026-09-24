@@ -2,8 +2,8 @@
 
 use repose_core::{Color, Rect, Scene, SceneNode};
 use repose_render_wgpu::{
-    Callback, CallbackResources, DepthComposite, ScreenDescriptor, WgpuCallback,
-    offscreen::OffscreenRenderer,
+    Callback, CallbackRenderPass, CallbackResources, DepthComposite, ScreenDescriptor,
+    WgpuCallback, offscreen::OffscreenRenderer,
 };
 
 const SHADER: &str = r#"
@@ -207,7 +207,7 @@ impl WgpuCallback for Probe {
     fn paint(
         &self,
         _info: repose_core::PaintCallbackInfo,
-        rpass: &mut wgpu::RenderPass<'static>,
+        rpass: &mut CallbackRenderPass<'_, '_>,
         resources: &CallbackResources,
     ) {
         if let Some(composite) = resources.get::<DepthComposite>() {

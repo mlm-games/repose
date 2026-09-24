@@ -106,7 +106,7 @@ impl Drop for TimerHandle {
 
 fn insert(due: Due, repeat: Repeat, callback: Callback) -> TimerHandle {
     let id = unique_component_id();
-    REGISTRY.with(|r| {
+    let old = REGISTRY.with(|r| {
         r.borrow_mut().insert(
             id,
             Entry {
@@ -114,16 +114,23 @@ fn insert(due: Due, repeat: Repeat, callback: Callback) -> TimerHandle {
                 repeat,
                 callback,
             },
-        );
+        )
     });
+    drop(old);
     request_frame();
     TimerHandle { id: Some(id) }
 }
 
 fn cancel(id: u64) {
-    let _ = REGISTRY.try_with(|r| {
-        r.borrow_mut().remove(&id);
-    });
+    let removed = REGISTRY
+        .try_with(|r| {
+            r.try_borrow_mut()
+                .ok()
+                .and_then(|mut registry| registry.remove(&id))
+        })
+        .ok()
+        .flatten();
+    drop(removed);
 }
 
 fn wrap_once(cb: impl FnOnce() + 'static) -> Callback {
@@ -293,13 +300,16 @@ pub fn poll() {
         }
     }
     if !remove.is_empty() {
-        REGISTRY.with(|r| {
+        let removed_entries = REGISTRY.with(|r| {
             let mut reg = r.borrow_mut();
-            for id in remove {
-                reg.remove(&id);
-            }
+            let removed = remove
+                .into_iter()
+                .filter_map(|id| reg.remove(&id))
+                .collect::<Vec<_>>();
             need_frames = need_frames || reg.values().any(|e| matches!(e.due, Due::Frame(_)));
+            removed
         });
+        drop(removed_entries);
     }
     if need_frames {
         request_frame();
@@ -318,6 +328,14 @@ fn skip_ahead(mut next: Instant, period: Duration, now: Instant) -> Instant {
     } else {
         next
     }
+}
+
+fn replace_timer_slot(slot: &Rc<RefCell<Option<TimerHandle>>>, value: Option<TimerHandle>) {
+    let old = slot
+        .try_borrow_mut()
+        .ok()
+        .map(|mut current| std::mem::replace(&mut *current, value));
+    drop(old);
 }
 
 /// Trailing-edge debouncer: each call reschedules the single pending firing.
@@ -346,12 +364,12 @@ impl Debouncer {
 
     /// Schedule `cb` after a quiet `delay`, replacing any pending firing.
     pub fn call(&self, cb: impl FnOnce() + 'static) {
-        *self.pending.borrow_mut() = Some(delay(self.delay, cb));
+        replace_timer_slot(&self.pending, Some(delay(self.delay, cb)));
     }
 
     /// Drop the pending firing, if any.
     pub fn cancel_pending(&self) {
-        *self.pending.borrow_mut() = None;
+        replace_timer_slot(&self.pending, None);
     }
 }
 
@@ -388,10 +406,13 @@ impl Throttler {
             cb();
         } else {
             let last_fire = self.last_fire.clone();
-            *self.pending.borrow_mut() = Some(delay(edge - now, move || {
-                *last_fire.borrow_mut() = Some(Instant::now());
-                cb();
-            }));
+            replace_timer_slot(
+                &self.pending,
+                Some(delay(edge - now, move || {
+                    *last_fire.borrow_mut() = Some(Instant::now());
+                    cb();
+                })),
+            );
         }
     }
 }
@@ -432,10 +453,16 @@ pub fn scoped_delay_with_key<K: PartialEq + Clone + 'static>(
             installed: false,
         })
     });
-    let mut slot = cell.borrow_mut();
-    if !slot.installed {
-        slot.installed = true;
-        // Read the flag at dispose time: key changes replace it.
+    let install = {
+        let mut slot = cell.borrow_mut();
+        if !slot.installed {
+            slot.installed = true;
+            true
+        } else {
+            false
+        }
+    };
+    if install {
         let cell_c = cell.clone();
         crate::scoped_effect(move || {
             crate::on_unmount(move || {
@@ -443,11 +470,21 @@ pub fn scoped_delay_with_key<K: PartialEq + Clone + 'static>(
             })
         });
     }
-    if slot.key.as_ref() != Some(&key) {
-        *slot.alive.borrow_mut() = false;
-        let alive = Rc::new(RefCell::new(true));
-        slot.alive = alive.clone();
-        slot.key = Some(key);
+    let alive = Rc::new(RefCell::new(true));
+    let old_values = {
+        let mut slot = cell.borrow_mut();
+        if slot.key.as_ref() != Some(&key) {
+            *slot.alive.borrow_mut() = false;
+            let old_alive = std::mem::replace(&mut slot.alive, alive.clone());
+            let old_key = slot.key.replace(key.clone());
+            Some((old_alive, old_key))
+        } else {
+            None
+        }
+    };
+    if let Some((old_alive, old_key)) = old_values {
+        drop(old_alive);
+        drop(old_key);
         delay(duration, move || {
             if *alive.borrow() {
                 cb();
@@ -468,7 +505,8 @@ mod tests {
 
     /// Clear the thread-local registry so reused test threads don't leak state.
     fn reset() {
-        REGISTRY.with(|r| r.borrow_mut().clear());
+        let entries = REGISTRY.with(|r| std::mem::take(&mut *r.borrow_mut()));
+        drop(entries);
     }
 
     #[test]

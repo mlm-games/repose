@@ -1,7 +1,7 @@
 use repose_core::prelude::*;
 use repose_ui::*;
 
-use crate::ui::{Hint, Page, Section, sp};
+use crate::ui::{Hint, Page, Section, compact_layout, sp};
 
 fn shadow_card(m: Modifier, label: &'static str, fg: Option<Color>) -> View {
     let mut t = Text(label).size(Sp(14.0));
@@ -17,6 +17,8 @@ fn shadow_card(m: Modifier, label: &'static str, fg: Option<Color>) -> View {
 }
 
 pub fn screen() -> View {
+    let compact = compact_layout();
+
     Page(vec![
         Section("view! macro - declarative syntax", {
             Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child((
@@ -30,9 +32,13 @@ pub fn screen() -> View {
             ))
         }),
         Section(
-            "Grid (3 columns)",
+            if compact {
+                "Grid (1 column)"
+            } else {
+                "Grid (3 columns)"
+            },
             Grid(
-                3,
+                if compact { 1 } else { 3 },
                 Modifier::new().padding(sp::MD),
                 (0..6)
                     .map(|i| {
@@ -52,13 +58,22 @@ pub fn screen() -> View {
             "Graphics Layer (Modifier::graphics_layer)",
             Column(Modifier::new().padding(sp::MD).gap(sp::MD)).child((
                 Hint("Render subtree to an offscreen texture, then composite with group alpha."),
-                Column(Modifier::new().size(Dp(420.0), Dp(160.0))).child((
+                Column(
+                    Modifier::new()
+                        .fill_max_width()
+                        .max_width(Dp(420.0))
+                        .height(Dp(160.0)),
+                )
+                .child((
                     Box(Modifier::new()
-                        .size(Dp(420.0), Dp(160.0))
+                        .fill_max_width()
+                        .height(Dp(160.0))
                         .background(theme().primary.with_alpha(96))
                         .clip_rounded(Dp(12.0))),
                     Box(Modifier::new()
-                        .size(Dp(360.0), Dp(120.0))
+                        .fill_max_width()
+                        .max_width(Dp(360.0))
+                        .height(Dp(120.0))
                         .graphics_layer(0.7)
                         .absolute()
                         .offset(Some(Dp(20.0)), Some(Dp(20.0)), None, None)
@@ -73,7 +88,9 @@ pub fn screen() -> View {
                             .color(theme().on_secondary),
                     )),
                     Box(Modifier::new()
-                        .size(Dp(280.0), Dp(60.0))
+                        .fill_max_width()
+                        .max_width(Dp(280.0))
+                        .height(Dp(60.0))
                         .graphics_layer(0.5)
                         .absolute()
                         .offset(Some(Dp(120.0)), Some(Dp(80.0)), None, None)
@@ -111,7 +128,9 @@ pub fn screen() -> View {
             "Stack (absolute positioning)",
             Column(
                 Modifier::new()
-                    .size(Dp(420.0), Dp(180.0))
+                    .fill_max_width()
+                    .max_width(Dp(420.0))
+                    .height(Dp(180.0))
                     .background(theme().surface)
                     .border(Dp(1.0), theme().outline, Dp(12.0))
                     .clip_rounded(Dp(12.0)),

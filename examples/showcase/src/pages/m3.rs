@@ -75,6 +75,7 @@ pub fn screen() -> View {
             .repeated(RepeatableSpec::infinite()),
     );
     let anim_target = remember(|| signal(0.0f32));
+    let split_action = remember(|| signal("No split-button action yet".to_string()));
     let anim_val = animate_f32(
         "m3_demo_anim",
         anim_target.get(),
@@ -93,7 +94,12 @@ pub fn screen() -> View {
             let l = menu_label.clone();
             move || l.set("Item 2".to_string())
         })),
-        DropdownMenuEntry::Item(DropdownMenuItem::new("Item 3 (disabled)", || {}).disabled()),
+        DropdownMenuEntry::Item(
+            DropdownMenuItem::new("Item 3 (disabled)", || {
+                log::info!("disabled menu item invoked")
+            })
+            .disabled(),
+        ),
         DropdownMenuEntry::Divider,
         DropdownMenuEntry::Submenu(DropdownMenuSubmenu::new(
             "More",
@@ -381,7 +387,10 @@ pub fn screen() -> View {
                         SplitButtonLayout(
                             SplitButtonLeadingButton(
                                 Modifier::new(),
-                                || {},
+                                {
+                                    let action = split_action.clone();
+                                    move || action.set("Action".to_string())
+                                },
                                 ButtonConfig::default(),
                                 || Text("Action"),
                             ),
@@ -414,7 +423,10 @@ pub fn screen() -> View {
                         SplitButtonLayout(
                             SplitButtonTonalLeadingButton(
                                 Modifier::new(),
-                                || {},
+                                {
+                                    let action = split_action.clone();
+                                    move || action.set("Filter".to_string())
+                                },
                                 ButtonConfig::default(),
                                 || Text("Filter"),
                             ),
@@ -462,7 +474,10 @@ pub fn screen() -> View {
                         SplitButtonLayout(
                             SplitButtonLeadingButton(
                                 Modifier::new(),
-                                || {},
+                                {
+                                    let action = split_action.clone();
+                                    move || action.set("Save".to_string())
+                                },
                                 ButtonConfig::default(),
                                 || Text("Save"),
                             ),
@@ -482,6 +497,9 @@ pub fn screen() -> View {
                         )
                     },
                 )),
+                Text(format!("Last split action: {}", split_action.get()))
+                    .size(Sp(13.0))
+                    .color(th.on_surface_variant),
             )),
         ),
         Section(

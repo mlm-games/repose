@@ -8,7 +8,7 @@ use repose_material::material3::{
 use repose_material::{Icon, material_symbols};
 use repose_ui::*;
 
-use crate::ui::{Caption, Hint, Page, Section, sp};
+use crate::ui::{Caption, Hint, Page, Section, compact_layout, sp};
 
 material_symbols! {
     home     : '\u{E88A}',
@@ -150,48 +150,79 @@ pub fn screen() -> View {
     let last_submit_multi = remember_with_key("text_last_submit_multi", || signal(String::new()));
     let last_change_multi = remember_with_key("text_last_change_multi", || signal(String::new()));
     let toggle = remember(|| signal(false));
+    let compact = compact_layout();
+    let section_modifier = if compact {
+        Modifier::new().fill_max_width()
+    } else {
+        Modifier::new().flex_grow(1.0)
+    };
+
+    let field_section = Section(
+        "TextField (single-line)",
+        Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child((
+            OutlinedTextField(
+                Modifier::new().fill_max_width(),
+                single_text.get(),
+                {
+                    let last_change = last_change_single.clone();
+                    let t = single_text.clone();
+                    move |v| {
+                        t.set(v.clone());
+                        last_change.set(v);
+                    }
+                },
+                OutlinedTextFieldConfig {
+                    label: Some("Type here".into()),
+                    on_submit: Some(Rc::new({
+                        let last_submit = last_submit_single.clone();
+                        move |s| last_submit.set(s)
+                    })),
+                    ..Default::default()
+                },
+            ),
+            Hint("Single-line: Enter submits."),
+            field_status(last_change_single.get(), last_submit_single.get()),
+        )),
+    )
+    .modifier(section_modifier.clone());
+
+    let symbols_section = Section(
+        "Material Symbols",
+        FlowRow(
+            Modifier::new().fill_max_width().padding(sp::MD).gap(sp::LG),
+            FlowRowConfig::default(),
+        )
+        .child((
+            symbol_cell(
+                Icon(Symbols::home).size(Sp(32.0)).color(theme().primary),
+                "home",
+            ),
+            symbol_cell(
+                Icon(Symbols::favorite).size(Sp(32.0)).color(theme().error),
+                "favorite",
+            ),
+            symbol_cell(
+                Icon(Symbols::settings)
+                    .size(Sp(32.0))
+                    .color(theme().on_surface),
+                "settings",
+            ),
+            symbol_cell(
+                Icon(Symbols::search).size(Sp(32.0)).color(theme().primary),
+                "search",
+            ),
+        )),
+    )
+    .modifier(section_modifier);
+
+    let intro = if compact {
+        Column(Modifier::new().fill_max_width().gap(sp::MD)).child((field_section, symbols_section))
+    } else {
+        Row(Modifier::new().fill_max_width().gap(sp::LG)).child((field_section, symbols_section))
+    };
 
     let mut sections: Vec<View> = vec![
-        Row(Modifier::new().fill_max_width().gap(sp::LG)).child((
-            Section(
-                "TextField (single-line)",
-                Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child((
-                    OutlinedTextField(
-                        Modifier::new().fill_max_width(),
-                        single_text.get(),
-                        {
-                            let last_change = last_change_single.clone();
-                            let t = single_text.clone();
-                            move |v| {
-                                t.set(v.clone());
-                                last_change.set(v);
-                            }
-                        },
-                        OutlinedTextFieldConfig {
-                            label: Some("Type here".into()),
-                            on_submit: Some(Rc::new({
-                                let last_submit = last_submit_single.clone();
-                                move |s| last_submit.set(s)
-                            })),
-                            ..Default::default()
-                        },
-                    ),
-                    Hint("Single-line: Enter submits."),
-                    field_status(last_change_single.get(), last_submit_single.get()),
-                )),
-            )
-            .modifier(Modifier::new().flex_grow(1.0)),
-            Section(
-                "Material Symbols",
-                Row(Modifier::new().padding(sp::MD).gap(sp::LG)).child((
-                    symbol_cell(Icon(Symbols::home).size(Sp(32.0)).color(theme().primary), "home"),
-                    symbol_cell(Icon(Symbols::favorite).size(Sp(32.0)).color(theme().error), "favorite"),
-                    symbol_cell(Icon(Symbols::settings).size(Sp(32.0)).color(theme().on_surface), "settings"),
-                    symbol_cell(Icon(Symbols::search).size(Sp(32.0)).color(theme().primary), "search"),
-                )),
-            )
-            .modifier(Modifier::new().flex_grow(1.0)),
-        )),
+        intro,
         Section("Password TextField", {
             let pw = remember_with_key("pw_value", || signal(String::new()));
             let tf_state = remember_with_key("pw_tf_state", || {
@@ -212,11 +243,7 @@ pub fn screen() -> View {
                         ..Default::default()
                     },
                 ),
-                Row(Modifier::new()).child((
-                    Hint("(masked value: "),
-                    Text(pw.get()).size(Sp(14.0)).color(theme().primary),
-                    Hint(")"),
-                )),
+                Caption("Password input is masked")
             ))
         }),
         Section(
@@ -269,7 +296,7 @@ pub fn screen() -> View {
                     .modifier(Modifier::new().fill_max_width()),
                 Text("This paragraph demonstrates wrapping in a constrained box. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Vestibulum at arcu sed justo viverra posuere.")
                     .size(Sp(16.0))
-                    .modifier(Modifier::new().width(Dp(420.0))),
+                    .modifier(Modifier::new().fill_max_width().max_width(Dp(420.0))),
             )),
         ),
     ];

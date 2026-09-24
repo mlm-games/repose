@@ -10,7 +10,7 @@ pub mod unresolved;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{BTreeMap, HashMap, HashSet, VecDeque},
     hash::{Hash, Hasher},
     sync::Mutex,
 };
@@ -42,9 +42,48 @@ const GLYPH_CACHE_CAP: usize = 4096;
 const WRAP_CACHE_CAP: usize = 1024;
 const ELLIP_CACHE_CAP: usize = 2048;
 
-static METRICS_LRU: OnceLock<Mutex<Lru<(u64, u32, u64, u16, u8, i32, u64), TextMetrics>>> =
-    OnceLock::new();
-fn metrics_cache() -> &'static Mutex<Lru<(u64, u32, u64, u16, u8, i32, u64), TextMetrics>> {
+#[derive(Clone, Hash, Eq, PartialEq)]
+struct MetricsCacheKey {
+    text: String,
+    px_bits: u32,
+    family: Option<String>,
+    font_weight: u16,
+    font_style: u8,
+    letter_spacing_bits: u32,
+    variation: Option<String>,
+    generation: u64,
+}
+
+#[derive(Clone, Hash, Eq, PartialEq)]
+struct WrapCacheKey {
+    text: String,
+    px_bits: u32,
+    max_width_bits: u32,
+    max_lines: Option<usize>,
+    family: Option<String>,
+    soft_wrap: bool,
+    font_weight: u16,
+    font_style: u8,
+    letter_spacing_bits: u32,
+    variation: Option<String>,
+    generation: u64,
+}
+
+#[derive(Clone, Hash, Eq, PartialEq)]
+struct EllipCacheKey {
+    text: String,
+    px_bits: u32,
+    max_width_bits: u32,
+    family: Option<String>,
+    font_weight: u16,
+    font_style: u8,
+    letter_spacing_bits: u32,
+    variation: Option<String>,
+    generation: u64,
+}
+
+static METRICS_LRU: OnceLock<Mutex<Lru<MetricsCacheKey, TextMetrics>>> = OnceLock::new();
+fn metrics_cache() -> &'static Mutex<Lru<MetricsCacheKey, TextMetrics>> {
     METRICS_LRU.get_or_init(|| Mutex::new(Lru::new(4096)))
 }
 
@@ -145,36 +184,23 @@ impl<K: std::hash::Hash + Eq + Clone, V> Lru<K, V> {
     }
 }
 
-static WRAP_LRU: OnceLock<
-    Mutex<Lru<(u64, u32, u32, u16, bool, u16, u8, i32, u64), (Vec<String>, bool)>>,
-> = OnceLock::new();
+static WRAP_LRU: OnceLock<Mutex<Lru<WrapCacheKey, (Vec<String>, bool)>>> = OnceLock::new();
 
-static WRAP_RANGES_LRU: OnceLock<
-    Mutex<Lru<(u64, u32, u32, u16, bool, u16, u8, i32, u64), (Vec<(usize, usize)>, bool)>>,
-> = OnceLock::new();
-
-static ELLIP_LRU: OnceLock<Mutex<Lru<(u64, u32, u32, u16, u8, i32, u64), String>>> =
+static WRAP_RANGES_LRU: OnceLock<Mutex<Lru<WrapCacheKey, (Vec<(usize, usize)>, bool)>>> =
     OnceLock::new();
 
-fn wrap_cache()
--> &'static Mutex<Lru<(u64, u32, u32, u16, bool, u16, u8, i32, u64), (Vec<String>, bool)>> {
+static ELLIP_LRU: OnceLock<Mutex<Lru<EllipCacheKey, String>>> = OnceLock::new();
+
+fn wrap_cache() -> &'static Mutex<Lru<WrapCacheKey, (Vec<String>, bool)>> {
     WRAP_LRU.get_or_init(|| Mutex::new(Lru::new(WRAP_CACHE_CAP)))
 }
 
-fn wrap_ranges_cache()
--> &'static Mutex<Lru<(u64, u32, u32, u16, bool, u16, u8, i32, u64), (Vec<(usize, usize)>, bool)>> {
+fn wrap_ranges_cache() -> &'static Mutex<Lru<WrapCacheKey, (Vec<(usize, usize)>, bool)>> {
     WRAP_RANGES_LRU.get_or_init(|| Mutex::new(Lru::new(WRAP_CACHE_CAP)))
 }
 
-fn ellip_cache() -> &'static Mutex<Lru<(u64, u32, u32, u16, u8, i32, u64), String>> {
+fn ellip_cache() -> &'static Mutex<Lru<EllipCacheKey, String>> {
     ELLIP_LRU.get_or_init(|| Mutex::new(Lru::new(ELLIP_CACHE_CAP)))
-}
-
-fn fast_hash(s: &str) -> u64 {
-    let mut h = RapidHasher::default();
-    s.len().hash(&mut h);
-    s.hash(&mut h);
-    h.finish()
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -255,6 +281,7 @@ struct FontRecord {
     id: u64,
     data: parley::FontData,
     data_bytes: Vec<u8>,
+    face_index: u32,
 }
 
 struct Engine {
@@ -270,12 +297,16 @@ struct Engine {
         HashMap<(u64, u32, u32), (u32, u32, i32, i32, swash::scale::image::Content, Vec<u8>)>,
     /// Cache of (ascent, descent) in px keyed by
     /// (family hash, weight, px bits). Used for baseline alignment.
-    ascent_cache: RapidHashMap<(u64, u16, u32), (f32, f32)>,
+    ascent_cache: RapidHashMap<(Option<String>, u16, u32, u64), (f32, f32)>,
 }
 
 impl Engine {
     fn ensure_font(&mut self, fd: &parley::FontData) -> u64 {
-        if let Some(existing) = self.font_registry.iter().find(|r| r.data == *fd) {
+        if let Some(existing) = self
+            .font_registry
+            .iter()
+            .find(|r| r.face_index == fd.index && r.data.data == fd.data)
+        {
             log::debug!(
                 "[font] reuse id={} len={}",
                 existing.id,
@@ -291,6 +322,7 @@ impl Engine {
             id,
             data: fd.clone(),
             data_bytes: bytes,
+            face_index: fd.index,
         });
         id
     }
@@ -386,13 +418,12 @@ impl Engine {
                 cached.3 as f32,
             ));
         }
-        let data_bytes = self
-            .font_registry
-            .iter()
-            .find(|r| r.id == font_id)?
-            .data_bytes
-            .clone();
-        let font = swash::FontRef::from_index(&data_bytes, 0)?;
+        let (data_bytes, face_index) = {
+            let record = self.font_registry.iter().find(|r| r.id == font_id)?;
+            (record.data_bytes.clone(), record.face_index)
+        };
+        let face_index = usize::try_from(face_index).ok()?;
+        let font = swash::FontRef::from_index(&data_bytes, face_index)?;
         let mut scaler = self.swash_cx.builder(font).size(px).hint(true).build();
         let image = Render::new(&[
             Source::Outline,
@@ -434,49 +465,88 @@ impl Engine {
 static ENGINE: OnceLock<Mutex<Engine>> = OnceLock::new();
 
 pub static FONT_PROVIDER: OnceLock<Mutex<font_awl::Provider>> = OnceLock::new();
+#[cfg(target_arch = "wasm32")]
+static RETAINED_FONT_DATA: OnceLock<Mutex<Vec<Vec<u8>>>> = OnceLock::new();
 
-fn init_engine_sync() -> Engine {
+#[cfg(target_arch = "wasm32")]
+static WASM_FONT_CONTEXT_READY: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+#[cfg(target_arch = "wasm32")]
+static WASM_FONT_INIT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn append_generic_family_once(
+    collection: &mut parley::fontique::Collection,
+    generic: parley::fontique::GenericFamily,
+    id: parley::fontique::FamilyId,
+) {
+    let mut families: Vec<parley::fontique::FamilyId> =
+        collection.generic_families(generic).collect();
+    if !families.contains(&id) {
+        families.push(id);
+        collection.set_generic_families(generic, families.into_iter());
+    }
+}
+
+fn configure_collection(collection: &mut parley::fontique::Collection) {
+    for name in [
+        "Noto Sans Symbols",
+        "Noto Sans Symbols 2",
+        "Material Symbols Outlined",
+    ] {
+        if let Some(info) = collection.family_by_name(name) {
+            append_generic_family_once(
+                collection,
+                parley::fontique::GenericFamily::SansSerif,
+                info.id(),
+            );
+        }
+    }
+    if let Some(info) = collection.family_by_name("Noto Color Emoji") {
+        append_generic_family_once(
+            collection,
+            parley::fontique::GenericFamily::Emoji,
+            info.id(),
+        );
+    }
+}
+
+fn register_asset_if_missing(provider: &mut font_awl::Provider, bytes: &[u8]) {
+    if collection_font_data_families(provider.collection_mut(), bytes).is_empty() {
+        let blob: parley::fontique::Blob<u8> = bytes.to_vec().into();
+        let families = provider.collection_mut().register_fonts(blob, None);
+        append_registered_families(provider.collection_mut(), &families);
+    }
+}
+
+fn init_provider_sync() -> font_awl::Provider {
     let mut provider = font_awl::Provider::new();
     provider.load_bundled_fonts();
+    static MATERIAL_SYMBOLS_TTF: &[u8] = include_bytes!("assets/MaterialSymbolsOutlined.ttf");
+    static NOTO_SYMBOLS_TTF: &[u8] = include_bytes!("assets/NotoSansSymbols2-Regular.ttf");
+    static NOTO_EMOJI_TTF: &[u8] = include_bytes!("assets/NotoColorEmoji-Regular.ttf");
+    register_asset_if_missing(&mut provider, MATERIAL_SYMBOLS_TTF);
+    register_asset_if_missing(&mut provider, NOTO_SYMBOLS_TTF);
+    register_asset_if_missing(&mut provider, NOTO_EMOJI_TTF);
     #[cfg(not(target_arch = "wasm32"))]
     if let Err(e) = provider.load_system_fonts_best_effort() {
         log::warn!("font-awl: failed to load system fonts: {e}");
     }
+    configure_collection(provider.collection_mut());
+    provider
+}
 
-    let mut font_cx = provider.new_parley_context();
-    // On wasm, bundled Symbols2 is NOT added to generic families by font-awl (bundled.rs only sets generic for OpenSans).
-    // Without this, "sans-serif" text like Text("★") has no fallback to Symbols2 and renders as .notdef (gid 0).
-    // Add Symbols2 to SansSerif generic at init so explicit fallback stacks and generic fallback both work.
-    #[cfg(target_arch = "wasm32")]
-    {
-        if let Some(info) = font_cx.collection.family_by_name("Noto Sans Symbols 2") {
-            let id = info.id();
-            let mut existing: Vec<parley::fontique::FamilyId> = font_cx
-                .collection
-                .generic_families(parley::fontique::GenericFamily::SansSerif)
-                .collect();
-            if !existing.contains(&id) {
-                existing.push(id);
-                font_cx.collection.set_generic_families(
-                    parley::fontique::GenericFamily::SansSerif,
-                    existing.into_iter(),
-                );
-            }
-        }
-        // Also ensure Emoji generic exists (may be empty initially, but keep for layered fallback).
-        // No-op if already set.
-    }
-    let layout_cx = parley::LayoutContext::new();
+fn provider() -> &'static Mutex<font_awl::Provider> {
+    FONT_PROVIDER.get_or_init(|| Mutex::new(init_provider_sync()))
+}
 
-    static MATERIAL_SYMBOLS_TTF: &[u8] = include_bytes!("assets/MaterialSymbolsOutlined.ttf");
-    let blob: parley::fontique::Blob<u8> = MATERIAL_SYMBOLS_TTF.to_vec().into();
-    font_cx.collection.register_fonts(blob, None);
-
-    let _ = FONT_PROVIDER.set(Mutex::new(provider));
+fn init_engine_sync() -> Engine {
+    let mut font_cx = provider().lock().unwrap().new_parley_context();
+    configure_collection(&mut font_cx.collection);
 
     Engine {
         font_cx,
-        layout_cx,
+        layout_cx: parley::LayoutContext::new(),
         swash_cx: swash::scale::ScaleContext::new(),
         key_map: HashMap::new(),
         font_registry: Vec::new(),
@@ -488,22 +558,39 @@ fn init_engine_sync() -> Engine {
 
 #[cfg(target_arch = "wasm32")]
 pub async fn init_fonts_wasm() {
-    let mut provider = font_awl::Provider::new();
-    provider.load_bundled_fonts();
-    if let Err(e) = provider.load_web_fonts().await {
-        log::warn!("font-awl: failed to load web fonts: {e}");
+    if WASM_FONT_CONTEXT_READY.load(Ordering::Acquire) {
+        return;
     }
-    let _ = FONT_PROVIDER.set(Mutex::new(provider));
+    if WASM_FONT_INIT
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_err()
+    {
+        return;
+    }
 
+    let mut candidate = init_provider_sync();
+    let result = candidate.load_web_fonts().await;
+    if let Err(error) = result {
+        WASM_FONT_INIT.store(false, Ordering::Release);
+        log::warn!("font-awl: failed to load web fonts: {error}");
+        return;
+    }
+    restore_retained_font_data(candidate.collection_mut());
+    configure_collection(candidate.collection_mut());
+    {
+        let mut p = provider().lock().unwrap();
+        *p = candidate;
+    }
+    let font_cx = provider().lock().unwrap().new_parley_context();
     if let Some(eng) = ENGINE.get() {
         let mut eng = eng.lock().unwrap();
-        // Register web fonts into the existing engine's collection
-        // by re-building font_cx from the updated provider
-        if let Some(provider_lock) = FONT_PROVIDER.get() {
-            let p = provider_lock.lock().unwrap();
-            eng.font_cx = p.new_parley_context();
-        }
+        eng.font_cx = font_cx;
+        clear_caches_for_fallback_in(&mut eng);
+    } else {
+        drop(font_cx);
     }
+    WASM_FONT_CONTEXT_READY.store(true, Ordering::Release);
+    WASM_FONT_INIT.store(false, Ordering::Release);
 }
 
 fn engine() -> &'static Mutex<Engine> {
@@ -511,128 +598,126 @@ fn engine() -> &'static Mutex<Engine> {
 }
 
 pub fn register_font_data(bytes: &[u8]) {
-    let mut eng = engine().lock().unwrap();
-    let blob: parley::fontique::Blob<u8> = bytes.to_vec().into();
-    let families = eng.font_cx.collection.register_fonts(blob.clone(), None);
-    // Detect family type: font_family_name fails for woff2 (skrifa needs decompressed), so fallback to registered family names
-    let mut is_emoji = false;
-    let mut is_symbols = false;
-    if let Some(name) = font_family_name(bytes) {
-        if name.starts_with("Noto Color Emoji") {
-            is_emoji = true;
-        } else if name.starts_with("Noto Sans Symbols") {
-            is_symbols = true;
-        }
-    }
-    if !is_emoji && !is_symbols {
-        for (fid, _) in &families {
-            if let Some(fname) = eng.font_cx.collection.family_name(*fid) {
-                if fname.starts_with("Noto Color Emoji") {
-                    is_emoji = true;
-                }
-                if fname.starts_with("Noto Sans Symbols") {
-                    is_symbols = true;
-                }
-            } else if let Some(info) = eng.font_cx.collection.family(*fid) {
-                let fname = info.name();
-                if fname.starts_with("Noto Color Emoji") {
-                    is_emoji = true;
-                }
-                if fname.starts_with("Noto Sans Symbols") {
-                    is_symbols = true;
-                }
-            }
-        }
-    }
-    if is_emoji {
-        let ids: Vec<parley::fontique::FamilyId> = families.iter().map(|(fid, _)| *fid).collect();
-        let mut existing: Vec<parley::fontique::FamilyId> = eng
-            .font_cx
-            .collection
-            .generic_families(parley::fontique::GenericFamily::Emoji)
-            .collect();
-        for id in ids.clone() {
-            if !existing.contains(&id) {
-                existing.push(id);
-            }
-        }
-        eng.font_cx
-            .collection
-            .set_generic_families(parley::fontique::GenericFamily::Emoji, existing.into_iter());
-    } else if is_symbols {
-        let ids: Vec<parley::fontique::FamilyId> = families.iter().map(|(fid, _)| *fid).collect();
-        let mut existing: Vec<parley::fontique::FamilyId> = eng
-            .font_cx
-            .collection
-            .generic_families(parley::fontique::GenericFamily::SansSerif)
-            .collect();
-        for id in ids.clone() {
-            if !existing.contains(&id) {
-                existing.push(id);
-            }
-        }
-        eng.font_cx.collection.set_generic_families(
-            parley::fontique::GenericFamily::SansSerif,
-            existing.into_iter(),
-        );
-    }
-    // Clear source cache so next layout re-resolves fonts (mirrors Compose invalidation)
-    eng.font_cx.source_cache = parley::fontique::SourceCache::default();
-    if let Some(provider_lock) = FONT_PROVIDER.get() {
-        let mut p = provider_lock.lock().unwrap();
-        let families2 = p.collection_mut().register_fonts(blob, None);
-        // Mirror generic setup for provider's collection as well (used for new contexts)
-        if is_emoji {
-            let ids: Vec<parley::fontique::FamilyId> =
-                families2.iter().map(|(fid, _)| *fid).collect();
-            let mut existing: Vec<parley::fontique::FamilyId> = p
-                .collection_mut()
-                .generic_families(parley::fontique::GenericFamily::Emoji)
-                .collect();
-            for id in ids.clone() {
-                if !existing.contains(&id) {
-                    existing.push(id);
-                }
-            }
-            p.collection_mut()
-                .set_generic_families(parley::fontique::GenericFamily::Emoji, existing.into_iter());
-        } else if is_symbols {
-            let ids: Vec<parley::fontique::FamilyId> =
-                families2.iter().map(|(fid, _)| *fid).collect();
-            let mut existing: Vec<parley::fontique::FamilyId> = p
-                .collection_mut()
-                .generic_families(parley::fontique::GenericFamily::SansSerif)
-                .collect();
-            for id in ids.clone() {
-                if !existing.contains(&id) {
-                    existing.push(id);
-                }
-            }
-            p.collection_mut().set_generic_families(
-                parley::fontique::GenericFamily::SansSerif,
-                existing.into_iter(),
-            );
-        }
-    }
-    clear_caches_for_fallback_in(&mut eng);
-    // Notify unresolved registry (mirrors Compose: fontFamilyResolver.preload + onNewFontInstalled)
-    #[cfg(target_arch = "wasm32")]
-    {
-        // Re-invalidate via registry to trigger ParagraphLayouter-style listeners
-        // (wasm_fallback also does this; double-clear is safe)
-        crate::unresolved::web_unresolved_registry().on_new_font_installed();
+    let _ = register_font_data_if_usable(bytes);
+}
+
+fn font_source_bytes(font: &parley::fontique::FontInfo) -> Option<&[u8]> {
+    match font.source().kind() {
+        parley::fontique::SourceKind::Memory(blob) => Some(blob.as_ref()),
+        parley::fontique::SourceKind::Path(_) => None,
     }
 }
 
-pub(crate) fn clear_caches_for_fallback() {
-    clear_lru_caches();
-    if let Ok(mut eng) = engine().lock() {
-        eng.ascent_cache.clear();
+fn collection_font_data_families(
+    collection: &mut parley::fontique::Collection,
+    bytes: &[u8],
+) -> Vec<parley::fontique::FamilyId> {
+    let mut names: Vec<String> = collection.family_names().map(str::to_owned).collect();
+    names.sort_unstable();
+    let mut result = Vec::new();
+    for name in names {
+        let Some(info) = collection.family_by_name(&name) else {
+            continue;
+        };
+        if info
+            .fonts()
+            .iter()
+            .any(|font| font_source_bytes(font).is_some_and(|source| source == bytes))
+        {
+            result.push(info.id());
+        }
     }
-    bump_frame_for_fallback();
+    result
 }
 
-/// Variant for callers that already hold the engine guard.
+fn append_registered_families(
+    collection: &mut parley::fontique::Collection,
+    families: &[(parley::fontique::FamilyId, Vec<parley::fontique::FontInfo>)],
+) {
+    let mut ids: Vec<parley::fontique::FamilyId> = families.iter().map(|(id, _)| *id).collect();
+    ids.sort_unstable();
+    for id in ids {
+        let Some(name) = collection.family_name(id).map(str::to_owned) else {
+            continue;
+        };
+        let generic = if name.starts_with("Noto Color Emoji") {
+            parley::fontique::GenericFamily::Emoji
+        } else {
+            parley::fontique::GenericFamily::SansSerif
+        };
+        append_generic_family_once(collection, generic, id);
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn retain_font_data(bytes: &[u8]) {
+    let retained = RETAINED_FONT_DATA.get_or_init(|| Mutex::new(Vec::new()));
+    let Ok(mut retained) = retained.lock() else {
+        return;
+    };
+    if retained.iter().all(|existing| existing.as_slice() != bytes) {
+        retained.push(bytes.to_vec());
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn restore_retained_font_data(collection: &mut parley::fontique::Collection) {
+    let retained = RETAINED_FONT_DATA
+        .get()
+        .and_then(|retained| retained.lock().ok().map(|retained| retained.clone()));
+    let Some(retained) = retained else {
+        return;
+    };
+    for bytes in retained {
+        if collection_font_data_families(collection, &bytes).is_empty() {
+            let blob: parley::fontique::Blob<u8> = bytes.into();
+            let families = collection.register_fonts(blob, None);
+            append_registered_families(collection, &families);
+        }
+    }
+}
+
+pub(crate) fn register_font_data_if_usable(bytes: &[u8]) -> bool {
+    let (font_cx, newly_registered) = {
+        let mut p = provider().lock().unwrap();
+        let existing = collection_font_data_families(p.collection_mut(), bytes);
+        if !existing.is_empty() {
+            for id in existing {
+                let is_emoji = p
+                    .collection_mut()
+                    .family_name(id)
+                    .is_some_and(|name| name.starts_with("Noto Color Emoji"));
+                let generic = if is_emoji {
+                    parley::fontique::GenericFamily::Emoji
+                } else {
+                    parley::fontique::GenericFamily::SansSerif
+                };
+                append_generic_family_once(p.collection_mut(), generic, id);
+            }
+            (p.new_parley_context(), false)
+        } else {
+            let blob: parley::fontique::Blob<u8> = bytes.to_vec().into();
+            let families = p.collection_mut().register_fonts(blob, None);
+            if families.is_empty() {
+                return false;
+            }
+            append_registered_families(p.collection_mut(), &families);
+            configure_collection(p.collection_mut());
+            (p.new_parley_context(), true)
+        }
+    };
+
+    if newly_registered {
+        #[cfg(target_arch = "wasm32")]
+        retain_font_data(bytes);
+        let mut eng = engine().lock().unwrap();
+        eng.font_cx = font_cx;
+        clear_caches_for_fallback_in(&mut eng);
+    }
+
+    true
+}
+
 pub(crate) fn clear_caches_for_fallback_in(eng: &mut Engine) {
     clear_lru_caches();
     eng.ascent_cache.clear();
@@ -701,9 +786,10 @@ pub fn primary_font_vertical_metrics(
         return (0.0, 0.0);
     }
     let key = (
-        font_family.map(fast_hash).unwrap_or(0),
+        font_family.map(str::to_owned),
         font_weight,
-        (px * 100.0) as u32,
+        px.to_bits(),
+        font_generation(),
     );
     let mut eng = engine().lock().unwrap();
     if let Some(&m) = eng.ascent_cache.get(&key) {
@@ -720,15 +806,25 @@ pub fn primary_font_vertical_metrics(
 /// Returns `None` if the font data is invalid or contains no names.
 pub fn font_family_name(bytes: &[u8]) -> Option<String> {
     use skrifa::string::StringId;
-    let font = skrifa::FontRef::new(bytes).ok()?;
-    font.localized_strings(StringId::TYPOGRAPHIC_FAMILY_NAME)
-        .english_or_first()
-        .map(|s| s.to_string())
-        .or_else(|| {
-            font.localized_strings(StringId::FAMILY_NAME)
-                .english_or_first()
-                .map(|s| s.to_string())
-        })
+
+    for face_index in 0..4096u32 {
+        let Ok(font) = skrifa::FontRef::from_index(bytes, face_index) else {
+            break;
+        };
+        let name = font
+            .localized_strings(StringId::TYPOGRAPHIC_FAMILY_NAME)
+            .english_or_first()
+            .map(|s| s.to_string())
+            .or_else(|| {
+                font.localized_strings(StringId::FAMILY_NAME)
+                    .english_or_first()
+                    .map(|s| s.to_string())
+            });
+        if name.is_some() {
+            return name;
+        }
+    }
+    None
 }
 
 fn key_from_pair(font_id: u64, glyph_id: u32) -> GlyphKey {
@@ -759,8 +855,10 @@ fn collect_unresolved_codepoints(layout: &parley::Layout<()>, text: &str) -> Vec
                     // slice may be invalid if out of bounds? clamp
                     let end = range.end.min(text.len());
                     let start = range.start.min(end);
-                    for ch in text[start..end].chars() {
-                        out.push(ch as u32);
+                    if let Some(slice) = text.get(start..end) {
+                        for ch in slice.chars() {
+                            out.push(ch as u32);
+                        }
                     }
                     // Fallback: if text_range empty but still missing, push replacement
                     if range.start == range.end {
@@ -782,7 +880,40 @@ fn collect_unresolved_codepoints(layout: &parley::Layout<()>, text: &str) -> Vec
     out
 }
 
-fn shape_line_inner(
+fn push_font_family<'a>(
+    builder: &mut parley::RangedBuilder<'a, ()>,
+    family: Option<&str>,
+    text_len: usize,
+) {
+    use parley::style::{FontFamilyName, GenericFamily};
+
+    let mut names = Vec::with_capacity(10);
+    match family {
+        Some("monospace") => {
+            names.push(FontFamilyName::named("JetBrains Mono"));
+            names.push(GenericFamily::Monospace.into());
+        }
+        Some("sans-serif") => names.push(FontFamilyName::named("Open Sans")),
+        Some("emoji") => names.push(FontFamilyName::named("Noto Color Emoji")),
+        Some("serif") => names.push(GenericFamily::Serif.into()),
+        Some("cursive") => names.push(GenericFamily::Cursive.into()),
+        Some("fantasy") => names.push(GenericFamily::Fantasy.into()),
+        Some("system-ui") => names.push(GenericFamily::SystemUi.into()),
+        Some("math") => names.push(GenericFamily::Math.into()),
+        Some(family) => names.push(FontFamilyName::named(family)),
+        None => {}
+    }
+    names.push(GenericFamily::SansSerif.into());
+    names.push(GenericFamily::Emoji.into());
+    names.push(FontFamilyName::named("Noto Color Emoji"));
+    names.push(FontFamilyName::named("Noto Sans Symbols 2"));
+    names.push(FontFamilyName::named("Noto Sans Symbols2"));
+    names.push(FontFamilyName::named("Noto Sans Symbols"));
+    names.push(FontFamilyName::named("Material Symbols Outlined"));
+    builder.push(names.as_slice(), 0..text_len);
+}
+
+fn build_layout(
     eng: &mut Engine,
     text: &str,
     px: f32,
@@ -792,17 +923,13 @@ fn shape_line_inner(
     font_style: u8,
     letter_spacing: f32,
     font_variation_settings: Option<&str>,
-) -> Vec<ShapedGlyph> {
+) -> parley::Layout<()> {
     use parley::FontWeight;
-    use parley::layout::PositionedLayoutItem;
     use parley::style::StyleProperty;
 
-    let Engine {
-        ref mut font_cx,
-        ref mut layout_cx,
-        ..
-    } = *eng;
-    let mut builder = layout_cx.ranged_builder(font_cx, text, 1.0, true);
+    let mut builder = eng
+        .layout_cx
+        .ranged_builder(&mut eng.font_cx, text, 1.0, true);
     builder.push_default(StyleProperty::FontSize(px));
     if line_height_ratio > 0.0 {
         builder.push_default(StyleProperty::LineHeight(
@@ -817,189 +944,127 @@ fn shape_line_inner(
         _ => parley::FontStyle::Normal,
     }));
     builder.push_default(StyleProperty::LetterSpacing(letter_spacing));
-
     if let Some(settings) = font_variation_settings {
         builder.push_default(StyleProperty::FontVariations(
             parley::style::FontVariations::from(settings),
         ));
     }
-
-    if let Some(family) = font_family {
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            use parley::style::{FontFamilyName, GenericFamily};
-            let names: &[FontFamilyName] = match family {
-                "monospace" => &[
-                    FontFamilyName::named("JetBrains Mono"),
-                    GenericFamily::Monospace.into(),
-                ],
-                "sans-serif" => &[
-                    FontFamilyName::named("Open Sans"),
-                    GenericFamily::SansSerif.into(),
-                ],
-                "emoji" => &[
-                    FontFamilyName::named("Noto Color Emoji"),
-                    GenericFamily::Emoji.into(),
-                ],
-                "serif" => &[GenericFamily::Serif.into()],
-                "cursive" => &[GenericFamily::Cursive.into()],
-                "fantasy" => &[GenericFamily::Fantasy.into()],
-                "system-ui" => &[GenericFamily::SystemUi.into()],
-                "math" => &[GenericFamily::Math.into()],
-                _ => &[FontFamilyName::named(family)],
-            };
-            builder.push(names, 0..text.len());
-        }
-        #[cfg(target_arch = "wasm32")]
-        {
-            use parley::style::{FontFamilyName, GenericFamily};
-            let names: &[FontFamilyName] = match family {
-                "monospace" => &[
-                    FontFamilyName::named("JetBrains Mono"),
-                    GenericFamily::Monospace.into(),
-                    GenericFamily::SansSerif.into(),
-                    FontFamilyName::named("Noto Sans Symbols 2"),
-                    FontFamilyName::named("Noto Sans Symbols2"),
-                    FontFamilyName::named("Noto Sans Symbols"),
-                ],
-                "sans-serif" => &[
-                    FontFamilyName::named("Open Sans"),
-                    GenericFamily::SansSerif.into(),
-                    GenericFamily::Emoji.into(),
-                    FontFamilyName::named("Noto Color Emoji"),
-                    FontFamilyName::named("Noto Sans Symbols 2"),
-                    FontFamilyName::named("Noto Sans Symbols2"),
-                    FontFamilyName::named("Noto Sans Symbols"),
-                ],
-                "emoji" => &[
-                    FontFamilyName::named("Noto Color Emoji"),
-                    GenericFamily::Emoji.into(),
-                    GenericFamily::SansSerif.into(),
-                    FontFamilyName::named("Noto Sans Symbols 2"),
-                ],
-                "serif" => &[
-                    GenericFamily::Serif.into(),
-                    GenericFamily::SansSerif.into(),
-                    FontFamilyName::named("Noto Sans Symbols 2"),
-                ],
-                "cursive" => &[
-                    GenericFamily::Cursive.into(),
-                    GenericFamily::SansSerif.into(),
-                    FontFamilyName::named("Noto Sans Symbols 2"),
-                ],
-                "fantasy" => &[
-                    GenericFamily::Fantasy.into(),
-                    GenericFamily::SansSerif.into(),
-                    FontFamilyName::named("Noto Sans Symbols 2"),
-                ],
-                "system-ui" => &[
-                    GenericFamily::SystemUi.into(),
-                    GenericFamily::SansSerif.into(),
-                    FontFamilyName::named("Noto Sans Symbols 2"),
-                ],
-                "math" => &[
-                    GenericFamily::Math.into(),
-                    GenericFamily::SansSerif.into(),
-                    FontFamilyName::named("Noto Sans Symbols 2"),
-                ],
-                _ => &[FontFamilyName::named(family)],
-            };
-            builder.push(names, 0..text.len());
-        }
-    } else {
-        #[cfg(target_arch = "wasm32")]
-        {
-            use parley::style::{FontFamilyName, GenericFamily};
-            let fallback: &[FontFamilyName] = &[
-                GenericFamily::SansSerif.into(),
-                GenericFamily::Emoji.into(),
-                FontFamilyName::named("Noto Color Emoji"),
-                FontFamilyName::named("Noto Sans Symbols 2"),
-                FontFamilyName::named("Noto Sans Symbols2"),
-                FontFamilyName::named("Noto Sans Symbols"),
-            ];
-            builder.push(fallback, 0..text.len());
-        }
-    }
-
+    push_font_family(&mut builder, font_family, text.len());
     let mut layout = builder.build(text);
     layout.break_all_lines(None);
     layout.align(
         parley::Alignment::Start,
         parley::AlignmentOptions::default(),
     );
+    layout
+}
 
-    #[cfg(target_arch = "wasm32")]
-    {
-        let unresolved = collect_unresolved_codepoints(&layout, text);
-        // Filter out PUA (Material Symbols etc. E000-F8FF, F0000-FFFFD, 100000-10FFFD) - they are bundled via MaterialSymbolsOutlined.ttf, not Noto fallback
-        let unresolved: Vec<u32> = unresolved
-            .into_iter()
-            .filter(|cp| {
-                !((0xE000..=0xF8FF).contains(cp)
-                    || (0xF0000..=0xFFFFD).contains(cp)
-                    || (0x100000..=0x10FFFD).contains(cp))
-            })
-            .collect();
-        if !unresolved.is_empty() {
-            let reg = crate::unresolved::web_unresolved_registry();
-            let is_new = unresolved.iter().any(|cp| !reg.contains(*cp));
-            if is_new {
-                crate::fallback::wasm_fallback::ensure_fallback_initialized();
-                reg.add_unresolved_vec(unresolved);
-            }
-        }
+#[cfg(target_arch = "wasm32")]
+fn report_unresolved_codepoints(layout: &parley::Layout<()>, text: &str) {
+    let unresolved = collect_unresolved_codepoints(layout, text);
+    if unresolved.is_empty() {
+        return;
     }
+    let reg = crate::unresolved::web_unresolved_registry();
+    if unresolved.iter().any(|cp| !reg.contains(*cp)) {
+        crate::fallback::wasm_fallback::ensure_fallback_initialized();
+        reg.add_unresolved_vec(unresolved);
+    }
+}
 
-    let mut out: Vec<ShapedGlyph> = Vec::new();
+#[cfg(not(target_arch = "wasm32"))]
+fn report_unresolved_codepoints(_layout: &parley::Layout<()>, _text: &str) {}
+
+fn collect_shaped_layout(
+    eng: &mut Engine,
+    layout: parley::Layout<()>,
+    px: f32,
+    collect_runs: bool,
+) -> (Vec<ShapedGlyph>, Vec<ShapedRun>) {
+    use parley::layout::PositionedLayoutItem;
+
+    let mut glyphs = Vec::new();
+    let mut runs = Vec::new();
     for line in layout.lines() {
         for item in line.items() {
             let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
                 continue;
             };
-            let font_data = glyph_run.run().font();
+            let run = glyph_run.run();
+            if collect_runs {
+                runs.push(ShapedRun {
+                    text_range: run.text_range(),
+                    rtl: run.is_rtl(),
+                    synthesis: run.synthesis(),
+                });
+            }
+            let font_data = run.font();
             let fid = eng.ensure_font(font_data);
             log::debug!(
                 "[shape] run: fid={} font_data_len={}",
                 fid,
                 font_data.data.as_ref().len()
             );
-            for g in glyph_run.positioned_glyphs() {
-                let gid = g.id;
+            for glyph in glyph_run.positioned_glyphs() {
+                let gid = glyph.id;
                 let key = key_from_pair(fid, gid);
                 eng.key_map.insert(key, (fid, gid));
-
-                let (w, h, left, top) = eng
+                let (width, height, left, top) = eng
                     .raster_placement(fid, gid, px)
                     .unwrap_or((0.0, 0.0, 0.0, 0.0));
-
                 log::debug!(
                     "[shape] glyph: gid={} px={} x={:.1} y={:.1} advance={:.1} bitmap={}x{} {}x{}",
                     gid,
                     px,
-                    g.x,
-                    g.y,
-                    g.advance,
-                    w,
-                    h,
+                    glyph.x,
+                    glyph.y,
+                    glyph.advance,
+                    width,
+                    height,
                     left,
                     top,
                 );
-
-                out.push(ShapedGlyph {
+                glyphs.push(ShapedGlyph {
                     key,
                     px,
-                    x: g.x,
-                    y: g.y,
-                    w,
-                    h,
+                    x: glyph.x,
+                    y: glyph.y,
+                    w: width,
+                    h: height,
                     bearing_x: left,
                     bearing_y: top,
-                    advance: g.advance + letter_spacing,
+                    advance: glyph.advance,
                 });
             }
         }
     }
+    (glyphs, runs)
+}
+
+fn shape_line_inner(
+    eng: &mut Engine,
+    text: &str,
+    px: f32,
+    line_height_ratio: f32,
+    font_family: Option<&str>,
+    font_weight: u16,
+    font_style: u8,
+    letter_spacing: f32,
+    font_variation_settings: Option<&str>,
+) -> Vec<ShapedGlyph> {
+    let layout = build_layout(
+        eng,
+        text,
+        px,
+        line_height_ratio,
+        font_family,
+        font_weight,
+        font_style,
+        letter_spacing,
+        font_variation_settings,
+    );
+    report_unresolved_codepoints(&layout, text);
+    let (out, _) = collect_shaped_layout(eng, layout, px, false);
     out
 }
 
@@ -1027,6 +1092,151 @@ pub fn shape_line(
     )
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum TextDirection {
+    #[default]
+    Auto,
+    Ltr,
+    Rtl,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum FontSynthesis {
+    #[default]
+    Unspecified,
+    None,
+    Weight,
+    Style,
+    All,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ShapeCapabilityError {
+    RequestedDirectionMismatch,
+    SynthesisModeUnsupported,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct ShapeOptions<'a> {
+    pub font_family: Option<&'a str>,
+    pub font_weight: u16,
+    pub font_style: u8,
+    pub letter_spacing: f32,
+    pub font_variation_settings: Option<&'a str>,
+    pub text_direction: TextDirection,
+    pub font_synthesis: FontSynthesis,
+}
+
+impl Default for ShapeOptions<'_> {
+    fn default() -> Self {
+        Self {
+            font_family: None,
+            font_weight: 400,
+            font_style: 0,
+            letter_spacing: 0.0,
+            font_variation_settings: None,
+            text_direction: TextDirection::Auto,
+            font_synthesis: FontSynthesis::Unspecified,
+        }
+    }
+}
+
+pub struct ShapedRun {
+    pub text_range: std::ops::Range<usize>,
+    pub rtl: bool,
+    pub synthesis: parley::fontique::Synthesis,
+}
+
+pub struct ShapedText {
+    pub glyphs: Vec<ShapedGlyph>,
+    pub requested_text_direction: TextDirection,
+    pub resolved_text_direction: TextDirection,
+    pub runs: Vec<ShapedRun>,
+}
+
+fn synthesis_has_weight(synthesis: &parley::fontique::Synthesis) -> bool {
+    synthesis.embolden()
+        || synthesis
+            .variation_settings()
+            .iter()
+            .any(|(tag, _)| tag.to_be_bytes() == *b"wght")
+}
+
+fn synthesis_has_style(synthesis: &parley::fontique::Synthesis) -> bool {
+    synthesis.skew().is_some()
+        || synthesis.variation_settings().iter().any(|(tag, _)| {
+            matches!(
+                tag.to_be_bytes(),
+                [b'i', b't', b'a', b'l'] | [b's', b'l', b'n', b't']
+            )
+        })
+}
+
+fn validate_shape_options(
+    options: ShapeOptions<'_>,
+    resolved_direction: TextDirection,
+    runs: &[ShapedRun],
+) -> Result<(), ShapeCapabilityError> {
+    if options.text_direction != TextDirection::Auto && options.text_direction != resolved_direction
+    {
+        return Err(ShapeCapabilityError::RequestedDirectionMismatch);
+    }
+    let invalid = match options.font_synthesis {
+        FontSynthesis::Unspecified | FontSynthesis::All => false,
+        FontSynthesis::None => runs.iter().any(|run| run.synthesis.any()),
+        FontSynthesis::Weight => runs.iter().any(|run| synthesis_has_style(&run.synthesis)),
+        FontSynthesis::Style => runs.iter().any(|run| synthesis_has_weight(&run.synthesis)),
+    };
+    if invalid {
+        Err(ShapeCapabilityError::SynthesisModeUnsupported)
+    } else {
+        Ok(())
+    }
+}
+
+pub fn shape_text_with_options(
+    text: &str,
+    px: f32,
+    line_height_ratio: f32,
+    options: ShapeOptions<'_>,
+) -> Result<ShapedText, ShapeCapabilityError> {
+    let mut eng = engine().lock().unwrap();
+    let layout = build_layout(
+        &mut eng,
+        text,
+        px,
+        line_height_ratio,
+        options.font_family,
+        options.font_weight,
+        options.font_style,
+        options.letter_spacing,
+        options.font_variation_settings,
+    );
+    report_unresolved_codepoints(&layout, text);
+    let resolved_direction = if layout.is_rtl() {
+        TextDirection::Rtl
+    } else {
+        TextDirection::Ltr
+    };
+    let (glyphs, runs) = collect_shaped_layout(&mut eng, layout, px, true);
+    validate_shape_options(options, resolved_direction, &runs)?;
+    Ok(ShapedText {
+        glyphs,
+        requested_text_direction: options.text_direction,
+        resolved_text_direction: resolved_direction,
+        runs,
+    })
+}
+
+pub fn shape_line_with_options(
+    text: &str,
+    px: f32,
+    line_height_ratio: f32,
+    options: ShapeOptions<'_>,
+) -> Result<Vec<ShapedGlyph>, ShapeCapabilityError> {
+    shape_text_with_options(text, px, line_height_ratio, options).map(|shaped| shaped.glyphs)
+}
+
 pub fn rasterize(key: GlyphKey, px: f32) -> Option<GlyphBitmap> {
     use swash::scale::{Render, Source, StrikeWith};
     let mut eng = engine().lock().unwrap();
@@ -1049,13 +1259,12 @@ pub fn rasterize(key: GlyphKey, px: f32) -> Option<GlyphBitmap> {
             data: cached.5.clone(),
         });
     }
-    let data_bytes = eng
-        .font_registry
-        .iter()
-        .find(|r| r.id == fid)?
-        .data_bytes
-        .clone();
-    let font = swash::FontRef::from_index(&data_bytes, 0)?;
+    let (data_bytes, face_index) = {
+        let record = eng.font_registry.iter().find(|r| r.id == fid)?;
+        (record.data_bytes.clone(), record.face_index)
+    };
+    let face_index = usize::try_from(face_index).ok()?;
+    let font = swash::FontRef::from_index(&data_bytes, face_index)?;
     let mut scaler = eng.swash_cx.builder(font).size(px).hint(true).build();
     let image = Render::new(&[
         Source::Outline,
@@ -1103,8 +1312,12 @@ pub fn lookup_cache_key(key: GlyphKey, px: f32) -> Option<CacheKey> {
     })
 }
 
-fn extract_outlines_for(data_bytes: &[u8], glyph_id: u32) -> Option<Box<[Command]>> {
-    let font = skrifa::FontRef::new(data_bytes).ok()?;
+fn extract_outlines_for(
+    data_bytes: &[u8],
+    face_index: u32,
+    glyph_id: u32,
+) -> Option<Box<[Command]>> {
+    let font = skrifa::FontRef::from_index(data_bytes, face_index).ok()?;
     let mut pen = OutlinePenCollector(Vec::new());
     font.outline_glyphs()
         .get(skrifa::GlyphId::new(glyph_id))?
@@ -1119,7 +1332,7 @@ pub fn extract_outline_commands(cache_key: CacheKey) -> Option<Box<[Command]>> {
         .font_registry
         .iter()
         .find(|r| r.id == cache_key.font_id)?;
-    extract_outlines_for(&record.data_bytes, cache_key.glyph_id)
+    extract_outlines_for(&record.data_bytes, record.face_index, cache_key.glyph_id)
 }
 
 pub fn lookup_and_extract_outline(key: GlyphKey, px: f32) -> Option<(CacheKey, Box<[Command]>)> {
@@ -1131,7 +1344,7 @@ pub fn lookup_and_extract_outline(key: GlyphKey, px: f32) -> Option<(CacheKey, B
         glyph_id: gid,
         font_size_bits: px.to_bits(),
     };
-    let cmds = extract_outlines_for(&record.data_bytes, gid)?;
+    let cmds = extract_outlines_for(&record.data_bytes, record.face_index, gid)?;
     Some((ck, cmds))
 }
 
@@ -1161,6 +1374,531 @@ pub struct TextMetrics {
     pub byte_offsets: Vec<usize>,
 }
 
+#[derive(Clone, Copy)]
+struct LogicalPart {
+    start: usize,
+    end: usize,
+    advance: f32,
+}
+
+struct LogicalGroup {
+    start: usize,
+    end: usize,
+    parts: Vec<LogicalPart>,
+    has_ligature_start: bool,
+    advance: f32,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+struct AtomicRange {
+    start: usize,
+    end: usize,
+}
+
+#[derive(Clone, Copy)]
+struct VisualExtent {
+    start: usize,
+    end: usize,
+    left: f32,
+    right: f32,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum EdgeKind {
+    Start,
+    Internal,
+    End,
+}
+
+#[derive(Clone, Copy)]
+struct EdgeCandidate {
+    byte: usize,
+    position: f32,
+    kind: EdgeKind,
+}
+
+struct LayoutEdges {
+    edges: Vec<(usize, f32)>,
+    extents: Vec<VisualExtent>,
+    atomic_ranges: Vec<AtomicRange>,
+}
+
+struct LineMeasurement {
+    metrics: TextMetrics,
+    extents: Vec<VisualExtent>,
+    atomic_ranges: Vec<AtomicRange>,
+}
+
+#[derive(Clone, Copy)]
+struct HardLine {
+    start: usize,
+    end: usize,
+    next_start: usize,
+}
+
+fn hard_lines(text: &str) -> Vec<HardLine> {
+    let mut lines = Vec::new();
+    let mut start = 0usize;
+    let mut chars = text.char_indices().peekable();
+    while let Some((index, ch)) = chars.next() {
+        let next_start = match ch {
+            '\n' => Some(index + 1),
+            '\u{2028}' | '\u{2029}' => Some(index + ch.len_utf8()),
+            '\r' => {
+                if text[index + 1..].starts_with('\n') {
+                    chars.next();
+                    Some(index + 2)
+                } else {
+                    Some(index + 1)
+                }
+            }
+            _ => None,
+        };
+        if let Some(next_start) = next_start {
+            lines.push(HardLine {
+                start,
+                end: index,
+                next_start,
+            });
+            start = next_start;
+        }
+    }
+    lines.push(HardLine {
+        start,
+        end: text.len(),
+        next_start: text.len(),
+    });
+    lines
+}
+
+fn finish_logical_group(mut group: LogicalGroup) -> LogicalGroup {
+    for part in &mut group.parts {
+        if !part.advance.is_finite() {
+            part.advance = 0.0;
+        }
+    }
+    group.advance = group.parts.iter().map(|part| part.advance).sum();
+    if !group.advance.is_finite() {
+        group.advance = 0.0;
+    }
+    group.end = group.end.max(group.start);
+    group
+}
+
+fn logical_groups_for_run<B: parley::style::Brush>(
+    run: parley::layout::Run<'_, B>,
+) -> Vec<LogicalGroup> {
+    let mut groups = Vec::new();
+    let mut current: Option<LogicalGroup> = None;
+    for cluster in run.clusters() {
+        let range = cluster.text_range();
+        let part = LogicalPart {
+            start: range.start,
+            end: range.end,
+            advance: cluster.advance(),
+        };
+        let is_ligature = cluster.is_ligature_start() || cluster.is_ligature_continuation();
+        if !is_ligature {
+            if let Some(group) = current.take() {
+                groups.push(finish_logical_group(group));
+            }
+            groups.push(finish_logical_group(LogicalGroup {
+                start: part.start,
+                end: part.end,
+                parts: vec![part],
+                has_ligature_start: false,
+                advance: 0.0,
+            }));
+            continue;
+        }
+        let starts_new_group = cluster.is_ligature_start()
+            && current
+                .as_ref()
+                .is_some_and(|group| group.has_ligature_start);
+        if starts_new_group && let Some(group) = current.take() {
+            groups.push(finish_logical_group(group));
+        }
+        let group = current.get_or_insert_with(|| LogicalGroup {
+            start: part.start,
+            end: part.end,
+            parts: Vec::new(),
+            has_ligature_start: false,
+            advance: 0.0,
+        });
+        group.start = group.start.min(part.start);
+        group.end = group.end.max(part.end);
+        group.parts.push(part);
+        group.has_ligature_start |= cluster.is_ligature_start();
+    }
+    if let Some(group) = current {
+        groups.push(finish_logical_group(group));
+    }
+    groups
+}
+
+fn add_grapheme_edges(
+    text: &str,
+    range: std::ops::Range<usize>,
+    start_x: f32,
+    end_x: f32,
+    candidates: &mut Vec<EdgeCandidate>,
+) {
+    let start = range.start.min(text.len());
+    let end = range.end.min(text.len()).max(start);
+    let Some(slice) = text.get(start..end) else {
+        return;
+    };
+    let mut boundaries = vec![start];
+    boundaries.extend(
+        slice
+            .grapheme_indices(true)
+            .map(|(offset, grapheme)| start + offset + grapheme.len()),
+    );
+    if boundaries.len() == 1 {
+        candidates.push(EdgeCandidate {
+            byte: start,
+            position: start_x,
+            kind: EdgeKind::Start,
+        });
+        candidates.push(EdgeCandidate {
+            byte: end,
+            position: end_x,
+            kind: EdgeKind::End,
+        });
+        return;
+    }
+    let count = boundaries.len() - 1;
+    for (index, byte) in boundaries.into_iter().enumerate() {
+        let fraction = index as f32 / count as f32;
+        let position = start_x + (end_x - start_x) * fraction;
+        let kind = if index == 0 {
+            EdgeKind::Start
+        } else if index == count {
+            EdgeKind::End
+        } else {
+            EdgeKind::Internal
+        };
+        candidates.push(EdgeCandidate {
+            byte,
+            position,
+            kind,
+        });
+    }
+}
+
+fn edge_priority(kind: EdgeKind) -> u8 {
+    match kind {
+        EdgeKind::Internal => 0,
+        EdgeKind::Start => 1,
+        EdgeKind::End => 2,
+    }
+}
+
+fn resolve_edge_candidates(
+    mut candidates: Vec<EdgeCandidate>,
+    text_len: usize,
+) -> Vec<(usize, f32)> {
+    candidates.sort_by_key(|candidate| candidate.byte);
+    let mut edges = BTreeMap::new();
+    for candidate in candidates {
+        let replace = match edges.get(&candidate.byte) {
+            None => true,
+            Some((_, kind)) => edge_priority(candidate.kind) > edge_priority(*kind),
+        };
+        if replace {
+            edges.insert(candidate.byte, (candidate.position, candidate.kind));
+        }
+    }
+    edges.entry(0).or_insert((0.0, EdgeKind::Start));
+    edges.entry(text_len).or_insert((0.0, EdgeKind::End));
+    edges
+        .into_iter()
+        .map(|(byte, (position, _))| (byte, position))
+        .collect()
+}
+
+fn normalized_atomic_ranges(mut ranges: Vec<AtomicRange>) -> Vec<AtomicRange> {
+    ranges.retain(|range| range.end > range.start);
+    ranges.sort_by_key(|range| (range.start, range.end));
+    let mut result: Vec<AtomicRange> = Vec::new();
+    for range in ranges {
+        if let Some(previous) = result.last_mut()
+            && (range.start < previous.end || range.start == previous.start)
+        {
+            previous.end = previous.end.max(range.end);
+        } else {
+            result.push(range);
+        }
+    }
+    result
+}
+
+fn atomic_ranges_for_layout(text: &str, layout: &parley::Layout<()>) -> Vec<AtomicRange> {
+    let mut clusters = Vec::new();
+    let mut seen = HashSet::new();
+    for line in layout.lines() {
+        for run in line.runs() {
+            for cluster in run.clusters() {
+                let range = cluster.text_range();
+                let candidate = (
+                    range.start.min(text.len()),
+                    range.end.min(text.len()),
+                    cluster.is_ligature_start(),
+                    cluster.is_ligature_continuation(),
+                );
+                if seen.insert(candidate) {
+                    clusters.push(candidate);
+                }
+            }
+        }
+    }
+    clusters.sort_by_key(|(start, end, _, _)| (*start, *end));
+    let mut result = Vec::new();
+    let mut current: Option<AtomicRange> = None;
+    let mut has_start = false;
+    for (start, end, is_start, is_continuation) in clusters {
+        if end <= start {
+            continue;
+        }
+        if !is_start && !is_continuation {
+            if let Some(range) = current.take() {
+                result.push(range);
+            }
+            has_start = false;
+            result.push(AtomicRange { start, end });
+            continue;
+        }
+        if is_start
+            && has_start
+            && let Some(range) = current.take()
+        {
+            result.push(range);
+            has_start = false;
+        }
+        let range = current.get_or_insert(AtomicRange { start, end });
+        range.start = range.start.min(start);
+        range.end = range.end.max(end);
+        has_start |= is_start;
+    }
+    if let Some(range) = current {
+        result.push(range);
+    }
+    normalized_atomic_ranges(result)
+}
+
+fn layout_edges_for_layout(text: &str, layout: &parley::Layout<()>) -> LayoutEdges {
+    let mut candidates = Vec::new();
+    let mut extents = Vec::new();
+
+    for line in layout.lines() {
+        let line_range = line.text_range();
+        let line_start = line_range.start.min(text.len());
+        let line_end = line_range.end.min(text.len()).max(line_start);
+        candidates.push(EdgeCandidate {
+            byte: line_start,
+            position: 0.0,
+            kind: EdgeKind::Internal,
+        });
+        if line_end > line_start {
+            candidates.push(EdgeCandidate {
+                byte: line_end,
+                position: 0.0,
+                kind: EdgeKind::Internal,
+            });
+        }
+
+        let inline_min = line.metrics().inline_min_coord;
+        for run in line.runs() {
+            let mut visual_clusters = HashMap::new();
+            for cluster in run.visual_clusters() {
+                let range = cluster.text_range();
+                visual_clusters
+                    .entry((range.start, range.end))
+                    .or_insert_with(|| cluster.visual_offset());
+            }
+            let groups = logical_groups_for_run(run);
+            for group in &groups {
+                let mut left = f32::INFINITY;
+                let mut right = f32::NEG_INFINITY;
+                for part in &group.parts {
+                    let Some(offset) = visual_clusters
+                        .get(&(part.start, part.end))
+                        .copied()
+                        .flatten()
+                    else {
+                        continue;
+                    };
+                    let offset = offset + inline_min;
+                    let advance = if part.advance.is_finite() {
+                        part.advance
+                    } else {
+                        0.0
+                    };
+                    left = left.min(offset).min(offset + advance);
+                    right = right.max(offset).max(offset + advance);
+                    let (start_x, end_x) = if run.is_rtl() {
+                        (offset + advance, offset)
+                    } else {
+                        (offset, offset + advance)
+                    };
+                    add_grapheme_edges(text, part.start..part.end, start_x, end_x, &mut candidates);
+                }
+                if left.is_finite() && right.is_finite() {
+                    extents.push(VisualExtent {
+                        start: group.start.min(text.len()),
+                        end: group.end.min(text.len()),
+                        left,
+                        right,
+                    });
+                }
+            }
+        }
+    }
+
+    LayoutEdges {
+        edges: resolve_edge_candidates(candidates, text.len()),
+        extents,
+        atomic_ranges: atomic_ranges_for_layout(text, layout),
+    }
+}
+
+fn visual_width(measurement: &LineMeasurement, start: usize, end: usize) -> f32 {
+    let text_len = measurement
+        .metrics
+        .byte_offsets
+        .last()
+        .copied()
+        .unwrap_or(0);
+    let start = start.min(text_len);
+    let end = end.min(text_len).max(start);
+    let mut min = f32::INFINITY;
+    let mut max = f32::NEG_INFINITY;
+    for extent in &measurement.extents {
+        if extent.start < end && extent.end > start {
+            min = min.min(extent.left).min(extent.right);
+            max = max.max(extent.left).max(extent.right);
+        }
+    }
+    for (byte, position) in measurement
+        .metrics
+        .byte_offsets
+        .iter()
+        .zip(&measurement.metrics.positions)
+    {
+        if *byte >= start && *byte <= end {
+            min = min.min(*position);
+            max = max.max(*position);
+        }
+    }
+    if min.is_finite() && max.is_finite() {
+        (max - min).max(0.0)
+    } else {
+        0.0
+    }
+}
+
+fn edge_position(edges: &[(usize, f32)], byte: usize) -> f32 {
+    match edges.binary_search_by_key(&byte, |edge| edge.0) {
+        Ok(index) => edges[index].1,
+        Err(0) => edges.first().map(|edge| edge.1).unwrap_or(0.0),
+        Err(index) => edges
+            .get(index.saturating_sub(1))
+            .map(|edge| edge.1)
+            .unwrap_or(0.0),
+    }
+}
+
+fn metrics_from_edges(text: &str, edges: &[(usize, f32)]) -> TextMetrics {
+    let mut byte_offsets = Vec::with_capacity(text.graphemes(true).count() + 1);
+    byte_offsets.push(0);
+    for (byte, _) in text.grapheme_indices(true) {
+        if byte != 0 {
+            byte_offsets.push(byte);
+        }
+    }
+    if *byte_offsets.last().unwrap_or(&0) != text.len() {
+        byte_offsets.push(text.len());
+    }
+    let positions = byte_offsets
+        .iter()
+        .map(|byte| edge_position(edges, *byte))
+        .collect();
+    TextMetrics {
+        positions,
+        byte_offsets,
+    }
+}
+
+fn measure_line_with_engine(
+    eng: &mut Engine,
+    text: &str,
+    px: f32,
+    font_family: Option<&str>,
+    font_weight: u16,
+    font_style: u8,
+    letter_spacing: f32,
+    font_variation_settings: Option<&str>,
+) -> LineMeasurement {
+    let layout = build_layout(
+        eng,
+        text,
+        px,
+        0.0,
+        font_family,
+        font_weight,
+        font_style,
+        letter_spacing,
+        font_variation_settings,
+    );
+    report_unresolved_codepoints(&layout, text);
+    let layout_edges = layout_edges_for_layout(text, &layout);
+    let metrics = metrics_from_edges(text, &layout_edges.edges);
+    LineMeasurement {
+        metrics,
+        extents: layout_edges.extents,
+        atomic_ranges: layout_edges.atomic_ranges,
+    }
+}
+
+fn measure_text_with_engine(
+    eng: &mut Engine,
+    text: &str,
+    px: f32,
+    font_family: Option<&str>,
+    font_weight: u16,
+    font_style: u8,
+    letter_spacing: f32,
+    font_variation_settings: Option<&str>,
+) -> TextMetrics {
+    let mut edges = BTreeMap::new();
+    for line in hard_lines(text) {
+        let local_text = &text[line.start..line.end];
+        let layout = build_layout(
+            eng,
+            local_text,
+            px,
+            0.0,
+            font_family,
+            font_weight,
+            font_style,
+            letter_spacing,
+            font_variation_settings,
+        );
+        report_unresolved_codepoints(&layout, local_text);
+        let local_edges = layout_edges_for_layout(local_text, &layout);
+        for (byte, position) in local_edges.edges {
+            edges.insert(line.start + byte, position);
+        }
+    }
+    for line in hard_lines(text) {
+        if line.next_start > line.end {
+            edges.insert(line.next_start, 0.0);
+        }
+    }
+    let edges = edges.into_iter().collect::<Vec<_>>();
+    metrics_from_edges(text, &edges)
+}
+
 pub fn metrics_for_textfield(
     text: &str,
     px: f32,
@@ -1170,368 +1908,341 @@ pub fn metrics_for_textfield(
     letter_spacing: f32,
     font_variation_settings: Option<&str>,
 ) -> TextMetrics {
-    let family_hash = font_family.map(fast_hash).unwrap_or(0);
-    let fvs_hash = font_variation_settings.map(fast_hash).unwrap_or(0);
-    let key = (
-        fast_hash(text),
-        (px * 100.0) as u32,
-        family_hash,
+    let key = MetricsCacheKey {
+        text: text.to_owned(),
+        px_bits: px.to_bits(),
+        family: font_family.map(str::to_owned),
         font_weight,
         font_style,
-        (letter_spacing * 100.0) as i32,
-        fvs_hash,
-    );
+        letter_spacing_bits: letter_spacing.to_bits(),
+        variation: font_variation_settings.map(str::to_owned),
+        generation: font_generation(),
+    };
     if let Some(m) = metrics_cache().lock().unwrap().get(&key).cloned() {
         return m;
     }
     let mut eng = engine().lock().unwrap();
-
-    use parley::FontWeight;
-    use parley::style::StyleProperty;
-
-    let Engine {
-        ref mut font_cx,
-        ref mut layout_cx,
-        ..
-    } = *eng;
-    let mut builder = layout_cx.ranged_builder(font_cx, text, 1.0, true);
-    builder.push_default(StyleProperty::FontSize(px));
-    builder.push_default(StyleProperty::FontWeight(FontWeight::new(
-        font_weight as f32,
-    )));
-    builder.push_default(StyleProperty::FontStyle(match font_style {
-        1 => parley::FontStyle::Italic,
-        _ => parley::FontStyle::Normal,
-    }));
-    builder.push_default(StyleProperty::LetterSpacing(letter_spacing));
-    if let Some(settings) = font_variation_settings {
-        builder.push_default(StyleProperty::FontVariations(
-            parley::style::FontVariations::from(settings),
-        ));
-    }
-    if let Some(family) = font_family {
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            use parley::style::{FontFamilyName, GenericFamily};
-            let names: &[FontFamilyName] = match family {
-                "monospace" => &[
-                    FontFamilyName::named("JetBrains Mono"),
-                    GenericFamily::Monospace.into(),
-                ],
-                "sans-serif" => &[
-                    FontFamilyName::named("Open Sans"),
-                    GenericFamily::SansSerif.into(),
-                ],
-                "emoji" => &[
-                    FontFamilyName::named("Noto Color Emoji"),
-                    GenericFamily::Emoji.into(),
-                ],
-                "serif" => &[GenericFamily::Serif.into()],
-                "cursive" => &[GenericFamily::Cursive.into()],
-                "fantasy" => &[GenericFamily::Fantasy.into()],
-                "system-ui" => &[GenericFamily::SystemUi.into()],
-                "math" => &[GenericFamily::Math.into()],
-                _ => &[FontFamilyName::named(family)],
-            };
-            builder.push(names, 0..text.len());
-        }
-        #[cfg(target_arch = "wasm32")]
-        {
-            use parley::style::{FontFamilyName, GenericFamily};
-            let names: &[FontFamilyName] = match family {
-                "monospace" => &[
-                    FontFamilyName::named("JetBrains Mono"),
-                    GenericFamily::Monospace.into(),
-                    GenericFamily::SansSerif.into(),
-                    FontFamilyName::named("Noto Sans Symbols 2"),
-                    FontFamilyName::named("Noto Sans Symbols2"),
-                    FontFamilyName::named("Noto Sans Symbols"),
-                ],
-                "sans-serif" => &[
-                    FontFamilyName::named("Open Sans"),
-                    GenericFamily::SansSerif.into(),
-                    GenericFamily::Emoji.into(),
-                    FontFamilyName::named("Noto Color Emoji"),
-                    FontFamilyName::named("Noto Sans Symbols 2"),
-                    FontFamilyName::named("Noto Sans Symbols2"),
-                    FontFamilyName::named("Noto Sans Symbols"),
-                ],
-                "emoji" => &[
-                    FontFamilyName::named("Noto Color Emoji"),
-                    GenericFamily::Emoji.into(),
-                    GenericFamily::SansSerif.into(),
-                    FontFamilyName::named("Noto Sans Symbols 2"),
-                ],
-                "serif" => &[
-                    GenericFamily::Serif.into(),
-                    GenericFamily::SansSerif.into(),
-                    FontFamilyName::named("Noto Sans Symbols 2"),
-                ],
-                "cursive" => &[
-                    GenericFamily::Cursive.into(),
-                    GenericFamily::SansSerif.into(),
-                    FontFamilyName::named("Noto Sans Symbols 2"),
-                ],
-                "fantasy" => &[
-                    GenericFamily::Fantasy.into(),
-                    GenericFamily::SansSerif.into(),
-                    FontFamilyName::named("Noto Sans Symbols 2"),
-                ],
-                "system-ui" => &[
-                    GenericFamily::SystemUi.into(),
-                    GenericFamily::SansSerif.into(),
-                    FontFamilyName::named("Noto Sans Symbols 2"),
-                ],
-                "math" => &[
-                    GenericFamily::Math.into(),
-                    GenericFamily::SansSerif.into(),
-                    FontFamilyName::named("Noto Sans Symbols 2"),
-                ],
-                _ => &[FontFamilyName::named(family)],
-            };
-            builder.push(names, 0..text.len());
-        }
-    } else {
-        #[cfg(target_arch = "wasm32")]
-        {
-            use parley::style::{FontFamilyName, GenericFamily};
-            let fallback: &[FontFamilyName] = &[
-                GenericFamily::SansSerif.into(),
-                GenericFamily::Emoji.into(),
-                FontFamilyName::named("Noto Color Emoji"),
-                FontFamilyName::named("Noto Sans Symbols 2"),
-                FontFamilyName::named("Noto Sans Symbols2"),
-                FontFamilyName::named("Noto Sans Symbols"),
-            ];
-            builder.push(fallback, 0..text.len());
-        }
-    }
-
-    let mut layout = builder.build(text);
-    layout.break_all_lines(None);
-    layout.align(
-        parley::Alignment::Start,
-        parley::AlignmentOptions::default(),
-    );
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        let unresolved = collect_unresolved_codepoints(&layout, text);
-        let unresolved: Vec<u32> = unresolved
-            .into_iter()
-            .filter(|cp| {
-                !((0xE000..=0xF8FF).contains(cp)
-                    || (0xF0000..=0xFFFFD).contains(cp)
-                    || (0x100000..=0x10FFFD).contains(cp))
-            })
-            .collect();
-        if !unresolved.is_empty() {
-            let reg = crate::unresolved::web_unresolved_registry();
-            let is_new = unresolved.iter().any(|cp| !reg.contains(*cp));
-            if is_new {
-                crate::fallback::wasm_fallback::ensure_fallback_initialized();
-                reg.add_unresolved_vec(unresolved);
-            }
-        }
-    }
-
-    let mut edges: Vec<(usize, f32)> = Vec::new();
-    let mut last_x = 0.0f32;
-    let mut glyph_idx = 0usize;
-    for line in layout.lines() {
-        for item in line.items() {
-            let parley::layout::PositionedLayoutItem::GlyphRun(glyph_run) = item else {
-                continue;
-            };
-            let run_offset = glyph_run.offset();
-            let run = glyph_run.run();
-            let mut cluster_offset = run_offset;
-            for cluster in run.clusters() {
-                let range = cluster.text_range();
-                for g in cluster.glyphs() {
-                    let shift = glyph_idx as f32 * letter_spacing;
-                    let x_pos = cluster_offset + g.x;
-                    let right = x_pos + shift + g.advance + letter_spacing;
-                    last_x = right.max(last_x);
-                    edges.push((range.end, right));
-                    glyph_idx += 1;
-                    cluster_offset += g.advance;
-                }
-            }
-        }
-    }
-    if edges.last().map(|e| e.0) != Some(text.len()) {
-        edges.push((text.len(), last_x));
-    }
-
-    let mut positions = Vec::with_capacity(text.graphemes(true).count() + 1);
-    let mut byte_offsets = Vec::with_capacity(positions.capacity());
-    positions.push(0.0);
-    byte_offsets.push(0);
-    let mut last_byte = 0usize;
-    for (b, _) in text.grapheme_indices(true) {
-        // Boundary 0 is already covered by the initial entries above...
-        if b == 0 {
-            continue;
-        }
-        positions
-            .push(positions.last().copied().unwrap_or(0.0) + width_between(&edges, last_byte, b));
-        byte_offsets.push(b);
-        last_byte = b;
-    }
-    if *byte_offsets.last().unwrap_or(&0) != text.len() {
-        positions.push(
-            positions.last().copied().unwrap_or(0.0) + width_between(&edges, last_byte, text.len()),
-        );
-        byte_offsets.push(text.len());
-    }
-    let m = TextMetrics {
-        positions,
-        byte_offsets,
-    };
-    metrics_cache().lock().unwrap().put(key, m.clone());
-    m
-}
-
-fn width_between(edges: &[(usize, f32)], start_b: usize, end_b: usize) -> f32 {
-    let x0 = lookup_right(edges, start_b);
-    let x1 = lookup_right(edges, end_b);
-    (x1 - x0).max(0.0)
-}
-fn lookup_right(edges: &[(usize, f32)], b: usize) -> f32 {
-    match edges.binary_search_by_key(&b, |e| e.0) {
-        Ok(i) => edges[i].1,
-        Err(i) => {
-            if i == 0 {
-                0.0
-            } else {
-                edges[i - 1].1
-            }
-        }
-    }
-}
-
-fn wrap_single_hard_line(
-    text: &str,
-    px: f32,
-    max_width: f32,
-    max_lines: Option<usize>,
-    font_weight: u16,
-    font_style: u8,
-    letter_spacing: f32,
-    font_variation_settings: Option<&str>,
-) -> (Vec<String>, bool) {
-    let soft_wrap = true;
-    let max_lines_key: u16 = match max_lines {
-        None => 0,
-        Some(n) => {
-            let n = n.min(u16::MAX as usize - 1) as u16;
-            n.saturating_add(1)
-        }
-    };
-    let fvs_hash = font_variation_settings.map(fast_hash).unwrap_or(0);
-    let key = (
-        fast_hash(text),
-        (px * 100.0) as u32,
-        (max_width * 100.0) as u32,
-        max_lines_key,
-        soft_wrap,
-        font_weight,
-        font_style,
-        (letter_spacing * 100.0) as i32,
-        fvs_hash,
-    );
-    if let Some(h) = wrap_cache().lock().unwrap().get(&key).cloned() {
-        return h;
-    }
-
-    let m = metrics_for_textfield(
+    let metrics = measure_text_with_engine(
+        &mut eng,
         text,
         px,
-        None,
+        font_family,
         font_weight,
         font_style,
         letter_spacing,
         font_variation_settings,
     );
-    if let Some(&last) = m.positions.last()
-        && last <= max_width + 0.5
-    {
-        return (vec![text.to_string()], false);
+    metrics_cache().lock().unwrap().put(key, metrics.clone());
+    metrics
+}
+
+fn is_wrapping_space(ch: char) -> bool {
+    ch.is_whitespace() && !matches!(ch, '\u{00A0}' | '\u{202F}' | '\u{2007}')
+}
+
+fn trim_start_byte(text: &str, mut byte: usize) -> usize {
+    byte = byte.min(text.len());
+    while byte < text.len() {
+        let ch = text[byte..].chars().next().unwrap();
+        if !is_wrapping_space(ch) {
+            break;
+        }
+        byte += ch.len_utf8();
+    }
+    byte
+}
+
+fn trim_end_byte(text: &str, mut byte: usize) -> usize {
+    byte = byte.min(text.len());
+    while byte > 0 {
+        let previous = text[..byte].char_indices().next_back();
+        let Some((start, ch)) = previous else {
+            break;
+        };
+        if !is_wrapping_space(ch) {
+            break;
+        }
+        byte = start;
+    }
+    byte
+}
+
+fn containing_atomic_range(ranges: &[AtomicRange], byte: usize) -> Option<AtomicRange> {
+    ranges
+        .iter()
+        .copied()
+        .find(|range| range.start < byte && byte < range.end)
+}
+
+fn snap_start_to_atomic(ranges: &[AtomicRange], byte: usize) -> usize {
+    containing_atomic_range(ranges, byte)
+        .map(|range| range.start)
+        .unwrap_or(byte)
+}
+
+fn snap_end_to_atomic(ranges: &[AtomicRange], byte: usize) -> usize {
+    containing_atomic_range(ranges, byte)
+        .map(|range| range.end)
+        .unwrap_or(byte)
+}
+
+fn next_safe_boundary(text: &str, ranges: &[AtomicRange], start: usize, limit: usize) -> usize {
+    let start = start.min(text.len());
+    let limit = limit.min(text.len()).max(start);
+    if start >= limit {
+        return start;
+    }
+    let mut next = next_grapheme_end(text, start, limit);
+    while let Some(range) = containing_atomic_range(ranges, next) {
+        if range.end >= limit {
+            return limit;
+        }
+        next = range.end;
+    }
+    next
+}
+
+fn push_trimmed_range_atomic(
+    text: &str,
+    start: usize,
+    end: usize,
+    ranges: &[AtomicRange],
+    out: &mut Vec<(usize, usize)>,
+) {
+    let mut start = start.min(text.len());
+    let mut end = end.min(text.len()).max(start);
+    let whitespace_only = text.get(start..end).is_some_and(|slice| {
+        slice
+            .chars()
+            .all(|ch| is_wrapping_space(ch) || matches!(ch, '\u{00A0}' | '\u{202F}' | '\u{2007}'))
+    });
+    if end == start {
+        out.push((start, end));
+        return;
+    }
+    if whitespace_only {
+        out.push((start, end));
+        return;
+    }
+    start = trim_start_byte(text, start);
+    end = trim_end_byte(text, end.max(start));
+    start = snap_start_to_atomic(ranges, start);
+    end = snap_end_to_atomic(ranges, end).max(start);
+    out.push((start, end));
+}
+
+fn next_grapheme_end(text: &str, start: usize, limit: usize) -> usize {
+    let start = start.min(text.len());
+    let limit = limit.min(text.len());
+    if start >= limit {
+        return start;
+    }
+    text.get(start..limit)
+        .and_then(|slice| {
+            slice
+                .grapheme_indices(true)
+                .next()
+                .map(|(offset, grapheme)| start + offset + grapheme.len())
+        })
+        .unwrap_or(limit)
+}
+
+fn wrap_one_hard_line_ranges(
+    text: &str,
+    max_width: f32,
+    max_lines: Option<usize>,
+    measurement: &LineMeasurement,
+) -> (Vec<(usize, usize)>, bool) {
+    if text.is_empty() {
+        return (vec![(0, 0)], false);
+    }
+    if max_lines == Some(0) {
+        return (Vec::new(), true);
+    }
+    let atomic_ranges = &measurement.atomic_ranges;
+    if visual_width(measurement, 0, text.len()) <= max_width + 0.5 {
+        let mut out = Vec::new();
+        push_trimmed_range_atomic(text, 0, text.len(), atomic_ranges, &mut out);
+        return (out, false);
     }
 
-    let width_of = |start_b: usize, end_b: usize| -> f32 {
-        let i0 = match m.byte_offsets.binary_search(&start_b) {
-            Ok(i) | Err(i) => i,
-        };
-        let i1 = match m.byte_offsets.binary_search(&end_b) {
-            Ok(i) | Err(i) => i,
-        };
-        (m.positions.get(i1).copied().unwrap_or(0.0) - m.positions.get(i0).copied().unwrap_or(0.0))
-            .max(0.0)
-    };
-
-    let mut out: Vec<String> = Vec::new();
+    let mut out = Vec::new();
     let mut truncated = false;
+    let mut line_start = trim_start_byte(text, 0);
+    line_start = snap_start_to_atomic(atomic_ranges, line_start);
+    let mut last_fit = Some(line_start);
 
-    let mut line_start = 0usize;
-    let mut best_break = line_start;
-
-    for tok in text.split_word_bounds() {
-        let tok_start = best_break;
-        let tok_end = tok_start + tok.len();
-        let w = width_of(line_start, tok_end);
-
-        if w <= max_width + 0.5 {
-            best_break = tok_end;
+    for (raw_token_start, token) in text.split_word_bound_indices() {
+        let raw_token_start = raw_token_start.min(text.len());
+        let raw_token_end = (raw_token_start + token.len()).min(text.len());
+        let token_start = snap_start_to_atomic(atomic_ranges, raw_token_start);
+        let token_end = snap_end_to_atomic(atomic_ranges, raw_token_end).max(token_start);
+        if token_end <= line_start {
             continue;
         }
 
-        if best_break > line_start {
-            out.push(text[line_start..best_break].trim_end().to_string());
-            line_start = best_break;
-        } else {
-            let mut cut = tok_start;
-            for g in tok.grapheme_indices(true) {
-                let next = tok_start + g.0 + g.1.len();
-                if width_of(line_start, next) <= max_width + 0.5 {
+        let mut content_end = trim_end_byte(text, token_end);
+        content_end = snap_end_to_atomic(atomic_ranges, content_end);
+        if content_end <= line_start {
+            last_fit = Some(token_end);
+            continue;
+        }
+
+        if visual_width(measurement, line_start, content_end) <= max_width + 0.5 {
+            last_fit = Some(token_end);
+            continue;
+        }
+
+        if let Some(fit) = last_fit.filter(|fit| *fit > line_start) {
+            push_trimmed_range_atomic(text, line_start, fit, atomic_ranges, &mut out);
+            if max_lines.is_some_and(|limit| out.len() >= limit) {
+                truncated = fit < text.len();
+                return (out, truncated);
+            }
+            line_start = trim_start_byte(text, fit);
+            line_start = snap_start_to_atomic(atomic_ranges, line_start);
+            last_fit = None;
+            if token_end <= line_start {
+                continue;
+            }
+        }
+
+        let mut remaining_start = line_start.max(token_start);
+        while remaining_start < token_end {
+            remaining_start = trim_start_byte(text, remaining_start);
+            remaining_start = snap_start_to_atomic(atomic_ranges, remaining_start);
+            if remaining_start >= token_end {
+                break;
+            }
+            let mut cut = line_start;
+            let mut probe = remaining_start;
+            while probe < token_end {
+                let next = next_safe_boundary(text, atomic_ranges, probe, token_end);
+                if next <= probe {
+                    break;
+                }
+                if visual_width(measurement, line_start, next) <= max_width + 0.5 {
                     cut = next;
+                    probe = next;
                 } else {
                     break;
                 }
             }
-            if cut == line_start
-                && let Some((ofs, grapheme)) = tok.grapheme_indices(true).next()
-            {
-                cut = tok_start + ofs + grapheme.len();
+            if cut <= line_start {
+                cut = next_safe_boundary(text, atomic_ranges, remaining_start, token_end);
             }
-            out.push(text[line_start..cut].to_string());
+            if cut <= line_start {
+                break;
+            }
+            push_trimmed_range_atomic(text, line_start, cut, atomic_ranges, &mut out);
             line_start = cut;
-        }
-
-        if let Some(ml) = max_lines
-            && out.len() >= ml
-        {
-            truncated = true;
-            line_start = line_start.min(text.len());
-            break;
-        }
-
-        best_break = line_start;
-
-        if line_start < tok_end && width_of(line_start, tok_end) <= max_width + 0.5 {
-            best_break = tok_end;
+            if max_lines.is_some_and(|limit| out.len() >= limit) {
+                truncated = line_start < text.len();
+                return (out, truncated);
+            }
+            line_start = trim_start_byte(text, line_start);
+            line_start = snap_start_to_atomic(atomic_ranges, line_start);
+            last_fit = None;
+            remaining_start = line_start;
         }
     }
 
-    if line_start < text.len() && max_lines.is_none_or(|ml| out.len() < ml) {
-        out.push(text[line_start..].trim_end().to_string());
+    if line_start < text.len() && max_lines.is_none_or(|limit| out.len() < limit) {
+        push_trimmed_range_atomic(text, line_start, text.len(), atomic_ranges, &mut out);
     }
+    if out.is_empty() {
+        out.push((text.len(), text.len()));
+    }
+    (out, truncated)
+}
 
-    let res = (out, truncated);
+fn wrap_cache_key(
+    text: &str,
+    px: f32,
+    max_width: f32,
+    max_lines: Option<usize>,
+    soft_wrap: bool,
+    font_family: Option<&str>,
+    font_weight: u16,
+    font_style: u8,
+    letter_spacing: f32,
+    font_variation_settings: Option<&str>,
+) -> WrapCacheKey {
+    WrapCacheKey {
+        text: text.to_owned(),
+        px_bits: px.to_bits(),
+        max_width_bits: max_width.to_bits(),
+        max_lines,
+        family: font_family.map(str::to_owned),
+        soft_wrap,
+        font_weight,
+        font_style,
+        letter_spacing_bits: letter_spacing.to_bits(),
+        variation: font_variation_settings.map(str::to_owned),
+        generation: font_generation(),
+    }
+}
 
-    wrap_cache().lock().unwrap().put(key, res.clone());
-    res
+pub fn wrap_lines_with_family(
+    text: &str,
+    px: f32,
+    max_width: f32,
+    max_lines: Option<usize>,
+    soft_wrap: bool,
+    font_family: Option<&str>,
+    font_weight: u16,
+    font_style: u8,
+    letter_spacing: f32,
+    font_variation_settings: Option<&str>,
+) -> (Vec<String>, bool) {
+    if text.is_empty() {
+        return if max_lines == Some(0) {
+            (Vec::new(), true)
+        } else {
+            (vec![String::new()], false)
+        };
+    }
+    if max_width <= 0.0 && soft_wrap {
+        return if max_lines == Some(0) {
+            (Vec::new(), true)
+        } else {
+            (vec![String::new()], false)
+        };
+    }
+    let key = wrap_cache_key(
+        text,
+        px,
+        max_width,
+        max_lines,
+        soft_wrap,
+        font_family,
+        font_weight,
+        font_style,
+        letter_spacing,
+        font_variation_settings,
+    );
+    if let Some(cached) = wrap_cache().lock().unwrap().get(&key).cloned() {
+        return cached;
+    }
+    let (ranges, truncated) = wrap_line_ranges_with_family(
+        text,
+        px,
+        max_width,
+        max_lines,
+        soft_wrap,
+        font_family,
+        font_weight,
+        font_style,
+        letter_spacing,
+        font_variation_settings,
+    );
+    let lines = ranges
+        .iter()
+        .map(|(start, end)| text.get(*start..*end).unwrap_or_default().to_string())
+        .collect::<Vec<_>>();
+    let result = (lines, truncated);
+    wrap_cache().lock().unwrap().put(key, result.clone());
+    result
 }
 
 pub fn wrap_lines(
@@ -1545,39 +2256,144 @@ pub fn wrap_lines(
     letter_spacing: f32,
     font_variation_settings: Option<&str>,
 ) -> (Vec<String>, bool) {
-    if text.is_empty() || max_width <= 0.0 {
-        return (vec![String::new()], false);
+    wrap_lines_with_family(
+        text,
+        px,
+        max_width,
+        max_lines,
+        soft_wrap,
+        None,
+        font_weight,
+        font_style,
+        letter_spacing,
+        font_variation_settings,
+    )
+}
+
+pub fn wrap_lines_with_style(
+    text: &str,
+    px: f32,
+    max_width: f32,
+    max_lines: Option<usize>,
+    soft_wrap: bool,
+    font_family: Option<&str>,
+    font_weight: u16,
+    font_style: u8,
+    letter_spacing: f32,
+    font_variation_settings: Option<&str>,
+) -> (Vec<String>, bool) {
+    wrap_lines_with_family(
+        text,
+        px,
+        max_width,
+        max_lines,
+        soft_wrap,
+        font_family,
+        font_weight,
+        font_style,
+        letter_spacing,
+        font_variation_settings,
+    )
+}
+
+pub fn wrap_line_ranges_with_family(
+    text: &str,
+    px: f32,
+    max_width: f32,
+    max_lines: Option<usize>,
+    soft_wrap: bool,
+    font_family: Option<&str>,
+    font_weight: u16,
+    font_style: u8,
+    letter_spacing: f32,
+    font_variation_settings: Option<&str>,
+) -> (Vec<(usize, usize)>, bool) {
+    if text.is_empty() {
+        return if max_lines == Some(0) {
+            (Vec::new(), true)
+        } else {
+            (vec![(0, 0)], false)
+        };
     }
-    if !soft_wrap {
-        return (text.split('\n').map(|s| s.to_string()).collect(), false);
+    if max_width <= 0.0 && soft_wrap {
+        return if max_lines == Some(0) {
+            (Vec::new(), true)
+        } else {
+            (vec![(0, 0)], false)
+        };
+    }
+    let key = wrap_cache_key(
+        text,
+        px,
+        max_width,
+        max_lines,
+        soft_wrap,
+        font_family,
+        font_weight,
+        font_style,
+        letter_spacing,
+        font_variation_settings,
+    );
+    if let Some(cached) = wrap_ranges_cache().lock().unwrap().get(&key).cloned() {
+        return cached;
     }
 
-    let mut combined: Vec<String> = Vec::new();
-    let mut any_truncated = false;
-    for (seg_i, seg) in text.split('\n').enumerate() {
-        let remaining = max_lines.map(|ml| ml.saturating_sub(combined.len()));
-        if max_lines.is_some_and(|ml| combined.len() >= ml) {
-            any_truncated = true;
+    if !soft_wrap {
+        let lines = hard_lines(text);
+        let count = max_lines.map_or(lines.len(), |limit| limit.min(lines.len()));
+        let truncated = count < lines.len();
+        let result = (
+            lines
+                .into_iter()
+                .take(count)
+                .map(|line| (line.start, line.end))
+                .collect(),
+            truncated,
+        );
+        wrap_ranges_cache().lock().unwrap().put(key, result.clone());
+        return result;
+    }
+
+    let mut output = Vec::new();
+    let mut truncated = false;
+    let mut eng = engine().lock().unwrap();
+    for line in hard_lines(text) {
+        if max_lines.is_some_and(|limit| output.len() >= limit) {
+            truncated = output.len() < hard_lines(text).len();
             break;
         }
-        let (mut lines, trunc) = wrap_single_hard_line(
-            seg,
+        let remaining = max_lines.map(|limit| limit.saturating_sub(output.len()));
+        let segment = &text[line.start..line.end];
+        let measurement = measure_line_with_engine(
+            &mut eng,
+            segment,
             px,
-            max_width,
-            remaining,
+            font_family,
             font_weight,
             font_style,
             letter_spacing,
             font_variation_settings,
         );
-        if lines.is_empty() {
-            lines.push(String::new());
+        let (ranges, segment_truncated) =
+            wrap_one_hard_line_ranges(segment, max_width, remaining, &measurement);
+        output.extend(
+            ranges
+                .into_iter()
+                .map(|(start, end)| (line.start + start, line.start + end)),
+        );
+        if segment_truncated {
+            truncated = true;
+            break;
         }
-        combined.append(&mut lines);
-        any_truncated |= trunc;
-        let _ = seg_i;
+        if max_lines.is_some_and(|limit| output.len() >= limit) && line.next_start < text.len() {
+            truncated = true;
+            break;
+        }
     }
-    return (combined, any_truncated);
+    drop(eng);
+    let result = (output, truncated);
+    wrap_ranges_cache().lock().unwrap().put(key, result.clone());
+    result
 }
 
 pub fn wrap_line_ranges(
@@ -1591,190 +2407,117 @@ pub fn wrap_line_ranges(
     letter_spacing: f32,
     font_variation_settings: Option<&str>,
 ) -> (Vec<(usize, usize)>, bool) {
-    if text.is_empty() || max_width <= 0.0 {
-        return (vec![(0, 0)], false);
-    }
-    if !soft_wrap {
-        let mut out = Vec::new();
-        let mut start = 0usize;
-        for (i, ch) in text.char_indices() {
-            if ch == '\n' {
-                out.push((start, i));
-                start = i + 1;
-            }
-        }
-        out.push((start, text.len()));
-        return (out, false);
-    }
-
-    let max_lines_key: u16 = match max_lines {
-        None => 0,
-        Some(n) => {
-            let n = n.min(u16::MAX as usize - 1) as u16;
-            n.saturating_add(1)
-        }
-    };
-    let fvs_hash = font_variation_settings.map(fast_hash).unwrap_or(0);
-    let key = (
-        fast_hash(text),
-        (px * 100.0) as u32,
-        (max_width * 100.0) as u32,
-        max_lines_key,
-        soft_wrap,
-        font_weight,
-        font_style,
-        (letter_spacing * 100.0) as i32,
-        fvs_hash,
-    );
-    if let Some(v) = wrap_ranges_cache().lock().unwrap().get(&key).cloned() {
-        return v;
-    }
-
-    let m = metrics_for_textfield(
+    wrap_line_ranges_with_family(
         text,
         px,
+        max_width,
+        max_lines,
+        soft_wrap,
         None,
         font_weight,
         font_style,
         letter_spacing,
         font_variation_settings,
-    );
-
-    let width_of = |start_b: usize, end_b: usize| -> f32 {
-        let i0 = match m.byte_offsets.binary_search(&start_b) {
-            Ok(i) | Err(i) => i,
-        };
-        let i1 = match m.byte_offsets.binary_search(&end_b) {
-            Ok(i) | Err(i) => i,
-        };
-        (m.positions.get(i1).copied().unwrap_or(0.0) - m.positions.get(i0).copied().unwrap_or(0.0))
-            .max(0.0)
-    };
-
-    let mut out: Vec<(usize, usize)> = Vec::new();
-    let mut truncated = false;
-
-    let mut line0_start = 0usize;
-    for (i, ch) in text.char_indices() {
-        if ch == '\n' {
-            let (mut ranges, tr) = wrap_one_hard_line_ranges(
-                text,
-                line0_start,
-                i,
-                max_width,
-                max_lines.map(|ml| ml.saturating_sub(out.len())),
-                &width_of,
-            );
-            out.append(&mut ranges);
-            if tr {
-                truncated = true;
-                break;
-            }
-            line0_start = i + 1;
-
-            if let Some(ml) = max_lines
-                && out.len() >= ml
-            {
-                truncated = true;
-                break;
-            }
-        }
-    }
-    if !truncated {
-        let (mut ranges, tr) = wrap_one_hard_line_ranges(
-            text,
-            line0_start,
-            text.len(),
-            max_width,
-            max_lines.map(|ml| ml.saturating_sub(out.len())),
-            &width_of,
-        );
-        out.append(&mut ranges);
-        truncated = tr;
-    }
-
-    if out.is_empty() {
-        out.push((0, 0));
-    }
-
-    let res = (out, truncated);
-    wrap_ranges_cache().lock().unwrap().put(key, res.clone());
-    res
+    )
 }
 
-fn wrap_one_hard_line_ranges(
+pub fn wrap_line_ranges_with_style(
     text: &str,
-    start: usize,
-    end: usize,
+    px: f32,
     max_width: f32,
     max_lines: Option<usize>,
-    width_of: &dyn Fn(usize, usize) -> f32,
+    soft_wrap: bool,
+    font_family: Option<&str>,
+    font_weight: u16,
+    font_style: u8,
+    letter_spacing: f32,
+    font_variation_settings: Option<&str>,
 ) -> (Vec<(usize, usize)>, bool) {
-    let mut out = Vec::new();
-    let mut t = false;
+    wrap_line_ranges_with_family(
+        text,
+        px,
+        max_width,
+        max_lines,
+        soft_wrap,
+        font_family,
+        font_weight,
+        font_style,
+        letter_spacing,
+        font_variation_settings,
+    )
+}
 
-    if start >= end {
-        out.push((start, start));
-        return (out, false);
+pub fn ellipsize_line_with_family(
+    text: &str,
+    px: f32,
+    max_width: f32,
+    font_family: Option<&str>,
+    font_weight: u16,
+    font_style: u8,
+    letter_spacing: f32,
+    font_variation_settings: Option<&str>,
+) -> String {
+    if text.is_empty() || max_width <= 0.0 {
+        return String::new();
     }
-
-    if width_of(start, end) <= max_width + 0.5 {
-        out.push((start, end));
-        return (out, false);
+    let key = EllipCacheKey {
+        text: text.to_owned(),
+        px_bits: px.to_bits(),
+        max_width_bits: max_width.to_bits(),
+        family: font_family.map(str::to_owned),
+        font_weight,
+        font_style,
+        letter_spacing_bits: letter_spacing.to_bits(),
+        variation: font_variation_settings.map(str::to_owned),
+        generation: font_generation(),
+    };
+    if let Some(cached) = ellip_cache().lock().unwrap().get(&key).cloned() {
+        return cached;
     }
-
-    let mut line_start = start;
-    let mut best_break = line_start;
-    let mut unconsumed_start = start;
-
-    for tok in text[line_start..end].split_word_bounds() {
-        let tok_abs_start = unconsumed_start;
-        let tok_abs_end = tok_abs_start + tok.len();
-        unconsumed_start = tok_abs_end;
-
-        let w = width_of(line_start, tok_abs_end);
-        if w <= max_width + 0.5 {
-            best_break = tok_abs_end;
+    let measurement = {
+        let mut eng = engine().lock().unwrap();
+        measure_line_with_engine(
+            &mut eng,
+            text,
+            px,
+            font_family,
+            font_weight,
+            font_style,
+            letter_spacing,
+            font_variation_settings,
+        )
+    };
+    if visual_width(&measurement, 0, text.len()) <= max_width + 0.5 {
+        let result = text.to_owned();
+        ellip_cache().lock().unwrap().put(key, result.clone());
+        return result;
+    }
+    let ellipsis_width = ellipsis_width_with_style(
+        px,
+        font_family,
+        font_weight,
+        font_style,
+        letter_spacing,
+        font_variation_settings,
+    );
+    if ellipsis_width >= max_width {
+        return String::new();
+    }
+    let mut byte = 0usize;
+    for (offset, grapheme) in text.grapheme_indices(true) {
+        let candidate = offset + grapheme.len();
+        if containing_atomic_range(&measurement.atomic_ranges, candidate).is_some() {
             continue;
         }
-
-        if best_break > line_start {
-            out.push((line_start, best_break));
-            line_start = best_break;
-        } else {
-            let mut cut = tok_abs_start;
-            for (ofs, g) in tok.grapheme_indices(true) {
-                let next = tok_abs_start + ofs + g.len();
-                if width_of(line_start, next) <= max_width + 0.5 {
-                    cut = next;
-                } else {
-                    break;
-                }
-            }
-            if cut == line_start
-                && let Some((ofs, gr)) = tok.grapheme_indices(true).next()
-            {
-                cut = tok_abs_start + ofs + gr.len();
-            }
-            out.push((line_start, cut));
-            line_start = cut;
+        if visual_width(&measurement, 0, candidate) + ellipsis_width <= max_width + 0.5 {
+            byte = candidate;
         }
-
-        if let Some(ml) = max_lines
-            && out.len() >= ml
-        {
-            t = true;
-            break;
-        }
-
-        best_break = line_start;
     }
-
-    if !t && line_start < end && max_lines.is_none_or(|ml| out.len() < ml) {
-        out.push((line_start, end));
-    }
-
-    (out, t)
+    let mut result = String::with_capacity(byte + '…'.len_utf8());
+    result.push_str(&text[..byte]);
+    result.push('…');
+    ellip_cache().lock().unwrap().put(key, result.clone());
+    result
 }
 
 pub fn ellipsize_line(
@@ -1786,91 +2529,132 @@ pub fn ellipsize_line(
     letter_spacing: f32,
     font_variation_settings: Option<&str>,
 ) -> String {
-    if text.is_empty() || max_width <= 0.0 {
-        return String::new();
-    }
-    let fvs_hash = font_variation_settings.map(fast_hash).unwrap_or(0);
-    let key = (
-        fast_hash(text),
-        (px * 100.0) as u32,
-        (max_width * 100.0) as u32,
-        font_weight,
-        font_style,
-        (letter_spacing * 100.0) as i32,
-        fvs_hash,
-    );
-    if let Some(s) = ellip_cache().lock().unwrap().get(&key).cloned() {
-        return s;
-    }
-    let m = metrics_for_textfield(
+    ellipsize_line_with_family(
         text,
         px,
+        max_width,
         None,
         font_weight,
         font_style,
         letter_spacing,
         font_variation_settings,
-    );
-    if let Some(&last) = m.positions.last()
-        && last <= max_width + 0.5
-    {
-        return text.to_string();
-    }
-    let _el = "…";
-    let e_w = ellipsis_width(px, letter_spacing);
-    if e_w >= max_width {
-        return String::new();
-    }
-    let mut cut_i = 0usize;
-    for i in 0..m.positions.len() {
-        if m.positions[i] + e_w <= max_width {
-            cut_i = i;
-        } else {
-            break;
-        }
-    }
-    let byte = m
-        .byte_offsets
-        .get(cut_i)
-        .copied()
-        .unwrap_or(0)
-        .min(text.len());
-    let mut out = String::with_capacity(byte + 3);
-    out.push_str(&text[..byte]);
-    out.push('…');
-
-    let s = out;
-    ellip_cache().lock().unwrap().put(key, s.clone());
-
-    s
+    )
 }
 
-fn ellipsis_width(px: f32, letter_spacing: f32) -> f32 {
-    static ELLIP_W_LRU: OnceLock<Mutex<Lru<(u32, i32), f32>>> = OnceLock::new();
-    /// Bump when the fallback font set changes: the width cache is keyed only
-    /// by size, so without a generation tag it would serve pre-fallback widths
-    /// forever. `clear_caches_for_fallback` can't reach this function-local
-    /// static, so the generation check below does the invalidation instead.
+pub fn ellipsize_line_with_style(
+    text: &str,
+    px: f32,
+    max_width: f32,
+    font_family: Option<&str>,
+    font_weight: u16,
+    font_style: u8,
+    letter_spacing: f32,
+    font_variation_settings: Option<&str>,
+) -> String {
+    ellipsize_line_with_family(
+        text,
+        px,
+        max_width,
+        font_family,
+        font_weight,
+        font_style,
+        letter_spacing,
+        font_variation_settings,
+    )
+}
+
+fn ellipsis_width_with_style(
+    px: f32,
+    font_family: Option<&str>,
+    font_weight: u16,
+    font_style: u8,
+    letter_spacing: f32,
+    font_variation_settings: Option<&str>,
+) -> f32 {
+    static ELLIP_W_LRU: OnceLock<
+        Mutex<Lru<(u32, Option<String>, u16, u8, u32, Option<String>, u64), f32>>,
+    > = OnceLock::new();
     static ELLIP_W_GEN: AtomicU64 = AtomicU64::new(0);
     let cache = ELLIP_W_LRU.get_or_init(|| Mutex::new(Lru::new(64)));
     let generation = font_generation();
     if ELLIP_W_GEN.load(Ordering::Relaxed) != generation {
-        if let Ok(mut g) = cache.lock() {
-            g.clear_both();
+        if let Ok(mut guard) = cache.lock() {
+            guard.clear_both();
         }
         ELLIP_W_GEN.store(generation, Ordering::Relaxed);
     }
-    let key = ((px * 100.0) as u32, (letter_spacing * 100.0) as i32);
-    if let Some(w) = cache.lock().unwrap().get(&key).copied() {
-        return w;
+    let key = (
+        px.to_bits(),
+        font_family.map(str::to_owned),
+        font_weight,
+        font_style,
+        letter_spacing.to_bits(),
+        font_variation_settings.map(str::to_owned),
+        generation,
+    );
+    if let Some(width) = cache.lock().unwrap().get(&key).copied() {
+        return width;
     }
-    let w = if let Some(g) =
-        crate::shape_line("…", px, px, None, 400, 0, letter_spacing, None).last()
-    {
-        g.x + g.advance
-    } else {
-        0.0
+    let width = {
+        let mut eng = engine().lock().unwrap();
+        let measurement = measure_line_with_engine(
+            &mut eng,
+            "…",
+            px,
+            font_family,
+            font_weight,
+            font_style,
+            letter_spacing,
+            font_variation_settings,
+        );
+        visual_width(&measurement, 0, "…".len())
     };
-    cache.lock().unwrap().put(key, w);
-    w
+    cache.lock().unwrap().put(key, width);
+    width
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bidi_caret_positions_follow_visual_order() {
+        let text = "אבג";
+        let metrics = metrics_for_textfield(text, 32.0, None, 400, 0, 0.0, None);
+        assert!(metrics.positions.windows(2).all(|w| w[0] > w[1]));
+        assert!(
+            metrics
+                .positions
+                .iter()
+                .all(|position| position.is_finite())
+        );
+
+        let mixed = "אב abc";
+        let metrics = metrics_for_textfield(mixed, 32.0, None, 400, 0, 0.0, None);
+        assert!(metrics.positions[0] > metrics.positions[1]);
+        assert!(metrics.positions[1] > metrics.positions[2]);
+        assert!(metrics.positions[4] < metrics.positions[5]);
+        assert!(metrics.positions[5] < metrics.positions[6]);
+    }
+
+    #[test]
+    fn utf8_layout_and_wrapping_do_not_panic() {
+        let text = "e\u{301} 👩‍👩‍👧‍👦 🇺🇸 אב\u{00A0}界";
+        let result = std::panic::catch_unwind(|| {
+            let _ = metrics_for_textfield(text, 16.0, None, 400, 0, 0.0, None);
+            let _ = wrap_line_ranges_with_family(
+                text,
+                16.0,
+                12.0,
+                Some(2),
+                true,
+                None,
+                400,
+                0,
+                0.0,
+                None,
+            );
+        });
+        assert!(result.is_ok());
+    }
 }

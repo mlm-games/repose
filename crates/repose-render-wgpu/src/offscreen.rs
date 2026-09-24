@@ -167,8 +167,9 @@ impl OffscreenRenderer {
     /// Wrap an existing scene renderer with a fresh target + readback
     /// buffer. Dimensions clamp to ≥ 1.
     pub fn from_renderer(mut renderer: WgpuSceneRenderer, width: u32, height: u32) -> Result<Self> {
-        let width = width.max(1);
-        let height = height.max(1);
+        let max = renderer.device.limits().max_texture_dimension_2d;
+        let width = width.max(1).min(max);
+        let height = height.max(1).min(max);
         renderer.resize(width, height);
         let texture = renderer.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("repose-offscreen-tex"),
@@ -188,9 +189,20 @@ impl OffscreenRenderer {
         });
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
-        let unpadded = width * 4;
-        let padded = unpadded.div_ceil(align) * align;
-        let buf_size = (padded * height) as u64;
+        let unpadded = width
+            .checked_mul(4)
+            .ok_or_else(|| anyhow::anyhow!("offscreen row size overflow"))?;
+        let padded = unpadded
+            .checked_add(align - 1)
+            .ok_or_else(|| anyhow::anyhow!("offscreen row alignment overflow"))?
+            / align
+            * align;
+        let buf_size = u64::from(padded)
+            .checked_mul(u64::from(height))
+            .ok_or_else(|| anyhow::anyhow!("offscreen readback size overflow"))?;
+        if buf_size > renderer.device.limits().max_buffer_size {
+            anyhow::bail!("offscreen readback exceeds device buffer limit");
+        }
         let readback = renderer.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("repose-offscreen-readback"),
             size: buf_size,
@@ -257,20 +269,25 @@ impl OffscreenRenderer {
             web_workers::web::has_block_support(),
             "render_rgba (blocking) called on wasm main thread; use render_rgba_async"
         );
-        let cmd = self.encode_rgba(scene, clear);
-        self.renderer.queue.submit(Some(cmd));
-        let slice = self.readback.slice(..);
-        let (tx, rx) = web_workers::sync::mpsc::channel();
-        slice.map_async(wgpu::MapMode::Read, move |r| {
-            let _ = tx.send_sync(r);
-        });
-        self.renderer.device.poll(PollType::wait_indefinitely())?;
-        rx.recv_sync()??;
-        let mapped = slice.get_mapped_range()?;
-        let out = strip_padding(&mapped, self.width, self.height, self.padded_bytes_per_row);
-        drop(mapped);
-        self.readback.unmap();
-        Ok(out)
+        self.renderer.begin_frame()?;
+        let result = (|| -> Result<Vec<u8>> {
+            let cmd = self.encode_rgba(scene, clear);
+            self.renderer.queue.submit(Some(cmd));
+            let slice = self.readback.slice(..);
+            let (tx, rx) = web_workers::sync::mpsc::channel();
+            slice.map_async(wgpu::MapMode::Read, move |r| {
+                let _ = tx.send_sync(r);
+            });
+            self.renderer.device.poll(PollType::wait_indefinitely())?;
+            rx.recv_sync()??;
+            let mapped = slice.get_mapped_range()?;
+            let result = strip_padding(&mapped, self.width, self.height, self.padded_bytes_per_row);
+            drop(mapped);
+            self.readback.unmap();
+            result
+        })();
+        self.renderer.end_frame();
+        result
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -279,33 +296,42 @@ impl OffscreenRenderer {
         scene: &Scene,
         clear: Option<[f64; 4]>,
     ) -> Result<Vec<u8>> {
-        let cmd = self.encode_rgba(scene, clear);
-        self.renderer.queue.submit(Some(cmd));
-        let slice = self.readback.slice(..);
-        let (tx, rx) = web_workers::sync::mpsc::channel();
-        slice.map_async(wgpu::MapMode::Read, {
-            let tx = tx.clone();
-            move |r| {
-                let _ = tx.send_sync(r);
+        self.renderer.begin_frame()?;
+        let result = async {
+            let cmd = self.encode_rgba(scene, clear);
+            self.renderer.queue.submit(Some(cmd));
+            let slice = self.readback.slice(..);
+            let (tx, rx) = web_workers::sync::mpsc::channel();
+            slice.map_async(wgpu::MapMode::Read, {
+                let tx = tx.clone();
+                move |r| {
+                    let _ = tx.send_sync(r);
+                }
+            });
+            let start = web_workers::sync::Instant::now();
+            loop {
+                let _ = self.renderer.device.poll(PollType::Poll);
+                if let Ok(r) = rx.try_recv() {
+                    r?;
+                    break;
+                }
+                if start.elapsed().as_secs() > 30 {
+                    anyhow::bail!(
+                        "offscreen readback timed out after 30s (map callback never fired)"
+                    );
+                }
+                web_workers::web::yield_now_async(web_workers::web::YieldTime::UserVisible).await;
             }
-        });
-        let start = web_workers::sync::Instant::now();
-        loop {
-            let _ = self.renderer.device.poll(PollType::Poll);
-            if let Ok(r) = rx.try_recv() {
-                r?;
-                break;
-            }
-            if start.elapsed().as_secs() > 30 {
-                anyhow::bail!("offscreen readback timed out after 30s (map callback never fired)");
-            }
-            web_workers::web::yield_now_async(web_workers::web::YieldTime::UserVisible).await;
+            let mapped = slice.get_mapped_range()?;
+            let result =
+                strip_padding(&*mapped, self.width, self.height, self.padded_bytes_per_row);
+            drop(mapped);
+            self.readback.unmap();
+            result
         }
-        let mapped = slice.get_mapped_range()?;
-        let out = strip_padding(&*mapped, self.width, self.height, self.padded_bytes_per_row);
-        drop(mapped);
-        self.readback.unmap();
-        Ok(out)
+        .await;
+        self.renderer.end_frame();
+        result
     }
 
     pub fn renderer_mut(&mut self) -> &mut WgpuSceneRenderer {
@@ -329,8 +355,9 @@ impl OffscreenRenderer {
     /// matches (no reallocation). Dimensions clamp to ≥ 1. After this,
     /// `render_rgba` returns `width * height * 4` bytes at the new size.
     pub fn ensure_size(&mut self, width: u32, height: u32) -> Result<()> {
-        let width = width.max(1);
-        let height = height.max(1);
+        let max = self.renderer.device.limits().max_texture_dimension_2d;
+        let width = width.max(1).min(max);
+        let height = height.max(1).min(max);
         if self.width == width && self.height == height {
             return Ok(());
         }
@@ -349,15 +376,30 @@ impl OffscreenRenderer {
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format: TextureFormat::Rgba8UnormSrgb,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING
+                    | wgpu::TextureUsages::COPY_SRC,
                 view_formats: &[],
             });
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
-        let padded = (width * 4).div_ceil(align) * align;
+        let unpadded = width
+            .checked_mul(4)
+            .ok_or_else(|| anyhow::anyhow!("offscreen row size overflow"))?;
+        let padded = unpadded
+            .checked_add(align - 1)
+            .ok_or_else(|| anyhow::anyhow!("offscreen row alignment overflow"))?
+            / align
+            * align;
+        let size = u64::from(padded)
+            .checked_mul(u64::from(height))
+            .ok_or_else(|| anyhow::anyhow!("offscreen readback size overflow"))?;
+        if size > self.renderer.device.limits().max_buffer_size {
+            anyhow::bail!("offscreen readback exceeds device buffer limit");
+        }
         let readback = self.renderer.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("repose-offscreen-readback"),
-            size: (padded * height) as u64,
+            size,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
@@ -390,15 +432,36 @@ impl OffscreenRenderer {
     }
 }
 
-fn strip_padding(mapped: &[u8], width: u32, height: u32, padded: u32) -> Vec<u8> {
-    let unpadded = width * 4;
-    let mut out = Vec::with_capacity((width * height * 4) as usize);
+fn strip_padding(mapped: &[u8], width: u32, height: u32, padded: u32) -> Result<Vec<u8>> {
+    let unpadded = usize::try_from(
+        width
+            .checked_mul(4)
+            .ok_or_else(|| anyhow::anyhow!("offscreen row size overflow"))?,
+    )
+    .map_err(|_| anyhow::anyhow!("offscreen row size exceeds addressable memory"))?;
+    let output_size = width
+        .checked_mul(height)
+        .and_then(|value| value.checked_mul(4))
+        .ok_or_else(|| anyhow::anyhow!("offscreen output size overflow"))?;
+    let capacity = usize::try_from(output_size)
+        .map_err(|_| anyhow::anyhow!("offscreen output exceeds addressable memory"))?;
+    let padded = usize::try_from(padded)
+        .map_err(|_| anyhow::anyhow!("offscreen padded row exceeds addressable memory"))?;
+    let mut out = Vec::with_capacity(capacity);
     for y in 0..height {
-        let start = (y * padded) as usize;
-        let end = start + unpadded as usize;
-        out.extend_from_slice(&mapped[start..end]);
+        let start = usize::try_from(y)
+            .ok()
+            .and_then(|row| row.checked_mul(padded))
+            .ok_or_else(|| anyhow::anyhow!("offscreen row offset overflow"))?;
+        let end = start
+            .checked_add(unpadded)
+            .ok_or_else(|| anyhow::anyhow!("offscreen row end overflow"))?;
+        let row = mapped
+            .get(start..end)
+            .ok_or_else(|| anyhow::anyhow!("offscreen readback row is truncated"))?;
+        out.extend_from_slice(row);
     }
-    out
+    Ok(out)
 }
 
 pub fn map_buffer_blocking(slice: &wgpu::BufferSlice<'_>, device: &wgpu::Device) -> Result<()> {

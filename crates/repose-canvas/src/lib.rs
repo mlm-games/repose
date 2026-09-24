@@ -93,8 +93,8 @@ pub enum DrawCommand {
         clip: Option<u32>,
         blend: BlendMode,
     },
-    /// Screen-space overlays drawn in final device pixels, unaffected by the
-    /// world transform.
+    /// Canvas-local overlay meshes translated to the canvas origin and emitted
+    /// without the world transform.
     VectorOverlay { meshes: Arc<[VectorMeshData]> },
     /// Begin a stencil clip from an arbitrary tessellated mask.
     PushVectorClip {
@@ -128,8 +128,8 @@ impl DrawScope {
     }
     /// Brush-filled rect (solid, linear, radial, sweep). Mirrors Compose
     /// `DrawScope.drawRect(brush, ...)`. Gradient endpoints are expressed in
-    /// the rect's local space: `(0,0)` is the rect top-left, so
-    /// `LinearGradient::vertical` spans the rect height.
+    /// the rect's local space: `(0,0)` is the rect top-left and endpoints are
+    /// pixel offsets.
     pub fn draw_rect_brush(&mut self, rect: Rect, brush: Brush, radius: Px) {
         self.commands.push(DrawCommand::Rect {
             rect,
@@ -363,7 +363,8 @@ impl DrawScope {
         });
     }
 
-    /// Draw a screen-space overlay mesh in final device pixels.
+    /// Draw canvas-local overlay meshes translated to the canvas origin without
+    /// applying the world transform.
     pub fn draw_vector_overlay(&mut self, meshes: Arc<[VectorMeshData]>) {
         self.commands.push(DrawCommand::VectorOverlay { meshes });
     }
@@ -431,13 +432,118 @@ impl DrawScope {
     }
 }
 
-fn translate_mesh_data(m: &VectorMeshData, dx: f32, dy: f32) -> VectorMeshData {
+fn alpha_color(color: Color, alpha: f32) -> Color {
+    if alpha == 1.0 {
+        return color;
+    }
+    Color(
+        color.0,
+        color.1,
+        color.2,
+        (color.3 as f32 * alpha.clamp(0.0, 1.0)) as u8,
+    )
+}
+
+fn alpha_brush(brush: Brush, alpha: f32) -> Brush {
+    if alpha == 1.0 {
+        return brush;
+    }
+    match brush {
+        Brush::Solid(color) => Brush::Solid(alpha_color(color, alpha)),
+        Brush::Linear {
+            start,
+            end,
+            start_color,
+            end_color,
+        } => Brush::Linear {
+            start,
+            end,
+            start_color: alpha_color(start_color, alpha),
+            end_color: alpha_color(end_color, alpha),
+        },
+        Brush::Radial {
+            center,
+            radius,
+            start_color,
+            end_color,
+        } => Brush::Radial {
+            center,
+            radius,
+            start_color: alpha_color(start_color, alpha),
+            end_color: alpha_color(end_color, alpha),
+        },
+        Brush::Sweep {
+            center,
+            start_color,
+            end_color,
+        } => Brush::Sweep {
+            center,
+            start_color: alpha_color(start_color, alpha),
+            end_color: alpha_color(end_color, alpha),
+        },
+        _ => brush,
+    }
+}
+
+fn alpha_paint(paint: PaintDesc, alpha: f32) -> PaintDesc {
+    if alpha == 1.0 {
+        return paint;
+    }
+    match paint {
+        PaintDesc::Solid => PaintDesc::Solid,
+        PaintDesc::Linear {
+            start,
+            end,
+            start_color,
+            end_color,
+        } => PaintDesc::Linear {
+            start,
+            end,
+            start_color: alpha_color(start_color, alpha),
+            end_color: alpha_color(end_color, alpha),
+        },
+        PaintDesc::Radial {
+            center,
+            radius,
+            start_color,
+            end_color,
+        } => PaintDesc::Radial {
+            center,
+            radius,
+            start_color: alpha_color(start_color, alpha),
+            end_color: alpha_color(end_color, alpha),
+        },
+        PaintDesc::Sweep {
+            center,
+            start_color,
+            end_color,
+        } => PaintDesc::Sweep {
+            center,
+            start_color: alpha_color(start_color, alpha),
+            end_color: alpha_color(end_color, alpha),
+        },
+        _ => paint,
+    }
+}
+
+fn map_mesh_data(m: &VectorMeshData, dx: f32, dy: f32, alpha: f32) -> VectorMeshData {
+    let alpha = alpha.clamp(0.0, 1.0);
     let vertices: Arc<[VectorVertex]> = m
         .vertices
         .iter()
         .map(|v| VectorVertex {
             pos: [v.pos[0] + dx, v.pos[1] + dy],
-            ..*v
+            color: if alpha == 1.0 {
+                v.color
+            } else {
+                [
+                    v.color[0] * alpha,
+                    v.color[1] * alpha,
+                    v.color[2] * alpha,
+                    v.color[3] * alpha,
+                ]
+            },
+            uv: v.uv,
         })
         .collect();
     VectorMeshData {
@@ -446,8 +552,65 @@ fn translate_mesh_data(m: &VectorMeshData, dx: f32, dy: f32) -> VectorMeshData {
     }
 }
 
-fn brush_to_paint(brush: &Brush) -> PaintDesc {
+fn mapped_mesh(m: &Arc<VectorMeshData>, dx: f32, dy: f32, alpha: f32) -> Arc<VectorMeshData> {
+    if alpha == 1.0 && dx == 0.0 && dy == 0.0 {
+        return m.clone();
+    }
+    Arc::new(map_mesh_data(m, dx, dy, alpha))
+}
+
+fn offset_brush(brush: Brush, origin: Vec2) -> Brush {
     match brush {
+        Brush::Solid(color) => Brush::Solid(color),
+        Brush::Linear {
+            start,
+            end,
+            start_color,
+            end_color,
+        } => Brush::Linear {
+            start: Vec2 {
+                x: start.x + origin.x,
+                y: start.y + origin.y,
+            },
+            end: Vec2 {
+                x: end.x + origin.x,
+                y: end.y + origin.y,
+            },
+            start_color,
+            end_color,
+        },
+        Brush::Radial {
+            center,
+            radius,
+            start_color,
+            end_color,
+        } => Brush::Radial {
+            center: Vec2 {
+                x: center.x + origin.x,
+                y: center.y + origin.y,
+            },
+            radius,
+            start_color,
+            end_color,
+        },
+        Brush::Sweep {
+            center,
+            start_color,
+            end_color,
+        } => Brush::Sweep {
+            center: Vec2 {
+                x: center.x + origin.x,
+                y: center.y + origin.y,
+            },
+            start_color,
+            end_color,
+        },
+        _ => brush,
+    }
+}
+
+fn brush_to_paint(brush: &Brush, origin: Vec2) -> PaintDesc {
+    match offset_brush(*brush, origin) {
         Brush::Solid(_) => PaintDesc::Solid,
         Brush::Linear {
             start,
@@ -455,10 +618,10 @@ fn brush_to_paint(brush: &Brush) -> PaintDesc {
             start_color,
             end_color,
         } => PaintDesc::Linear {
-            start: *start,
-            end: *end,
-            start_color: *start_color,
-            end_color: *end_color,
+            start,
+            end,
+            start_color,
+            end_color,
         },
         Brush::Radial {
             center,
@@ -466,22 +629,60 @@ fn brush_to_paint(brush: &Brush) -> PaintDesc {
             start_color,
             end_color,
         } => PaintDesc::Radial {
-            center: *center,
-            radius: *radius,
-            start_color: *start_color,
-            end_color: *end_color,
+            center,
+            radius,
+            start_color,
+            end_color,
         },
         Brush::Sweep {
             center,
             start_color,
             end_color,
         } => PaintDesc::Sweep {
-            center: *center,
-            start_color: *start_color,
-            end_color: *end_color,
+            center,
+            start_color,
+            end_color,
         },
         _ => PaintDesc::Solid,
     }
+}
+
+fn generated_vertex_color(brush: &Brush, alpha: f32) -> [f32; 4] {
+    match brush {
+        Brush::Solid(color) => {
+            let color = alpha_color(*color, alpha).to_linear();
+            [
+                color[0] * color[3],
+                color[1] * color[3],
+                color[2] * color[3],
+                color[3],
+            ]
+        }
+        _ => [0.0; 4],
+    }
+}
+
+fn mesh_from_buffers(
+    buffers: lyon_tessellation::VertexBuffers<lyon_path::math::Point, u16>,
+    vertex_color: [f32; 4],
+) -> Option<VectorMeshData> {
+    if buffers.indices.is_empty() {
+        return None;
+    }
+    let vertices: Arc<[VectorVertex]> = buffers
+        .indices
+        .iter()
+        .map(|&i| {
+            let v = &buffers.vertices[i as usize];
+            VectorVertex {
+                pos: [v.x, v.y],
+                color: vertex_color,
+                uv: [0.0, 0.0],
+            }
+        })
+        .collect();
+    let indices: Arc<[u32]> = (0..vertices.len() as u32).collect();
+    Some(VectorMeshData { vertices, indices })
 }
 
 fn tessellate_polyline(
@@ -492,6 +693,8 @@ fn tessellate_polyline(
     join: StrokeJoin,
     miter: f32,
     path_effect: Option<&PathEffect>,
+    brush: &Brush,
+    alpha: f32,
 ) -> Option<VectorMeshData> {
     use lyon_path::Path;
     use lyon_path::math::Point;
@@ -499,6 +702,10 @@ fn tessellate_polyline(
         LineCap, LineJoin, StrokeOptions, StrokeTessellator, VertexBuffers,
         geometry_builder::simple_builder,
     };
+
+    if points.len() < 2 {
+        return None;
+    }
 
     let mut builder = Path::builder();
     let pt = |p: &Vec2| Point::new(canvas_rect.x + p.x, canvas_rect.y + p.y);
@@ -535,30 +742,163 @@ fn tessellate_polyline(
         &mut simple_builder(&mut buffers),
     )
     .ok()?;
-    if buffers.indices.is_empty() {
-        return None;
+    mesh_from_buffers(buffers, generated_vertex_color(brush, alpha))
+}
+
+fn apply_canvas_corner_effect(path: &lyon_path::Path, radius: f32) -> lyon_path::Path {
+    use lyon_path::PathEvent;
+    use lyon_path::math::{Point, Vector};
+
+    if !radius.is_finite() || radius <= 0.0 {
+        return path.clone();
     }
-    let vertices: Arc<[VectorVertex]> = buffers
-        .indices
+    if path
         .iter()
-        .map(|&i| {
-            let v = &buffers.vertices[i as usize];
-            VectorVertex {
-                pos: [v.x, v.y],
-                color: [1.0, 1.0, 1.0, 1.0],
-                uv: [0.0, 0.0],
+        .any(|event| matches!(event, PathEvent::Quadratic { .. } | PathEvent::Cubic { .. }))
+    {
+        return path.clone();
+    }
+    struct CornerContour {
+        points: Vec<Point>,
+        closed: bool,
+    }
+
+    let events: Vec<PathEvent> = path.iter().collect();
+    let mut contours: Vec<CornerContour> = Vec::new();
+    let mut current: Vec<Point> = Vec::new();
+    let mut contour_start = Point::new(0.0, 0.0);
+    for event in events {
+        match event {
+            PathEvent::Begin { at } => {
+                if !current.is_empty() {
+                    contours.push(CornerContour {
+                        points: std::mem::take(&mut current),
+                        closed: false,
+                    });
+                }
+                contour_start = at;
+                current.push(at);
             }
-        })
-        .collect();
-    let indices: Arc<[u32]> = (0..vertices.len() as u32).collect();
-    Some(VectorMeshData { vertices, indices })
+            PathEvent::Line { to, .. } => current.push(to),
+            PathEvent::End { close, .. } => {
+                if !current.is_empty() {
+                    if close
+                        && current
+                            .last()
+                            .is_some_and(|last| (*last - contour_start).square_length() > 1e-6)
+                    {
+                        current.push(contour_start);
+                    }
+                    contours.push(CornerContour {
+                        points: std::mem::take(&mut current),
+                        closed: close,
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+    if !current.is_empty() {
+        contours.push(CornerContour {
+            points: current,
+            closed: false,
+        });
+    }
+
+    let mut builder = lyon_path::Path::builder();
+    for contour in contours {
+        let points = contour.points;
+        let closed = contour.closed;
+        if points.len() < 2 {
+            continue;
+        }
+        if points.len() == 2 {
+            builder.begin(points[0]);
+            builder.line_to(points[1]);
+            builder.end(false);
+            continue;
+        }
+        let n = points.len();
+        let mut output: Vec<(Point, Option<Point>)> = Vec::new();
+        for i in 0..n {
+            let current_point = points[i];
+            if !closed && (i == 0 || i == n - 1) {
+                output.push((current_point, None));
+                continue;
+            }
+            if closed && i == n - 1 {
+                break;
+            }
+            let previous = if i == 0 {
+                points[n - 2]
+            } else {
+                points[i - 1]
+            };
+            let next = if i + 1 == n {
+                points[1]
+            } else {
+                points[i + 1]
+            };
+            let incoming = Vector::new(current_point.x - previous.x, current_point.y - previous.y);
+            let outgoing = Vector::new(next.x - current_point.x, next.y - current_point.y);
+            let incoming_len = incoming.length();
+            let outgoing_len = outgoing.length();
+            if incoming_len <= 1e-6 || outgoing_len <= 1e-6 {
+                output.push((current_point, None));
+                continue;
+            }
+            let u1 = incoming / incoming_len;
+            let u2 = outgoing / outgoing_len;
+            let angle = (u1.x * u2.x + u1.y * u2.y).clamp(-1.0, 1.0).acos();
+            let half_angle = angle * 0.5;
+            if angle >= std::f32::consts::PI - 1e-3 || half_angle <= 1e-3 {
+                output.push((current_point, None));
+                continue;
+            }
+            let inset = (radius / half_angle.tan())
+                .min(incoming_len * 0.49)
+                .min(outgoing_len * 0.49)
+                .max(0.0);
+            output.push((
+                Point::new(
+                    current_point.x - u1.x * inset,
+                    current_point.y - u1.y * inset,
+                ),
+                Some(current_point),
+            ));
+            output.push((
+                Point::new(
+                    current_point.x + u2.x * inset,
+                    current_point.y + u2.y * inset,
+                ),
+                None,
+            ));
+        }
+        if output.is_empty() {
+            continue;
+        }
+        builder.begin(output[0].0);
+        for (point, control) in output.iter().skip(1) {
+            if let Some(control) = control {
+                builder.quadratic_bezier_to(*control, *point);
+            } else {
+                builder.line_to(*point);
+            }
+        }
+        if closed {
+            builder.close();
+        } else {
+            builder.end(false);
+        }
+    }
+    builder.build()
 }
 
 fn apply_canvas_path_effect(path: &lyon_path::Path, effect: &PathEffect) -> lyon_path::Path {
     use lyon_path::PathEvent;
     use lyon_path::iterator::PathIterator;
     match effect {
-        PathEffect::Corner { .. } => path.clone(),
+        PathEffect::Corner { radius } => apply_canvas_corner_effect(path, *radius),
         PathEffect::Dash { intervals, phase } => {
             if intervals.len() < 2 || intervals.len() % 2 != 0 {
                 return path.clone();
@@ -668,6 +1008,8 @@ fn tessellate_rounded_rect_stroke(
     join: StrokeJoin,
     miter: f32,
     path_effect: Option<&PathEffect>,
+    brush: &Brush,
+    alpha: f32,
 ) -> Option<VectorMeshData> {
     let needs_mesh = !matches!(join, StrokeJoin::Miter) || miter != 4.0 || path_effect.is_some();
     if !needs_mesh {
@@ -720,23 +1062,7 @@ fn tessellate_rounded_rect_stroke(
         &mut simple_builder(&mut buffers),
     )
     .ok()?;
-    if buffers.indices.is_empty() {
-        return None;
-    }
-    let vertices: Arc<[VectorVertex]> = buffers
-        .indices
-        .iter()
-        .map(|&i| {
-            let v = &buffers.vertices[i as usize];
-            VectorVertex {
-                pos: [v.x, v.y],
-                color: [1.0, 1.0, 1.0, 1.0],
-                uv: [0.0, 0.0],
-            }
-        })
-        .collect();
-    let indices: Arc<[u32]> = (0..vertices.len() as u32).collect();
-    Some(VectorMeshData { vertices, indices })
+    mesh_from_buffers(buffers, generated_vertex_color(brush, alpha))
 }
 
 /// Stroked ellipse ring for styles `EllipseBorder` cannot express (same
@@ -749,6 +1075,8 @@ fn tessellate_ellipse_stroke(
     join: StrokeJoin,
     miter: f32,
     path_effect: Option<&PathEffect>,
+    brush: &Brush,
+    alpha: f32,
 ) -> Option<VectorMeshData> {
     let needs_mesh = !matches!(join, StrokeJoin::Miter) || miter != 4.0 || path_effect.is_some();
     if !needs_mesh {
@@ -773,7 +1101,6 @@ fn tessellate_ellipse_stroke(
         Angle::radians(0.0),
         lyon_path::Winding::Positive,
     );
-    builder.close();
     let mut path = builder.build();
     if let Some(effect) = path_effect {
         path = apply_canvas_path_effect(&path, effect);
@@ -796,23 +1123,7 @@ fn tessellate_ellipse_stroke(
         &mut simple_builder(&mut buffers),
     )
     .ok()?;
-    if buffers.indices.is_empty() {
-        return None;
-    }
-    let vertices: Arc<[VectorVertex]> = buffers
-        .indices
-        .iter()
-        .map(|&i| {
-            let v = &buffers.vertices[i as usize];
-            VectorVertex {
-                pos: [v.x, v.y],
-                color: [1.0, 1.0, 1.0, 1.0],
-                uv: [0.0, 0.0],
-            }
-        })
-        .collect();
-    let indices: Arc<[u32]> = (0..vertices.len() as u32).collect();
-    Some(VectorMeshData { vertices, indices })
+    mesh_from_buffers(buffers, generated_vertex_color(brush, alpha))
 }
 
 fn tessellate_arc_wedge(
@@ -820,6 +1131,8 @@ fn tessellate_arc_wedge(
     canvas_rect: Rect,
     start: f32,
     sweep: f32,
+    brush: &Brush,
+    alpha: f32,
 ) -> Option<VectorMeshData> {
     use lyon_path::math::Point;
     use lyon_tessellation::{
@@ -849,27 +1162,11 @@ fn tessellate_arc_wedge(
         &mut simple_builder(&mut buffers),
     )
     .ok()?;
-    if buffers.indices.is_empty() {
-        return None;
-    }
-    let vertices: Arc<[VectorVertex]> = buffers
-        .indices
-        .iter()
-        .map(|&i| {
-            let v = &buffers.vertices[i as usize];
-            VectorVertex {
-                pos: [v.x, v.y],
-                color: [1.0, 1.0, 1.0, 1.0],
-                uv: [0.0, 0.0],
-            }
-        })
-        .collect();
-    let indices: Arc<[u32]> = (0..vertices.len() as u32).collect();
-    Some(VectorMeshData { vertices, indices })
+    mesh_from_buffers(buffers, generated_vertex_color(brush, alpha))
 }
 
 pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) -> View {
-    let painter = move |scene: &mut Scene, rect: Rect, _alpha: f32| {
+    let painter = move |scene: &mut Scene, rect: Rect, alpha: f32| {
         let mut scope = DrawScope {
             commands: Vec::new(),
             size: Size {
@@ -885,7 +1182,6 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
             w: r.w,
             h: r.h,
         };
-
         for cmd in &scope.commands {
             match cmd {
                 DrawCommand::Rect {
@@ -894,12 +1190,15 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                     radius,
                     style,
                 } => {
-                    let r = to_global(*r);
+                    let local_r = *r;
+                    let raw_fill = *fill;
+                    let fill = alpha_brush(raw_fill, alpha);
+                    let r = to_global(local_r);
                     match style {
                         ShapeStyle::Fill => {
                             scene.nodes.push(SceneNode::Rect {
                                 rect: r,
-                                brush: *fill,
+                                brush: fill,
                                 radius: [*radius; 4],
                             });
                         }
@@ -911,7 +1210,7 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                             path_effect,
                         } => {
                             if let Some(mesh) = tessellate_rounded_rect_stroke(
-                                r,
+                                local_r,
                                 *radius,
                                 rect,
                                 *width,
@@ -919,18 +1218,26 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                                 *join,
                                 *miter,
                                 path_effect.as_ref(),
+                                &raw_fill,
+                                alpha,
                             ) {
                                 scene.nodes.push(SceneNode::VectorMesh {
                                     mesh: Arc::new(mesh),
                                     transform: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
-                                    paint: brush_to_paint(fill),
+                                    paint: brush_to_paint(
+                                        &fill,
+                                        Vec2 {
+                                            x: rect.x + local_r.x,
+                                            y: rect.y + local_r.y,
+                                        },
+                                    ),
                                     clip: None,
                                     blend: BlendMode::Alpha,
                                 });
                             } else {
                                 scene.nodes.push(SceneNode::Border {
                                     rect: r,
-                                    brush: *fill,
+                                    brush: fill,
                                     width: *width,
                                     radius: [*radius; 4],
                                 });
@@ -945,18 +1252,20 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                     fill,
                     style,
                 } => {
-                    let r = Rect {
+                    let local_r = Rect {
                         x: center.x - *rx,
                         y: center.y - *ry,
                         w: 2.0 * *rx,
                         h: 2.0 * *ry,
                     };
-                    let r = to_global(r);
+                    let raw_fill = *fill;
+                    let fill = alpha_brush(raw_fill, alpha);
+                    let r = to_global(local_r);
                     match style {
                         ShapeStyle::Fill => {
                             scene.nodes.push(SceneNode::Ellipse {
                                 rect: r,
-                                brush: *fill,
+                                brush: fill,
                             });
                         }
                         ShapeStyle::Stroke {
@@ -967,25 +1276,33 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                             path_effect,
                         } => {
                             if let Some(mesh) = tessellate_ellipse_stroke(
-                                r,
+                                local_r,
                                 rect,
                                 *width,
                                 *cap,
                                 *join,
                                 *miter,
                                 path_effect.as_ref(),
+                                &raw_fill,
+                                alpha,
                             ) {
                                 scene.nodes.push(SceneNode::VectorMesh {
                                     mesh: Arc::new(mesh),
                                     transform: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
-                                    paint: brush_to_paint(fill),
+                                    paint: brush_to_paint(
+                                        &fill,
+                                        Vec2 {
+                                            x: rect.x + local_r.x,
+                                            y: rect.y + local_r.y,
+                                        },
+                                    ),
                                     clip: None,
                                     blend: BlendMode::Alpha,
                                 });
                             } else {
                                 scene.nodes.push(SceneNode::EllipseBorder {
                                     rect: r,
-                                    brush: *fill,
+                                    brush: fill,
                                     width: *width,
                                 });
                             }
@@ -1004,6 +1321,8 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                     if points.len() < 2 {
                         continue;
                     }
+                    let raw_brush = *brush;
+                    let fill = alpha_brush(raw_brush, alpha);
                     let mesh = tessellate_polyline(
                         points,
                         rect,
@@ -1012,12 +1331,20 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                         *join,
                         *miter,
                         path_effect.as_ref(),
+                        &raw_brush,
+                        alpha,
                     );
                     let Some(mesh) = mesh else { continue };
                     scene.nodes.push(SceneNode::VectorMesh {
                         mesh: Arc::new(mesh),
                         transform: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
-                        paint: brush_to_paint(brush),
+                        paint: brush_to_paint(
+                            &fill,
+                            Vec2 {
+                                x: rect.x,
+                                y: rect.y,
+                            },
+                        ),
                         clip: None,
                         blend: BlendMode::Alpha,
                     });
@@ -1031,23 +1358,39 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                     width,
                     cap,
                 } => {
+                    let local_r = *r;
+                    let raw_brush = *brush;
+                    let fill = alpha_brush(raw_brush, alpha);
                     if *use_center {
-                        let mesh = tessellate_arc_wedge(*r, rect, *start_angle, *sweep_angle);
+                        let mesh = tessellate_arc_wedge(
+                            local_r,
+                            rect,
+                            *start_angle,
+                            *sweep_angle,
+                            &raw_brush,
+                            alpha,
+                        );
                         let Some(mesh) = mesh else { continue };
                         scene.nodes.push(SceneNode::VectorMesh {
                             mesh: Arc::new(mesh),
                             transform: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
-                            paint: brush_to_paint(brush),
+                            paint: brush_to_paint(
+                                &fill,
+                                Vec2 {
+                                    x: rect.x + local_r.x,
+                                    y: rect.y + local_r.y,
+                                },
+                            ),
                             clip: None,
                             blend: BlendMode::Alpha,
                         });
                     } else {
                         scene.nodes.push(SceneNode::Arc {
-                            rect: to_global(*r),
+                            rect: to_global(local_r),
                             start_angle: *start_angle,
                             sweep_angle: *sweep_angle,
                             stroke_width: *width,
-                            brush: *brush,
+                            brush: fill,
                             cap: *cap,
                         });
                     }
@@ -1067,7 +1410,7 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                             h: size.0,
                         },
                         text: Arc::<str>::from(text.clone()),
-                        color: *color,
+                        color: alpha_color(*color, alpha),
                         size: *size,
                         font_family: *font_family,
                         text_align: TextAlign::Unspecified,
@@ -1089,7 +1432,7 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                     blend,
                 } => {
                     scene.nodes.push(SceneNode::VectorMesh {
-                        mesh: mesh.clone(),
+                        mesh: mapped_mesh(mesh, 0.0, 0.0, alpha),
                         transform: [
                             transform[0],
                             transform[1],
@@ -1098,23 +1441,29 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                             transform[4] + rect.x,
                             transform[5] + rect.y,
                         ],
-                        paint: *paint,
+                        paint: alpha_paint(*paint, alpha),
                         clip: *clip,
                         blend: *blend,
                     });
                 }
                 DrawCommand::VectorOverlay { meshes } => {
-                    let translated: Vec<VectorMeshData> = meshes
-                        .iter()
-                        .map(|m| translate_mesh_data(m, rect.x, rect.y))
-                        .collect();
-                    scene.nodes.push(SceneNode::VectorOverlay {
-                        meshes: translated.into(),
-                    });
+                    let mapped: Arc<[VectorMeshData]> =
+                        if alpha == 1.0 && rect.x == 0.0 && rect.y == 0.0 {
+                            meshes.clone()
+                        } else {
+                            meshes
+                                .iter()
+                                .map(|m| map_mesh_data(m, rect.x, rect.y, alpha))
+                                .collect::<Vec<_>>()
+                                .into()
+                        };
+                    scene
+                        .nodes
+                        .push(SceneNode::VectorOverlay { meshes: mapped });
                 }
                 DrawCommand::PushVectorClip { mesh, op } => {
                     scene.nodes.push(SceneNode::PushVectorClip {
-                        mesh: Arc::new(translate_mesh_data(mesh, rect.x, rect.y)),
+                        mesh: mapped_mesh(mesh, rect.x, rect.y, alpha),
                         op: *op,
                     });
                 }
@@ -1123,10 +1472,19 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                 }
                 DrawCommand::PushTransform { transform } => {
                     let mut transform = *transform;
-
-                    // Canvas local -> window global.
-                    transform.translate_x += rect.x;
-                    transform.translate_y += rect.y;
+                    let origin = Vec2 {
+                        x: rect.x,
+                        y: rect.y,
+                    };
+                    let linear = transform.linear();
+                    transform.translate_x +=
+                        origin.x - (linear[0] * origin.x + linear[1] * origin.y);
+                    transform.translate_y +=
+                        origin.y - (linear[2] * origin.x + linear[3] * origin.y);
+                    transform.perspective[2] -=
+                        transform.perspective[0] * origin.x + transform.perspective[1] * origin.y;
+                    transform.origin_x = 0.0;
+                    transform.origin_y = 0.0;
 
                     scene.nodes.push(SceneNode::PushTransform { transform });
                 }
@@ -1147,7 +1505,7 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                             h: r.h,
                         },
                         handle: *handle,
-                        tint: *tint,
+                        tint: alpha_color(*tint, alpha),
                         fit: *fit,
                     });
                 }

@@ -5,57 +5,232 @@ use repose_core::{
     Brush, Color, Dp, Modifier, Px, Sp, TextOverflow, View, ViewKind,
     animation::{AnimationSpec, Easing},
     scroll::ScrollBinding,
+    text::{Shadow, SpanStyle, TextStyle},
 };
 use std::hash::{Hash, Hasher};
 
 fn hash_view_content_inner(view: &View, hasher: &mut impl Hasher) {
+    view.id.hash(hasher);
     hash_view_kind(&view.kind, hasher);
-
     hash_modifier(&view.modifier, hasher);
-
-    if let Some(sem) = &view.semantics {
+    view.scope_key.hash(hasher);
+    if let Some(semantics) = &view.semantics {
         1u8.hash(hasher);
-        std::mem::discriminant(&sem.role).hash(hasher);
-        sem.label.hash(hasher);
-        sem.focused.hash(hasher);
-        sem.enabled.hash(hasher);
-        sem.selectable_group.hash(hasher);
-        sem.checked.hash(hasher);
-        sem.selected.hash(hasher);
-        sem.value.hash(hasher);
+        std::mem::discriminant(&semantics.role).hash(hasher);
+        semantics.label.hash(hasher);
+        semantics.focused.hash(hasher);
+        semantics.enabled.hash(hasher);
+        semantics.selectable_group.hash(hasher);
+        semantics.checked.hash(hasher);
+        semantics.selected.hash(hasher);
+        semantics.value.hash(hasher);
     } else {
         0u8.hash(hasher);
     }
-
-    if let Some(key) = view.modifier.key {
-        key.hash(hasher);
+    match view.modifier.key {
+        Some(key) => {
+            1u8.hash(hasher);
+            key.hash(hasher);
+        }
+        None => 0u8.hash(hasher),
     }
 }
 
-/// Compute a content hash for a View's immediate properties.
-/// This does NOT include children - that's handled separately.
 pub fn hash_view_content(view: &View) -> u64 {
     let mut hasher = RapidHasher::default();
     hash_view_content_inner(view, &mut hasher);
     hasher.finish()
 }
 
-/// Compute a hash that includes the subtree structure.
-/// This combines the node's content hash with its children's subtree hashes.
 pub fn hash_subtree(content_hash: u64, children_hashes: &[u64]) -> u64 {
     let mut hasher = RapidHasher::default();
     content_hash.hash(&mut hasher);
     children_hashes.len().hash(&mut hasher);
-    for &h in children_hashes {
-        h.hash(&mut hasher);
+    for hash in children_hashes {
+        hash.hash(&mut hasher);
     }
     hasher.finish()
 }
 
-fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
-    // Discriminant
-    std::mem::discriminant(kind).hash(hasher);
+fn hash_opt_color(color: Option<&Color>, hasher: &mut impl Hasher) {
+    match color {
+        Some(color) => {
+            1u8.hash(hasher);
+            hash_color(color, hasher);
+        }
+        None => 0u8.hash(hasher),
+    }
+}
 
+fn hash_path_effect(path_effect: &Option<repose_core::PathEffect>, hasher: &mut impl Hasher) {
+    match path_effect {
+        Some(repose_core::PathEffect::Corner { radius }) => {
+            0u8.hash(hasher);
+            hash_f32(*radius, hasher);
+        }
+        Some(repose_core::PathEffect::Dash { intervals, phase }) => {
+            1u8.hash(hasher);
+            intervals.len().hash(hasher);
+            for interval in intervals {
+                hash_f32(*interval, hasher);
+            }
+            hash_f32(*phase, hasher);
+        }
+        None => 2u8.hash(hasher),
+    }
+}
+
+fn hash_draw_style(style: &repose_core::DrawStyle, hasher: &mut impl Hasher) {
+    match style {
+        repose_core::DrawStyle::Fill => 0u8.hash(hasher),
+        repose_core::DrawStyle::Stroke {
+            width,
+            cap,
+            join,
+            miter,
+            path_effect,
+        }
+        | repose_core::DrawStyle::FillAndStroke {
+            width,
+            cap,
+            join,
+            miter,
+            path_effect,
+        } => {
+            std::mem::discriminant(style).hash(hasher);
+            hash_f32(*width, hasher);
+            (*cap as u8).hash(hasher);
+            (*join as u8).hash(hasher);
+            hash_f32(*miter, hasher);
+            hash_path_effect(path_effect, hasher);
+        }
+    }
+}
+
+fn hash_text_decoration(decoration: &repose_core::TextDecoration, hasher: &mut impl Hasher) {
+    decoration.underline.hash(hasher);
+    decoration.strikethrough.hash(hasher);
+    hash_opt_color(decoration.color.as_ref(), hasher);
+}
+
+fn hash_shadow(shadow: &Shadow, hasher: &mut impl Hasher) {
+    hash_color(&shadow.color, hasher);
+    hash_dp(shadow.offset_x, hasher);
+    hash_dp(shadow.offset_y, hasher);
+    hash_dp(shadow.blur_radius, hasher);
+}
+
+fn hash_text_style(style: &TextStyle, hasher: &mut impl Hasher) {
+    hash_sp(style.font_size, hasher);
+    hash_opt_color(style.color.as_ref(), hasher);
+    style.font_weight.hash(hasher);
+    style.font_family.hash(hasher);
+    style.font_style.hash(hasher);
+    style.text_align.hash(hasher);
+    hash_sp(style.letter_spacing, hasher);
+    hash_sp(style.line_height, hasher);
+    hash_opt_color(style.background.as_ref(), hasher);
+    match &style.text_decoration {
+        Some(decoration) => {
+            1u8.hash(hasher);
+            hash_text_decoration(decoration, hasher);
+        }
+        None => 0u8.hash(hasher),
+    }
+    match &style.shadow {
+        Some(shadow) => {
+            1u8.hash(hasher);
+            hash_shadow(shadow, hasher);
+        }
+        None => 0u8.hash(hasher),
+    }
+    hash_discriminant_option(&style.text_direction, hasher);
+    std::mem::discriminant(&style.font_synthesis).hash(hasher);
+    hash_f32(style.baseline_shift.0, hasher);
+    std::mem::discriminant(&style.hyphens).hash(hasher);
+    std::mem::discriminant(&style.line_break).hash(hasher);
+    match &style.text_indent {
+        Some(indent) => {
+            1u8.hash(hasher);
+            hash_dp(indent.first_line, hasher);
+            hash_dp(indent.rest_lines, hasher);
+        }
+        None => 0u8.hash(hasher),
+    }
+    hash_draw_style(&style.draw_style, hasher);
+    hash_f32(style.alpha, hasher);
+    style.locale_list.hash(hasher);
+    style.font_feature_settings.hash(hasher);
+    style.font_variation_settings.hash(hasher);
+}
+
+fn hash_span_style(style: &SpanStyle, hasher: &mut impl Hasher) {
+    hash_opt_color(style.color.as_ref(), hasher);
+    match style.font_size {
+        Some(size) => {
+            1u8.hash(hasher);
+            hash_sp(size, hasher);
+        }
+        None => 0u8.hash(hasher),
+    }
+    style.font_weight.hash(hasher);
+    style.font_family.hash(hasher);
+    style.font_style.hash(hasher);
+    style.text_align.hash(hasher);
+    match style.letter_spacing {
+        Some(value) => {
+            1u8.hash(hasher);
+            hash_sp(value, hasher);
+        }
+        None => 0u8.hash(hasher),
+    }
+    match style.line_height {
+        Some(value) => {
+            1u8.hash(hasher);
+            hash_sp(value, hasher);
+        }
+        None => 0u8.hash(hasher),
+    }
+    hash_opt_color(style.background.as_ref(), hasher);
+    match &style.text_decoration {
+        Some(decoration) => {
+            1u8.hash(hasher);
+            hash_text_decoration(decoration, hasher);
+        }
+        None => 0u8.hash(hasher),
+    }
+    hash_discriminant_option(&style.text_direction, hasher);
+    hash_discriminant_option(&style.font_synthesis, hasher);
+    match style.baseline_shift {
+        Some(value) => {
+            1u8.hash(hasher);
+            hash_f32(value.0, hasher);
+        }
+        None => 0u8.hash(hasher),
+    }
+    hash_discriminant_option(&style.hyphens, hasher);
+    hash_discriminant_option(&style.line_break, hasher);
+    match &style.text_indent {
+        Some(indent) => {
+            1u8.hash(hasher);
+            hash_dp(indent.first_line, hasher);
+            hash_dp(indent.rest_lines, hasher);
+        }
+        None => 0u8.hash(hasher),
+    }
+    match &style.draw_style {
+        Some(style) => {
+            1u8.hash(hasher);
+            hash_draw_style(style, hasher);
+        }
+        None => 0u8.hash(hasher),
+    }
+    hash_f32(style.alpha, hasher);
+    style.font_variation_settings.hash(hasher);
+}
+
+fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
+    std::mem::discriminant(kind).hash(hasher);
     match kind {
         ViewKind::Text {
             text,
@@ -76,133 +251,40 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
             font_variation_settings,
             draw_style,
         } => {
-            font_family.hash(hasher);
             text.hash(hasher);
             hash_color(color, hasher);
             hash_sp(*font_size, hasher);
             soft_wrap.hash(hasher);
             max_lines.hash(hasher);
             hash_text_overflow(overflow, hasher);
+            font_family.hash(hasher);
             text_align.hash(hasher);
             font_weight.0.hash(hasher);
             font_style.hash(hasher);
-            text_decoration.underline.hash(hasher);
-            text_decoration.strikethrough.hash(hasher);
-            if let Some(c) = &text_decoration.color {
-                hash_color(c, hasher);
-            }
+            hash_text_decoration(text_decoration, hasher);
             hash_sp(*letter_spacing, hasher);
             hash_sp(*line_height, hasher);
             url.hash(hasher);
             font_variation_settings.hash(hasher);
-            match draw_style {
-                repose_core::DrawStyle::Fill => 0u8.hash(hasher),
-                repose_core::DrawStyle::Stroke { width, .. }
-                | repose_core::DrawStyle::FillAndStroke { width, .. } => {
+            hash_draw_style(draw_style, hasher);
+            match annotations {
+                Some(annotations) => {
                     1u8.hash(hasher);
-                    hash_f32(*width, hasher);
-                }
-            }
-            if let Some(annos) = annotations {
-                annos.len().hash(hasher);
-                for span in annos.iter() {
-                    span.start.hash(hasher);
-                    span.end.hash(hasher);
-                    if let Some(c) = &span.style.color {
-                        hash_color(c, hasher);
-                    }
-                    if let Some(fs) = span.style.font_size {
-                        hash_sp(fs, hasher);
-                    }
-                    if let Some(fw) = span.style.font_weight {
-                        fw.hash(hasher);
-                    }
-                    if let Some(fam) = &span.style.font_family {
-                        fam.hash(hasher);
-                    }
-                    if let Some(fs) = span.style.font_style {
-                        fs.hash(hasher);
-                    }
-                    if let Some(ls) = span.style.letter_spacing {
-                        hash_sp(ls, hasher);
-                    }
-                    if let Some(lh) = span.style.line_height {
-                        hash_sp(lh, hasher);
-                    }
-                    if let Some(bg) = &span.style.background {
-                        hash_color(bg, hasher);
-                    }
-                    if let Some(td) = &span.style.text_decoration {
-                        td.underline.hash(hasher);
-                        td.strikethrough.hash(hasher);
-                    }
-                    if let Some(bs) = &span.style.baseline_shift {
-                        hash_f32(bs.0, hasher);
-                    }
-                    if let Some(ds) = &span.style.draw_style {
-                        fn hash_stroke_params(
-                            hasher: &mut impl Hasher,
-                            tag: u8,
-                            width: &f32,
-                            cap: &repose_core::StrokeCap,
-                            join: &repose_core::StrokeJoin,
-                            miter: &f32,
-                            path_effect: &Option<repose_core::PathEffect>,
-                        ) {
-                            tag.hash(hasher);
-                            hash_f32(*width, hasher);
-                            (*cap as u8).hash(hasher);
-                            (*join as u8).hash(hasher);
-                            hash_f32(*miter, hasher);
-                            if let Some(pe) = path_effect {
-                                match pe {
-                                    repose_core::PathEffect::Corner { radius } => {
-                                        0u8.hash(hasher);
-                                        hash_f32(*radius, hasher);
-                                    }
-                                    repose_core::PathEffect::Dash { intervals, phase } => {
-                                        1u8.hash(hasher);
-                                        intervals.len().hash(hasher);
-                                        for v in intervals {
-                                            hash_f32(*v, hasher);
-                                        }
-                                        hash_f32(*phase, hasher);
-                                    }
-                                }
-                            } else {
-                                2u8.hash(hasher);
+                    annotations.len().hash(hasher);
+                    for span in annotations.iter() {
+                        span.start.hash(hasher);
+                        span.end.hash(hasher);
+                        hash_span_style(&span.style, hasher);
+                        match &span.url {
+                            Some(url) => {
+                                1u8.hash(hasher);
+                                url.hash(hasher);
                             }
-                        }
-                        match ds {
-                            repose_core::DrawStyle::Fill => 0u8.hash(hasher),
-                            repose_core::DrawStyle::Stroke {
-                                width,
-                                cap,
-                                join,
-                                miter,
-                                path_effect,
-                            } => {
-                                hash_stroke_params(hasher, 1, width, cap, join, miter, path_effect)
-                            }
-                            repose_core::DrawStyle::FillAndStroke {
-                                width,
-                                cap,
-                                join,
-                                miter,
-                                path_effect,
-                            } => {
-                                hash_stroke_params(hasher, 2, width, cap, join, miter, path_effect)
-                            }
+                            None => 0u8.hash(hasher),
                         }
                     }
-                    hash_f32(span.style.alpha, hasher);
-                    if let Some(fvs) = &span.style.font_variation_settings {
-                        fvs.hash(hasher);
-                    }
-                    if let Some(url) = &span.url {
-                        url.hash(hasher);
-                    }
                 }
+                None => 0u8.hash(hasher),
             }
         }
         ViewKind::Image { handle, tint, fit } => {
@@ -214,69 +296,144 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
         | ViewKind::Box
         | ViewKind::Row
         | ViewKind::Column
-        | ViewKind::ZStack => {
-            // These are just containers, discriminant is enough
+        | ViewKind::ZStack
+        | ViewKind::SubcomposeLayout { .. } => {}
+        _ => {}
+    }
+}
+
+fn hash_discriminant_option<T>(value: &Option<T>, hasher: &mut impl Hasher) {
+    match value {
+        Some(value) => {
+            1u8.hash(hasher);
+            std::mem::discriminant(value).hash(hasher);
         }
-        ViewKind::SubcomposeLayout { .. } => {
-            // Closure contents are not part of the hash; the content closure
-        }
-        _ => {
-            0x9E3779B97F4A7C15u64.hash(hasher);
-            format!("{kind:?}").hash(hasher);
-        }
+        None => 0u8.hash(hasher),
     }
 }
 
 fn hash_f32(v: f32, hasher: &mut impl Hasher) {
-    let mut bits = v.to_bits();
-    if bits == 0x8000_0000 {
-        bits = 0;
-    }
-    if v.is_nan() {
-        bits = 0x7FC0_0000;
-    }
-    bits.hash(hasher);
+    v.to_bits().hash(hasher);
 }
-fn hash_opt_f32(v: Option<f32>, hasher: &mut impl Hasher) {
-    match v {
-        Some(x) => {
+
+fn hash_rc_identity<T: ?Sized>(value: &Option<std::rc::Rc<T>>, hasher: &mut impl Hasher) {
+    match value {
+        Some(value) => {
             1u8.hash(hasher);
-            hash_f32(x, hasher);
+            (std::rc::Rc::as_ptr(value) as *const () as usize).hash(hasher);
         }
         None => 0u8.hash(hasher),
     }
 }
+
+fn hash_scroll_axis_binding(
+    binding: &repose_core::scroll::ScrollAxisBinding,
+    hasher: &mut impl Hasher,
+) {
+    binding.show_scrollbar.hash(hasher);
+    hash_rc_identity(&binding.on_scroll, hasher);
+    hash_rc_identity(&binding.set_viewport_main, hasher);
+    hash_rc_identity(&binding.set_content_main, hasher);
+    hash_rc_identity(&binding.get_offset_main, hasher);
+    hash_rc_identity(&binding.set_offset_main, hasher);
+    hash_rc_identity(&binding.tick, hasher);
+    hash_rc_identity(&binding.set_nested_scroll_parent, hasher);
+}
+
+fn hash_scroll_binding(binding: &ScrollBinding, hasher: &mut impl Hasher) {
+    match binding {
+        ScrollBinding::Vertical(binding) => {
+            1u8.hash(hasher);
+            hash_scroll_axis_binding(binding, hasher);
+        }
+        ScrollBinding::Horizontal(binding) => {
+            2u8.hash(hasher);
+            hash_scroll_axis_binding(binding, hasher);
+        }
+        ScrollBinding::Both(binding) => {
+            3u8.hash(hasher);
+            binding.show_scrollbar.hash(hasher);
+            hash_rc_identity(&binding.on_scroll, hasher);
+            hash_rc_identity(&binding.set_viewport_width, hasher);
+            hash_rc_identity(&binding.set_viewport_height, hasher);
+            hash_rc_identity(&binding.set_content_width, hasher);
+            hash_rc_identity(&binding.set_content_height, hasher);
+            hash_rc_identity(&binding.get_offset_xy, hasher);
+            hash_rc_identity(&binding.set_offset_xy, hasher);
+            hash_rc_identity(&binding.tick, hasher);
+            hash_rc_identity(&binding.set_nested_scroll_parent, hasher);
+        }
+    }
+}
+
+fn hash_cursor(cursor: &Option<repose_core::CursorIcon>, hasher: &mut impl Hasher) {
+    match cursor {
+        Some(repose_core::CursorIcon::Custom(image)) => {
+            10u8.hash(hasher);
+            (std::sync::Arc::as_ptr(image) as *const () as usize).hash(hasher);
+            image.size.hash(hasher);
+            image.hotspot.hash(hasher);
+            image.rgba.hash(hasher);
+        }
+        Some(cursor) => {
+            1u8.hash(hasher);
+            std::mem::discriminant(cursor).hash(hasher);
+        }
+        None => 0u8.hash(hasher),
+    }
+}
+
+fn hash_opt_f32(v: Option<f32>, hasher: &mut impl Hasher) {
+    match v {
+        Some(value) => {
+            1u8.hash(hasher);
+            hash_f32(value, hasher);
+        }
+        None => 0u8.hash(hasher),
+    }
+}
+
 fn hash_dp(v: Dp, hasher: &mut impl Hasher) {
     hash_f32(v.0, hasher);
 }
+
 fn hash_opt_dp(v: Option<Dp>, hasher: &mut impl Hasher) {
     match v {
-        Some(x) => {
+        Some(value) => {
             1u8.hash(hasher);
-            hash_dp(x, hasher);
+            hash_dp(value, hasher);
         }
         None => 0u8.hash(hasher),
     }
 }
+
 fn hash_sp(v: Sp, hasher: &mut impl Hasher) {
     hash_f32(v.0, hasher);
 }
+
 #[allow(dead_code)]
 fn hash_px(v: Px, hasher: &mut impl Hasher) {
     hash_f32(v.0, hasher);
 }
 
 fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
-    // Size
-    if let Some(s) = &m.size {
-        hash_dp(s.width, hasher);
-        hash_dp(s.height, hasher);
+    match m.size {
+        Some(size) => {
+            1u8.hash(hasher);
+            hash_dp(size.width, hasher);
+            hash_dp(size.height, hasher);
+        }
+        None => 0u8.hash(hasher),
     }
     hash_opt_dp(m.width, hasher);
     hash_opt_dp(m.height, hasher);
-    if let Some(s) = &m.required_size {
-        hash_dp(s.width, hasher);
-        hash_dp(s.height, hasher);
+    match m.required_size {
+        Some(size) => {
+            1u8.hash(hasher);
+            hash_dp(size.width, hasher);
+            hash_dp(size.height, hasher);
+        }
+        None => 0u8.hash(hasher),
     }
     hash_opt_dp(m.required_min_width, hasher);
     hash_opt_dp(m.required_max_width, hasher);
@@ -288,177 +445,157 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
     hash_opt_f32(m.fill_max_w, hasher);
     hash_opt_f32(m.fill_max_h, hasher);
     m.repaint_boundary.hash(hasher);
-
-    // Padding
     hash_opt_dp(m.padding, hasher);
-    if let Some(pv) = &m.padding_values {
-        hash_dp(pv.left, hasher);
-        hash_dp(pv.right, hasher);
-        hash_dp(pv.top, hasher);
-        hash_dp(pv.bottom, hasher);
+    match m.padding_values {
+        Some(padding) => {
+            1u8.hash(hasher);
+            hash_dp(padding.left, hasher);
+            hash_dp(padding.right, hasher);
+            hash_dp(padding.top, hasher);
+            hash_dp(padding.bottom, hasher);
+        }
+        None => 0u8.hash(hasher),
     }
-
-    // Min/max size
     hash_opt_dp(m.min_width, hasher);
     hash_opt_dp(m.min_height, hasher);
     hash_opt_dp(m.max_width, hasher);
     hash_opt_dp(m.max_height, hasher);
-
-    // Background
-    if let Some(bg) = &m.background {
-        hash_brush(bg, hasher);
-    }
-
-    // Border
-    if let Some(b) = &m.border {
-        hash_dp(b.width, hasher);
-        hash_brush(&b.brush, hasher);
-        for &r in &b.radius {
-            hash_dp(r, hasher);
+    match &m.background {
+        Some(background) => {
+            1u8.hash(hasher);
+            hash_brush(background, hasher);
         }
+        None => 0u8.hash(hasher),
     }
-
-    // Flex
+    match &m.border {
+        Some(border) => {
+            1u8.hash(hasher);
+            hash_dp(border.width, hasher);
+            hash_brush(&border.brush, hasher);
+            for &radius in &border.radius {
+                hash_dp(radius, hasher);
+            }
+        }
+        None => 0u8.hash(hasher),
+    }
     hash_opt_f32(m.flex_grow, hasher);
     hash_opt_f32(m.flex_shrink, hasher);
     hash_opt_dp(m.flex_basis, hasher);
-    m.flex_wrap.map(|v| std::mem::discriminant(&v)).hash(hasher);
+    m.flex_wrap
+        .map(|value| std::mem::discriminant(&value))
+        .hash(hasher);
     m.flex_basis_content.hash(hasher);
     m.flex_line_count.hash(hasher);
-    m.flex_dir.map(|v| std::mem::discriminant(&v)).hash(hasher);
+    m.flex_dir
+        .map(|value| std::mem::discriminant(&value))
+        .hash(hasher);
     m.align_self
-        .map(|v| (v.keyword as u8, v.safety as u8))
+        .map(|value| (value.keyword as u8, value.safety as u8))
         .hash(hasher);
     m.justify_content
-        .map(|v| (v.keyword as u8, v.safety as u8))
+        .map(|value| (value.keyword as u8, value.safety as u8))
         .hash(hasher);
     m.align_items_container
-        .map(|v| (v.keyword as u8, v.safety as u8))
+        .map(|value| (value.keyword as u8, value.safety as u8))
         .hash(hasher);
     m.align_content
-        .map(|v| (v.keyword as u8, v.safety as u8))
+        .map(|value| (value.keyword as u8, value.safety as u8))
         .hash(hasher);
     m.baseline_align.hash(hasher);
-
-    // Clip
-    if let Some(r) = &m.clip_rounded {
-        for &v in r {
-            hash_dp(v, hasher);
+    match m.clip_rounded {
+        Some(radius) => {
+            1u8.hash(hasher);
+            for value in radius {
+                hash_dp(value, hasher);
+            }
         }
+        None => 0u8.hash(hasher),
     }
-
-    // Transform
-    if let Some(t) = &m.transform {
-        hash_f32(t.translate_x, hasher);
-        hash_f32(t.translate_y, hasher);
-        hash_f32(t.scale_x, hasher);
-        hash_f32(t.scale_y, hasher);
-        hash_f32(t.rotate, hasher);
+    match m.transform {
+        Some(transform) => {
+            1u8.hash(hasher);
+            hash_f32(transform.translate_x, hasher);
+            hash_f32(transform.translate_y, hasher);
+            hash_f32(transform.scale_x, hasher);
+            hash_f32(transform.scale_y, hasher);
+            hash_f32(transform.rotate, hasher);
+            hash_f32(transform.shear_x, hasher);
+            hash_f32(transform.shear_y, hasher);
+            hash_f32(transform.origin_x, hasher);
+            hash_f32(transform.origin_y, hasher);
+            for value in transform.perspective {
+                hash_f32(value, hasher);
+            }
+        }
+        None => 0u8.hash(hasher),
     }
-
-    // Alpha
     hash_opt_f32(m.alpha, hasher);
-
-    // Position
     m.position_type
-        .map(|v| std::mem::discriminant(&v))
+        .map(|value| std::mem::discriminant(&value))
         .hash(hasher);
     hash_opt_dp(m.offset_left, hasher);
     hash_opt_dp(m.offset_right, hasher);
     hash_opt_dp(m.offset_top, hasher);
     hash_opt_dp(m.offset_bottom, hasher);
-
-    // Grid
-    if let Some(g) = &m.grid {
-        g.columns.hash(hasher);
-        hash_dp(g.row_gap, hasher);
-        hash_dp(g.column_gap, hasher);
+    match &m.grid {
+        Some(grid) => {
+            1u8.hash(hasher);
+            grid.columns.hash(hasher);
+            hash_dp(grid.row_gap, hasher);
+            hash_dp(grid.column_gap, hasher);
+        }
+        None => 0u8.hash(hasher),
     }
     m.grid_col_span.hash(hasher);
     m.grid_row_span.hash(hasher);
-
-    // Aspect ratio
     hash_opt_f32(m.aspect_ratio, hasher);
     m.intrinsic_width.hash(hasher);
     m.intrinsic_height.hash(hasher);
     hash_opt_dp(m.fit_content_width, hasher);
     hash_opt_dp(m.fit_content_height, hasher);
-    // Contain has no Hash impl upstream; map to a discriminant byte.
     match m.contain {
         None => 0u8.hash(hasher),
-        Some(c) if c == taffy::Contain::CONTENT => 3u8.hash(hasher),
-        Some(c) if c == taffy::Contain::LAYOUT => 1u8.hash(hasher),
-        Some(c) if c == taffy::Contain::PAINT => 2u8.hash(hasher),
+        Some(value) if value == taffy::Contain::CONTENT => 3u8.hash(hasher),
+        Some(value) if value == taffy::Contain::LAYOUT => 1u8.hash(hasher),
+        Some(value) if value == taffy::Contain::PAINT => 2u8.hash(hasher),
         Some(_) => 4u8.hash(hasher),
     }
-
-    // Z-index
     hash_f32(m.z_index, hasher);
     hash_opt_f32(m.render_z_index, hasher);
     m.input_blocker.hash(hasher);
-
-    fn hash_rc_ptr<T: ?Sized>(o: &Option<std::rc::Rc<T>>, hasher: &mut impl std::hash::Hasher) {
-        o.is_some().hash(hasher);
-    }
     m.click.hash(hasher);
     m.disabled.hash(hasher);
     m.focusable.hash(hasher);
     m.hit_passthrough.hash(hasher);
     m.propagate_min.hash(hasher);
     m.focus_group.hash(hasher);
-    (m.on_action.is_some()).hash(hasher);
-    hash_rc_ptr(&m.on_click, hasher);
-    hash_rc_ptr(&m.on_double_click, hasher);
-    hash_rc_ptr(&m.on_long_click, hasher);
-    hash_rc_ptr(&m.on_pointer_down, hasher);
-    hash_rc_ptr(&m.on_pointer_move, hasher);
-    hash_rc_ptr(&m.on_pointer_up, hasher);
-    hash_rc_ptr(&m.on_pointer_cancel, hasher);
-    hash_rc_ptr(&m.on_pointer_enter, hasher);
-    hash_rc_ptr(&m.on_pointer_leave, hasher);
-    hash_rc_ptr(&m.on_key_event, hasher);
-    hash_rc_ptr(&m.on_preview_key_event, hasher);
     match &m.blur {
-        Some(b) => {
-            true.hash(hasher);
-            hash_dp(b.radius_x, hasher);
-            hash_dp(b.radius_y, hasher);
-            std::mem::discriminant(&b.edge_treatment).hash(hasher);
-        }
-        None => false.hash(hasher),
-    }
-    hash_rc_ptr(&m.indication, hasher);
-    hash_rc_ptr(&m.drag_preview, hasher);
-
-    match &m.scroll {
-        None => 0u8.hash(hasher),
-        Some(ScrollBinding::Vertical(b)) => {
+        Some(blur) => {
             1u8.hash(hasher);
-            b.show_scrollbar.hash(hasher);
+            hash_dp(blur.radius_x, hasher);
+            hash_dp(blur.radius_y, hasher);
+            std::mem::discriminant(&blur.edge_treatment).hash(hasher);
         }
-        Some(ScrollBinding::Horizontal(b)) => {
-            2u8.hash(hasher);
-            b.show_scrollbar.hash(hasher);
-        }
-        Some(ScrollBinding::Both(b)) => {
-            3u8.hash(hasher);
-            b.show_scrollbar.hash(hasher);
-        }
+        None => 0u8.hash(hasher),
     }
-    m.nested_scroll_connection.is_some().hash(hasher);
-    m.on_scroll.is_some().hash(hasher);
-
-    // Overflow / clip_rect
-    m.overflow.map(|o| std::mem::discriminant(&o)).hash(hasher);
-    if let Some(cr) = &m.clip_rect {
-        ((cr.left.0 * 100.0) as i32).hash(hasher);
-        ((cr.top.0 * 100.0) as i32).hash(hasher);
-        ((cr.right.0 * 100.0) as i32).hash(hasher);
-        ((cr.bottom.0 * 100.0) as i32).hash(hasher);
-        std::mem::discriminant(&cr.op).hash(hasher);
+    match &m.scroll {
+        Some(binding) => hash_scroll_binding(binding, hasher),
+        None => 0u8.hash(hasher),
     }
-
-    // Gaps & margins
+    m.overflow
+        .map(|value| std::mem::discriminant(&value))
+        .hash(hasher);
+    match m.clip_rect {
+        Some(rect) => {
+            1u8.hash(hasher);
+            hash_dp(rect.left, hasher);
+            hash_dp(rect.top, hasher);
+            hash_dp(rect.right, hasher);
+            hash_dp(rect.bottom, hasher);
+            std::mem::discriminant(&rect.op).hash(hasher);
+        }
+        None => 0u8.hash(hasher),
+    }
     hash_opt_dp(m.gap, hasher);
     hash_opt_dp(m.row_gap, hasher);
     hash_opt_dp(m.column_gap, hasher);
@@ -466,173 +603,143 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
     hash_opt_dp(m.margin_left, hasher);
     hash_opt_dp(m.margin_right, hasher);
     hash_opt_dp(m.margin_bottom, hasher);
-
-    // Layers / custom paint / custom layout
     hash_opt_f32(m.graphics_layer, hasher);
-    m.painter.is_some().hash(hasher);
-    m.paint_callback.is_some().hash(hasher);
-    m.layout.is_some().hash(hasher);
-    if let Some(sh) = &m.shadow {
-        hash_dp(sh.blur_radius, hasher);
-        hash_dp(sh.offset_y, hasher);
-        hash_color(&sh.color, hasher);
-    }
-
-    // Side effects / a11y / cursor (callbacks stay presence-only)
-    (m.on_globally_positioned.is_some()).hash(hasher);
-    (m.on_size_changed.is_some()).hash(hasher);
-    if let Some(sem) = &m.semantics {
-        std::mem::discriminant(&sem.role).hash(hasher);
-        sem.label.hash(hasher);
-        sem.focused.hash(hasher);
-        sem.enabled.hash(hasher);
-        sem.selectable_group.hash(hasher);
-        sem.checked.hash(hasher);
-        sem.selected.hash(hasher);
-        sem.value.hash(hasher);
-    }
-    if let Some(c) = &m.cursor {
-        std::mem::discriminant(c).hash(hasher);
-    }
-
-    if let Some(ti) = &m.text_input {
-        true.hash(hasher);
-        ti.hint.hash(hasher);
-        ti.multiline.hash(hasher);
-        ti.value.hash(hasher);
-        ti.enabled.hash(hasher);
-        ti.read_only.hash(hasher);
-        ti.max_lines.hash(hasher);
-        ti.min_lines.hash(hasher);
-        std::mem::discriminant(&ti.keyboard_type).hash(hasher);
-        std::mem::discriminant(&ti.capitalization).hash(hasher);
-        std::mem::discriminant(&ti.ime_action).hash(hasher);
-        ti.auto_correct_enabled.hash(hasher);
-        hash_rc_ptr(&ti.on_change, hasher);
-        hash_rc_ptr(&ti.on_submit, hasher);
-        hash_rc_ptr(&ti.on_text_layout, hasher);
-        match &ti.focus_tracker {
-            Some(_) => true.hash(hasher),
-            None => false.hash(hasher),
+    match &m.shadow {
+        Some(shadow) => {
+            1u8.hash(hasher);
+            hash_dp(shadow.blur_radius, hasher);
+            hash_dp(shadow.offset_y, hasher);
+            hash_color(&shadow.color, hasher);
         }
-        match &ti.cursor_color {
-            Some(c) => {
-                true.hash(hasher);
-                hash_color(c, hasher);
-            }
-            None => false.hash(hasher),
+        None => 0u8.hash(hasher),
+    }
+    match &m.semantics {
+        Some(semantics) => {
+            1u8.hash(hasher);
+            std::mem::discriminant(&semantics.role).hash(hasher);
+            semantics.label.hash(hasher);
+            semantics.focused.hash(hasher);
+            semantics.enabled.hash(hasher);
+            semantics.selectable_group.hash(hasher);
+            semantics.checked.hash(hasher);
+            semantics.selected.hash(hasher);
+            semantics.value.hash(hasher);
         }
-        match &ti.text_style {
-            Some(ts) => {
-                true.hash(hasher);
-                ((ts.font_size.0 * 100.0) as i32).hash(hasher);
-                ts.font_weight.hash(hasher);
-                ts.font_family.hash(hasher);
-                ts.font_style.hash(hasher);
-                std::mem::discriminant(&ts.text_align).hash(hasher);
-                ((ts.letter_spacing.0 * 100.0) as i32).hash(hasher);
-                ((ts.line_height.0 * 100.0) as i32).hash(hasher);
-                match &ts.color {
-                    Some(c) => {
-                        true.hash(hasher);
-                        hash_color(c, hasher);
-                    }
-                    None => false.hash(hasher),
+        None => 0u8.hash(hasher),
+    }
+    hash_cursor(&m.cursor, hasher);
+    match &m.text_input {
+        Some(input) => {
+            1u8.hash(hasher);
+            input.hint.hash(hasher);
+            input.multiline.hash(hasher);
+            input.value.hash(hasher);
+            input.enabled.hash(hasher);
+            input.read_only.hash(hasher);
+            input.max_lines.hash(hasher);
+            input.min_lines.hash(hasher);
+            std::mem::discriminant(&input.keyboard_type).hash(hasher);
+            std::mem::discriminant(&input.capitalization).hash(hasher);
+            std::mem::discriminant(&input.ime_action).hash(hasher);
+            input.auto_correct_enabled.hash(hasher);
+            match input.cursor_color {
+                Some(color) => {
+                    1u8.hash(hasher);
+                    hash_color(&color, hasher);
                 }
-                match &ts.background {
-                    Some(c) => {
-                        true.hash(hasher);
-                        hash_color(c, hasher);
-                    }
-                    None => false.hash(hasher),
+                None => 0u8.hash(hasher),
+            }
+            match &input.text_style {
+                Some(style) => {
+                    1u8.hash(hasher);
+                    hash_text_style(style, hasher);
                 }
+                None => 0u8.hash(hasher),
             }
-            None => false.hash(hasher),
-        }
-        match &ti.keyboard_actions {
-            Some(ka) => {
-                true.hash(hasher);
-                hash_rc_ptr(&ka.on_done, hasher);
-                hash_rc_ptr(&ka.on_go, hasher);
-                hash_rc_ptr(&ka.on_next, hasher);
-                hash_rc_ptr(&ka.on_previous, hasher);
-                hash_rc_ptr(&ka.on_search, hasher);
-                hash_rc_ptr(&ka.on_send, hasher);
+            match &input.line_limits {
+                Some(repose_core::text::TextFieldLineLimits::SingleLine) => 1u8.hash(hasher),
+                Some(repose_core::text::TextFieldLineLimits::MultiLine {
+                    min_height_in_lines,
+                    max_height_in_lines,
+                }) => {
+                    2u8.hash(hasher);
+                    min_height_in_lines.hash(hasher);
+                    max_height_in_lines.hash(hasher);
+                }
+                None => 0u8.hash(hasher),
             }
-            None => false.hash(hasher),
         }
-        ti.interaction_source.is_some().hash(hasher);
-        match &ti.line_limits {
-            Some(repose_core::text::TextFieldLineLimits::SingleLine) => 1u8.hash(hasher),
-            Some(repose_core::text::TextFieldLineLimits::MultiLine {
-                min_height_in_lines,
-                max_height_in_lines,
-            }) => {
-                2u8.hash(hasher);
-                min_height_in_lines.hash(hasher);
-                max_height_in_lines.hash(hasher);
-            }
-            None => 0u8.hash(hasher),
+        None => 0u8.hash(hasher),
+    }
+    match &m.state_colors {
+        Some(colors) => {
+            1u8.hash(hasher);
+            hash_color(&colors.default, hasher);
+            hash_color(&colors.hovered, hasher);
+            hash_color(&colors.focused, hasher);
+            hash_color(&colors.pressed, hasher);
+            hash_color(&colors.disabled, hasher);
+            hash_color(&colors.dragged, hasher);
         }
-        match &ti.visual_transformation {
-            Some(_) => true.hash(hasher),
-            None => false.hash(hasher),
+        None => 0u8.hash(hasher),
+    }
+    match &m.state_elevation {
+        Some(elevation) => {
+            1u8.hash(hasher);
+            hash_dp(elevation.default, hasher);
+            hash_dp(elevation.hovered, hasher);
+            hash_dp(elevation.focused, hasher);
+            hash_dp(elevation.pressed, hasher);
+            hash_dp(elevation.disabled, hasher);
+            hash_dp(elevation.dragged, hasher);
         }
-    } else {
-        false.hash(hasher);
+        None => 0u8.hash(hasher),
     }
-
-    (m.on_drag_start.is_some()).hash(hasher);
-    (m.on_drag_end.is_some()).hash(hasher);
-    (m.on_drag_enter.is_some()).hash(hasher);
-    (m.on_drag_over.is_some()).hash(hasher);
-    (m.on_drag_leave.is_some()).hash(hasher);
-    (m.on_drop.is_some()).hash(hasher);
-
-    // State colors
-    if let Some(sc) = &m.state_colors {
-        hash_color(&sc.default, hasher);
-        hash_color(&sc.hovered, hasher);
-        hash_color(&sc.pressed, hasher);
-        hash_color(&sc.disabled, hasher);
+    match &m.animate_content_size {
+        Some(spec) => {
+            1u8.hash(hasher);
+            hash_animation_spec(spec, hasher);
+        }
+        None => 0u8.hash(hasher),
     }
-
-    if let Some(se) = &m.state_elevation {
-        hash_dp(se.default, hasher);
-        hash_dp(se.hovered, hasher);
-        hash_dp(se.pressed, hasher);
-        hash_dp(se.disabled, hasher);
-    }
-
-    if let Some(spec) = &m.animate_content_size {
-        hash_animation_spec(spec, hasher);
-    }
-
-    m.focus_requester.is_some().hash(hasher);
-    m.interaction_source.is_some().hash(hasher);
-
-    m.on_focus_changed.is_some().hash(hasher);
 }
 
 fn hash_animation_spec(spec: &AnimationSpec, hasher: &mut impl Hasher) {
-    spec.duration.as_millis().hash(hasher);
+    spec.duration.as_nanos().hash(hasher);
     hash_easing(&spec.easing, hasher);
-    spec.delay.as_millis().hash(hasher);
-    if let Some(spring) = &spec.spring {
-        hash_f32(spring.damping_ratio, hasher);
-        hash_f32(spring.stiffness, hasher);
+    spec.delay.as_nanos().hash(hasher);
+    match &spec.spring {
+        Some(spring) => {
+            1u8.hash(hasher);
+            hash_f32(spring.damping_ratio, hasher);
+            hash_f32(spring.stiffness, hasher);
+            hash_f32(spring.settle_progress, hasher);
+            hash_f32(spring.settle_velocity, hasher);
+        }
+        None => 0u8.hash(hasher),
     }
-    if let Some(repeat) = &spec.repeat {
-        repeat.iterations.hash(hasher);
-        repeat.reverse.hash(hasher);
-        repeat.delay_between.as_millis().hash(hasher);
+    match &spec.repeat {
+        Some(repeat) => {
+            1u8.hash(hasher);
+            repeat.iterations.hash(hasher);
+            repeat.reverse.hash(hasher);
+            repeat.delay_between.as_nanos().hash(hasher);
+        }
+        None => 0u8.hash(hasher),
     }
 }
 
 fn hash_easing(easing: &Easing, hasher: &mut impl Hasher) {
     std::mem::discriminant(easing).hash(hasher);
-    if let Easing::SpringCrit { omega } = easing {
-        hash_f32(*omega, hasher);
+    match easing {
+        Easing::SpringCrit { omega } => hash_f32(*omega, hasher),
+        Easing::Custom(cb) => {
+            hash_f32(cb.p1x, hasher);
+            hash_f32(cb.p1y, hasher);
+            hash_f32(cb.p2x, hasher);
+            hash_f32(cb.p2y, hasher);
+        }
+        _ => {}
     }
 }
 
@@ -682,7 +789,7 @@ fn hash_brush(b: &Brush, hasher: &mut impl Hasher) {
             hash_color(start_color, hasher);
             hash_color(end_color, hasher);
         }
-        _ => {} // Future Brush variants
+        _ => {}
     }
 }
 
@@ -825,6 +932,34 @@ mod tests {
                 draw_style: DrawStyle::Fill,
             },
         )
+    }
+
+    #[test]
+    fn view_id_and_span_baseline_change_hash() {
+        let first = View::new(1, ViewKind::Box);
+        let second = View::new(2, ViewKind::Box);
+        assert_ne!(hash_view_content(&first), hash_view_content(&second));
+
+        let mut a = text_view_with_url(None);
+        let mut b = a.clone();
+        let span = repose_core::TextSpan {
+            start: 0,
+            end: 4,
+            style: repose_core::SpanStyle::default()
+                .baseline_shift(repose_core::BaselineShift::Superscript),
+            url: None,
+        };
+        if let ViewKind::Text { annotations, .. } = &mut a.kind {
+            *annotations = Some(std::sync::Arc::from([span.clone()]));
+        }
+        if let ViewKind::Text { annotations, .. } = &mut b.kind {
+            *annotations = Some(std::sync::Arc::from([repose_core::TextSpan {
+                style: repose_core::SpanStyle::default()
+                    .baseline_shift(repose_core::BaselineShift::Subscript),
+                ..span
+            }]));
+        }
+        assert_ne!(hash_view_content(&a), hash_view_content(&b));
     }
 
     #[test]

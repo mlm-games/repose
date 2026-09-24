@@ -197,14 +197,14 @@ pub fn on_touch(
     dirty
 }
 
-/// Touch handler that also syncs IME for focused textfields (web/android).
-/// Returns whether a redraw is needed. Probably shared for desktop once winit unifies touch.
+/// Touch handler that also syncs IME for focused textfields on native runners.
+/// The web backend has no editor bridge, so its touch path only dispatches input.
 pub fn on_touch_with_ime(
     rt: &mut ReposeRuntime,
     touch_gestures: &mut TouchGestureState,
     t: &Touch,
     scale: f32,
-    window: &winit::window::Window,
+    _window: &winit::window::Window,
     dispatch: impl FnMut(Action) -> bool,
 ) -> bool {
     let pos_px = (t.location.x as f32, t.location.y as f32);
@@ -213,16 +213,23 @@ pub fn on_touch_with_ime(
         touch_gestures.contact_down(tid, pos_px);
         let focused = touch_gestures.touch_started(rt, tid, pos_px);
         sync_touch_points(rt, touch_gestures);
+        #[cfg(not(target_arch = "wasm32"))]
         if let Some(fid) = focused {
-            if rt.is_textfield(fid) {
+            let editable = rt
+                .frame_cache
+                .as_ref()
+                .is_some_and(|frame| crate::common::is_editable_textfield_hit(frame, fid));
+            if rt.sched.window_focused && editable {
                 let (purpose, ac, cap) = rt.focused_keyboard_hints();
-                crate::common::set_ime_for_textfield_ex(window, true, purpose, ac, cap);
+                crate::common::set_ime_for_textfield_ex(_window, true, purpose, ac, cap);
             } else {
-                crate::common::set_ime_for_textfield(window, false);
+                crate::common::set_ime_for_textfield(_window, false);
             }
         } else {
-            crate::common::set_ime_for_textfield(window, false);
+            crate::common::set_ime_for_textfield(_window, false);
         }
+        #[cfg(target_arch = "wasm32")]
+        let _ = focused;
         return true;
     }
     on_touch(rt, touch_gestures, t, scale, dispatch)
@@ -265,7 +272,11 @@ pub fn on_keyboard_input(
         inspector.hud.toggle_inspector();
         return true;
     }
-    let mapped = map_key(key_event.physical_key, &rt.modifiers);
+    let mapped = if crate::common::is_back_key(key_event) {
+        repose_core::input::Key::Escape
+    } else {
+        map_key(key_event.physical_key, &rt.modifiers)
+    };
     let ke = winit_key_to_repose(key_event, &mapped, &rt.modifiers);
     rt.handle_key_with_text(&ke, key_event.text.as_deref())
 }

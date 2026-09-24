@@ -65,27 +65,47 @@ impl Scope {
     }
 
     pub fn add_disposer(&self, disposer: impl FnOnce() + 'static) {
+        if self.inner.disposed.get() {
+            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(disposer));
+            if let Err(e) = res {
+                let msg = e
+                    .downcast_ref::<String>()
+                    .map(|s| s.as_str())
+                    .or_else(|| e.downcast_ref::<&str>().copied())
+                    .unwrap_or("unknown");
+                log::error!("Scope disposer after disposal panicked: {msg}");
+            }
+            return;
+        }
         self.inner.disposers.borrow_mut().push(Box::new(disposer));
     }
 
     /// Returns a cached value from this scope's memo cache, or creates it with
-    /// `init` and stores it. The value persists for the lifetime of this scope
-    /// (i.e., until the scope key is no longer composed or the root is replaced).
+    /// `init` and stores it. The value persists until this `Scope` is disposed.
     pub fn memo<T: 'static>(&self, key: &str, init: impl FnOnce() -> T) -> Rc<T> {
-        let mut cache = self.inner.memo_cache.borrow_mut();
-        if let Some(existing) = cache.get(key)
+        if let Some(existing) = self.inner.memo_cache.borrow().get(key)
             && let Some(v) = existing.downcast_ref::<Rc<T>>()
         {
             return v.clone();
         }
         let val: Rc<T> = Rc::new(init());
-        cache.insert(key.to_string(), Box::new(val.clone()));
+        if !self.inner.disposed.get() {
+            let old = {
+                let mut cache = self.inner.memo_cache.borrow_mut();
+                cache.insert(key.to_string(), Box::new(val.clone()))
+            };
+            drop(old);
+        }
         val
     }
 
     pub fn child(&self) -> Scope {
         let child = Scope::new();
-        self.inner.children.borrow_mut().push(child.clone());
+        if self.inner.disposed.get() {
+            child.inner.disposed.set(true);
+        } else {
+            self.inner.children.borrow_mut().push(child.clone());
+        }
         child
     }
 
@@ -95,7 +115,7 @@ impl Scope {
         }
         // Dispose children first
         let children = std::mem::take(&mut *self.inner.children.borrow_mut());
-        for child in children {
+        for child in children.into_iter().rev() {
             let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| child.dispose()));
             if let Err(e) = res {
                 let msg = e
@@ -108,7 +128,7 @@ impl Scope {
         }
 
         let disposers = std::mem::take(&mut *self.inner.disposers.borrow_mut());
-        for disposer in disposers {
+        for disposer in disposers.into_iter().rev() {
             let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(disposer));
             if let Err(e) = res {
                 let msg = e
@@ -119,6 +139,8 @@ impl Scope {
                 log::error!("Scope disposer panicked: {msg}");
             }
         }
+        let memo = std::mem::take(&mut *self.inner.memo_cache.borrow_mut());
+        drop(memo);
     }
 }
 
@@ -162,11 +184,15 @@ pub fn scoped_effect_once(f: impl FnOnce() -> Dispose + 'static) {
         loc.line(),
         loc.column()
     );
-    let installed = crate::remember_with_key(key, || std::cell::Cell::new(false));
-    if !installed.get() {
-        installed.set(true);
-        scoped_effect(f);
+    if current_scope().is_none() {
+        debug_assert!(
+            false,
+            "scoped_effect called without a current Scope; setup skipped so cleanup cannot leak"
+        );
+        log::error!("scoped_effect called without a current Scope; setup skipped");
+        return;
     }
+    crate::effects::effect_once_with_key(key, f);
 }
 
 /// Scoped effect that auto-cleans up.
@@ -196,7 +222,7 @@ impl Drop for ScopeInner {
             return; // already disposed via explicit dispose() call
         }
         let children = std::mem::take(&mut *self.children.borrow_mut());
-        for child in children {
+        for child in children.into_iter().rev() {
             let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(child)));
             if let Err(e) = res {
                 log::error!(
@@ -210,7 +236,7 @@ impl Drop for ScopeInner {
         }
 
         let disposers = std::mem::take(&mut *self.disposers.borrow_mut());
-        for disposer in disposers {
+        for disposer in disposers.into_iter().rev() {
             let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(disposer));
             if let Err(e) = res {
                 log::error!(
@@ -222,5 +248,7 @@ impl Drop for ScopeInner {
                 );
             }
         }
+        let memo = std::mem::take(&mut *self.memo_cache.borrow_mut());
+        drop(memo);
     }
 }

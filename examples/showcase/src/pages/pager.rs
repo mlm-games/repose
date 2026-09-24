@@ -21,9 +21,13 @@ fn pager_colors() -> [Color; PAGES] {
 
 fn dots(current: usize) -> View {
     let colors = pager_colors();
-    Row(Modifier::new()
-        .align_items(AlignItems::CENTER)
-        .padding(sp::SM))
+    FlowRow(
+        Modifier::new()
+            .fill_max_width()
+            .align_items(AlignItems::CENTER)
+            .padding(sp::SM),
+        FlowRowConfig::default(),
+    )
     .child(
         (0..PAGES)
             .map(|i| {
@@ -69,9 +73,13 @@ fn controls(state: Rc<PagerState>, current: usize) -> View {
         move || st.set_page(st.current_page().saturating_sub(1))
     };
     let next = move || state.set_page((state.current_page() + 1).min(PAGES - 1));
-    Row(Modifier::new()
-        .align_items(AlignItems::CENTER)
-        .padding(sp::SM))
+    FlowRow(
+        Modifier::new()
+            .fill_max_width()
+            .align_items(AlignItems::CENTER)
+            .padding(sp::SM),
+        FlowRowConfig::default(),
+    )
     .child((
         Button(Modifier::new(), prev, ButtonConfig::default(), || {
             Text("Prev")

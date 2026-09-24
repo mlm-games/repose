@@ -11,10 +11,12 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use repose_core::prelude::*;
-use repose_core::{Brush, CursorIcon, PointerEvent, Rect, Scene, SceneNode, View};
+use repose_core::{Brush, CursorIcon, FontStyle, PointerEvent, Rect, Scene, SceneNode, View};
 use web_time::{Duration, Instant};
 
-use crate::textfield::{caret_xy_for_byte, index_for_xy_bytes, word_range};
+use crate::textfield::{
+    TextFieldMetrics, caret_xy_for_byte_with_metrics, index_for_xy_bytes_with_metrics, word_range,
+};
 use crate::{Text, TextStyle};
 
 // Shared tap-timing with TextFieldState (textfield.rs): 300ms double-tap
@@ -32,13 +34,43 @@ pub trait SelectableTextExt {
 
 impl SelectableTextExt for View {
     fn selectable(self, on_selection_change: impl Fn(Option<(usize, usize)>) + 'static) -> View {
-        let (text, font_size_sp) = match &self.kind {
+        let (text, metrics) = match &self.kind {
             ViewKind::Text {
-                text, font_size, ..
-            } => (text.clone(), *font_size),
+                text,
+                font_size,
+                font_family,
+                font_weight,
+                font_style,
+                letter_spacing,
+                line_height,
+                font_variation_settings,
+                ..
+            } => {
+                let font_px = font_size.to_px().0;
+                let metrics = TextFieldMetrics {
+                    font_px,
+                    font_family: *font_family,
+                    font_weight: font_weight.0,
+                    font_style: if matches!(font_style, FontStyle::Italic) {
+                        1
+                    } else {
+                        0
+                    },
+                    letter_spacing_px: letter_spacing.to_px().0,
+                    font_variation_settings: font_variation_settings
+                        .as_ref()
+                        .map(|settings| settings.to_string()),
+                    line_height_px: if line_height.0 > 0.0 {
+                        line_height.to_px().0
+                    } else {
+                        font_px
+                    },
+                };
+                (text.clone(), metrics)
+            }
             _ => return self,
         };
-        make_selectable(self, text, font_size_sp, on_selection_change)
+        make_selectable(self, text, metrics, on_selection_change)
     }
 }
 
@@ -50,13 +82,19 @@ pub fn SelectableText(
 ) -> View {
     let text: String = text.into();
     let v = Text(text.clone()).size(font_size_sp);
-    make_selectable(v, text, font_size_sp, on_selection_change)
+    let font_px = font_size_sp.to_px().0;
+    let metrics = TextFieldMetrics {
+        font_px,
+        line_height_px: font_px,
+        ..TextFieldMetrics::default()
+    };
+    make_selectable(v, text, metrics, on_selection_change)
 }
 
 fn make_selectable(
     mut v: View,
     text: String,
-    font_size_sp: Sp,
+    metrics: TextFieldMetrics,
     on_selection_change: impl Fn(Option<(usize, usize)>) + 'static,
 ) -> View {
     let text_for_handlers = text.clone();
@@ -73,6 +111,7 @@ fn make_selectable(
     let tap_count: Rc<RefCell<u8>> = remember(|| RefCell::new(0));
 
     let callback = Rc::new(on_selection_change);
+    let metrics = Rc::new(metrics);
 
     let set_sel = {
         let selection = selection.clone();
@@ -93,16 +132,16 @@ fn make_selectable(
         let last_tap_pos = last_tap_pos.clone();
         let tap_count = tap_count.clone();
         let set_sel = set_sel.clone();
+        let metrics = metrics.clone();
         move |ev: PointerEvent| {
             let r = *last_rect.borrow();
             if r.w <= 0.0 || r.h <= 0.0 {
                 return;
             }
-            let font_px = font_size_sp.to_px().0;
             let lx = ev.position.x.max(0.0);
             let ly = ev.position.y.max(0.0);
             let wrap_w = r.w.max(1.0);
-            let byte = index_for_xy_bytes(&text, font_px, wrap_w, lx, ly);
+            let byte = index_for_xy_bytes_with_metrics(&text, wrap_w, lx, ly, &metrics);
 
             // Tap counting
             let now = Instant::now();
@@ -195,6 +234,7 @@ fn make_selectable(
         let dragging = dragging.clone();
         let last_rect = last_rect.clone();
         let set_sel = set_sel.clone();
+        let metrics = metrics.clone();
         move |ev: PointerEvent| {
             if !*dragging.borrow() {
                 return;
@@ -203,11 +243,10 @@ fn make_selectable(
             if r.w <= 0.0 || r.h <= 0.0 {
                 return;
             }
-            let font_px = font_size_sp.to_px().0;
             let lx = ev.position.x.max(0.0);
             let ly = ev.position.y.max(0.0);
             let wrap_w = r.w.max(1.0);
-            let byte = index_for_xy_bytes(&text, font_px, wrap_w, lx, ly);
+            let byte = index_for_xy_bytes_with_metrics(&text, wrap_w, lx, ly, &metrics);
             let a = *anchor.borrow();
             let sel = Some((a.min(byte), a.max(byte)));
             set_sel(sel);
@@ -238,10 +277,24 @@ fn make_selectable(
         }
     };
 
+    let on_cancel = {
+        let dragging = dragging.clone();
+        let tap_count = tap_count.clone();
+        let last_tap_time = last_tap_time.clone();
+        let last_tap_pos = last_tap_pos.clone();
+        move |_ev: PointerEvent| {
+            *dragging.borrow_mut() = false;
+            *tap_count.borrow_mut() = 0;
+            *last_tap_time.borrow_mut() = None;
+            *last_tap_pos.borrow_mut() = None;
+        }
+    };
+
     let painter = {
         let text = text_for_paint.clone();
         let selection = selection.clone();
         let last_rect = last_rect.clone();
+        let metrics = metrics.clone();
         move |scene: &mut Scene, rect: Rect, _alpha: f32| {
             *last_rect.borrow_mut() = rect;
 
@@ -259,13 +312,12 @@ fn make_selectable(
                 return;
             }
 
-            let font_px = font_size_sp.to_px().0;
             let wrap_w = rect.w.max(1.0);
-            let (sx, sy, sli) = caret_xy_for_byte(&text, font_px, wrap_w, s);
-            let (ex, ey, eli) = caret_xy_for_byte(&text, font_px, wrap_w, e);
+            let (sx, sy, sli) = caret_xy_for_byte_with_metrics(&text, wrap_w, s, &metrics);
+            let (ex, ey, eli) = caret_xy_for_byte_with_metrics(&text, wrap_w, e, &metrics);
             let th = theme();
             let brush = Brush::Solid(th.primary.with_alpha(96));
-            let line_h = font_px * 1.2;
+            let line_h = metrics.line_height_px.max(metrics.font_px);
 
             if sli == eli {
                 let x = sx.min(ex);
@@ -325,6 +377,7 @@ fn make_selectable(
         .on_pointer_down(on_down)
         .on_pointer_move(on_move)
         .on_pointer_up(on_up)
+        .on_pointer_cancel(on_cancel)
         .painter(painter)
         .cursor(CursorIcon::Text)
         .on_action({

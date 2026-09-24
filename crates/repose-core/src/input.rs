@@ -620,14 +620,18 @@ thread_local! {
 /// the thread default.
 #[inline]
 pub fn input_mode() -> InputMode {
-    crate::locals::local_input_mode().unwrap_or_else(|| INPUT_MODE.get())
+    crate::locals::local_input_mode().unwrap_or_else(default_input_mode)
 }
 
-/// Force the global default input mode (no frame request). Prefer
-/// [`request_input_mode`] from event handlers.
+pub(crate) fn default_input_mode() -> InputMode {
+    INPUT_MODE.get()
+}
+
+/// Force the global default input mode and request a frame.
 #[inline]
 pub fn set_input_mode_default(mode: InputMode) {
     INPUT_MODE.set(mode);
+    crate::request_frame();
 }
 
 /// Request a new input mode. Returns `true` if the mode changed.
