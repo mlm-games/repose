@@ -350,6 +350,23 @@ impl NotoFontDownloader {
     }
 }
 
+#[cfg(any(target_arch = "wasm32", test))]
+#[derive(Default)]
+struct FontDownloadProgress {
+    installed_urls: HashSet<String>,
+}
+
+#[cfg(any(target_arch = "wasm32", test))]
+impl FontDownloadProgress {
+    fn needs_fetch(&self, url: &str) -> bool {
+        !self.installed_urls.contains(url)
+    }
+
+    fn record_success(&mut self, url: String) {
+        self.installed_urls.insert(url);
+    }
+}
+
 fn is_cjk_font(font: &NotoFont) -> bool {
     is_noto_sans_sc(font)
         || is_noto_sans_tc(font)
@@ -497,6 +514,7 @@ pub mod wasm_fallback {
         queued: Vec<HashSet<u32>>,
         is_running: bool,
         error_count: u32,
+        progress: FontDownloadProgress,
     }
 
     impl WebFallbackFontDownloader {
@@ -506,6 +524,7 @@ pub mod wasm_fallback {
                 queued: Vec::new(),
                 is_running: false,
                 error_count: 0,
+                progress: FontDownloadProgress::default(),
             }
         }
 
@@ -630,7 +649,7 @@ pub mod wasm_fallback {
                 continue;
             }
 
-            let mut successes: Vec<Vec<u8>> = Vec::new();
+            let mut any_success = false;
             let mut failed = false;
             let mut seen_urls: HashSet<String> = HashSet::new();
             for font in &fonts_to_download {
@@ -638,22 +657,28 @@ pub mod wasm_fallback {
                 if !seen_urls.insert(url.clone()) {
                     continue;
                 }
+                let needs_fetch = global.borrow().progress.needs_fetch(&url);
+                if !needs_fetch {
+                    continue;
+                }
                 match fetch_bytes(&url).await {
-                    Ok(bytes) => successes.push(bytes),
+                    Ok(bytes) => {
+                        if crate::register_font_data_if_usable(&bytes) {
+                            global.borrow_mut().progress.record_success(url);
+                            any_success = true;
+                        } else {
+                            failed = true;
+                        }
+                    }
                     Err(_) => failed = true,
                 }
             }
 
-            let mut any_success = false;
-            for bytes in successes {
-                if crate::register_font_data_if_usable(&bytes) {
-                    any_success = true;
-                } else {
-                    failed = true;
-                }
+            if any_success {
+                crate::unresolved::web_unresolved_registry().on_new_font_installed();
             }
 
-            if failed || !any_success {
+            if failed {
                 let backoff = {
                     let mut state = global.borrow_mut();
                     let pause = state.error_count.saturating_mul(5).min(60);
@@ -668,7 +693,6 @@ pub mod wasm_fallback {
             }
 
             global.borrow_mut().error_count = 0;
-            crate::unresolved::web_unresolved_registry().on_new_font_installed();
         }
     }
 
@@ -899,5 +923,15 @@ mod tests {
             "got {:?}",
             fonts.iter().map(|f| f.name).collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn successful_font_is_not_fetched_again() {
+        let mut progress = FontDownloadProgress::default();
+        assert!(progress.needs_fetch("successful"));
+        assert!(progress.needs_fetch("failed"));
+        progress.record_success("successful".into());
+        assert!(!progress.needs_fetch("successful"));
+        assert!(progress.needs_fetch("failed"));
     }
 }

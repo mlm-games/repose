@@ -241,7 +241,7 @@ fn dialog_preview_key(
             | repose_core::shortcuts::Action::FocusUp
             | repose_core::shortcuts::Action::FocusDown,
         ) => false,
-        Some(_) => true,
+        Some(_) => false,
         None => false,
     }
 }
@@ -884,4 +884,73 @@ pub fn TimePickerDialog(
         },
         content,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use repose_core::shortcuts::{
+        Action, ShortcutMap, ShortcutState, install_shortcut_map_with_key, with_runtime_state,
+    };
+
+    fn key_event(key: Key, modifiers: Modifiers) -> KeyEvent {
+        KeyEvent {
+            key,
+            modifiers,
+            is_repeat: false,
+            event_type: KeyEventType::Down,
+            utf16_code_point: 0,
+            physical: None,
+        }
+    }
+
+    #[test]
+    fn preview_key_lets_global_shortcuts_through() {
+        let state = Rc::new(DialogState::new());
+        let props = Rc::new(RefCell::new(DialogProperties::default()));
+        let shortcuts = ShortcutState::new();
+        let command = Modifiers {
+            command: true,
+            ctrl: !cfg!(target_os = "macos"),
+            ..Modifiers::default()
+        };
+
+        with_runtime_state(&shortcuts, || {
+            assert!(!dialog_preview_key(
+                state.clone(),
+                props.clone(),
+                key_event(Key::Character('s'), command),
+            ));
+            assert!(!dialog_preview_key(
+                state.clone(),
+                props.clone(),
+                key_event(Key::Character('f'), command),
+            ));
+            assert!(!dialog_preview_key(
+                state.clone(),
+                props.clone(),
+                key_event(Key::Character('c'), command),
+            ));
+
+            let mut custom = ShortcutMap::new();
+            custom.insert(
+                Key::Character('x'),
+                Modifiers::default(),
+                Action::Custom("dialog-test".into()),
+            );
+            let disposer = install_shortcut_map_with_key("dialog-test", custom);
+            assert!(!dialog_preview_key(
+                state.clone(),
+                props.clone(),
+                key_event(Key::Character('x'), Modifiers::default()),
+            ));
+            disposer.run();
+        });
+
+        assert!(dialog_preview_key(
+            state,
+            props,
+            key_event(Key::Escape, Modifiers::default()),
+        ));
+    }
 }

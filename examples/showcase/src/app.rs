@@ -243,7 +243,7 @@ fn install_save_shortcut(
 ) {
     let mut map = shortcuts::ShortcutMap::new();
     let mods = Modifiers {
-        command: cfg!(target_os = "macos"),
+        command: true,
         ctrl: !cfg!(target_os = "macos"),
         ..Modifiers::default()
     };

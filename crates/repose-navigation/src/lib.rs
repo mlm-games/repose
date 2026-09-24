@@ -670,6 +670,7 @@ pub mod back {
 
     #[derive(Default)]
     struct Registry {
+        base: Option<Handler>,
         current: Option<Handler>,
         installed: Vec<Installed>,
     }
@@ -679,7 +680,11 @@ pub mod back {
     }
 
     pub fn set(handler: Option<Handler>) {
-        let _ = REGISTRY.try_with(|registry| registry.borrow_mut().current = handler);
+        let _ = REGISTRY.try_with(|registry| {
+            let mut registry = registry.borrow_mut();
+            registry.base = handler;
+            sync_current(&mut registry);
+        });
     }
 
     pub(crate) fn current() -> Option<Handler> {
@@ -690,6 +695,14 @@ pub mod back {
 
     fn same_handler(a: &Handler, b: &Handler) -> bool {
         Rc::ptr_eq(a, b)
+    }
+
+    fn sync_current(registry: &mut Registry) {
+        registry.current = registry
+            .installed
+            .last()
+            .map(|entry| entry.handler.clone())
+            .or_else(|| registry.base.clone());
     }
 
     pub(crate) fn install(handler: Handler, owner: String) -> Option<Handler> {
@@ -720,13 +733,7 @@ pub mod back {
                 return;
             };
             registry.installed.remove(index);
-            if registry
-                .current
-                .as_ref()
-                .is_some_and(|item| same_handler(item, handler))
-            {
-                registry.current = registry.installed.last().map(|entry| entry.handler.clone());
-            }
+            sync_current(&mut registry);
         });
     }
 
@@ -868,6 +875,14 @@ mod nav_state_tests {
     #[test]
     fn back_handler_restores_after_out_of_order_cleanup() {
         back::reset_for_test();
+        let base_called = Rc::new(std::cell::Cell::new(false));
+        let base: Rc<dyn Fn() -> bool> = {
+            let base_called = base_called.clone();
+            Rc::new(move || {
+                base_called.set(true);
+                false
+            })
+        };
         let first: Rc<dyn Fn() -> bool> = Rc::new(|| false);
         let second: Rc<dyn Fn() -> bool> = Rc::new(|| false);
         let third_called = Rc::new(std::cell::Cell::new(false));
@@ -878,16 +893,24 @@ mod nav_state_tests {
                 true
             })
         };
+        back::set(Some(base));
+        assert!(!back::handle());
+        assert!(base_called.get());
         back::install(first.clone(), "first".into());
         back::install(second.clone(), "second".into());
         back::install(third.clone(), "third".into());
         back::restore(&second);
         assert!(back::handle());
         assert!(third_called.get());
+        third_called.set(false);
+        base_called.set(false);
+        back::restore(&first);
+        assert!(back::handle());
+        assert!(third_called.get());
+        assert!(!base_called.get());
         back::restore(&third);
         assert!(!back::handle());
-        back::restore(&first);
-        assert!(!back::handle());
+        assert!(base_called.get());
         back::reset_for_test();
     }
 
