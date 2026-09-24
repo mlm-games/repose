@@ -317,13 +317,7 @@ fn hash_f32(v: f32, hasher: &mut impl Hasher) {
 }
 
 fn hash_rc_identity<T: ?Sized>(value: &Option<std::rc::Rc<T>>, hasher: &mut impl Hasher) {
-    match value {
-        Some(value) => {
-            1u8.hash(hasher);
-            (std::rc::Rc::as_ptr(value) as *const () as usize).hash(hasher);
-        }
-        None => 0u8.hash(hasher),
-    }
+    value.is_some().hash(hasher);
 }
 
 fn hash_scroll_axis_binding(
@@ -370,7 +364,6 @@ fn hash_cursor(cursor: &Option<repose_core::CursorIcon>, hasher: &mut impl Hashe
     match cursor {
         Some(repose_core::CursorIcon::Custom(image)) => {
             10u8.hash(hasher);
-            (std::sync::Arc::as_ptr(image) as *const () as usize).hash(hasher);
             image.size.hash(hasher);
             image.hotspot.hash(hasher);
             image.rgba.hash(hasher);

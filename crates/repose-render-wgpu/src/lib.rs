@@ -1,5 +1,7 @@
+use std::any::TypeId;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
 use std::num::NonZeroU64;
 #[cfg(feature = "winit-surface")]
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -459,8 +461,15 @@ enum PassTarget {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct CallbackIdentity {
+    type_id: TypeId,
+    value: u64,
+    reusable: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct CallbackScopeKey {
-    callback: usize,
+    callback: CallbackIdentity,
     target: PassTarget,
     width: u32,
     height: u32,
@@ -475,13 +484,34 @@ struct CallbackScopeUse {
     frame: u64,
 }
 
+fn callback_identity(callback: &Callback, fallback: usize) -> CallbackIdentity {
+    callback
+        .0
+        .resource_key()
+        .map(|key| {
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            key.hash(&mut hasher);
+            CallbackIdentity {
+                type_id: callback.0.resource_type_id(),
+                value: hasher.finish(),
+                reusable: true,
+            }
+        })
+        .unwrap_or(CallbackIdentity {
+            type_id: TypeId::of::<Callback>(),
+            value: fallback as u64,
+            reusable: false,
+        })
+}
+
 fn callback_scope_key(
-    payload: &repose_core::PaintCallbackPayload,
+    callback: &Callback,
+    fallback: usize,
     target: PassTarget,
     descriptor: &ScreenDescriptor,
 ) -> CallbackScopeKey {
     CallbackScopeKey {
-        callback: Arc::as_ptr(payload) as *const () as usize,
+        callback: callback_identity(callback, fallback),
         target,
         width: descriptor.size_in_pixels[0],
         height: descriptor.size_in_pixels[1],
@@ -6895,7 +6925,7 @@ impl WgpuSceneRenderer {
                     .callback_scope_payloads
                     .get(scope)
                     .is_none_or(|weak| weak.upgrade().is_none());
-                (!payload_dead).then_some((*scope, usage.tick))
+                (payload_dead && !scope.callback.reusable).then_some((*scope, usage.tick))
             })
             .collect();
         dead.sort_by_key(|(_, tick)| *tick);
@@ -8861,6 +8891,7 @@ impl WgpuSceneRenderer {
                     },
                     sample_count: self.active_surface_msaa_samples(),
                 };
+                let default_descriptors = [(PassTarget::Surface, default_descriptor)];
                 let mut prepare_encoder =
                     self.device
                         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -8873,25 +8904,15 @@ impl WgpuSceneRenderer {
                         });
                 let mut active_callback_scopes = HashSet::new();
                 for (key, cb) in &prepare_list {
-                    let descriptors = callback_targets
-                        .get(&key)
-                        .cloned()
-                        .unwrap_or_else(|| vec![(PassTarget::Surface, default_descriptor)]);
-                    for (target, screen_desc) in descriptors {
-                        let scope = CallbackScopeKey {
-                            callback: *key,
-                            target,
-                            width: screen_desc.size_in_pixels[0],
-                            height: screen_desc.size_in_pixels[1],
-                            target_format: screen_desc.target_format,
-                            sample_count: screen_desc.sample_count,
-                            pixels_per_point_bits: screen_desc.pixels_per_point.to_bits(),
-                        };
+                    let descriptors = callback_targets.get(key).unwrap_or(&default_descriptors);
+                    for &(target, screen_desc) in descriptors {
+                        let scope = callback_scope_key(cb, *key, target, &screen_desc);
                         active_callback_scopes.insert(scope);
-                        if self
-                            .callback_scope_payloads
-                            .get(&scope)
-                            .is_some_and(|payload| payload.upgrade().is_none())
+                        if !scope.callback.reusable
+                            && self
+                                .callback_scope_payloads
+                                .get(&scope)
+                                .is_some_and(|payload| payload.upgrade().is_none())
                         {
                             self.remove_callback_scope(&scope);
                         }
@@ -8902,20 +8923,9 @@ impl WgpuSceneRenderer {
                 let mut prepare_buffers = Vec::new();
                 let mut finish_buffers = Vec::new();
                 for (key, cb) in &prepare_list {
-                    let descriptors = callback_targets
-                        .get(&key)
-                        .cloned()
-                        .unwrap_or_else(|| vec![(PassTarget::Surface, default_descriptor)]);
-                    for (target, screen_desc) in descriptors {
-                        let scope = CallbackScopeKey {
-                            callback: *key,
-                            target,
-                            width: screen_desc.size_in_pixels[0],
-                            height: screen_desc.size_in_pixels[1],
-                            target_format: screen_desc.target_format,
-                            sample_count: screen_desc.sample_count,
-                            pixels_per_point_bits: screen_desc.pixels_per_point.to_bits(),
-                        };
+                    let descriptors = callback_targets.get(key).unwrap_or(&default_descriptors);
+                    for &(target, screen_desc) in descriptors {
+                        let scope = callback_scope_key(cb, *key, target, &screen_desc);
                         self.touch_callback_scope(scope);
                         if !self.callback_scoped_resources.contains_key(&scope)
                             && self.callback_scoped_resources.len() >= MAX_CALLBACK_SCOPES
@@ -8933,20 +8943,9 @@ impl WgpuSceneRenderer {
                     }
                 }
                 for (key, cb) in &prepare_list {
-                    let descriptors = callback_targets
-                        .get(&key)
-                        .cloned()
-                        .unwrap_or_else(|| vec![(PassTarget::Surface, default_descriptor)]);
-                    for (target, screen_desc) in descriptors {
-                        let scope = CallbackScopeKey {
-                            callback: *key,
-                            target,
-                            width: screen_desc.size_in_pixels[0],
-                            height: screen_desc.size_in_pixels[1],
-                            target_format: screen_desc.target_format,
-                            sample_count: screen_desc.sample_count,
-                            pixels_per_point_bits: screen_desc.pixels_per_point.to_bits(),
-                        };
+                    let descriptors = callback_targets.get(key).unwrap_or(&default_descriptors);
+                    for &(target, screen_desc) in descriptors {
+                        let scope = callback_scope_key(cb, *key, target, &screen_desc);
                         self.touch_callback_scope(scope);
                         if let Some(resources) = self.callback_scoped_resources.get_mut(&scope) {
                             finish_buffers.extend(cb.0.finish_prepare(
@@ -9710,9 +9709,8 @@ impl WgpuSceneRenderer {
                                         self.active_surface_msaa_samples()
                                     },
                                 };
-                                let mut scope =
-                                    callback_scope_key(&payload, pass.target, &descriptor);
-                                scope.callback = callback_id;
+                                let scope =
+                                    callback_scope_key(cb, callback_id, pass.target, &descriptor);
                                 let resources = self
                                     .callback_scoped_resources
                                     .get(&scope)

@@ -246,6 +246,14 @@ impl<'pass, 'encoder> DerefMut for CallbackRenderPass<'pass, 'encoder> {
 
 /// Trait for custom wgpu rendering inside a `repose` layout rect.
 pub trait WgpuCallback: Send + Sync + 'static {
+    fn resource_key(&self) -> Option<&str> {
+        None
+    }
+
+    fn resource_type_id(&self) -> TypeId {
+        TypeId::of::<Self>()
+    }
+
     /// Called before the main `repose` render pass, with access to `device`/`queue`/`encoder`
     /// for buffer uploads. Can return extra command buffers to be submitted.
     fn prepare(

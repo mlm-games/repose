@@ -1145,6 +1145,7 @@ impl ViewTree {
             .filter(|(_, node)| node.generation != current_gen)
             .map(|(id, _)| id)
             .collect();
+        let removed_any = !to_remove.is_empty();
 
         for id in to_remove {
             if let Some(node) = self.nodes.remove(id) {
@@ -1159,12 +1160,14 @@ impl ViewTree {
                 self.removed_ids.push(id);
             }
         }
-        self.subcompose_runs
-            .retain(|id, _| self.nodes.contains_key(*id));
-        self.subcompose_cache
-            .retain(|id, _| self.nodes.contains_key(*id));
-        self.dirty.retain(|id| self.nodes.contains_key(*id));
-        self.rebuild_view_id_map();
+        if removed_any {
+            self.subcompose_runs
+                .retain(|id, _| self.nodes.contains_key(*id));
+            self.subcompose_cache
+                .retain(|id, _| self.nodes.contains_key(*id));
+            self.dirty.retain(|id| self.nodes.contains_key(*id));
+            self.rebuild_view_id_map();
+        }
     }
 
     /// Set cached layout for a node.
