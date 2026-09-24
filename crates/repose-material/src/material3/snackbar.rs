@@ -251,9 +251,16 @@ pub fn show_simple_snackbar(
 ) {
     let message = message.into();
     let view_message = message.clone();
-    let action = action_label.map(|label| SnackbarAction {
-        label,
-        on_click: on_action.unwrap_or_else(|| Rc::new(|| {})),
+    let action = action_label.map(|label| {
+        let on_click = on_action.unwrap_or_else(|| Rc::new(|| {}));
+        let controller = controller.clone();
+        SnackbarAction {
+            label,
+            on_click: Rc::new(move || {
+                on_click();
+                controller.dismiss();
+            }),
+        }
     });
     let view_action = action.clone();
     let animation_id = unique_component_id();
