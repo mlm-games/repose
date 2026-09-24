@@ -181,30 +181,18 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
                                 join,
                                 miter,
                                 path_effect,
-                            } => hash_stroke_params(
-                                hasher,
-                                1,
-                                width,
-                                cap,
-                                join,
-                                miter,
-                                path_effect,
-                            ),
+                            } => {
+                                hash_stroke_params(hasher, 1, width, cap, join, miter, path_effect)
+                            }
                             repose_core::DrawStyle::FillAndStroke {
                                 width,
                                 cap,
                                 join,
                                 miter,
                                 path_effect,
-                            } => hash_stroke_params(
-                                hasher,
-                                2,
-                                width,
-                                cap,
-                                join,
-                                miter,
-                                path_effect,
-                            ),
+                            } => {
+                                hash_stroke_params(hasher, 2, width, cap, join, miter, path_effect)
+                            }
                         }
                     }
                     hash_f32(span.style.alpha, hasher);

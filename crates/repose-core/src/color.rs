@@ -342,7 +342,11 @@ pub enum Brush {
 
     /// Angular sweep gradient rotating clockwise around `center` from 3 o'clock.
     /// `center` is shape-local px from the shape's top-left.
-    Sweep { center: Vec2, start_color: Color, end_color: Color },
+    Sweep {
+        center: Vec2,
+        start_color: Color,
+        end_color: Color,
+    },
 }
 
 /// Out-of-bounds behavior for gradient brushes, mirroring Compose `TileMode`.

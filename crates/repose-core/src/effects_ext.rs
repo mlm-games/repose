@@ -17,15 +17,12 @@ pub fn disposable_effect<K: PartialEq + Clone + 'static>(
     effect: impl FnOnce() -> Dispose + 'static,
 ) {
     let callsite = effect_key!("de");
-    let last_key = crate::remember_with_key(format!("{callsite}:last"), || {
-        RefCell::new(None::<K>)
-    });
+    let last_key = crate::remember_with_key(format!("{callsite}:last"), || RefCell::new(None::<K>));
     let cleanup_slot = crate::remember_with_key(format!("{callsite}:cleanup"), || {
         RefCell::new(None::<Dispose>)
     });
-    let installed = crate::remember_with_key(format!("{callsite}:installed"), || {
-        RefCell::new(false)
-    });
+    let installed =
+        crate::remember_with_key(format!("{callsite}:installed"), || RefCell::new(false));
 
     if !*installed.borrow() {
         *installed.borrow_mut() = true;
@@ -73,15 +70,12 @@ fn disposable_effect_with_callsite<K: PartialEq + Clone + 'static>(
     key: K,
     effect: impl FnOnce() -> Dispose + 'static,
 ) {
-    let last_key = crate::remember_with_key(format!("{callsite}:last"), || {
-        RefCell::new(None::<K>)
-    });
+    let last_key = crate::remember_with_key(format!("{callsite}:last"), || RefCell::new(None::<K>));
     let cleanup_slot = crate::remember_with_key(format!("{callsite}:cleanup"), || {
         RefCell::new(None::<Dispose>)
     });
-    let installed = crate::remember_with_key(format!("{callsite}:installed"), || {
-        RefCell::new(false)
-    });
+    let installed =
+        crate::remember_with_key(format!("{callsite}:installed"), || RefCell::new(false));
 
     if !*installed.borrow() {
         *installed.borrow_mut() = true;

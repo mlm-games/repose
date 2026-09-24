@@ -466,7 +466,10 @@ pub fn run_desktop_app_with_config(
             *last_key = Some(key);
             if let repose_core::CursorIcon::Custom(img) = c {
                 let hash = key.1;
-                let hit = cache.as_ref().filter(|(k, _)| *k == hash).map(|(_, h)| h.clone());
+                let hit = cache
+                    .as_ref()
+                    .filter(|(k, _)| *k == hash)
+                    .map(|(_, h)| h.clone());
                 let custom = match hit {
                     Some(h) => Some(h),
                     None => match el {
@@ -730,7 +733,13 @@ pub fn run_desktop_app_with_config(
                     if let Some(win) = &self.window
                         && let Some(c) = result.cursor
                     {
-                        Self::apply_cursor_static(win, &mut self.custom_cursor, &mut self.last_cursor_key, Some(el), &c);
+                        Self::apply_cursor_static(
+                            win,
+                            &mut self.custom_cursor,
+                            &mut self.last_cursor_key,
+                            Some(el),
+                            &c,
+                        );
                     }
 
                     self.request_redraw();

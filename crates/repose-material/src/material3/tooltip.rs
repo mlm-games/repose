@@ -328,7 +328,12 @@ enum CaretSide {
     Left,
 }
 
-fn caret_side(position: TooltipAnchorPosition, popup_y: f32, popup_x: f32, anchor: Rect) -> CaretSide {
+fn caret_side(
+    position: TooltipAnchorPosition,
+    popup_y: f32,
+    popup_x: f32,
+    anchor: Rect,
+) -> CaretSide {
     match position.resolve() {
         TooltipAnchorPosition::Left => {
             if popup_x > anchor.x {
@@ -381,26 +386,10 @@ fn caret_mesh(side: CaretSide, w_px: f32, h_px: f32, color: Color) -> Arc<Vector
         uv: [0.0; 2],
     };
     let (a, b, c) = match side {
-        CaretSide::Bottom => (
-            v(-w_px / 2.0, 0.0),
-            v(w_px / 2.0, 0.0),
-            v(0.0, h_px),
-        ),
-        CaretSide::Top => (
-            v(-w_px / 2.0, h_px),
-            v(w_px / 2.0, h_px),
-            v(0.0, 0.0),
-        ),
-        CaretSide::Right => (
-            v(0.0, -h_px / 2.0),
-            v(0.0, h_px / 2.0),
-            v(w_px, 0.0),
-        ),
-        CaretSide::Left => (
-            v(w_px, -h_px / 2.0),
-            v(w_px, h_px / 2.0),
-            v(0.0, 0.0),
-        ),
+        CaretSide::Bottom => (v(-w_px / 2.0, 0.0), v(w_px / 2.0, 0.0), v(0.0, h_px)),
+        CaretSide::Top => (v(-w_px / 2.0, h_px), v(w_px / 2.0, h_px), v(0.0, 0.0)),
+        CaretSide::Right => (v(0.0, -h_px / 2.0), v(0.0, h_px / 2.0), v(w_px, 0.0)),
+        CaretSide::Left => (v(w_px, -h_px / 2.0), v(w_px, h_px / 2.0), v(0.0, 0.0)),
     };
     Arc::new(VectorMeshData {
         vertices: [a, b, c].into(),
@@ -422,14 +411,8 @@ fn tooltip_caret(
         return None;
     }
     let (w_dp, h_dp) = match side {
-        CaretSide::Bottom | CaretSide::Top => (
-            config.caret_size.width,
-            config.caret_size.height,
-        ),
-        CaretSide::Right | CaretSide::Left => (
-            config.caret_size.height,
-            config.caret_size.width,
-        ),
+        CaretSide::Bottom | CaretSide::Top => (config.caret_size.width, config.caret_size.height),
+        CaretSide::Right | CaretSide::Left => (config.caret_size.height, config.caret_size.width),
     };
     let w_px = dp_to_px(w_dp).0;
     let h_px = dp_to_px(h_dp).0;
@@ -437,26 +420,26 @@ fn tooltip_caret(
         return None;
     }
     let (left, top) = match side {
-        CaretSide::Bottom => (
-            caret_x(popup.x, window_w, anchor) - w_dp.0 / 2.0,
-            popup.y,
-        ),
-        CaretSide::Top => (
-            caret_x(popup.x, window_w, anchor) - w_dp.0 / 2.0,
-            -h_dp.0,
-        ),
+        CaretSide::Bottom => (caret_x(popup.x, window_w, anchor) - w_dp.0 / 2.0, popup.y),
+        CaretSide::Top => (caret_x(popup.x, window_w, anchor) - w_dp.0 / 2.0, -h_dp.0),
         CaretSide::Right => (popup.x, popup.y / 2.0 - h_dp.0 / 2.0),
         CaretSide::Left => (-w_dp.0, popup.y / 2.0 - h_dp.0 / 2.0),
     };
     let mesh = caret_mesh(side, w_px, h_px, container);
     let caret = repose_canvas::Canvas(Modifier::new().size(w_dp, h_dp), move |s| {
-        s.draw_vector_mesh(mesh.clone(), [1.0, 0.0, 0.0, 1.0, 0.0, 0.0], PaintDesc::Solid);
+        s.draw_vector_mesh(
+            mesh.clone(),
+            [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+            PaintDesc::Solid,
+        );
     });
-    Some(Box(Modifier::new()
-        .absolute()
-        .offset(Some(Dp(left)), Some(Dp(top)), None, None)
-        .hit_passthrough())
-    .child(caret))
+    Some(
+        Box(Modifier::new()
+            .absolute()
+            .offset(Some(Dp(left)), Some(Dp(top)), None, None)
+            .hit_passthrough())
+        .child(caret),
+    )
 }
 
 /// Plain tooltip body: inverse-surface container, `body_small` text.
@@ -513,26 +496,30 @@ pub fn RichTooltip(
 
     let mut rows: Vec<View> = Vec::new();
     if let Some(title) = title {
-        rows.push(Box(Modifier::new()
+        rows.push(
+            Box(Modifier::new()
+                .fill_max_width()
+                .padding_values(PaddingValues {
+                    top: TooltipDefaults::RICH_TITLE_TOP,
+                    ..PaddingValues::default()
+                }))
+            .child(title.color(title_color).size(th.typography.title_small)),
+        );
+    }
+    rows.push(
+        Box(Modifier::new()
             .fill_max_width()
             .padding_values(PaddingValues {
-                top: TooltipDefaults::RICH_TITLE_TOP,
+                top: TooltipDefaults::RICH_TEXT_TOP,
+                bottom: TooltipDefaults::RICH_TEXT_BOTTOM,
                 ..PaddingValues::default()
             }))
-        .child(title.color(title_color).size(th.typography.title_small)));
-    }
-    rows.push(Box(Modifier::new()
-        .fill_max_width()
-        .padding_values(PaddingValues {
-            top: TooltipDefaults::RICH_TEXT_TOP,
-            bottom: TooltipDefaults::RICH_TEXT_BOTTOM,
-            ..PaddingValues::default()
-        }))
-    .child(
-        Text(text.into())
-            .color(content)
-            .size(th.typography.body_medium),
-    ));
+        .child(
+            Text(text.into())
+                .color(content)
+                .size(th.typography.body_medium),
+        ),
+    );
     if let Some((label, on_click)) = action {
         let label_view = Box(Modifier::new()
             .min_height(TooltipDefaults::RICH_ACTION_MIN_HEIGHT)
@@ -568,12 +555,7 @@ pub fn RichTooltip(
     )
 }
 
-fn tooltip_surface(
-    config: &TooltipConfig,
-    container: Color,
-    shape: Dp,
-    content: View,
-) -> View {
+fn tooltip_surface(config: &TooltipConfig, container: Color, shape: Dp, content: View) -> View {
     let th = theme();
     let shadow = if config.shadow_elevation.0 > 0.0 {
         config.shadow_elevation
@@ -631,13 +613,11 @@ pub fn TooltipBox(
     };
     let current_body = remember_state_with_key(format!("tt_body_{id}"), || tooltip_body.clone());
     *current_body.borrow_mut() = tooltip_body;
-    let current_config =
-        remember_state_with_key(format!("tt_cfg_{id}"), || config.clone());
+    let current_config = remember_state_with_key(format!("tt_cfg_{id}"), || config.clone());
     *current_config.borrow_mut() = config.clone();
 
     let anchor_rect = remember_state_with_key(format!("tt_anchor_{id}"), Rect::default);
-    let popup_size =
-        remember_state_with_key(format!("tt_popup_{id}"), || Vec2 { x: 0.0, y: 0.0 });
+    let popup_size = remember_state_with_key(format!("tt_popup_{id}"), || Vec2 { x: 0.0, y: 0.0 });
     let trigger = Box(Modifier::new().on_globally_positioned({
         let anchor_rect = anchor_rect.clone();
         move |rect| {
@@ -777,8 +757,7 @@ pub fn TooltipBox(
                     } else {
                         Box(Modifier::new())
                     };
-                    ZStack(Modifier::new().fill_max_size().absolute())
-                        .child((scrim, popup))
+                    ZStack(Modifier::new().fill_max_size().absolute()).child((scrim, popup))
                 }),
                 10_000.0,
                 true,
@@ -842,7 +821,8 @@ mod tests {
 
     #[test]
     fn left_flips_right_on_left_collision() {
-        let (x, y) = tooltip_position_left(anchor(10.0, 200.0, 50.0, 20.0), 100.0, 40.0, 4.0, 400.0);
+        let (x, y) =
+            tooltip_position_left(anchor(10.0, 200.0, 50.0, 20.0), 100.0, 40.0, 4.0, 400.0);
         assert_eq!((x, y), (64.0, 190.0));
     }
 
@@ -855,12 +835,18 @@ mod tests {
 
     #[test]
     fn caret_x_centers_on_anchor() {
-        assert_eq!(caret_x(100.0, 400.0, anchor(100.0, 200.0, 50.0, 20.0)), 50.0);
+        assert_eq!(
+            caret_x(100.0, 400.0, anchor(100.0, 200.0, 50.0, 20.0)),
+            50.0
+        );
     }
 
     #[test]
     fn caret_x_pins_to_anchor_mid_when_wider_than_window() {
-        assert_eq!(caret_x(500.0, 400.0, anchor(100.0, 200.0, 50.0, 20.0)), 125.0);
+        assert_eq!(
+            caret_x(500.0, 400.0, anchor(100.0, 200.0, 50.0, 20.0)),
+            125.0
+        );
     }
 
     #[test]

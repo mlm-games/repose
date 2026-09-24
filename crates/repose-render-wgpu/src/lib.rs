@@ -4893,10 +4893,7 @@ impl WgpuSurfaceBackend {
     /// Create a fresh surface for `window` on the retained instance and
     /// configure it. Recovers from `CurrentSurfaceTexture::Lost`, where
     /// reconfiguring the old surface object cannot help.
-    pub fn recreate_surface(
-        &mut self,
-        window: &Arc<winit::window::Window>,
-    ) -> anyhow::Result<()> {
+    pub fn recreate_surface(&mut self, window: &Arc<winit::window::Window>) -> anyhow::Result<()> {
         let Some(instance) = self.instance.as_ref() else {
             anyhow::bail!("no wgpu instance retained; cannot recreate surface")
         };
@@ -4985,7 +4982,8 @@ impl RenderBackend for WgpuSurfaceBackend {
                         log::warn!("surface {other:?}; reconfiguring next frame");
                         self.pending_reconfigure = true;
                     }
-                    wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {
+                    wgpu::CurrentSurfaceTexture::Timeout
+                    | wgpu::CurrentSurfaceTexture::Occluded => {
                         log::debug!("surface {other:?}; retrying next frame");
                     }
                     _ => {}
@@ -5431,10 +5429,8 @@ impl WgpuSceneRenderer {
             mode: blend.shader_mode(),
             _pad: [0.0; 3],
         };
-        self.blend_ring.grow_to_fit(
-            &self.device,
-            std::mem::size_of::<BlendInstance>() as u64,
-        );
+        self.blend_ring
+            .grow_to_fit(&self.device, std::mem::size_of::<BlendInstance>() as u64);
         let bytes = bytemuck::bytes_of(&inst);
         let (off, _) = self.blend_ring.alloc_write(&self.queue, bytes);
         current_pass.cmds.push(Cmd::BlendLayer {
@@ -5498,7 +5494,9 @@ impl WgpuSceneRenderer {
     }
 
     fn blend_snapshot_texture(&self, layer_id: u32) -> Option<wgpu::Texture> {
-        self.blend_snapshots.get(&layer_id).map(|s| s.texture.clone())
+        self.blend_snapshots
+            .get(&layer_id)
+            .map(|s| s.texture.clone())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -6934,8 +6932,7 @@ impl WgpuSceneRenderer {
                         );
                     } else {
                         let t_identity = Transform::identity();
-                        let current_transform =
-                            transform_stack.last().unwrap_or(&t_identity);
+                        let current_transform = transform_stack.last().unwrap_or(&t_identity);
                         self.emit_vector_mesh(
                             current_transform,
                             mesh,
@@ -7138,7 +7135,10 @@ impl WgpuSceneRenderer {
             // swapchain sampling mid-frame); layer parents copy from the
             // pool. Either way the region is parent-target pixels. Copies
             // for other passes stay queued (`remaining`).
-            let needs_snapshot = pass.cmds.iter().any(|c| matches!(c, Cmd::BlendLayer { .. }));
+            let needs_snapshot = pass
+                .cmds
+                .iter()
+                .any(|c| matches!(c, Cmd::BlendLayer { .. }));
             if needs_snapshot {
                 let copies = std::mem::take(&mut self.blend_copies);
                 let mut remaining = Vec::with_capacity(copies.len());
@@ -7589,8 +7589,7 @@ impl WgpuSceneRenderer {
                         // A missing snapshot (surface parent without texture,
                         // evicted layer) skips the draw: the mesh vanishes
                         // rather than misrendering.
-                        let dst = dst_layer
-                            .and_then(|id| self.blend_snapshots.get(&id).cloned());
+                        let dst = dst_layer.and_then(|id| self.blend_snapshots.get(&id).cloned());
                         let in_parent = match parent {
                             PassTarget::Surface => !is_layer,
                             PassTarget::Layer(id) => {
@@ -7600,17 +7599,13 @@ impl WgpuSceneRenderer {
                         if let (Some(src_lt), Some(dst_snap)) = (src, dst)
                             && in_parent
                         {
-                            let bytes =
-                                (n as u64) * std::mem::size_of::<BlendInstance>() as u64;
+                            let bytes = (n as u64) * std::mem::size_of::<BlendInstance>() as u64;
                             rpass.set_pipeline(&pipes.blend_layer);
                             rpass.set_scissor_rect(0, 0, tw, th);
                             rpass.set_bind_group(0, &self.globals_bind, &[]);
                             rpass.set_bind_group(1, &src_lt.bind, &[]);
                             rpass.set_bind_group(2, &dst_snap.bind, &[]);
-                            rpass.set_vertex_buffer(
-                                0,
-                                self.blend_ring.buf.slice(off..off + bytes),
-                            );
+                            rpass.set_vertex_buffer(0, self.blend_ring.buf.slice(off..off + bytes));
                             rpass.draw(0..6, 0..n);
                         }
                     }

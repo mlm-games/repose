@@ -397,7 +397,8 @@ pub fn run_android_app_with_options(
                     if t.phase == winit::event::TouchPhase::Started {
                         let pos_px = (t.location.x as f32, t.location.y as f32);
                         self.touch_gestures.contact_down(t.id, pos_px);
-                        self.touch_gestures.touch_started(&mut self.rt, t.id, pos_px);
+                        self.touch_gestures
+                            .touch_started(&mut self.rt, t.id, pos_px);
                         crate::runner_common::sync_touch_points(&mut self.rt, &self.touch_gestures);
                         self.dirty = true;
                         self.request_redraw();

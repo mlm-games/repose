@@ -144,9 +144,12 @@ pub fn handle_touch_raw(
 /// ids, physical-px positions sampled every tick while held.
 pub fn sync_touch_points(rt: &mut ReposeRuntime, touch_gestures: &TouchGestureState) {
     rt.sched.touch_points.clear();
-    rt.sched
-        .touch_points
-        .extend(touch_gestures.active_touches().iter().map(|(id, (x, y))| (*id, *x, *y)));
+    rt.sched.touch_points.extend(
+        touch_gestures
+            .active_touches()
+            .iter()
+            .map(|(id, (x, y))| (*id, *x, *y)),
+    );
 }
 
 /// HACK: Legacy wrapper that dispatches gestures inline (use `handle_touch_raw` when caller

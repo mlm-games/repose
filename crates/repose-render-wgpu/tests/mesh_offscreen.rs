@@ -594,9 +594,7 @@ fn blend_difference_subtracts_backdrop() {
         return;
     };
     assert!(
-        (175..=200).contains(&c[0])
-            && (175..=200).contains(&c[1])
-            && (175..=200).contains(&c[2]),
+        (175..=200).contains(&c[0]) && (175..=200).contains(&c[1]) && (175..=200).contains(&c[2]),
         "difference of red over grey wrong: {c:?}"
     );
 }

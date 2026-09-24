@@ -278,13 +278,15 @@ impl App {
             static LAST_CURSOR: RefCell<Option<String>> = const { RefCell::new(None) };
         }
         let next: String = match cursor {
-            Some(repose_core::CursorIcon::Custom(img)) => {
-                match Self::custom_cursor_css(img) {
-                    Some(url) => url,
-                    None => "default".to_string(),
-                }
-            }
-            other => other.as_ref().map(rc::cursor_css).unwrap_or("default").to_string(),
+            Some(repose_core::CursorIcon::Custom(img)) => match Self::custom_cursor_css(img) {
+                Some(url) => url,
+                None => "default".to_string(),
+            },
+            other => other
+                .as_ref()
+                .map(rc::cursor_css)
+                .unwrap_or("default")
+                .to_string(),
         };
         let changed = LAST_CURSOR.with(|last| {
             if last.borrow().as_deref() != Some(next.as_str()) {
@@ -318,7 +320,10 @@ impl App {
             return None;
         }
         let scale = (MAX as f32 / w.max(h) as f32).min(1.0);
-        let (dw, dh) = ((w as f32 * scale).round().max(1.0) as u32, (h as f32 * scale).round().max(1.0) as u32);
+        let (dw, dh) = (
+            (w as f32 * scale).round().max(1.0) as u32,
+            (h as f32 * scale).round().max(1.0) as u32,
+        );
         let mut px = Vec::with_capacity((dw * dh * 4) as usize);
         for y in 0..dh {
             for x in 0..dw {
@@ -329,8 +334,12 @@ impl App {
             }
         }
         let (hx, hy) = (
-            (img.hotspot[0] as f32 * scale).round().clamp(0.0, dw.saturating_sub(1) as f32) as u32,
-            (img.hotspot[1] as f32 * scale).round().clamp(0.0, dh.saturating_sub(1) as f32) as u32,
+            (img.hotspot[0] as f32 * scale)
+                .round()
+                .clamp(0.0, dw.saturating_sub(1) as f32) as u32,
+            (img.hotspot[1] as f32 * scale)
+                .round()
+                .clamp(0.0, dh.saturating_sub(1) as f32) as u32,
         );
         let mut png = Vec::new();
         {
@@ -340,7 +349,9 @@ impl App {
                 .ok()?;
         }
         let b64 = Self::image_base64_encode(&png);
-        Some(format!("url(data:image/png;base64,{b64}) {hx} {hy}, default"))
+        Some(format!(
+            "url(data:image/png;base64,{b64}) {hx} {hy}, default"
+        ))
     }
 
     /// Minimal base64 (RFC 4648, padded) over bytes. Vendored so the web

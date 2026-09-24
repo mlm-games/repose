@@ -18,8 +18,7 @@ static NEXT_LISTENER_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::Atomi
 
 static DEEPLINK_CB: Mutex<Option<Box<dyn Fn(Vec<u8>) + Send>>> = Mutex::new(None);
 static PENDING_DEEPLINKS: Mutex<Vec<Vec<u8>>> = Mutex::new(Vec::new());
-static DEEPLINK_LISTENERS: Mutex<Vec<(u64, Box<dyn Fn(Vec<u8>) + Send>)>> =
-    Mutex::new(Vec::new());
+static DEEPLINK_LISTENERS: Mutex<Vec<(u64, Box<dyn Fn(Vec<u8>) + Send>)>> = Mutex::new(Vec::new());
 
 thread_local! {
     static PRE_REDRAW: std::cell::RefCell<Option<Box<dyn FnMut(&repose_core::RenderContext)>>> =
@@ -159,9 +158,7 @@ pub fn add_deeplink_listener(callback: Box<dyn Fn(Vec<u8>) + Send>) -> u64 {
 }
 
 pub fn remove_deeplink_listener(id: u64) -> bool {
-    let mut listeners = DEEPLINK_LISTENERS
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let mut listeners = DEEPLINK_LISTENERS.lock().unwrap_or_else(|e| e.into_inner());
     let before = listeners.len();
     listeners.retain(|(lid, _)| *lid != id);
     listeners.len() != before
@@ -215,11 +212,8 @@ pub fn process_deeplinks() {
                 );
             }
         }
-        let listeners = std::mem::take(
-            &mut *DEEPLINK_LISTENERS
-                .lock()
-                .unwrap_or_else(|e| e.into_inner()),
-        );
+        let listeners =
+            std::mem::take(&mut *DEEPLINK_LISTENERS.lock().unwrap_or_else(|e| e.into_inner()));
         for (_, cb) in &listeners {
             let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| cb(data.clone())));
             if let Err(e) = res {
@@ -232,8 +226,6 @@ pub fn process_deeplinks() {
                 );
             }
         }
-        *DEEPLINK_LISTENERS
-            .lock()
-            .unwrap_or_else(|e| e.into_inner()) = listeners;
+        *DEEPLINK_LISTENERS.lock().unwrap_or_else(|e| e.into_inner()) = listeners;
     }
 }

@@ -355,8 +355,12 @@ impl TouchGestureState {
             if let Some((pending_pos, _, pending_tid)) = self.pending_primary.take() {
                 if !cancelled && !was_multi && self.active_touches.len() < 2 {
                     press = Some(
-                        rt.handle_touch_press(Self::touch_finger(pending_tid), pending_pos, PointerButton::Primary)
-                            .focused,
+                        rt.handle_touch_press(
+                            Self::touch_finger(pending_tid),
+                            pending_pos,
+                            PointerButton::Primary,
+                        )
+                        .focused,
                     );
                 }
                 self.primary_press_dispatched = false;
@@ -395,10 +399,7 @@ impl TouchGestureState {
             self.scroll_capture_id = None;
             self.prev_touch_px = None;
         }
-        TouchEnded {
-            swipe_right,
-            press,
-        }
+        TouchEnded { swipe_right, press }
     }
 
     /// Live touch contacts in physical px, keyed by winit touch id.
@@ -558,9 +559,7 @@ mod tests {
         for fid in [1u64, 2u64] {
             let kinds: Vec<_> = seen.get(&fid).cloned().unwrap_or_default();
             assert!(
-                kinds
-                    .iter()
-                    .any(|k| matches!(k, PointerEventKind::Down(_))),
+                kinds.iter().any(|k| matches!(k, PointerEventKind::Down(_))),
                 "finger {fid} must dispatch its own press, got {kinds:?}"
             );
             assert!(

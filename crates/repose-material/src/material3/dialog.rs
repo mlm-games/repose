@@ -531,12 +531,7 @@ pub fn DatePickerDialog(
         },
     ),)));
 
-    Dialog(
-        state,
-        config.modifier,
-        DialogProperties::default(),
-        content,
-    )
+    Dialog(state, config.modifier, DialogProperties::default(), content)
 }
 
 /// Configuration for [`TimePickerDialog`].
@@ -588,10 +583,5 @@ pub fn TimePickerDialog(
         },
     ),)));
 
-    Dialog(
-        state,
-        config.modifier,
-        DialogProperties::default(),
-        content,
-    )
+    Dialog(state, config.modifier, DialogProperties::default(), content)
 }

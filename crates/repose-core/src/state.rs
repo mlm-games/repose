@@ -88,9 +88,11 @@ fn produce_state_inner<T: Clone + 'static>(
 
         reactive::run_observer_now(obs_id);
 
-        let out = out_cell.borrow().as_ref().cloned().unwrap_or_else(|| {
-            Signal::new(producer())
-        });
+        let out = out_cell
+            .borrow()
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| Signal::new(producer()));
         (out, ProduceHandle { obs: obs_id })
     });
     if let Some(scope) = crate::scope::current_scope() {
