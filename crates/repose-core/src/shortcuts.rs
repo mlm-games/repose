@@ -159,6 +159,29 @@ pub struct ShortcutState {
     pub handler: Option<Handler>,
     pub default_map: ShortcutMap,
     pub scopes: Vec<ShortcutMap>,
+    runtime_installs: Rc<RefCell<RuntimeShortcutInstalls>>,
+    use_global_fallback: bool,
+}
+
+struct RuntimeShortcutMapEntry {
+    key: String,
+    token: u64,
+    map: ShortcutMap,
+    cleanup: Dispose,
+}
+
+struct RuntimeShortcutHandlerEntry {
+    key: String,
+    token: u64,
+    handler: Handler,
+    cleanup: Dispose,
+}
+
+#[derive(Default)]
+struct RuntimeShortcutInstalls {
+    maps: Vec<RuntimeShortcutMapEntry>,
+    handlers: Vec<RuntimeShortcutHandlerEntry>,
+    next_token: u64,
 }
 
 impl ShortcutState {
@@ -167,10 +190,20 @@ impl ShortcutState {
             handler: None,
             default_map: default_map(),
             scopes: Vec::new(),
+            runtime_installs: Rc::new(RefCell::new(RuntimeShortcutInstalls {
+                next_token: 1,
+                ..RuntimeShortcutInstalls::default()
+            })),
+            use_global_fallback: true,
         }
     }
 
-    pub fn resolve_action(&self, chord: &KeyChord) -> Option<Action> {
+    pub fn without_global_fallback(mut self) -> Self {
+        self.use_global_fallback = false;
+        self
+    }
+
+    fn resolve_local_action(&self, chord: &KeyChord) -> Option<Action> {
         if chord.key == Key::Unknown {
             return None;
         }
@@ -182,22 +215,45 @@ impl ShortcutState {
         {
             return Some(action);
         }
-        if let Some(action) = self.default_map.action_for(chord) {
+        if let Some(action) = self
+            .runtime_installs
+            .borrow()
+            .maps
+            .iter()
+            .rev()
+            .find_map(|entry| entry.map.action_for(chord))
+        {
             return Some(action);
         }
-        resolve_action(chord.clone())
+        self.default_map.action_for(chord)
+    }
+
+    pub fn resolve_action(&self, chord: &KeyChord) -> Option<Action> {
+        self.resolve_local_action(chord).or_else(|| {
+            self.use_global_fallback
+                .then(|| resolve_global_action(chord.clone()))
+                .flatten()
+        })
+    }
+
+    fn handle_local(&self, action: Action) -> bool {
+        let handler = self
+            .runtime_installs
+            .borrow()
+            .handlers
+            .iter()
+            .rev()
+            .map(|entry| entry.handler.clone())
+            .next()
+            .or_else(|| self.handler.clone());
+        handler.is_some_and(|handler| handler(action))
     }
 
     pub fn handle(&self, action: Action) -> bool {
-        if self
-            .handler
-            .as_ref()
-            .map(|f| f(action.clone()))
-            .unwrap_or(false)
-        {
+        if self.handle_local(action.clone()) {
             return true;
         }
-        handle(action)
+        self.use_global_fallback && handle_global(action)
     }
 }
 
@@ -267,6 +323,7 @@ thread_local! {
     static SCOPES: RefCell<ShortcutScopeStack> =
         const { RefCell::new(ShortcutScopeStack(Vec::new())) };
     static NEXT_INSTALLER_ID: Cell<u64> = const { Cell::new(1) };
+    static ACTIVE_SHORTCUT_STATE: RefCell<Option<ShortcutState>> = const { RefCell::new(None) };
 }
 
 fn next_installer_id() -> u64 {
@@ -275,6 +332,24 @@ fn next_installer_id() -> u64 {
         next.set(id.wrapping_add(1));
         id
     })
+}
+
+pub fn with_runtime_state<R>(state: &ShortcutState, f: impl FnOnce() -> R) -> R {
+    struct Restore(Option<ShortcutState>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            ACTIVE_SHORTCUT_STATE.with(|slot| {
+                *slot.borrow_mut() = self.0.take();
+            });
+        }
+    }
+    let previous = ACTIVE_SHORTCUT_STATE.with(|slot| slot.borrow_mut().replace(state.clone()));
+    let _restore = Restore(previous);
+    f()
+}
+
+fn active_runtime_state() -> Option<ShortcutState> {
+    ACTIVE_SHORTCUT_STATE.with(|slot| slot.borrow().clone())
 }
 
 fn sync_handler() {
@@ -311,7 +386,7 @@ pub fn set(handler: Option<Handler>) {
     sync_handler();
 }
 
-pub fn handle(action: Action) -> bool {
+fn handle_global(action: Action) -> bool {
     let handler = HANDLER
         .try_with(|current| {
             current
@@ -324,7 +399,14 @@ pub fn handle(action: Action) -> bool {
     handler.map(|handler| handler(action)).unwrap_or(false)
 }
 
-pub fn resolve_action(chord: KeyChord) -> Option<Action> {
+pub fn handle(action: Action) -> bool {
+    if let Some(state) = active_runtime_state() {
+        return state.handle(action);
+    }
+    handle_global(action)
+}
+
+fn resolve_global_action(chord: KeyChord) -> Option<Action> {
     if chord.key == Key::Unknown {
         return None;
     }
@@ -343,6 +425,13 @@ pub fn resolve_action(chord: KeyChord) -> Option<Action> {
             .ok()
             .flatten()
     })
+}
+
+pub fn resolve_action(chord: KeyChord) -> Option<Action> {
+    if let Some(state) = active_runtime_state() {
+        return state.resolve_action(&chord);
+    }
+    resolve_global_action(chord)
 }
 
 pub fn set_default_map(map: ShortcutMap) {
@@ -372,8 +461,113 @@ fn owner_disposer(key: String, cleanup: Dispose, owner: String) -> Dispose {
     })
 }
 
+fn runtime_owner_disposer(key: String, cleanup: Dispose, owner: String) -> Dispose {
+    Dispose::new(move || {
+        cleanup.run();
+        crate::runtime::remove_keyed_disposer_for_owner(&key, &cleanup, &owner);
+    })
+}
+
+fn register_runtime_cleanup(state: &ShortcutState, key: &str, cleanup: Dispose) -> Dispose {
+    let cleanup_key = format!(
+        "runtime-shortcut-cleanup:{}:{key}",
+        Rc::as_ptr(&state.runtime_installs) as usize
+    );
+    let owner =
+        crate::runtime::scope_owner_token(crate::scope_cache::current_scope_key().as_deref());
+    if !crate::runtime::keyed_disposer_has_owner(&cleanup_key, &cleanup, &owner) {
+        crate::runtime::register_keyed_disposer_for_owner(
+            cleanup_key.clone(),
+            cleanup.clone(),
+            owner.clone(),
+        );
+        if let Some(scope) = crate::scope::current_scope() {
+            let registered = cleanup.clone();
+            let scope_key = cleanup_key.clone();
+            let scope_owner = owner.clone();
+            scope.add_disposer(move || {
+                crate::runtime::remove_keyed_disposer_for_owner(
+                    &scope_key,
+                    &registered,
+                    &scope_owner,
+                );
+            });
+        }
+    }
+    runtime_owner_disposer(cleanup_key, cleanup, owner)
+}
+
+fn install_runtime_map(state: &ShortcutState, key: String, map: ShortcutMap) -> Dispose {
+    let mut installs = state.runtime_installs.borrow_mut();
+    if let Some(entry) = installs.maps.iter_mut().find(|entry| entry.key == key) {
+        entry.map = map;
+        return entry.cleanup.clone();
+    }
+    let token = installs.next_token;
+    installs.next_token = installs.next_token.wrapping_add(1);
+    let weak: Weak<RefCell<RuntimeShortcutInstalls>> = Rc::downgrade(&state.runtime_installs);
+    let cleanup_key = key.clone();
+    let cleanup = Dispose::new(move || {
+        let Some(installs) = weak.upgrade() else {
+            return;
+        };
+        let mut installs = installs.borrow_mut();
+        if let Some(index) = installs
+            .maps
+            .iter()
+            .position(|entry| entry.key == cleanup_key && entry.token == token)
+        {
+            installs.maps.remove(index);
+        }
+    });
+    let disposer = register_runtime_cleanup(state, &key, cleanup);
+    installs.maps.push(RuntimeShortcutMapEntry {
+        key,
+        token,
+        map,
+        cleanup: disposer.clone(),
+    });
+    disposer
+}
+
+fn install_runtime_handler(state: &ShortcutState, key: String, handler: Handler) -> Dispose {
+    let mut installs = state.runtime_installs.borrow_mut();
+    if let Some(entry) = installs.handlers.iter_mut().find(|entry| entry.key == key) {
+        entry.handler = handler;
+        return entry.cleanup.clone();
+    }
+    let token = installs.next_token;
+    installs.next_token = installs.next_token.wrapping_add(1);
+    let weak: Weak<RefCell<RuntimeShortcutInstalls>> = Rc::downgrade(&state.runtime_installs);
+    let cleanup_key = key.clone();
+    let cleanup = Dispose::new(move || {
+        let Some(installs) = weak.upgrade() else {
+            return;
+        };
+        let mut installs = installs.borrow_mut();
+        if let Some(index) = installs
+            .handlers
+            .iter()
+            .position(|entry| entry.key == cleanup_key && entry.token == token)
+        {
+            installs.handlers.remove(index);
+        }
+    });
+    let disposer = register_runtime_cleanup(state, &key, cleanup);
+    installs.handlers.push(RuntimeShortcutHandlerEntry {
+        key,
+        token,
+        handler,
+        cleanup: disposer.clone(),
+    });
+    disposer
+}
+
 fn install_shortcut_map_state(key: impl Into<String>, map: ShortcutMap) -> Dispose {
     let key = key.into();
+    if let Some(state) = active_runtime_state() {
+        return install_runtime_map(&state, key, map);
+    }
     let state_key = format!("shortcut-map-state:{key}");
     let state: Rc<RefCell<MapInstallState>> = remember_with_key(state_key, || {
         RefCell::new(MapInstallState {
@@ -488,6 +682,9 @@ pub fn InstallShortcutMap(map: ShortcutMap) -> Dispose {
 
 pub fn install_shortcut_handler_state(key: impl Into<String>, handler: Handler) -> Dispose {
     let key = key.into();
+    if let Some(state) = active_runtime_state() {
+        return install_runtime_handler(&state, key, handler);
+    }
     let state_key = format!("shortcut-handler-state:{key}");
     let state: Rc<RefCell<HandlerInstallState>> = remember_with_key(state_key, || {
         RefCell::new(HandlerInstallState {
@@ -711,6 +908,33 @@ mod tests {
 
         SCOPES.with(|scopes| scopes.borrow_mut().pop());
         assert_eq!(resolve_action(chord), Some(Action::Custom("one".into())));
+    }
+
+    #[test]
+    fn runtime_installers_are_isolated() {
+        let a = ShortcutState::new();
+        let b = ShortcutState::new();
+        let chord = KeyChord::new(Key::Character('j'), Modifiers::default());
+        let mut map_a = ShortcutMap::new();
+        map_a.insert(
+            chord.key.clone(),
+            chord.modifiers,
+            Action::Custom("a".into()),
+        );
+        let mut map_b = ShortcutMap::new();
+        map_b.insert(
+            chord.key.clone(),
+            chord.modifiers,
+            Action::Custom("b".into()),
+        );
+        let dispose_a = with_runtime_state(&a, || InstallShortcutMapWithKey("same-install", map_a));
+        let dispose_b = with_runtime_state(&b, || InstallShortcutMapWithKey("same-install", map_b));
+        assert_eq!(a.resolve_action(&chord), Some(Action::Custom("a".into())));
+        assert_eq!(b.resolve_action(&chord), Some(Action::Custom("b".into())));
+        dispose_a.run();
+        assert!(a.resolve_action(&chord).is_none());
+        assert_eq!(b.resolve_action(&chord), Some(Action::Custom("b".into())));
+        dispose_b.run();
     }
 
     #[test]

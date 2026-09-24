@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::rc::{Rc, Weak};
 
@@ -45,10 +46,12 @@ pub struct OverlayHandle {
     inner: Rc<RefCell<OverlayState>>,
 }
 
-#[derive(Default)]
+pub type BackHandler = Rc<dyn Fn() -> bool>;
+
 struct OverlayState {
     next_id: u64,
     entries: Vec<OverlayEntry>,
+    back_handlers: HashMap<u64, BackHandler>,
 }
 
 #[derive(Clone)]
@@ -71,6 +74,7 @@ impl OverlayHandle {
             inner: Rc::new(RefCell::new(OverlayState {
                 next_id: 1,
                 entries: Vec::new(),
+                back_handlers: HashMap::new(),
             })),
         }
     }
@@ -84,11 +88,32 @@ impl OverlayHandle {
         self.show_entry(builder, z_index, pass_through)
     }
 
+    pub fn show_with_back(
+        &self,
+        view: View,
+        z_index: f32,
+        pass_through: bool,
+        back_handler: BackHandler,
+    ) -> u64 {
+        let builder = Rc::new(move || view.clone());
+        self.show_entry_with_back(builder, z_index, pass_through, Some(back_handler))
+    }
+
     pub fn show_entry(
         &self,
         builder: Rc<dyn Fn() -> View>,
         z_index: f32,
         pass_through: bool,
+    ) -> u64 {
+        self.show_entry_with_back(builder, z_index, pass_through, None)
+    }
+
+    pub fn show_entry_with_back(
+        &self,
+        builder: Rc<dyn Fn() -> View>,
+        z_index: f32,
+        pass_through: bool,
+        back_handler: Option<BackHandler>,
     ) -> u64 {
         let mut inner = self.inner.borrow_mut();
         let id = inner.next_id;
@@ -99,6 +124,9 @@ impl OverlayHandle {
             z_index,
             pass_through,
         });
+        if let Some(back_handler) = back_handler {
+            inner.back_handlers.insert(id, back_handler);
+        }
         request_frame();
         id
     }
@@ -114,11 +142,46 @@ impl OverlayHandle {
         OverlayGuard::show(self, builder, z_index, pass_through)
     }
 
+    pub fn show_guard_with_back(
+        &self,
+        builder: Rc<dyn Fn() -> View>,
+        z_index: f32,
+        pass_through: bool,
+        back_handler: BackHandler,
+    ) -> OverlayGuard {
+        OverlayGuard::show_with_back(self, builder, z_index, pass_through, back_handler)
+    }
+
+    pub fn handle_back(&self) -> bool {
+        let handler = {
+            let inner = self.inner.borrow();
+            inner
+                .entries
+                .iter()
+                .enumerate()
+                .filter_map(|(order, entry)| {
+                    inner
+                        .back_handlers
+                        .get(&entry.id)
+                        .map(|handler| (order, entry.z_index, handler.clone()))
+                })
+                .max_by(|(left_order, left_z, _), (right_order, right_z, _)| {
+                    left_z
+                        .partial_cmp(right_z)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                        .then_with(|| left_order.cmp(right_order))
+                })
+                .map(|(_, _, handler)| handler)
+        };
+        handler.is_some_and(|handler| handler())
+    }
+
     pub fn dismiss(&self, id: u64) -> bool {
         let mut inner = self.inner.borrow_mut();
         let before = inner.entries.len();
         inner.entries.retain(|entry| entry.id != id);
         let removed = inner.entries.len() != before;
+        inner.back_handlers.remove(&id);
         if removed {
             request_frame();
         }
@@ -127,8 +190,10 @@ impl OverlayHandle {
 
     pub fn clear(&self) {
         let mut inner = self.inner.borrow_mut();
-        if !inner.entries.is_empty() {
-            inner.entries.clear();
+        let had_entries = !inner.entries.is_empty();
+        inner.entries.clear();
+        inner.back_handlers.clear();
+        if had_entries {
             request_frame();
         }
     }
@@ -189,6 +254,20 @@ impl OverlayGuard {
         pass_through: bool,
     ) -> Self {
         let id = handle.show_entry(builder, z_index, pass_through);
+        Self {
+            handle: handle.clone(),
+            id: Some(id),
+        }
+    }
+
+    pub fn show_with_back(
+        handle: &OverlayHandle,
+        builder: Rc<dyn Fn() -> View>,
+        z_index: f32,
+        pass_through: bool,
+        back_handler: BackHandler,
+    ) -> Self {
+        let id = handle.show_entry_with_back(builder, z_index, pass_through, Some(back_handler));
         Self {
             handle: handle.clone(),
             id: Some(id),
@@ -454,6 +533,7 @@ impl SnackbarController {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::Cell;
 
     fn test_request() -> SnackbarRequest {
         SnackbarRequest {
@@ -492,6 +572,40 @@ mod tests {
         assert_eq!(deadline, again);
         drop(controller);
         SnackbarController::tick_all();
+    }
+
+    #[test]
+    fn back_uses_topmost_handler_and_falls_back_after_dismiss() {
+        let overlay = OverlayHandle::new();
+        let lower = Rc::new(Cell::new(0u32));
+        let upper = Rc::new(Cell::new(0u32));
+        let lower_handler = lower.clone();
+        let upper_handler = upper.clone();
+        let builder: Rc<dyn Fn() -> View> = Rc::new(|| View::new(0, ViewKind::OverlayHost));
+        let lower_id = overlay.show_entry_with_back(
+            builder.clone(),
+            1.0,
+            false,
+            Some(Rc::new(move || {
+                lower_handler.set(lower_handler.get() + 1);
+                true
+            })),
+        );
+        overlay.show_entry_with_back(
+            builder,
+            2.0,
+            false,
+            Some(Rc::new(move || {
+                upper_handler.set(upper_handler.get() + 1);
+                true
+            })),
+        );
+        assert!(overlay.handle_back());
+        assert_eq!(upper.get(), 1);
+        assert_eq!(lower.get(), 0);
+        overlay.dismiss(lower_id);
+        assert!(overlay.handle_back());
+        assert_eq!(upper.get(), 2);
     }
 
     #[test]

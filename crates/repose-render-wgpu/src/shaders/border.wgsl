@@ -163,7 +163,10 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
     // `half_px` is scaled but `unrotated_px` is un-scaled by the inverse
     // fwd_mat: re-apply the scale magnitude so both live in the same space.
     let scale_px = vec2(length(vec2(in.fwd_mat.x, in.fwd_mat.z)), length(vec2(in.fwd_mat.y, in.fwd_mat.w)));
-    let local_px = unrotated_px * scale_px + half_px;
+    let local_px = vec2(
+        unrotated_px.x * scale_px.x,
+        -unrotated_px.y * scale_px.y,
+    ) + half_px;
     let base = eval_shape_brush(in, local_px);
 
     let a = base.a * ring;

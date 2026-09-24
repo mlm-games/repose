@@ -461,6 +461,17 @@ fn alpha_brush(brush: Brush, alpha: f32) -> Brush {
             start_color: alpha_color(start_color, alpha),
             end_color: alpha_color(end_color, alpha),
         },
+        Brush::LinearNormalized {
+            start,
+            end,
+            start_color,
+            end_color,
+        } => Brush::LinearNormalized {
+            start,
+            end,
+            start_color: alpha_color(start_color, alpha),
+            end_color: alpha_color(end_color, alpha),
+        },
         Brush::Radial {
             center,
             radius,
@@ -579,6 +590,23 @@ fn offset_brush(brush: Brush, origin: Vec2) -> Brush {
             start_color,
             end_color,
         },
+        Brush::LinearNormalized {
+            start,
+            end,
+            start_color,
+            end_color,
+        } => Brush::LinearNormalized {
+            start: Vec2 {
+                x: start.x + origin.x,
+                y: start.y + origin.y,
+            },
+            end: Vec2 {
+                x: end.x + origin.x,
+                y: end.y + origin.y,
+            },
+            start_color,
+            end_color,
+        },
         Brush::Radial {
             center,
             radius,
@@ -609,8 +637,31 @@ fn offset_brush(brush: Brush, origin: Vec2) -> Brush {
     }
 }
 
-fn brush_to_paint(brush: &Brush, origin: Vec2) -> PaintDesc {
-    match offset_brush(*brush, origin) {
+fn resolve_normalized_brush(brush: Brush, size: Vec2) -> Brush {
+    match brush {
+        Brush::LinearNormalized {
+            start,
+            end,
+            start_color,
+            end_color,
+        } => Brush::Linear {
+            start: Vec2 {
+                x: start.x * size.x,
+                y: start.y * size.y,
+            },
+            end: Vec2 {
+                x: end.x * size.x,
+                y: end.y * size.y,
+            },
+            start_color,
+            end_color,
+        },
+        brush => brush,
+    }
+}
+
+fn brush_to_paint(brush: &Brush, origin: Vec2, size: Vec2) -> PaintDesc {
+    match offset_brush(resolve_normalized_brush(*brush, size), origin) {
         Brush::Solid(_) => PaintDesc::Solid,
         Brush::Linear {
             start,
@@ -829,16 +880,8 @@ fn apply_canvas_corner_effect(path: &lyon_path::Path, radius: f32) -> lyon_path:
             if closed && i == n - 1 {
                 break;
             }
-            let previous = if i == 0 {
-                points[n - 2]
-            } else {
-                points[i - 1]
-            };
-            let next = if i + 1 == n {
-                points[1]
-            } else {
-                points[i + 1]
-            };
+            let previous = if i == 0 { points[n - 2] } else { points[i - 1] };
+            let next = if i + 1 == n { points[1] } else { points[i + 1] };
             let incoming = Vector::new(current_point.x - previous.x, current_point.y - previous.y);
             let outgoing = Vector::new(next.x - current_point.x, next.y - current_point.y);
             let incoming_len = incoming.length();
@@ -1175,6 +1218,10 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
             },
         };
         on_draw(&mut scope);
+        let brush_size = Vec2 {
+            x: scope.size.width,
+            y: scope.size.height,
+        };
 
         let to_global = |r: Rect| Rect {
             x: rect.x + r.x,
@@ -1229,6 +1276,10 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                                         Vec2 {
                                             x: rect.x + local_r.x,
                                             y: rect.y + local_r.y,
+                                        },
+                                        Vec2 {
+                                            x: local_r.w,
+                                            y: local_r.h,
                                         },
                                     ),
                                     clip: None,
@@ -1295,6 +1346,10 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                                             x: rect.x + local_r.x,
                                             y: rect.y + local_r.y,
                                         },
+                                        Vec2 {
+                                            x: local_r.w,
+                                            y: local_r.h,
+                                        },
                                     ),
                                     clip: None,
                                     blend: BlendMode::Alpha,
@@ -1344,6 +1399,7 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                                 x: rect.x,
                                 y: rect.y,
                             },
+                            brush_size,
                         ),
                         clip: None,
                         blend: BlendMode::Alpha,
@@ -1379,6 +1435,10 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                                 Vec2 {
                                     x: rect.x + local_r.x,
                                     y: rect.y + local_r.y,
+                                },
+                                Vec2 {
+                                    x: local_r.w,
+                                    y: local_r.h,
                                 },
                             ),
                             clip: None,

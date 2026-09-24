@@ -210,6 +210,38 @@ fn linear_border_blends_endpoint_colors() {
 }
 
 #[test]
+fn normalized_linear_gradient_spans_shape_bounds() {
+    use repose_core::Vec2;
+    let Some(mut off) = try_offscreen(32, 32) else {
+        return;
+    };
+    let scene = Scene {
+        clear_color: Color::from_rgba(0, 0, 0, 0),
+        nodes: vec![SceneNode::Rect {
+            rect: Rect {
+                x: 4.0,
+                y: 4.0,
+                w: 24.0,
+                h: 24.0,
+            },
+            brush: Brush::LinearNormalized {
+                start: Vec2 { x: 0.0, y: 0.0 },
+                end: Vec2 { x: 0.0, y: 1.0 },
+                start_color: Color::from_rgba(255, 0, 0, 255),
+                end_color: Color::from_rgba(0, 0, 255, 255),
+            },
+            radius: [Px::ZERO; 4],
+        }],
+    };
+    let px = off.render_rgba(&scene, None).expect("render");
+    let at = |x: usize, y: usize| (y * 32 + x) * 4;
+    let top = at(16, 5);
+    let bottom = at(16, 26);
+    assert!(px[top] > px[top + 2]);
+    assert!(px[bottom + 2] > px[bottom]);
+}
+
+#[test]
 fn radial_border_center_matches_start_color() {
     use repose_core::Vec2;
     let Some(mut off) = try_offscreen(16, 16) else {
@@ -279,6 +311,36 @@ fn zero_arc_is_empty() {
     };
     let px = off.render_rgba(&scene, None).expect("render");
     assert!(px.chunks_exact(4).all(|pixel| pixel[3] == 0));
+}
+
+#[test]
+fn sweep_arc_renders_without_panic() {
+    use repose_core::{StrokeCap, Vec2};
+    let Some(mut off) = try_offscreen(16, 16) else {
+        return;
+    };
+    let scene = Scene {
+        clear_color: Color::from_rgba(0, 0, 0, 0),
+        nodes: vec![SceneNode::Arc {
+            rect: Rect {
+                x: 2.0,
+                y: 2.0,
+                w: 12.0,
+                h: 12.0,
+            },
+            start_angle: 0.0,
+            sweep_angle: std::f32::consts::TAU,
+            stroke_width: Px(2.0),
+            brush: Brush::Sweep {
+                center: Vec2 { x: 6.0, y: 6.0 },
+                start_color: Color::from_rgba(255, 0, 0, 255),
+                end_color: Color::from_rgba(0, 0, 255, 255),
+            },
+            cap: StrokeCap::Butt,
+        }],
+    };
+    let px = off.render_rgba(&scene, None).expect("render");
+    assert!(px.iter().any(|&byte| byte != 0));
 }
 
 #[test]

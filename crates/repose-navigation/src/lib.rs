@@ -3,7 +3,7 @@ pub mod deeplink;
 
 use std::{
     any::{Any, TypeId},
-    cell::RefCell,
+    cell::{Cell, RefCell},
     fmt::Debug,
     rc::Rc,
 };
@@ -51,10 +51,22 @@ impl std::fmt::Display for SavedStateTypeError {
 
 impl std::error::Error for SavedStateTypeError {}
 
-#[derive(Default)]
 pub struct SavedState {
     map: RefCell<std::collections::HashMap<&'static str, Box<dyn Any>>>,
     results: RefCell<std::collections::HashMap<&'static str, Box<dyn Any>>>,
+    active: Cell<bool>,
+    current: Cell<bool>,
+}
+
+impl Default for SavedState {
+    fn default() -> Self {
+        Self {
+            map: RefCell::new(std::collections::HashMap::new()),
+            results: RefCell::new(std::collections::HashMap::new()),
+            active: Cell::new(true),
+            current: Cell::new(true),
+        }
+    }
 }
 
 impl SavedState {
@@ -63,6 +75,9 @@ impl SavedState {
         key: &'static str,
         init: impl FnOnce() -> T,
     ) -> Rc<RefCell<T>> {
+        if !self.active.get() || !self.current.get() {
+            return Rc::new(RefCell::new(init()));
+        }
         if let Some(b) = self.map.borrow().get(key)
             && let Some(rc) = b.downcast_ref::<Rc<RefCell<T>>>()
         {
@@ -73,10 +88,39 @@ impl SavedState {
         rc
     }
 
+    fn deactivate(&self) {
+        self.active.set(false);
+        self.current.set(false);
+    }
+
+    fn set_current(&self, current: bool) {
+        if self.active.get() {
+            self.current.set(current);
+        }
+    }
+
+    fn is_active(&self) -> bool {
+        self.active.get()
+    }
+
+    fn set_result_unchecked<T: 'static>(&self, key: &'static str, val: T) {
+        self.results.borrow_mut().insert(key, Box::new(val));
+    }
+
     /// Stores a one-shot, in-memory result. A later set for the same slot
     /// replaces the previous value.
     pub fn set_result<T: 'static>(&self, key: &'static str, val: T) {
-        self.results.borrow_mut().insert(key, Box::new(val));
+        if self.active.get() && self.current.get() {
+            self.set_result_unchecked(key, val);
+        }
+    }
+
+    pub fn try_set_result<T: 'static>(&self, key: &'static str, val: T) -> bool {
+        if !self.active.get() || !self.current.get() {
+            return false;
+        }
+        self.set_result_unchecked(key, val);
+        true
     }
 
     /// Takes a result only when its type matches. A mismatch reports both
@@ -85,6 +129,9 @@ impl SavedState {
         &self,
         key: &'static str,
     ) -> Result<Option<T>, SavedStateTypeError> {
+        if !self.active.get() || !self.current.get() {
+            return Ok(None);
+        }
         let mut results = self.results.borrow_mut();
         let Some(value) = results.remove(key) else {
             return Ok(None);
@@ -163,6 +210,9 @@ impl<K: NavKey> NavBackStack<K> {
     fn fresh_entry(&self, s: &mut BackState<K>, key: K) {
         let id = s.next_id;
         s.next_id += 1;
+        if let Some(previous) = s.entries.last() {
+            previous.saved.set_current(false);
+        }
         s.entries.push(Entry {
             id,
             key,
@@ -190,12 +240,16 @@ impl<K: NavKey> NavBackStack<K> {
             }
             let split_at = s.entries.len() - count;
             let entries = s.entries.split_off(split_at);
+            if let Some(entry) = s.entries.last() {
+                entry.saved.set_current(true);
+            }
             s.last_dir = TransitionDir::Pop;
             s.transition_id = s.transition_id.wrapping_add(1);
             entries
         };
         self.bump();
         for entry in entries {
+            entry.saved.deactivate();
             entry.scope.dispose();
         }
         true
@@ -218,7 +272,7 @@ impl<K: NavKey> NavBackStack<K> {
             }
             s.entries[s.entries.len() - 2].saved.clone()
         };
-        parent_saved.set_result(slot, value);
+        parent_saved.set_result_unchecked(slot, value);
         self.pop_inner()
     }
 
@@ -237,7 +291,10 @@ impl<K: NavKey> NavBackStack<K> {
         let Some(entry) = s.entries.iter().rev().find(|entry| predicate(&entry.key)) else {
             return false;
         };
-        entry.saved.set_result(slot, value);
+        if !entry.saved.is_active() {
+            return false;
+        }
+        entry.saved.set_result_unchecked(slot, value);
         drop(s);
         self.bump();
         true
@@ -258,6 +315,7 @@ impl<K: NavKey> NavBackStack<K> {
         };
         self.bump();
         if let Some(e) = old {
+            e.saved.deactivate();
             e.scope.dispose();
         }
     }
@@ -303,6 +361,7 @@ impl<K: NavKey> NavBackStack<K> {
         };
         self.bump();
         for e in old_entries {
+            e.saved.deactivate();
             e.scope.dispose();
         }
     }
@@ -348,6 +407,7 @@ impl<K: NavKey> Navigator<K> {
         };
         self.stack.bump();
         for e in old_entries {
+            e.saved.deactivate();
             e.scope.dispose();
         }
     }
@@ -433,13 +493,15 @@ impl<K: NavKey> EntryScope<K> {
         slot: &'static str,
         init: impl FnOnce() -> T,
     ) -> Rc<RefCell<T>> {
+        if !self.is_current() {
+            return Rc::new(RefCell::new(init()));
+        }
         self.saved.remember(slot, init)
     }
     pub fn set_result<T: 'static>(&self, slot: &'static str, v: T) -> bool {
-        if !self.is_current() {
+        if !self.saved.try_set_result(slot, v) {
             return false;
         }
-        self.saved.set_result(slot, v);
         self.nav.stack.bump();
         true
     }
@@ -744,6 +806,25 @@ mod nav_state_tests {
         let (_, _, saved, _) = nav.stack.top().expect("parent");
         assert!(saved.try_take_result::<String>("result").is_err());
         assert_eq!(saved.take_result::<u32>("result"), Some(42));
+    }
+
+    #[test]
+    fn stale_saved_state_handles_do_not_write_after_push() {
+        repose_core::runtime::ComposeGuard::begin();
+        let stack = remember_back_stack("home".to_string());
+        let _hold = repose_core::runtime::ComposeGuard::begin();
+        let nav = Navigator {
+            stack: (*stack).clone(),
+        };
+        let parent_saved = nav.stack.inner.borrow().entries[0].saved.clone();
+        nav.push("child".to_string());
+        let detached = parent_saved.remember("stale", || 1u32);
+        *detached.borrow_mut() = 2;
+        parent_saved.set_result("result", 3u32);
+        nav.pop();
+        let (_, _, current_saved, _) = nav.stack.top().expect("home");
+        assert!(current_saved.map.borrow().get("stale").is_none());
+        assert!(current_saved.take_result::<u32>("result").is_none());
     }
 
     #[test]

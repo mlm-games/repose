@@ -497,11 +497,12 @@ impl LayoutEngine {
         skip_defer: bool,
         defer_except: Option<NodeId>,
     ) {
-        let (subtree_hash, modifier, kind, children) = {
+        let (subtree_hash, modifier, semantics, kind, children) = {
             let n = self.tree.get(node_id).unwrap();
             (
                 n.subtree_hash,
                 n.modifier.clone(),
+                n.semantics.clone(),
                 n.kind.clone(),
                 n.children.clone(),
             )
@@ -1762,14 +1763,21 @@ impl LayoutEngine {
                 if need_clip {
                     scene.nodes.push(SceneNode::PopClip);
                 }
+                let semantic = semantics.as_ref().or(modifier.semantics.as_ref());
                 sems.push(SemNode {
                     id: view_id,
                     parent: sem_parent,
-                    role: Role::Text,
-                    label: Some(text.clone()),
+                    role: semantic.map_or(Role::Text, |s| s.role),
+                    label: semantic
+                        .and_then(|s| s.label.clone())
+                        .or_else(|| Some(text.clone())),
                     rect,
                     focused: is_focused,
-                    ..Default::default()
+                    enabled: semantic.map_or(true, |s| s.enabled) && !modifier.disabled,
+                    selectable_group: semantic.is_some_and(|s| s.selectable_group),
+                    checked: semantic.and_then(|s| s.checked),
+                    selected: semantic.and_then(|s| s.selected),
+                    value: semantic.and_then(|s| s.value.clone()),
                 });
                 next_sem_parent = Some(view_id);
             }
@@ -1885,7 +1893,30 @@ impl LayoutEngine {
                 };
 
                 if !modifier.hit_passthrough {
-                    let user_on_action = modifier.on_action.clone();
+                    let sensitive = ti.sensitive
+                        || matches!(
+                            ti.keyboard_type,
+                            repose_core::KeyboardType::Password
+                                | repose_core::KeyboardType::NumberPassword
+                                | repose_core::KeyboardType::DecimalPassword
+                                | repose_core::KeyboardType::NumberPasswordSigned
+                                | repose_core::KeyboardType::DecimalPasswordSigned
+                        );
+                    let user_on_action = modifier.on_action.clone().map(|handler| {
+                        Rc::new(move |action| {
+                            if sensitive
+                                && matches!(
+                                    action,
+                                    repose_core::shortcuts::Action::Copy
+                                        | repose_core::shortcuts::Action::Cut
+                                )
+                            {
+                                return true;
+                            }
+                            handler(action)
+                        })
+                            as Rc<dyn Fn(repose_core::shortcuts::Action) -> bool>
+                    });
                     let change_cb = on_change.clone();
                     let is_multiline = multiline;
                     let can_edit = ti.enabled && !ti.read_only;
@@ -1895,6 +1926,9 @@ impl LayoutEngine {
                     let tf_on_action: Option<Rc<dyn Fn(repose_core::shortcuts::Action) -> bool>> =
                         Some(Rc::new(move |action| {
                             use repose_core::shortcuts::Action;
+                            if sensitive && matches!(action, Action::Copy | Action::Cut) {
+                                return true;
+                            }
                             if !can_edit
                                 && matches!(
                                     &action,
@@ -1985,7 +2019,7 @@ impl LayoutEngine {
                                     );
                                     let text = edited.text.clone();
                                     *st.borrow_mut() = edited;
-                                    if !text.is_empty() {
+                                    if !sensitive && !text.is_empty() {
                                         repose_core::clipboard::set_primary_selection(&text);
                                     }
                                     true
@@ -2061,6 +2095,7 @@ impl LayoutEngine {
                         tf_content_origin: Some((content_rect.x, content_rect.y)),
                         tf_enabled: ti.enabled,
                         tf_read_only: ti.read_only,
+                        tf_sensitive: ti.sensitive,
                         tf_value: ti.value.clone(),
                         tf_font_size: font_size_sp,
                         on_action: combined,
@@ -2091,20 +2126,26 @@ impl LayoutEngine {
                     hits.push(text_hit);
                 }
 
+                let semantic = semantics.as_ref().or(modifier.semantics.as_ref());
                 sems.push(SemNode {
                     id: view_id,
                     parent: sem_parent,
-                    role: Role::TextField,
-                    label: Some(hint.clone()),
+                    role: semantic.map_or(Role::TextField, |s| s.role),
+                    label: semantic
+                        .and_then(|s| s.label.clone())
+                        .or_else(|| Some(hint.clone())),
                     rect,
                     focused: is_focused,
-                    enabled: ti.enabled,
-                    ..Default::default()
+                    enabled: ti.enabled && semantic.map_or(true, |s| s.enabled),
+                    selectable_group: semantic.is_some_and(|s| s.selectable_group),
+                    checked: semantic.and_then(|s| s.checked),
+                    selected: semantic.and_then(|s| s.selected),
+                    value: semantic.and_then(|s| s.value.clone()),
                 });
                 next_sem_parent = Some(view_id);
             }
             _ => {
-                if let Some(s) = &modifier.semantics {
+                if let Some(s) = semantics.as_ref().or(modifier.semantics.as_ref()) {
                     sems.push(SemNode {
                         id: view_id,
                         parent: sem_parent,

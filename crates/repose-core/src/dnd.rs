@@ -246,11 +246,6 @@ pub struct DragPreviewCtx {
 /// Coordinates are in **screen px**. Draw relative to `ctx.pointer` / `ctx.grab_offset`.
 pub type DragPreview = Rc<dyn Fn(&mut Scene, &DragPreviewCtx)>;
 
-// Optional one-shot preview set from inside `on_drag_start` (overrides modifier).
-thread_local! {
-    static PENDING_PREVIEW: RefCell<Option<DragPreview>> = const { RefCell::new(None) };
-}
-
 /// Call from `on_drag_start` to supply a session-specific preview.
 ///
 /// ```ignore
@@ -260,11 +255,11 @@ thread_local! {
 /// })
 /// ```
 pub fn provide_drag_preview(preview: DragPreview) {
-    PENDING_PREVIEW.with(|p| *p.borrow_mut() = Some(preview));
+    with_dnd_state(|state| state.pending_preview = Some(preview));
 }
 
 fn take_pending_preview() -> Option<DragPreview> {
-    PENDING_PREVIEW.with(|p| p.borrow_mut().take())
+    with_dnd_state(|state| state.pending_preview.take())
 }
 
 /// Simple floating label chip (good default for tabs / list rows).
@@ -441,32 +436,130 @@ struct TouchDownState {
 
 const LONG_PRESS_MS: u128 = 400;
 
+#[derive(Default)]
+struct DndStorage {
+    frame: Option<Frame>,
+    scale: f32,
+    session: Option<DragSession>,
+    mouse_down: Option<MouseDownState>,
+    touch_down: Option<TouchDownState>,
+    pending_preview: Option<DragPreview>,
+}
+
+#[derive(Clone)]
+pub struct DndContext {
+    storage: Rc<RefCell<DndStorage>>,
+}
+
+impl Default for DndContext {
+    fn default() -> Self {
+        Self {
+            storage: Rc::new(RefCell::new(DndStorage {
+                scale: 1.0,
+                ..DndStorage::default()
+            })),
+        }
+    }
+}
+
+pub struct DndContextGuard {
+    previous: Option<DndContext>,
+}
+
+impl DndContext {
+    pub fn enter(&self) -> DndContextGuard {
+        let previous = ACTIVE_DND_CONTEXT.with(|slot| slot.borrow_mut().replace(self.clone()));
+        DndContextGuard { previous }
+    }
+}
+
+impl Drop for DndContextGuard {
+    fn drop(&mut self) {
+        ACTIVE_DND_CONTEXT.with(|slot| {
+            *slot.borrow_mut() = self.previous.take();
+        });
+    }
+}
+
 thread_local! {
-    static DND_FRAME: RefCell<Option<Frame>> = const { RefCell::new(None) };
-    static DND_SCALE: RefCell<f32> = const { RefCell::new(1.0) };
-    static DND_SESSION: RefCell<Option<DragSession>> = const { RefCell::new(None) };
-    static DND_MOUSE_DOWN: RefCell<Option<MouseDownState>> = const { RefCell::new(None) };
-    static DND_TOUCH_DOWN: RefCell<Option<TouchDownState>> = const { RefCell::new(None) };
+    static GLOBAL_DND: RefCell<DndStorage> = RefCell::new(DndStorage {
+        scale: 1.0,
+        ..DndStorage::default()
+    });
+    static ACTIVE_DND_CONTEXT: RefCell<Option<DndContext>> = const { RefCell::new(None) };
+}
+
+fn with_dnd_state<R>(f: impl FnOnce(&mut DndStorage) -> R) -> R {
+    if let Some(context) = ACTIVE_DND_CONTEXT.with(|slot| slot.borrow().clone()) {
+        let mut storage = context.storage.borrow_mut();
+        f(&mut storage)
+    } else {
+        GLOBAL_DND.with(|storage| f(&mut storage.borrow_mut()))
+    }
+}
+
+fn dnd_frame() -> Option<Frame> {
+    with_dnd_state(|state| state.frame.clone())
+}
+
+fn dnd_scale() -> f32 {
+    with_dnd_state(|state| state.scale)
+}
+
+fn mouse_down() -> Option<MouseDownState> {
+    with_dnd_state(|state| state.mouse_down.clone())
+}
+
+fn set_mouse_down(state: Option<MouseDownState>) {
+    with_dnd_state(|storage| storage.mouse_down = state);
+}
+
+fn touch_down() -> Option<TouchDownState> {
+    with_dnd_state(|state| state.touch_down.clone())
+}
+
+fn set_touch_down(state: Option<TouchDownState>) {
+    with_dnd_state(|storage| storage.touch_down = state);
+}
+
+fn update_touch_down(f: impl FnOnce(&mut TouchDownState)) {
+    with_dnd_state(|state| {
+        if let Some(touch) = state.touch_down.as_mut() {
+            f(touch);
+        }
+    });
+}
+
+fn with_session_mut<R>(f: impl FnOnce(&mut Option<DragSession>) -> R) -> R {
+    with_dnd_state(|state| f(&mut state.session))
+}
+
+fn take_session() -> Option<DragSession> {
+    with_dnd_state(|state| state.session.take())
+}
+
+fn set_session(session: DragSession) {
+    with_dnd_state(|state| state.session = Some(session));
 }
 
 /// Set the current frame for DnD hit-testing. Called by platform after each render.
 pub fn set_dnd_frame(frame: Option<Frame>) {
-    DND_FRAME.with(|f| *f.borrow_mut() = frame);
+    with_dnd_state(|state| state.frame = frame);
 }
 
 /// Set the display scale for DnD slop calculation.
 pub fn set_dnd_scale(scale: f32) {
-    DND_SCALE.with(|s| *s.borrow_mut() = scale);
+    with_dnd_state(|state| state.scale = scale);
 }
 
 /// Check if a drag session is currently active.
 pub fn is_dragging() -> bool {
-    DND_SESSION.with(|s| s.borrow().is_some())
+    with_dnd_state(|state| state.session.is_some())
 }
 
 /// Current drag session snapshot (if any).
 pub fn current_drag_session() -> Option<DragSession> {
-    DND_SESSION.with(|s| s.borrow().clone())
+    with_dnd_state(|state| state.session.clone())
 }
 
 fn touch_slop_px(scale: f32) -> f32 {
@@ -611,23 +704,21 @@ fn initiate_drag(
         y: start_pos.y - source_rect.y,
     };
 
-    DND_SESSION.with(|s| {
-        *s.borrow_mut() = Some(DragSession {
-            source_id: capture_id,
-            payload,
-            start_px: (start_pos.x, start_pos.y),
-            over_id: None,
-            source_rect,
-            grab_offset,
-            preview,
-        });
+    set_session(DragSession {
+        source_id: capture_id,
+        payload,
+        start_px: (start_pos.x, start_pos.y),
+        over_id: None,
+        source_rect,
+        grab_offset,
+        preview,
     });
     true
 }
 
 /// Handle a DragAction from the platform. Returns true if the action was consumed.
 pub fn handle_drag_action(action: &DragAction) -> bool {
-    let scale = DND_SCALE.with(|s| *s.borrow());
+    let scale = dnd_scale();
     let slop = touch_slop_px(scale);
 
     match *action {
@@ -639,23 +730,18 @@ pub fn handle_drag_action(action: &DragAction) -> bool {
         } => {
             match kind {
                 PointerKind::Mouse => {
-                    DND_MOUSE_DOWN.with(|m| {
-                        *m.borrow_mut() = Some(MouseDownState {
-                            position,
-                            capture_id,
-                        });
-                    });
+                    set_mouse_down(Some(MouseDownState {
+                        position,
+                        capture_id,
+                    }));
                 }
                 _ => {
-                    // Touch (or pen/unknown): start long-press timer
-                    DND_TOUCH_DOWN.with(|t| {
-                        *t.borrow_mut() = Some(TouchDownState {
-                            time: web_time::Instant::now(),
-                            position,
-                            capture_id,
-                            long_press_pending: true,
-                        });
-                    });
+                    set_touch_down(Some(TouchDownState {
+                        time: web_time::Instant::now(),
+                        position,
+                        capture_id,
+                        long_press_pending: true,
+                    }));
                 }
             }
             false
@@ -666,10 +752,10 @@ pub fn handle_drag_action(action: &DragAction) -> bool {
             modifiers,
         } => {
             // If already dragging, update
-            if DND_SESSION.with(|s| s.borrow().is_some()) {
-                if let Some(frame) = DND_FRAME.with(|f| f.borrow().clone()) {
-                    DND_SESSION.with(|s| {
-                        if let Some(ref mut session) = *s.borrow_mut() {
+            if is_dragging() {
+                if let Some(frame) = dnd_frame() {
+                    with_session_mut(|session| {
+                        if let Some(session) = session.as_mut() {
                             dnd_update_over(&frame, session, modifiers, position);
                         }
                     });
@@ -678,12 +764,12 @@ pub fn handle_drag_action(action: &DragAction) -> bool {
             }
 
             // Mouse: try drag initiation (drag past slop)
-            if let Some(down) = DND_MOUSE_DOWN.with(|m| m.borrow().clone()) {
+            if let Some(down) = mouse_down() {
                 let dx = position.x - down.position.x;
                 let dy = position.y - down.position.y;
                 let dist = (dx * dx + dy * dy).sqrt();
                 if dist >= slop {
-                    if let Some(frame) = DND_FRAME.with(|f| f.borrow().clone())
+                    if let Some(frame) = dnd_frame()
                         && initiate_drag(
                             &frame,
                             down.capture_id,
@@ -692,23 +778,21 @@ pub fn handle_drag_action(action: &DragAction) -> bool {
                             modifiers,
                         )
                     {
-                        DND_SESSION.with(|s| {
-                            if let Some(ref mut session) = *s.borrow_mut() {
+                        with_session_mut(|session| {
+                            if let Some(session) = session.as_mut() {
                                 dnd_update_over(&frame, session, modifiers, position);
                             }
                         });
-                        DND_MOUSE_DOWN.with(|m| *m.borrow_mut() = None);
+                        set_mouse_down(None);
                         return true;
                     }
-                    // Widget doesn't support drag - try mouse down again next time
-                    // (actually, clear it so we don't retry on every move)
-                    DND_MOUSE_DOWN.with(|m| *m.borrow_mut() = None);
+                    set_mouse_down(None);
                 }
                 return true; // consumed: mouse is pressed, don't fall through to scroll
             }
 
             // Touch: try long-press initiation
-            if let Some(touch) = DND_TOUCH_DOWN.with(|t| t.borrow().clone()) {
+            if let Some(touch) = touch_down() {
                 if touch.long_press_pending {
                     let elapsed_ms = (Instant::now() - touch.time).as_millis();
                     let dx = position.x - touch.position.x;
@@ -717,7 +801,7 @@ pub fn handle_drag_action(action: &DragAction) -> bool {
 
                     if elapsed_ms >= LONG_PRESS_MS
                         && dist <= slop
-                        && let Some(frame) = DND_FRAME.with(|f| f.borrow().clone())
+                        && let Some(frame) = dnd_frame()
                     {
                         if initiate_drag(
                             &frame,
@@ -726,37 +810,23 @@ pub fn handle_drag_action(action: &DragAction) -> bool {
                             position,
                             modifiers,
                         ) {
-                            DND_SESSION.with(|s| {
-                                if let Some(ref mut session) = *s.borrow_mut() {
+                            with_session_mut(|session| {
+                                if let Some(session) = session.as_mut() {
                                     dnd_update_over(&frame, session, modifiers, position);
                                 }
                             });
-                            DND_TOUCH_DOWN.with(|t| *t.borrow_mut() = None);
+                            set_touch_down(None);
                             return true;
                         }
-                        // Widget doesn't support drag - cancel long press
-                        DND_TOUCH_DOWN.with(|t| {
-                            if let Some(ref mut td) = *t.borrow_mut() {
-                                td.long_press_pending = false;
-                            }
-                        });
+                        update_touch_down(|touch| touch.long_press_pending = false);
                     }
                     if dist > slop {
-                        DND_TOUCH_DOWN.with(|t| {
-                            if let Some(ref mut td) = *t.borrow_mut() {
-                                td.long_press_pending = false;
-                            }
-                        });
+                        update_touch_down(|touch| touch.long_press_pending = false);
                     }
                 }
                 // Only consume if still waiting for long-press (within slop, timer not yet expired).
                 // If long-press was cancelled (moved past slop), let scroll handle the event.
-                let still_pending = DND_TOUCH_DOWN.with(|t| {
-                    t.borrow()
-                        .as_ref()
-                        .map(|td| td.long_press_pending)
-                        .unwrap_or(false)
-                });
+                let still_pending = touch_down().is_some_and(|touch| touch.long_press_pending);
                 if still_pending {
                     return true;
                 }
@@ -771,23 +841,23 @@ pub fn handle_drag_action(action: &DragAction) -> bool {
         } => {
             let mut consumed = false;
 
-            if let Some(session) = DND_SESSION.with(|s| s.borrow_mut().take()) {
-                if let Some(frame) = DND_FRAME.with(|f| f.borrow().clone()) {
+            if let Some(session) = take_session() {
+                if let Some(frame) = dnd_frame() {
                     dnd_finish(&frame, session, modifiers, position, true);
                 }
                 consumed = true;
             }
 
-            DND_MOUSE_DOWN.with(|m| *m.borrow_mut() = None);
-            DND_TOUCH_DOWN.with(|t| *t.borrow_mut() = None);
+            set_mouse_down(None);
+            set_touch_down(None);
 
             consumed
         }
 
         DragAction::Cancel => {
             let mut consumed = false;
-            if let Some(session) = DND_SESSION.with(|s| s.borrow_mut().take()) {
-                if let Some(frame) = DND_FRAME.with(|f| f.borrow().clone()) {
+            if let Some(session) = take_session() {
+                if let Some(frame) = dnd_frame() {
                     dnd_finish(
                         &frame,
                         session,
@@ -798,8 +868,8 @@ pub fn handle_drag_action(action: &DragAction) -> bool {
                 }
                 consumed = true;
             }
-            DND_MOUSE_DOWN.with(|m| *m.borrow_mut() = None);
-            DND_TOUCH_DOWN.with(|t| *t.borrow_mut() = None);
+            set_mouse_down(None);
+            set_touch_down(None);
             consumed
         }
     }
@@ -821,7 +891,7 @@ pub fn overlay_drag_indicator(
         y: mouse_pos_px.1,
     };
 
-    let frame = DND_FRAME.with(|f| f.borrow().clone());
+    let frame = dnd_frame();
     let Some(ref f) = frame else {
         return;
     };
@@ -851,27 +921,78 @@ pub fn overlay_drag_indicator(
         return;
     }
 
-    DND_SESSION.with(|s| {
-        let session = s.borrow();
-        let Some(ref session) = *session else {
-            return;
-        };
+    let Some(session) = current_drag_session() else {
+        return;
+    };
+    let ctx = DragPreviewCtx {
+        pointer: pos,
+        start_pointer: Vec2 {
+            x: session.start_px.0,
+            y: session.start_px.1,
+        },
+        source_rect: session.source_rect,
+        grab_offset: session.grab_offset,
+        payload: session.payload.clone(),
+    };
 
-        let ctx = DragPreviewCtx {
-            pointer: pos,
-            start_pointer: Vec2 {
-                x: session.start_px.0,
-                y: session.start_px.1,
-            },
-            source_rect: session.source_rect,
-            grab_offset: session.grab_offset,
-            payload: session.payload.clone(),
-        };
+    if let Some(preview) = session.preview {
+        preview(scene, &ctx);
+    } else {
+        draw_default_source_ghost(scene, &ctx, accent);
+    }
+}
 
-        if let Some(ref preview) = session.preview {
-            preview(scene, &ctx);
-        } else {
-            draw_default_source_ghost(scene, &ctx, accent);
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::input::PointerKind;
+    use crate::runtime::HitRegion;
+
+    #[test]
+    fn contexts_isolate_drag_sessions() {
+        let frame = Frame {
+            scene: Scene::default(),
+            hit_regions: vec![HitRegion {
+                id: 1,
+                rect: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 100.0,
+                    h: 100.0,
+                },
+                on_drag_start: Some(Rc::new(|_| Some(drag_payload(7u32)))),
+                ..Default::default()
+            }],
+            semantics_nodes: Vec::new(),
+            focus_chain: Vec::new(),
+        };
+        let a = DndContext::default();
+        let b = DndContext::default();
+        {
+            let _guard = a.enter();
+            set_dnd_frame(Some(frame.clone()));
+            handle_drag_action(&DragAction::Press {
+                position: Vec2 { x: 10.0, y: 10.0 },
+                capture_id: 1,
+                kind: PointerKind::Mouse,
+                modifiers: Modifiers::default(),
+            });
+            handle_drag_action(&DragAction::Move {
+                position: Vec2 { x: 40.0, y: 40.0 },
+                modifiers: Modifiers::default(),
+            });
+            assert!(is_dragging());
         }
-    });
+        {
+            let _guard = b.enter();
+            assert!(!is_dragging());
+            set_dnd_frame(Some(frame.clone()));
+        }
+        {
+            let _guard = a.enter();
+            assert!(is_dragging());
+            handle_drag_action(&DragAction::Cancel);
+            assert!(!is_dragging());
+        }
+    }
 }

@@ -75,6 +75,19 @@ pub fn push_lifecycle(state: AppLifecycle) {
     wake_event_loop();
 }
 
+#[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
+fn push_runtime_window_lifecycle(rt: &mut repose_app::ReposeRuntime, visible: bool) {
+    let foreground = visible && !WINDOW_OCCLUDED.load(Ordering::Relaxed);
+    let state = if foreground {
+        AppLifecycle::Foreground
+    } else {
+        AppLifecycle::Background
+    };
+    if rt.current_lifecycle() != Some(state) {
+        rt.push_lifecycle(state);
+    }
+}
+
 /// Desktop visibility policy: hidden or occluded windows report `Background`,
 /// visible windows report `Foreground`.
 #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
@@ -624,6 +637,8 @@ pub fn run_desktop_app_with_config(
 
     impl ApplicationHandler<()> for App {
         fn resumed(&mut self, el: &winit::event_loop::ActiveEventLoop) {
+            let _event_scope =
+                repose_app::lifecycle::enter_dispatchers(self.rt.event_dispatchers());
             self.occluded = false;
             WINDOW_OCCLUDED.store(false, Ordering::Relaxed);
             self.rt.sched.window_focused = self.os_focused;
@@ -694,7 +709,7 @@ pub fn run_desktop_app_with_config(
                 }
             }
             if self.window.is_some() {
-                crate::push_window_lifecycle(WINDOW_VISIBLE.load(Ordering::Relaxed));
+                push_runtime_window_lifecycle(&mut self.rt, WINDOW_VISIBLE.load(Ordering::Relaxed));
             }
         }
 
@@ -704,6 +719,9 @@ pub fn run_desktop_app_with_config(
             _id: winit::window::WindowId,
             event: WindowEvent,
         ) {
+            let _event_scope =
+                repose_app::lifecycle::enter_dispatchers(self.rt.event_dispatchers());
+            let _dnd_guard = self.rt.dnd_context.enter();
             // Process AccessKit events first!
             if let (Some(adapter), Some(window)) = (&mut self.accesskit_adapter, &self.window) {
                 adapter.process_event(window, &event);
@@ -718,7 +736,7 @@ pub fn run_desktop_app_with_config(
                             w.set_visible(false);
                         }
                         WINDOW_VISIBLE.store(false, Ordering::Relaxed);
-                        crate::push_window_lifecycle(false);
+                        push_runtime_window_lifecycle(&mut self.rt, false);
                     } else {
                         el.exit();
                     }
@@ -748,7 +766,10 @@ pub fn run_desktop_app_with_config(
                             self.sync_ime_for_focus();
                         }
                     }
-                    crate::push_window_lifecycle(WINDOW_VISIBLE.load(Ordering::Relaxed));
+                    push_runtime_window_lifecycle(
+                        &mut self.rt,
+                        WINDOW_VISIBLE.load(Ordering::Relaxed),
+                    );
                     self.request_redraw();
                 }
 
@@ -1080,6 +1101,10 @@ pub fn run_desktop_app_with_config(
                         && !key_event.repeat
                         && (rc::is_back_key(&key_event) || rc::is_escape_key(&key_event))
                     {
+                        if self.rt.overlay.handle_back() {
+                            self.request_redraw();
+                            return;
+                        }
                         use repose_navigation::back;
                         if back::handle() {
                             self.request_redraw();
@@ -1260,6 +1285,7 @@ pub fn run_desktop_app_with_config(
                     }
 
                     // Drag indicator overlay (internal + file drop)
+                    let _dnd_guard = self.rt.dnd_context.enter();
                     repose_core::dnd::overlay_drag_indicator(
                         &mut scene,
                         self.rt.mouse_pos_px,
@@ -1304,6 +1330,8 @@ pub fn run_desktop_app_with_config(
         }
 
         fn about_to_wait(&mut self, el: &winit::event_loop::ActiveEventLoop) {
+            let _event_scope =
+                repose_app::lifecycle::enter_dispatchers(self.rt.event_dispatchers());
             // Process cross-thread commands (e.g. tray toggles, deeplinks) before any
             // redraw check, so hide/show commands work even when hidden
             #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
@@ -1323,8 +1351,8 @@ pub fn run_desktop_app_with_config(
                     );
                 }
             }
-            process_deeplinks();
-            process_lifecycle();
+            self.rt.process_deeplinks();
+            self.rt.process_lifecycle();
 
             if let Some(backend) = &mut self.gamepad {
                 for ev in backend.poll() {
@@ -1446,7 +1474,9 @@ pub fn run_desktop_app_with_config(
         ) {
         }
         fn suspended(&mut self, _: &winit::event_loop::ActiveEventLoop) {
-            crate::push_window_lifecycle(false);
+            let _event_scope =
+                repose_app::lifecycle::enter_dispatchers(self.rt.event_dispatchers());
+            push_runtime_window_lifecycle(&mut self.rt, false);
         }
         fn exiting(&mut self, _: &winit::event_loop::ActiveEventLoop) {
             repose_core::shutdown_composition();

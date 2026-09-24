@@ -1,6 +1,6 @@
 //! Tree node definitions.
 
-use repose_core::{Modifier, Rect, ViewId, ViewKind};
+use repose_core::{Modifier, Rect, Semantics, ViewId, ViewKind};
 use slotmap::new_key_type;
 use smallvec::SmallVec;
 
@@ -23,6 +23,8 @@ pub struct TreeNode {
 
     /// Layout and styling modifiers.
     pub modifier: Modifier,
+
+    pub semantics: Option<Semantics>,
 
     /// Child node IDs.
     pub children: SmallVec<[NodeId; 4]>,
@@ -69,6 +71,7 @@ impl TreeNode {
             view_id,
             kind,
             modifier,
+            semantics: None,
             children: SmallVec::new(),
             parent: None,
             content_hash: 0,

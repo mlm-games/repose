@@ -164,30 +164,34 @@ pub fn run_web_app(
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
     let _ = console_log::init_with_level(log::Level::Info);
     repose_text::ensure_web_fallback_initialized();
+    wasm_bindgen_futures::spawn_local(async {
+        repose_text::init_fonts_wasm().await;
+    });
 
     repose_core::animation::set_clock(Box::new(repose_core::animation::SystemClock));
-
-    // Deeplink from page URL on startup.
-    if let Some(w) = web_sys::window() {
-        if let Ok(hash) = w.location().hash() {
-            let hash = hash.trim_start_matches('#');
-            if !hash.is_empty() {
-                crate::push_deeplink(hash.as_bytes().to_vec());
-            }
-        }
-    }
 
     let event_loop = EventLoop::new().map_err(|e| JsValue::from_str(&format!("{e:?}")))?;
     let mut app = App::new(Box::new(root), options);
 
+    if let Some(w) = web_sys::window() {
+        if let Ok(hash) = w.location().hash() {
+            let hash = hash.trim_start_matches('#');
+            if !hash.is_empty() {
+                app.rt.push_deeplink(hash.as_bytes().to_vec());
+            }
+        }
+    }
+
     // Listen for hash changes
     if let Some(w) = web_sys::window() {
         let location = w.location();
+        let pending = app.pending_deeplinks.clone();
         let cb = Closure::wrap(Box::new(move || {
             if let Ok(hash) = location.hash() {
                 let hash = hash.trim_start_matches('#');
                 if !hash.is_empty() {
-                    crate::push_deeplink(hash.as_bytes().to_vec());
+                    pending.borrow_mut().push(hash.as_bytes().to_vec());
+                    repose_core::request_frame();
                 }
             }
         }) as Box<dyn FnMut()>);
@@ -249,6 +253,7 @@ struct App {
     // keep DOM listener closures alive
     drop_listeners: Option<WebDropListeners>,
     deeplink_listener: Option<WebDeeplinkListener>,
+    pending_deeplinks: Rc<RefCell<Vec<Vec<u8>>>>,
 
     last_redraw: web_time::Instant,
 
@@ -298,7 +303,7 @@ impl App {
         self.external_drop_actions.borrow_mut().clear();
     }
 
-    fn poll_visibility_lifecycle(&self) {
+    fn poll_visibility_lifecycle(&mut self) {
         let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
             return;
         };
@@ -308,8 +313,8 @@ impl App {
         } else {
             repose_app::lifecycle::AppLifecycle::Foreground
         };
-        if repose_app::lifecycle::current_lifecycle() != Some(want) {
-            repose_app::lifecycle::push_lifecycle(want);
+        if self.rt.current_lifecycle() != Some(want) {
+            self.rt.push_lifecycle(want);
         }
     }
 
@@ -349,6 +354,7 @@ impl App {
             external_drop_actions: Rc::new(RefCell::new(Vec::new())),
             drop_listeners: None,
             deeplink_listener: None,
+            pending_deeplinks: Rc::new(RefCell::new(Vec::new())),
 
             last_redraw: web_time::Instant::now(),
 
@@ -1052,6 +1058,7 @@ impl App {
 
 impl ApplicationHandler<()> for App {
     fn resumed(&mut self, el: &ActiveEventLoop) {
+        let _event_scope = repose_app::lifecycle::enter_dispatchers(self.rt.event_dispatchers());
         if self.window.is_some() {
             return;
         }
@@ -1096,6 +1103,8 @@ impl ApplicationHandler<()> for App {
         _id: winit::window::WindowId,
         event: WindowEvent,
     ) {
+        let _event_scope = repose_app::lifecycle::enter_dispatchers(self.rt.event_dispatchers());
+        let _dnd_guard = self.rt.dnd_context.enter();
         let Some(window) = self.window.clone() else {
             return;
         };
@@ -1346,6 +1355,10 @@ impl ApplicationHandler<()> for App {
                     && !key_event.repeat
                     && (rc::is_back_key(&key_event) || rc::is_escape_key(&key_event))
                 {
+                    if self.rt.overlay.handle_back() {
+                        self.request_redraw();
+                        return;
+                    }
                     use repose_navigation::back;
                     if back::handle() {
                         self.request_redraw();
@@ -1399,6 +1412,7 @@ impl ApplicationHandler<()> for App {
                         if let Some(inspector) = &mut self.inspector {
                             inspector.frame(&mut scene);
                         }
+                        let _dnd_guard = self.rt.dnd_context.enter();
                         repose_core::dnd::overlay_drag_indicator(
                             &mut scene,
                             self.rt.mouse_pos_px,
@@ -1450,6 +1464,7 @@ impl ApplicationHandler<()> for App {
                     if let Some(inspector) = &mut self.inspector {
                         inspector.frame(&mut scene);
                     }
+                    let _dnd_guard = self.rt.dnd_context.enter();
                     repose_core::dnd::overlay_drag_indicator(
                         &mut scene,
                         self.rt.mouse_pos_px,
@@ -1485,8 +1500,13 @@ impl ApplicationHandler<()> for App {
     }
 
     fn about_to_wait(&mut self, el: &ActiveEventLoop) {
-        crate::process_deeplinks();
-        crate::process_lifecycle();
+        let _event_scope = repose_app::lifecycle::enter_dispatchers(self.rt.event_dispatchers());
+        let pending = std::mem::take(&mut *self.pending_deeplinks.borrow_mut());
+        for data in pending {
+            self.rt.push_deeplink(data);
+        }
+        self.rt.process_deeplinks();
+        self.rt.process_lifecycle();
         self.poll_visibility_lifecycle();
         if !self.rt.take_rumble_requests().is_empty() {
             log::warn!("gamepad: rumble not supported on web");

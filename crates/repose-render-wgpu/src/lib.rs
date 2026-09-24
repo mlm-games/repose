@@ -1,9 +1,9 @@
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::num::NonZeroU64;
 #[cfg(feature = "winit-surface")]
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use repose_core::color::{ChromaSiting, ColorInfo, PixelFormat};
 use repose_core::{Brush, FontStyle, Scene, SceneNode, StrokeCap, Transform, Vec2};
@@ -35,7 +35,7 @@ pub use callback::{
 };
 
 mod depth_composite;
-pub use depth_composite::DepthComposite;
+pub use depth_composite::{BlitRenderPass, DepthComposite};
 
 #[derive(Clone)]
 struct UploadRing {
@@ -269,6 +269,7 @@ pub struct WgpuSceneRenderer {
     blend_copies: Vec<BlendCopy>,
 
     msaa_samples: u32,
+    working_space_msaa_samples: u32,
 
     // Depth-stencil target
     depth_stencil_tex: wgpu::Texture,
@@ -282,6 +283,9 @@ pub struct WgpuSceneRenderer {
     surface_resolve_tex: Option<wgpu::Texture>,
     surface_resolve_view: Option<wgpu::TextureView>,
     surface_resolve_bytes: u64,
+    msaa_bytes: u64,
+    ws_msaa_bytes: u64,
+    depth_stencil_bytes: u64,
     working_space_bytes: u64,
     gpu_budget_bytes: u64,
 
@@ -327,6 +331,9 @@ pub struct WgpuSceneRenderer {
 
     pub callback_resources: CallbackResources,
     callback_scoped_resources: HashMap<CallbackScopeKey, CallbackResources>,
+    callback_scope_uses: HashMap<CallbackScopeKey, CallbackScopeUse>,
+    callback_scope_payloads: HashMap<CallbackScopeKey, Weak<Callback>>,
+    callback_scope_clock: u64,
     blend_snapshot_bytes_total: u64,
     frame_active: bool,
     last_render_error: Option<String>,
@@ -460,6 +467,12 @@ struct CallbackScopeKey {
     target_format: wgpu::TextureFormat,
     sample_count: u32,
     pixels_per_point_bits: u32,
+}
+
+#[derive(Clone, Copy)]
+struct CallbackScopeUse {
+    tick: u64,
+    frame: u64,
 }
 
 fn callback_scope_key(
@@ -2103,7 +2116,7 @@ struct ProjectiveInstance {
 }
 
 /// CPU-computed Y′CbCr -> R′G′B′ transform uploaded as a uniform buffer.
-/// Layout matches the WGSL `YuvTransform` struct (4 × vec4<f32>).
+/// Layout matches the WGSL `YuvTransform` struct (5 × vec4<f32>).
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct YuvTransformRaw {
@@ -2354,7 +2367,24 @@ impl WgpuSceneRenderer {
         output_format: wgpu::TextureFormat,
         msaa_samples: u32,
     ) -> Self {
+        Self::from_device_with_working_space_msaa(
+            device,
+            queue,
+            output_format,
+            msaa_samples,
+            msaa_samples,
+        )
+    }
+
+    pub fn from_device_with_working_space_msaa(
+        device: wgpu::Device,
+        queue: wgpu::Queue,
+        output_format: wgpu::TextureFormat,
+        msaa_samples: u32,
+        working_space_msaa_samples: u32,
+    ) -> Self {
         let msaa_samples = msaa_samples.max(1);
+        let working_space_msaa_samples = working_space_msaa_samples.max(1);
         let mesh_uniform_size = std::mem::size_of::<MeshUniform>() as u64;
         let base_mesh_alignment =
             u64::from(device.limits().min_uniform_buffer_offset_alignment).max(4);
@@ -2668,7 +2698,7 @@ impl WgpuSceneRenderer {
         let working_space_pipes = Pipelines::create(
             &device,
             wgpu::TextureFormat::Rgba16Float,
-            msaa_samples,
+            working_space_msaa_samples,
             &globals_layout,
             &text_bind_layout,
             &image_bind_layout_nv12,
@@ -2909,6 +2939,7 @@ impl WgpuSceneRenderer {
             blend_copies: Vec::new(),
 
             msaa_samples,
+            working_space_msaa_samples,
             depth_stencil_tex,
             depth_stencil_view,
             msaa_tex: None,
@@ -2918,6 +2949,9 @@ impl WgpuSceneRenderer {
             surface_resolve_tex: None,
             surface_resolve_view: None,
             surface_resolve_bytes: 0,
+            msaa_bytes: 0,
+            ws_msaa_bytes: 0,
+            depth_stencil_bytes: 0,
             working_space_bytes: 0,
             gpu_budget_bytes: MAX_GPU_RESOURCE_BYTES,
             globals_bind,
@@ -2951,6 +2985,9 @@ impl WgpuSceneRenderer {
 
             callback_resources: CallbackResources::default(),
             callback_scoped_resources: HashMap::new(),
+            callback_scope_uses: HashMap::new(),
+            callback_scope_payloads: HashMap::new(),
+            callback_scope_clock: 0,
             blend_snapshot_bytes_total: 0,
             frame_active: false,
             last_render_error: None,
@@ -3079,8 +3116,19 @@ impl WgpuSurfaceBackend {
 
         let render_format = view_format.unwrap_or(format);
         let msaa_samples = pick_surface_msaa(&adapter, render_format, msaa_samples);
-        let mut renderer =
-            WgpuSceneRenderer::from_device(device, queue, render_format, msaa_samples);
+        let working_space_msaa_samples = pick_surface_msaa_for_mode(
+            &adapter,
+            wgpu::TextureFormat::Rgba16Float,
+            msaa_samples,
+            true,
+        );
+        let mut renderer = WgpuSceneRenderer::from_device_with_working_space_msaa(
+            device,
+            queue,
+            render_format,
+            msaa_samples,
+            working_space_msaa_samples,
+        );
         renderer.resize(size.width, size.height);
 
         let view_formats = view_format.into_iter().collect::<Vec<_>>();
@@ -3202,21 +3250,40 @@ pub fn pick_surface_msaa(
     format: wgpu::TextureFormat,
     requested: u32,
 ) -> u32 {
+    pick_surface_msaa_for_mode(adapter, format, requested, false)
+}
+
+pub fn pick_surface_msaa_for_mode(
+    adapter: &wgpu::Adapter,
+    format: wgpu::TextureFormat,
+    requested: u32,
+    working_space: bool,
+) -> u32 {
     let requested = requested.max(1);
     let color_feat = adapter.get_texture_format_features(format);
     let working_space_feat = adapter.get_texture_format_features(wgpu::TextureFormat::Rgba16Float);
     let depth_feat = adapter.get_texture_format_features(wgpu::TextureFormat::Depth24PlusStencil8);
     let supported = |n: u32| {
-        color_feat.flags.sample_count_supported(n)
-            && working_space_feat.flags.sample_count_supported(n)
+        color_feat
+            .allowed_usages
+            .contains(wgpu::TextureUsages::RENDER_ATTACHMENT)
+            && color_feat.flags.sample_count_supported(n)
+            && (!working_space
+                || (working_space_feat
+                    .allowed_usages
+                    .contains(wgpu::TextureUsages::RENDER_ATTACHMENT)
+                    && working_space_feat.flags.sample_count_supported(n)
+                    && (n == 1
+                        || working_space_feat
+                            .flags
+                            .contains(wgpu::TextureFormatFeatureFlags::MULTISAMPLE_RESOLVE))))
             && (n == 1
                 || color_feat
                     .flags
                     .contains(wgpu::TextureFormatFeatureFlags::MULTISAMPLE_RESOLVE))
-            && (n == 1
-                || working_space_feat
-                    .flags
-                    .contains(wgpu::TextureFormatFeatureFlags::MULTISAMPLE_RESOLVE))
+            && depth_feat
+                .allowed_usages
+                .contains(wgpu::TextureUsages::RENDER_ATTACHMENT)
             && depth_feat.flags.sample_count_supported(n)
     };
     let mut candidates = vec![requested];
@@ -4662,6 +4729,9 @@ impl WgpuSceneRenderer {
             .saturating_add(self.blend_snapshot_bytes_total)
             .saturating_add(self.working_space_bytes)
             .saturating_add(self.surface_resolve_bytes)
+            .saturating_add(self.msaa_bytes)
+            .saturating_add(self.ws_msaa_bytes)
+            .saturating_add(self.depth_stencil_bytes)
     }
 
     fn budget_exceeded(&self) -> bool {
@@ -4779,6 +4849,7 @@ impl WgpuSceneRenderer {
             self.working_space_bytes = 0;
             self.recreate_msaa_and_depth_stencil();
         }
+        self.evict_budget_excess();
     }
 
     fn ensure_display_pipeline(&mut self) {
@@ -4871,6 +4942,7 @@ impl WgpuSceneRenderer {
         self.output_height = if height == 0 { 0 } else { height.min(max) };
         self.recreate_msaa_and_depth_stencil();
         self.recreate_working_space_texture();
+        self.evict_budget_excess();
     }
 
     fn recreate_working_space_texture(&mut self) {
@@ -4927,7 +4999,10 @@ impl WgpuSceneRenderer {
     }
 
     fn recreate_msaa_and_depth_stencil(&mut self) {
-        if self.msaa_samples > 1 {
+        self.msaa_bytes = 0;
+        self.ws_msaa_bytes = 0;
+        self.depth_stencil_bytes = 0;
+        if self.msaa_samples > 1 && !self.working_space {
             let tex = self.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("msaa color"),
                 size: wgpu::Extent3d {
@@ -4943,13 +5018,20 @@ impl WgpuSceneRenderer {
                 view_formats: &[],
             });
             let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+            self.msaa_bytes = texture_storage_bytes_with_samples(
+                self.output_format,
+                self.output_width.max(1),
+                self.output_height.max(1),
+                self.msaa_samples,
+            )
+            .unwrap_or(0);
             self.msaa_tex = Some(tex);
             self.msaa_view = Some(view);
         } else {
             self.msaa_tex = None;
             self.msaa_view = None;
         }
-        if self.working_space && self.msaa_samples > 1 {
+        if self.working_space && self.working_space_msaa_samples > 1 {
             let tex = self.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("working space msaa color"),
                 size: wgpu::Extent3d {
@@ -4958,13 +5040,20 @@ impl WgpuSceneRenderer {
                     depth_or_array_layers: 1,
                 },
                 mip_level_count: 1,
-                sample_count: self.msaa_samples,
+                sample_count: self.working_space_msaa_samples,
                 dimension: wgpu::TextureDimension::D2,
                 format: wgpu::TextureFormat::Rgba16Float,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
                 view_formats: &[],
             });
             let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+            self.ws_msaa_bytes = texture_storage_bytes_with_samples(
+                wgpu::TextureFormat::Rgba16Float,
+                self.output_width.max(1),
+                self.output_height.max(1),
+                self.working_space_msaa_samples,
+            )
+            .unwrap_or(0);
             self.ws_msaa_tex = Some(tex);
             self.ws_msaa_view = Some(view);
         } else {
@@ -5000,6 +5089,13 @@ impl WgpuSceneRenderer {
             self.surface_resolve_view = Some(view);
         }
 
+        self.depth_stencil_bytes = texture_storage_bytes_with_samples(
+            wgpu::TextureFormat::Depth24PlusStencil8,
+            self.output_width.max(1),
+            self.output_height.max(1),
+            self.active_surface_msaa_samples(),
+        )
+        .unwrap_or(0);
         self.depth_stencil_tex = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("depth-stencil (stencil clips)"),
             size: wgpu::Extent3d {
@@ -5008,7 +5104,7 @@ impl WgpuSceneRenderer {
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
-            sample_count: self.msaa_samples,
+            sample_count: self.active_surface_msaa_samples(),
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Depth24PlusStencil8,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -5017,6 +5113,14 @@ impl WgpuSceneRenderer {
         self.depth_stencil_view = self
             .depth_stencil_tex
             .create_view(&wgpu::TextureViewDescriptor::default());
+    }
+
+    fn active_surface_msaa_samples(&self) -> u32 {
+        if self.working_space {
+            self.working_space_msaa_samples
+        } else {
+            self.msaa_samples
+        }
     }
 
     fn layer_target_format(&self) -> wgpu::TextureFormat {
@@ -5461,8 +5565,8 @@ impl WgpuSceneRenderer {
 /// `grad_p0` and `radius` into `grad_p1.x`; sweep packs `center` into
 /// `grad_p0`.
 ///
-/// `rect` is the shape's scene-space bounds (only used for the solid
-/// fallback path) and `transform` the accumulated scene transform.
+/// `rect` is the shape's scene-space bounds and `transform` the accumulated
+/// scene transform.
 /// Endpoints are converted from shape-local px through the inverse linear
 /// part so rotation and uniform scale cancel against the shader's
 /// un-rotation. Non-uniform scale and shear distort the gradient the same
@@ -5470,7 +5574,7 @@ impl WgpuSceneRenderer {
 /// pixels).
 fn brush_to_shape_fields(
     brush: &Brush,
-    _rect: &repose_core::Rect,
+    rect: &repose_core::Rect,
     transform: &Transform,
 ) -> (u32, u32, [f32; 4], [f32; 4], [f32; 2], [f32; 2], u32) {
     let to_local = |p: Vec2| {
@@ -5506,6 +5610,26 @@ fn brush_to_shape_fields(
             end_color.to_linear(),
             to_local(*start),
             to_local(*end),
+            0u32,
+        ),
+        Brush::LinearNormalized {
+            start,
+            end,
+            start_color,
+            end_color,
+        } => (
+            1u32,
+            0u32,
+            start_color.to_linear(),
+            end_color.to_linear(),
+            to_local(Vec2 {
+                x: start.x * rect.w,
+                y: start.y * rect.h,
+            }),
+            to_local(Vec2 {
+                x: end.x * rect.w,
+                y: end.y * rect.h,
+            }),
             0u32,
         ),
         Brush::Radial {
@@ -5560,6 +5684,18 @@ fn brush_to_instance_fields(brush: &Brush) -> (u32, [f32; 4], [f32; 4], [f32; 2]
             [start.x, start.y],
             [end.x, end.y],
         ),
+        Brush::LinearNormalized {
+            start,
+            end,
+            start_color,
+            end_color,
+        } => (
+            1u32,
+            start_color.to_linear(),
+            end_color.to_linear(),
+            [start.x, start.y],
+            [end.x, end.y],
+        ),
         Brush::Radial { start_color, .. } => (
             0u32,
             start_color.to_linear(),
@@ -5585,6 +5721,7 @@ fn brush_to_solid_color(brush: &Brush) -> [f32; 4] {
     match brush {
         Brush::Solid(c) => c.to_linear(),
         Brush::Linear { start_color, .. } => start_color.to_linear(),
+        Brush::LinearNormalized { start_color, .. } => start_color.to_linear(),
         Brush::Radial { start_color, .. } => start_color.to_linear(),
         Brush::Sweep { start_color, .. } => start_color.to_linear(),
         _ => [0.0; 4],
@@ -6711,6 +6848,80 @@ impl WgpuSceneRenderer {
         });
     }
 
+    fn touch_callback_scope(&mut self, scope: CallbackScopeKey) {
+        self.callback_scope_clock = self.callback_scope_clock.wrapping_add(1);
+        let tick = self.callback_scope_clock;
+        self.callback_scope_uses.insert(
+            scope,
+            CallbackScopeUse {
+                tick,
+                frame: self.frame_index,
+            },
+        );
+    }
+
+    fn remove_callback_scope(&mut self, scope: &CallbackScopeKey) {
+        self.callback_scoped_resources.remove(scope);
+        self.callback_scope_uses.remove(scope);
+        self.callback_scope_payloads.remove(scope);
+    }
+
+    fn evict_callback_scope(&mut self, protected: &HashSet<CallbackScopeKey>) -> bool {
+        let candidate = self
+            .callback_scoped_resources
+            .keys()
+            .filter(|scope| !protected.contains(*scope))
+            .min_by_key(|scope| {
+                self.callback_scope_uses
+                    .get(*scope)
+                    .map(|usage| usage.tick)
+                    .unwrap_or(0)
+            })
+            .copied();
+        let Some(scope) = candidate else {
+            return false;
+        };
+        self.remove_callback_scope(&scope);
+        true
+    }
+
+    fn prune_callback_scopes(&mut self) {
+        let current_frame = self.frame_index;
+        let mut dead: Vec<(CallbackScopeKey, u64)> = self
+            .callback_scope_uses
+            .iter()
+            .filter_map(|(scope, usage)| {
+                let payload_dead = self
+                    .callback_scope_payloads
+                    .get(scope)
+                    .is_none_or(|weak| weak.upgrade().is_none());
+                (!payload_dead).then_some((*scope, usage.tick))
+            })
+            .collect();
+        dead.sort_by_key(|(_, tick)| *tick);
+        for (scope, _) in dead {
+            self.remove_callback_scope(&scope);
+        }
+
+        if self.callback_scoped_resources.len() <= MAX_CALLBACK_SCOPES {
+            return;
+        }
+        let mut inactive: Vec<(CallbackScopeKey, u64)> = self
+            .callback_scope_uses
+            .iter()
+            .filter_map(|(scope, usage)| {
+                (usage.frame != current_frame).then_some((*scope, usage.tick))
+            })
+            .collect();
+        inactive.sort_by_key(|(_, tick)| *tick);
+        for (scope, _) in inactive {
+            if self.callback_scoped_resources.len() <= MAX_CALLBACK_SCOPES {
+                break;
+            }
+            self.remove_callback_scope(&scope);
+        }
+    }
+
     pub fn begin_frame(&mut self) -> anyhow::Result<()> {
         if self.frame_active {
             self.last_render_error = Some("renderer frame is already active".into());
@@ -6743,6 +6954,7 @@ impl WgpuSceneRenderer {
                 composite.end_frame();
             }
         }
+        self.prune_callback_scopes();
         self.evict_unused_images();
         self.frame_active = false;
     }
@@ -8602,7 +8814,7 @@ impl WgpuSceneRenderer {
                             } else {
                                 self.output_format
                             },
-                            self.msaa_samples.max(1),
+                            self.active_surface_msaa_samples(),
                         ),
                         PassTarget::Layer(layer_id) => {
                             let layer = self.layer_pool.get(&layer_id);
@@ -8647,7 +8859,7 @@ impl WgpuSceneRenderer {
                     } else {
                         self.output_format
                     },
-                    sample_count: self.msaa_samples.max(1),
+                    sample_count: self.active_surface_msaa_samples(),
                 };
                 let mut prepare_encoder =
                     self.device
@@ -8659,6 +8871,34 @@ impl WgpuSceneRenderer {
                         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                             label: Some("callback finish prepare"),
                         });
+                let mut active_callback_scopes = HashSet::new();
+                for (key, cb) in &prepare_list {
+                    let descriptors = callback_targets
+                        .get(&key)
+                        .cloned()
+                        .unwrap_or_else(|| vec![(PassTarget::Surface, default_descriptor)]);
+                    for (target, screen_desc) in descriptors {
+                        let scope = CallbackScopeKey {
+                            callback: *key,
+                            target,
+                            width: screen_desc.size_in_pixels[0],
+                            height: screen_desc.size_in_pixels[1],
+                            target_format: screen_desc.target_format,
+                            sample_count: screen_desc.sample_count,
+                            pixels_per_point_bits: screen_desc.pixels_per_point.to_bits(),
+                        };
+                        active_callback_scopes.insert(scope);
+                        if self
+                            .callback_scope_payloads
+                            .get(&scope)
+                            .is_some_and(|payload| payload.upgrade().is_none())
+                        {
+                            self.remove_callback_scope(&scope);
+                        }
+                        let payload: Weak<Callback> = Arc::downgrade(cb);
+                        self.callback_scope_payloads.insert(scope, payload);
+                    }
+                }
                 let mut prepare_buffers = Vec::new();
                 let mut finish_buffers = Vec::new();
                 for (key, cb) in &prepare_list {
@@ -8676,12 +8916,11 @@ impl WgpuSceneRenderer {
                             sample_count: screen_desc.sample_count,
                             pixels_per_point_bits: screen_desc.pixels_per_point.to_bits(),
                         };
+                        self.touch_callback_scope(scope);
                         if !self.callback_scoped_resources.contains_key(&scope)
                             && self.callback_scoped_resources.len() >= MAX_CALLBACK_SCOPES
-                            && let Some(oldest) =
-                                self.callback_scoped_resources.keys().next().copied()
                         {
-                            self.callback_scoped_resources.remove(&oldest);
+                            self.evict_callback_scope(&active_callback_scopes);
                         }
                         let resources = self.callback_scoped_resources.entry(scope).or_default();
                         prepare_buffers.extend(cb.0.prepare(
@@ -8708,6 +8947,7 @@ impl WgpuSceneRenderer {
                             sample_count: screen_desc.sample_count,
                             pixels_per_point_bits: screen_desc.pixels_per_point.to_bits(),
                         };
+                        self.touch_callback_scope(scope);
                         if let Some(resources) = self.callback_scoped_resources.get_mut(&scope) {
                             finish_buffers.extend(cb.0.finish_prepare(
                                 &self.device,
@@ -9464,7 +9704,11 @@ impl WgpuSceneRenderer {
                                     } else {
                                         self.output_format
                                     },
-                                    sample_count: if is_layer { 1 } else { self.msaa_samples },
+                                    sample_count: if is_layer {
+                                        1
+                                    } else {
+                                        self.active_surface_msaa_samples()
+                                    },
                                 };
                                 let mut scope =
                                     callback_scope_key(&payload, pass.target, &descriptor);
@@ -9713,6 +9957,17 @@ fn texture_storage_bytes(
         anyhow::bail!("texture format has no storage size");
     }
     Ok(bytes)
+}
+
+fn texture_storage_bytes_with_samples(
+    format: wgpu::TextureFormat,
+    width: u32,
+    height: u32,
+    sample_count: u32,
+) -> anyhow::Result<u64> {
+    texture_storage_bytes(format, width, height)?
+        .checked_mul(u64::from(sample_count.max(1)))
+        .ok_or_else(|| anyhow::anyhow!("multisample texture size overflow"))
 }
 
 fn checked_image_bytes_usize(w: u32, h: u32, bytes_per_pixel: u32) -> anyhow::Result<usize> {

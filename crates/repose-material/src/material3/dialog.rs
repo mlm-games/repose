@@ -565,7 +565,7 @@ pub fn Dialog(
                             .clickable()
                             .focusable(true)
                             .semantics(Semantics {
-                                role: Role::Container,
+                                role: Role::Dialog,
                                 label: Some("Dialog".into()),
                                 ..Default::default()
                             })
@@ -625,7 +625,27 @@ pub fn Dialog(
                 }
             });
 
-            *overlay_guard.borrow_mut() = Some(overlay.show_guard(builder, 1000.0, false));
+            let back_state = state.clone();
+            let back_props = props.clone();
+            let back_handler: Rc<dyn Fn() -> bool> = Rc::new(move || {
+                let (dismiss, callback) = {
+                    let props = back_props.borrow();
+                    (
+                        props.dismiss_on_back_press,
+                        props.on_dismiss_request.clone(),
+                    )
+                };
+                if dismiss {
+                    if let Some(callback) = callback {
+                        callback();
+                    } else {
+                        back_state.dismiss();
+                    }
+                }
+                true
+            });
+            *overlay_guard.borrow_mut() =
+                Some(overlay.show_guard_with_back(builder, 1000.0, false, back_handler));
         }
     } else {
         *overlay_guard.borrow_mut() = None;

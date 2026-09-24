@@ -81,18 +81,19 @@ fn pq_eotf(c: f32) -> f32 {
     let m2 = 2523.0 / 4096.0 * 128.0;
     let c1 = 3424.0 / 4096.0;
     let c2 = 2413.0 / 4096.0 * 32.0;
-    let c3 = 2392.0 / 4096.0 * 32.0 + 32.0;
+    let c3 = 2392.0 / 4096.0 * 32.0;
     let p = pow(max(c, 0.0), 1.0 / m2);
-    return pow(max((p - c1) / max(c2 - c3, 1e-6), 0.0), 1.0 / m1);
+    return pow(max((p - c1) / max(c2 - c3 * p, 1e-6), 0.0), 1.0 / m1);
 }
 
 fn hlg_eotf(c: f32) -> f32 {
     let a = 0.17883277;
-    let b = 0.5 - a * log(4.0 * a);
+    let b = 0.28466892;
+    let c_offset = 0.55991073;
     if c <= 0.5 {
         return c * c / 3.0;
     }
-    return pow(max(c - b, 0.0), 1.0 / 0.17883277);
+    return (exp((c - c_offset) / a) + b) / 12.0;
 }
 
 fn transfer_eotf(c: f32, mode: f32) -> f32 {

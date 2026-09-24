@@ -12,6 +12,7 @@ pub enum Role {
     Switch,
     Slider,
     ProgressBar,
+    Dialog,
 }
 
 /// Semantics attached to a `View`, used to build the accessibility tree.

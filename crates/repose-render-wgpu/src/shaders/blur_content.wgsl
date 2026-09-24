@@ -52,38 +52,47 @@ fn vs_main(
 @group(1) @binding(0) var src_tex: texture_2d<f32>;
 @group(1) @binding(1) var src_smp: sampler;
 
-fn weighted_tap(uv: vec2<f32>, weight: f32, edge_mode: u32) -> vec4<f32> {
+struct WeightedTap {
+    color: vec4<f32>,
+    weight: f32,
+};
+
+fn weighted_tap(uv: vec2<f32>, weight: f32, edge_mode: u32) -> WeightedTap {
     if (edge_mode != 0u && (any(uv < vec2<f32>(0.0)) || any(uv > vec2<f32>(1.0)))) {
-        return vec4<f32>(0.0);
+        return WeightedTap(vec4<f32>(0.0), 0.0);
     }
     let sample = textureSample(src_tex, src_smp, clamp(uv, vec2<f32>(0.0), vec2<f32>(1.0)));
-    return vec4<f32>(sample.rgb * weight, weight);
+    return WeightedTap(vec4<f32>(sample.rgb * weight, sample.a * weight), weight);
 }
 
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
     let bu = in.blur_uv;
+    let offsets = array<vec3<f32>, 9>(
+        vec3<f32>(-1.0, -1.0, 1.0 / 16.0),
+        vec3<f32>(0.0, -1.0, 2.0 / 16.0),
+        vec3<f32>(1.0, -1.0, 1.0 / 16.0),
+        vec3<f32>(-1.0, 0.0, 2.0 / 16.0),
+        vec3<f32>(0.0, 0.0, 4.0 / 16.0),
+        vec3<f32>(1.0, 0.0, 2.0 / 16.0),
+        vec3<f32>(-1.0, 1.0, 1.0 / 16.0),
+        vec3<f32>(0.0, 1.0, 2.0 / 16.0),
+        vec3<f32>(1.0, 1.0, 1.0 / 16.0),
+    );
     var blurred = vec4<f32>(0.0);
-    var uv = in.uv + vec2<f32>(-bu.x, -bu.y);
-    blurred += weighted_tap(uv, 1.0 / 16.0, in.edge_mode);
-    uv = in.uv + vec2<f32>(0.0, -bu.y);
-    blurred += weighted_tap(uv, 2.0 / 16.0, in.edge_mode);
-    uv = in.uv + vec2<f32>(bu.x, -bu.y);
-    blurred += weighted_tap(uv, 1.0 / 16.0, in.edge_mode);
-    uv = in.uv + vec2<f32>(-bu.x, 0.0);
-    blurred += weighted_tap(uv, 2.0 / 16.0, in.edge_mode);
-    blurred += weighted_tap(in.uv, 4.0 / 16.0, in.edge_mode);
-    uv = in.uv + vec2<f32>(bu.x, 0.0);
-    blurred += weighted_tap(uv, 2.0 / 16.0, in.edge_mode);
-    uv = in.uv + vec2<f32>(-bu.x, bu.y);
-    blurred += weighted_tap(uv, 1.0 / 16.0, in.edge_mode);
-    uv = in.uv + vec2<f32>(0.0, bu.y);
-    blurred += weighted_tap(uv, 2.0 / 16.0, in.edge_mode);
-    uv = in.uv + vec2<f32>(bu.x, bu.y);
-    blurred += weighted_tap(uv, 1.0 / 16.0, in.edge_mode);
-    let total_weight = max(blurred.a, 1.0 / 16.0);
+    var total_weight = 0.0;
+    for (var i = 0u; i < 9u; i++) {
+        let tap = weighted_tap(
+            in.uv + offsets[i].xy * bu,
+            offsets[i].z,
+            in.edge_mode,
+        );
+        blurred += tap.color;
+        total_weight += tap.weight;
+    }
+    let normalizer = max(total_weight, 1.0 / 16.0);
     return vec4<f32>(
-        blurred.rgb / total_weight * in.color.a,
-        blurred.a / total_weight * in.color.a,
+        blurred.rgb / normalizer * in.color.a,
+        blurred.a / normalizer * in.color.a,
     );
 }

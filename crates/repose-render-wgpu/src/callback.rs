@@ -33,6 +33,7 @@
 
 use std::any::TypeId;
 use std::collections::HashMap;
+use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 use repose_core::{PaintCallbackInfo, PaintCallbackPayload, Rect};
@@ -226,6 +227,20 @@ impl<'pass, 'encoder> CallbackRenderPass<'pass, 'encoder> {
         instances: std::ops::Range<u32>,
     ) {
         self.pass.draw_indexed(indices, base_vertex, instances);
+    }
+}
+
+impl<'pass, 'encoder> Deref for CallbackRenderPass<'pass, 'encoder> {
+    type Target = wgpu::RenderPass<'encoder>;
+
+    fn deref(&self) -> &Self::Target {
+        self.pass
+    }
+}
+
+impl<'pass, 'encoder> DerefMut for CallbackRenderPass<'pass, 'encoder> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.pass
     }
 }
 

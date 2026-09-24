@@ -138,7 +138,10 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
     // `unrotated_px` (rotation-free, un-scaled) and re-apply the scale
     // magnitude so both live in the same space.
     let scale_px = vec2(length(vec2(in.fwd_mat.x, in.fwd_mat.z)), length(vec2(in.fwd_mat.y, in.fwd_mat.w)));
-    let local_px = unrotated_px * scale_px + half_px;
+    let local_px = vec2(
+        unrotated_px.x * scale_px.x,
+        -unrotated_px.y * scale_px.y,
+    ) + half_px;
     let base = eval_brush(in, local_px);
     let a = base.a * alpha_cov;
     return vec4(base.rgb * a, a);

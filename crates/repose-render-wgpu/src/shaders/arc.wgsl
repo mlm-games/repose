@@ -207,8 +207,10 @@ fn eval_arc_brush(in: VSOut) -> vec4<f32> {
     }
     // Shape-local px with (0,0) at the shape top-left. `unrotated_rel` is in
     // NDC, `xywh.zw` is the shape size in px: convert the offset, recenter.
-    let local_px = unrotated_rel(in.pos_ndc, in.xywh, in.fwd_mat) * G.ndc_to_px
-        + 0.5 * in.xywh.zw * G.ndc_to_px;
+    let local_px = vec2(
+        unrotated_rel(in.pos_ndc, in.xywh, in.fwd_mat).x,
+        -unrotated_rel(in.pos_ndc, in.xywh, in.fwd_mat).y,
+    ) * G.ndc_to_px + 0.5 * in.xywh.zw * G.ndc_to_px;
     if in.grad_kind == 1u {
         let d = distance(local_px, in.grad_p0);
         let radius = max(in.grad_p1.x, 1e-3);

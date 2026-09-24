@@ -309,6 +309,7 @@ pub struct OutlinedTextFieldConfig {
     pub enabled: bool,
     /// If true, the field can be focused and text selected/copied but not modified.
     pub read_only: bool,
+    pub sensitive: bool,
     /// Transforms the displayed text without changing the underlying value
     /// (e.g. password masking). Passed through to the lower-level text field.
     pub visual_transformation: Option<Rc<dyn VisualTransformation>>,
@@ -339,6 +340,7 @@ impl Default for OutlinedTextFieldConfig {
             is_error: false,
             enabled: true,
             read_only: false,
+            sensitive: false,
             visual_transformation: None,
             supporting_text: None,
             prefix: None,
@@ -418,6 +420,7 @@ pub fn OutlinedTextField(
                 visual_transformation: config.visual_transformation.clone(),
                 enabled: config.enabled,
                 read_only: config.read_only,
+                sensitive: config.sensitive,
                 cursor_color: config
                     .colors
                     .as_ref()
@@ -795,6 +798,7 @@ pub struct TextFieldConfig {
     pub enabled: bool,
     /// If true, the field can be focused and text selected/copied but not modified.
     pub read_only: bool,
+    pub sensitive: bool,
     /// Transforms the displayed text without changing the underlying value
     /// (e.g. password masking). Passed through to the lower-level text field.
     pub visual_transformation: Option<Rc<dyn VisualTransformation>>,
@@ -819,6 +823,7 @@ impl Default for TextFieldConfig {
             is_error: false,
             enabled: true,
             read_only: false,
+            sensitive: false,
             visual_transformation: None,
             supporting_text: None,
             prefix: None,
@@ -1020,6 +1025,7 @@ pub fn TextField(
                 visual_transformation: config.visual_transformation.clone(),
                 enabled: config.enabled,
                 read_only: config.read_only,
+                sensitive: config.sensitive,
                 cursor_color: config
                     .colors
                     .as_ref()

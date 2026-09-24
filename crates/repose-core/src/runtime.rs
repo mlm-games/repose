@@ -1081,6 +1081,8 @@ pub struct HitRegion {
     /// When true, selection/focus/copy are allowed but mutations are rejected
     pub tf_read_only: bool,
 
+    pub tf_sensitive: bool,
+
     /// Controlled text snapshot for this field (last compose).
     pub tf_value: String,
 

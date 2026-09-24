@@ -19,6 +19,40 @@ use super::{CallbackRenderPass, CallbackResources, ScreenDescriptor};
 
 const MAX_DEPTH_RESOURCE_BYTES: u64 = 256 * 1024 * 1024;
 
+pub trait BlitRenderPass {
+    fn set_blit_pipeline(&mut self, pipeline: &wgpu::RenderPipeline);
+    fn set_blit_bind_group(&mut self, index: u32, bind_group: &wgpu::BindGroup, offsets: &[u32]);
+    fn draw_blit_triangle(&mut self);
+}
+
+impl BlitRenderPass for wgpu::RenderPass<'_> {
+    fn set_blit_pipeline(&mut self, pipeline: &wgpu::RenderPipeline) {
+        self.set_pipeline(pipeline);
+    }
+
+    fn set_blit_bind_group(&mut self, index: u32, bind_group: &wgpu::BindGroup, offsets: &[u32]) {
+        self.set_bind_group(index, bind_group, offsets);
+    }
+
+    fn draw_blit_triangle(&mut self) {
+        self.draw(0..3, 0..1);
+    }
+}
+
+impl BlitRenderPass for CallbackRenderPass<'_, '_> {
+    fn set_blit_pipeline(&mut self, pipeline: &wgpu::RenderPipeline) {
+        self.set_pipeline(pipeline);
+    }
+
+    fn set_blit_bind_group(&mut self, index: u32, bind_group: &wgpu::BindGroup, offsets: &[u32]) {
+        self.set_bind_group(index, bind_group, offsets);
+    }
+
+    fn draw_blit_triangle(&mut self) {
+        self.draw(0..3, 0..1);
+    }
+}
+
 /// Fullscreen textured triangle: samples the offscreen scene 1:1.
 const BLIT_WGSL: &str = r#"
 @group(0) @binding(0) var scene_tex: texture_2d<f32>;
@@ -385,12 +419,16 @@ impl DepthComposite {
     /// renderer has already set the viewport to the callback rect, which
     /// matches the offscreen texture 1:1 (both come from the painted frame
     /// geometry). No-op when `id` has no target.
-    pub fn blit(&self, id: &str, rpass: &mut CallbackRenderPass<'_, '_>) {
+    pub fn blit<P: BlitRenderPass>(&self, id: &str, rpass: &mut P) {
         let Some(t) = self.targets.get(id) else {
             return;
         };
-        rpass.set_pipeline(&t.blit_pipeline);
-        rpass.set_bind_group(0, &t.blit_bind, &[]);
-        rpass.draw(0..3, 0..1);
+        rpass.set_blit_pipeline(&t.blit_pipeline);
+        rpass.set_blit_bind_group(0, &t.blit_bind, &[]);
+        rpass.draw_blit_triangle();
+    }
+
+    pub fn blit_callback(&self, id: &str, rpass: &mut CallbackRenderPass<'_, '_>) {
+        self.blit(id, rpass);
     }
 }

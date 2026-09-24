@@ -8,7 +8,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use repose_app::ReposeRuntime;
-use repose_core::input::{Key, KeyEvent, KeyEventType, Modifiers, PointerButton};
+use repose_core::input::{Key, KeyEvent, KeyEventType, Modifiers, PhysicalKey, PointerButton};
 use repose_core::runtime::{Frame, SemNode};
 use repose_core::semantics::Role;
 use repose_core::shortcuts::Action;
@@ -180,6 +180,147 @@ fn button_frame(
         semantics_nodes: Vec::new(),
         focus_chain: Vec::new(),
     }
+}
+
+#[test]
+fn combined_clickable_delays_single_click_when_double_configured() {
+    let mut rt = ReposeRuntime::new();
+    let clicks = Rc::new(RefCell::new(0u32));
+    let doubles = Rc::new(RefCell::new(0u32));
+    let c = clicks.clone();
+    let d = doubles.clone();
+    rt.cache_frame(button_frame(
+        BTN_ID,
+        Some(Rc::new(move || *c.borrow_mut() += 1)),
+        Some(Rc::new(move || *d.borrow_mut() += 1)),
+        None,
+    ));
+    let pos = Vec2 { x: 10.0, y: 10.0 };
+    rt.handle_pointer_press(pos, PointerButton::Primary);
+    rt.handle_pointer_release(pos, PointerButton::Primary);
+    assert_eq!(*clicks.borrow(), 0);
+    std::thread::sleep(std::time::Duration::from_millis(350));
+    rt.poll_gesture_timers();
+    assert_eq!(*clicks.borrow(), 1);
+    assert_eq!(*doubles.borrow(), 0);
+}
+
+#[test]
+fn combined_clickable_double_tap_skips_on_click() {
+    let mut rt = ReposeRuntime::new();
+    let clicks = Rc::new(RefCell::new(0u32));
+    let doubles = Rc::new(RefCell::new(0u32));
+    let c = clicks.clone();
+    let d = doubles.clone();
+    rt.cache_frame(button_frame(
+        BTN_ID,
+        Some(Rc::new(move || *c.borrow_mut() += 1)),
+        Some(Rc::new(move || *d.borrow_mut() += 1)),
+        None,
+    ));
+    let pos = Vec2 { x: 10.0, y: 10.0 };
+    rt.handle_pointer_press(pos, PointerButton::Primary);
+    rt.handle_pointer_release(pos, PointerButton::Primary);
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    rt.handle_pointer_press(pos, PointerButton::Primary);
+    rt.handle_pointer_release(pos, PointerButton::Primary);
+    assert_eq!(*doubles.borrow(), 1);
+    assert_eq!(*clicks.borrow(), 0);
+}
+
+#[test]
+fn long_press_fires_while_held_and_suppresses_click() {
+    let mut rt = ReposeRuntime::new();
+    let clicks = Rc::new(RefCell::new(0u32));
+    let longs = Rc::new(RefCell::new(0u32));
+    let c = clicks.clone();
+    let l = longs.clone();
+    rt.cache_frame(button_frame(
+        BTN_ID,
+        Some(Rc::new(move || *c.borrow_mut() += 1)),
+        None,
+        Some(Rc::new(move || *l.borrow_mut() += 1)),
+    ));
+    let pos = Vec2 { x: 10.0, y: 10.0 };
+    rt.handle_pointer_press(pos, PointerButton::Primary);
+    std::thread::sleep(std::time::Duration::from_millis(550));
+    rt.poll_gesture_timers();
+    assert_eq!(*longs.borrow(), 1);
+    rt.handle_pointer_release(pos, PointerButton::Primary);
+    assert_eq!(*clicks.borrow(), 0);
+}
+
+#[test]
+fn pending_click_survives_press_on_another_id() {
+    let mut rt = ReposeRuntime::new();
+    let a_clicks = Rc::new(RefCell::new(0u32));
+    let b_clicks = Rc::new(RefCell::new(0u32));
+    let ac = a_clicks.clone();
+    let bc = b_clicks.clone();
+    let a = button_frame(
+        BTN_ID,
+        Some(Rc::new(move || *ac.borrow_mut() += 1)),
+        Some(Rc::new(|| {})),
+        None,
+    );
+    let mut b = button_frame(
+        BTN_ID + 1,
+        Some(Rc::new(move || *bc.borrow_mut() += 1)),
+        None,
+        None,
+    );
+    b.hit_regions[0].rect.x = 200.0;
+    rt.cache_frame(Frame {
+        scene: Scene::default(),
+        hit_regions: [a.hit_regions, b.hit_regions].concat(),
+        semantics_nodes: Vec::new(),
+        focus_chain: Vec::new(),
+    });
+    let pos_a = Vec2 { x: 10.0, y: 10.0 };
+    let pos_b = Vec2 { x: 210.0, y: 10.0 };
+    rt.handle_pointer_press(pos_a, PointerButton::Primary);
+    rt.handle_pointer_release(pos_a, PointerButton::Primary);
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    rt.handle_pointer_press(pos_b, PointerButton::Primary);
+    rt.handle_pointer_release(pos_b, PointerButton::Primary);
+    assert_eq!(*b_clicks.borrow(), 1);
+    assert_eq!(*a_clicks.borrow(), 0);
+    std::thread::sleep(std::time::Duration::from_millis(350));
+    rt.poll_gesture_timers();
+    assert_eq!(*a_clicks.borrow(), 1);
+}
+
+#[test]
+fn keyboard_hold_long_press_fires_and_suppresses_click() {
+    let mut rt = ReposeRuntime::new();
+    let clicks = Rc::new(RefCell::new(0u32));
+    let longs = Rc::new(RefCell::new(0u32));
+    let c = clicks.clone();
+    let l = longs.clone();
+    rt.cache_frame(button_frame(
+        BTN_ID,
+        Some(Rc::new(move || *c.borrow_mut() += 1)),
+        None,
+        Some(Rc::new(move || *l.borrow_mut() += 1)),
+    ));
+    rt.sched.focused = Some(BTN_ID);
+    let down = KeyEvent {
+        key: Key::Space,
+        modifiers: Modifiers::default(),
+        is_repeat: false,
+        event_type: KeyEventType::Down,
+        utf16_code_point: 0,
+        physical: Some(PhysicalKey::Space),
+    };
+    let up = KeyEvent { ..down.clone() };
+    let mut up = up;
+    up.event_type = KeyEventType::Up;
+    assert!(rt.handle_key(&down));
+    std::thread::sleep(std::time::Duration::from_millis(550));
+    rt.poll_gesture_timers();
+    assert_eq!(*longs.borrow(), 1);
+    assert!(rt.handle_key(&up));
+    assert_eq!(*clicks.borrow(), 0);
 }
 
 #[test]
@@ -422,4 +563,30 @@ fn pointer_pos_tracks_mouse_only() {
     assert_eq!(rt.sched.pointer_pos_px, Some((10.0, 20.0)));
     rt.handle_focus_lost();
     assert_eq!(rt.sched.pointer_pos_px, None);
+}
+
+#[test]
+fn runtime_shortcuts_are_per_runtime() {
+    use repose_core::shortcuts::KeyChord;
+    let mut a = ReposeRuntime::new();
+    let mut b = ReposeRuntime::new();
+    a.shortcuts.default_map.insert(
+        Key::Character('k'),
+        Modifiers::default(),
+        Action::Custom("a".into()),
+    );
+    b.shortcuts.default_map.insert(
+        Key::Character('k'),
+        Modifiers::default(),
+        Action::Custom("b".into()),
+    );
+    let chord = KeyChord::new(Key::Character('k'), Modifiers::default());
+    assert_eq!(
+        a.shortcuts.resolve_action(&chord),
+        Some(Action::Custom("a".into()))
+    );
+    assert_eq!(
+        b.shortcuts.resolve_action(&chord),
+        Some(Action::Custom("b".into()))
+    );
 }

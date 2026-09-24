@@ -283,6 +283,7 @@ pub struct TextInputConfig {
     pub enabled: bool,
     /// When true, the text field can be focused and text can be selected/copied, but not modified.
     pub read_only: bool,
+    pub sensitive: bool,
     /// Maximum visible lines. Only effective when `multiline` is true.
     pub max_lines: Option<usize>,
     /// Minimum visible lines. Only effective when `multiline` is true.
@@ -320,6 +321,7 @@ impl Default for TextInputConfig {
             auto_correct_enabled: None,
             enabled: true,
             read_only: false,
+            sensitive: false,
             max_lines: None,
             min_lines: 1,
             cursor_color: None,
@@ -356,6 +358,7 @@ impl std::fmt::Debug for TextInputConfig {
         s.field("auto_correct_enabled", &self.auto_correct_enabled);
         s.field("enabled", &self.enabled);
         s.field("read_only", &self.read_only);
+        s.field("sensitive", &self.sensitive);
         s.field("max_lines", &self.max_lines);
         s.field("min_lines", &self.min_lines);
         s.field("cursor_color", &self.cursor_color);

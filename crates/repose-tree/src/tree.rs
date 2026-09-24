@@ -683,6 +683,7 @@ impl ViewTree {
 
             let old_kind = std::mem::replace(&mut node.kind, view.kind.clone());
             let old_modifier = std::mem::replace(&mut node.modifier, view.modifier.clone());
+            node.semantics = view.semantics.clone();
             let old_scope_key = std::mem::replace(&mut node.scope_key, view.scope_key.clone());
             let old_layout = if layout_changed {
                 node.layout_cache.take()
@@ -969,6 +970,7 @@ impl ViewTree {
                 .expect("create_node: node just inserted");
             node.parent = parent;
             node.depth = depth;
+            node.semantics = view.semantics.clone();
             node.content_hash = content_hash;
             node.user_key = view.modifier.key;
             node.scope_key = view.scope_key.clone();

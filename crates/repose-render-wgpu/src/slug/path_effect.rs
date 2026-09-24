@@ -16,11 +16,11 @@ pub fn apply_path_effect(path: &Path, effect: &PathEffect, tolerance: f32) -> Pa
 }
 
 fn apply_corner_effect(path: &Path, radius: f32, tolerance: f32) -> Path {
-    if radius <= 0.0 {
+    if !radius.is_finite() || radius <= 0.0 {
         return path.clone();
     }
     let events: Vec<PathEvent> = path.iter().flattened(tolerance).collect();
-    let mut contours: Vec<Vec<Point>> = Vec::new();
+    let mut contours: Vec<(Vec<Point>, bool)> = Vec::new();
     let mut current: Vec<Point> = Vec::new();
     let mut contour_start = Point::new(0.0, 0.0);
 
@@ -40,7 +40,7 @@ fn apply_corner_effect(path: &Path, radius: f32, tolerance: f32) -> Path {
                 close: false,
             } => {
                 if !current.is_empty() {
-                    contours.push(current.clone());
+                    contours.push((current.clone(), false));
                 }
                 current.clear();
             }
@@ -51,7 +51,7 @@ fn apply_corner_effect(path: &Path, radius: f32, tolerance: f32) -> Path {
             } => {
                 if !current.is_empty() {
                     current.push(contour_start);
-                    contours.push(current.clone());
+                    contours.push((current.clone(), true));
                 }
                 current.clear();
             }
@@ -59,23 +59,27 @@ fn apply_corner_effect(path: &Path, radius: f32, tolerance: f32) -> Path {
         }
     }
     if !current.is_empty() {
-        contours.push(current);
+        contours.push((current, false));
     }
 
     let mut builder = Path::builder();
-    for contour in &contours {
+    for (contour, closed) in &contours {
         if contour.len() < 2 {
             continue;
         }
         if contour.len() == 2 {
             builder.begin(contour[0]);
             builder.line_to(contour[1]);
+            if *closed {
+                builder.close();
+            } else {
+                builder.end(false);
+            }
             continue;
         }
 
         let n = contour.len();
         let last_idx = n - 1;
-        let closed = (contour[0] - contour[last_idx]).square_length() < 0.0001;
 
         // Collect rounded output points for this contour.
         let mut out_pts: Vec<Point> = Vec::new();
@@ -84,12 +88,12 @@ fn apply_corner_effect(path: &Path, radius: f32, tolerance: f32) -> Path {
             let p_curr = contour[i];
 
             // Open contour: first and last points aren't rounded (no adjacent edges).
-            if !closed && (i == 0 || i == last_idx) {
+            if !*closed && (i == 0 || i == last_idx) {
                 out_pts.push(p_curr);
                 continue;
             }
 
-            if i == last_idx && closed {
+            if i == last_idx && *closed {
                 break;
             }
 
@@ -153,8 +157,10 @@ fn apply_corner_effect(path: &Path, radius: f32, tolerance: f32) -> Path {
         for pt in out_pts.iter().skip(1) {
             builder.line_to(*pt);
         }
-        if closed {
+        if *closed {
             builder.close();
+        } else {
+            builder.end(false);
         }
     }
 
@@ -207,7 +213,7 @@ fn apply_dash_effect(path: &Path, intervals: &[f32], phase: f32, tolerance: f32)
         match ev {
             PathEvent::Begin { at: _ } => {
                 if in_subpath {
-                    builder.close();
+                    builder.end(false);
                     in_subpath = false;
                 }
                 // Dash continues across sub-paths; don't reset dash_dist.
@@ -236,7 +242,7 @@ fn apply_dash_effect(path: &Path, intervals: &[f32], phase: f32, tolerance: f32)
                             }
                             builder.line_to(next);
                         } else if in_subpath {
-                            builder.close();
+                            builder.end(false);
                             in_subpath = false;
                         }
                         cur = next;
@@ -261,6 +267,8 @@ fn apply_dash_effect(path: &Path, intervals: &[f32], phase: f32, tolerance: f32)
             } if in_subpath => {
                 if *close {
                     builder.close();
+                } else {
+                    builder.end(false);
                 }
                 in_subpath = false;
             }
@@ -269,8 +277,37 @@ fn apply_dash_effect(path: &Path, intervals: &[f32], phase: f32, tolerance: f32)
     }
 
     if in_subpath {
-        builder.close();
+        builder.end(false);
     }
 
     builder.build()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn corner_effect_terminates_open_and_closed_contours() {
+        let mut builder = Path::builder();
+        builder.begin(Point::new(0.0, 0.0));
+        builder.line_to(Point::new(10.0, 0.0));
+        builder.line_to(Point::new(0.0, 0.0));
+        builder.end(false);
+        builder.begin(Point::new(20.0, 0.0));
+        builder.line_to(Point::new(30.0, 0.0));
+        builder.line_to(Point::new(20.0, 10.0));
+        builder.close();
+        let path = builder.build();
+        let result = apply_path_effect(&path, &PathEffect::Corner { radius: 2.0 }, 0.25);
+        let closes: Vec<bool> = result
+            .iter()
+            .flattened(0.25)
+            .filter_map(|event| match event {
+                PathEvent::End { close, .. } => Some(close),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(closes, vec![false, true]);
+    }
 }

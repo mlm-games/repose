@@ -34,6 +34,11 @@ pub struct FallbackFontComponent {
     pub cover_count: usize,
 }
 
+static EMPTY_FALLBACK_COMPONENT: FallbackFontComponent = FallbackFontComponent {
+    fonts: Vec::new(),
+    cover_count: 0,
+};
+
 pub struct UnicodePropertyLookup {
     boundaries: Vec<u32>,
     // values[i] corresponds to range [boundaries[i-1]..boundaries[i])? Actually Kotlin logic:
@@ -43,7 +48,11 @@ pub struct UnicodePropertyLookup {
 }
 
 impl UnicodePropertyLookup {
-    pub fn lookup(&self, value: u32) -> Option<&FallbackFontComponent> {
+    pub fn lookup(&self, value: u32) -> &FallbackFontComponent {
+        self.try_lookup(value).unwrap_or(&EMPTY_FALLBACK_COMPONENT)
+    }
+
+    pub fn try_lookup(&self, value: u32) -> Option<&FallbackFontComponent> {
         if value > MAX_CODE_POINT {
             return None;
         }

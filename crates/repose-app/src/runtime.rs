@@ -159,8 +159,9 @@ pub struct ReposeRuntime {
     /// Ambient host layer for floating surfaces. Installed around
     /// composition each frame; entries render at the root.
     pub overlay: repose_ui::overlay::OverlayHandle,
-    lifecycle_events: crate::lifecycle::LifecycleDispatcher,
-    deeplink_events: crate::lifecycle::DeeplinkDispatcher,
+    pub dnd_context: repose_core::dnd::DndContext,
+    lifecycle_events: std::sync::Arc<crate::lifecycle::LifecycleDispatcher>,
+    deeplink_events: std::sync::Arc<crate::lifecycle::DeeplinkDispatcher>,
 
     pub modifiers: Modifiers,
     pub mouse_pos_px: (f32, f32),
@@ -274,8 +275,9 @@ impl ReposeRuntime {
     pub fn with_overlay(overlay: repose_ui::overlay::OverlayHandle) -> Self {
         Self {
             overlay,
-            lifecycle_events: crate::lifecycle::LifecycleDispatcher::default(),
-            deeplink_events: crate::lifecycle::DeeplinkDispatcher::default(),
+            dnd_context: repose_core::dnd::DndContext::default(),
+            lifecycle_events: std::sync::Arc::new(crate::lifecycle::LifecycleDispatcher::default()),
+            deeplink_events: std::sync::Arc::new(crate::lifecycle::DeeplinkDispatcher::default()),
             sched: Scheduler::new(),
             scale: 1.0,
             modifiers: Modifiers::default(),
@@ -313,10 +315,17 @@ impl ReposeRuntime {
             pending_click: None,
             frame_cache: None,
             cursor: None,
-            shortcuts: repose_core::shortcuts::ShortcutState::new(),
+            shortcuts: repose_core::shortcuts::ShortcutState::new().without_global_fallback(),
             textfield_states: HashMap::new(),
             gamepads: HashMap::new(),
             pending_rumble: Vec::new(),
+        }
+    }
+
+    pub fn event_dispatchers(&self) -> crate::lifecycle::RuntimeDispatchers {
+        crate::lifecycle::RuntimeDispatchers {
+            lifecycle: self.lifecycle_events.clone(),
+            deeplink: self.deeplink_events.clone(),
         }
     }
 
@@ -400,6 +409,8 @@ impl ReposeRuntime {
     where
         F: FnMut(&mut Scheduler, &RenderContext) -> View,
     {
+        let _dnd_guard = self.dnd_context.enter();
+        let _event_scope = crate::lifecycle::enter_dispatchers(self.event_dispatchers());
         self.poll_long_press();
         self.flush_pending_click();
         self.poll_key_long_press();
@@ -441,7 +452,9 @@ impl ReposeRuntime {
             }
         };
 
-        let frame = compose_once(self);
+        let shortcut_state = self.shortcuts.clone();
+        let frame =
+            repose_core::shortcuts::with_runtime_state(&shortcut_state, || compose_once(self));
 
         // Reconcile hover against the *new* hit list before presenting. If the
         // hover target changed, recompose once so paint uses the correct
@@ -459,7 +472,9 @@ impl ReposeRuntime {
                 }
             }
             // Hover should be stable: same geometry + same pointer. Do not loop.
-            return compose_once(self);
+            return repose_core::shortcuts::with_runtime_state(&shortcut_state, || {
+                compose_once(self)
+            });
         }
         frame
     }
@@ -563,6 +578,7 @@ impl ReposeRuntime {
 
     /// Store the composed frame for event hit testing.
     pub fn cache_frame(&mut self, frame: Frame) {
+        let _dnd_guard = self.dnd_context.enter();
         if self.key_pressed_active.is_some_and(|id| {
             self.sched.focused != Some(id)
                 || !frame
@@ -588,6 +604,7 @@ impl ReposeRuntime {
     /// hover against the new hit list, and publishes the frame to the DnD
     /// registry. Replaces platform-local copies of this logic.
     pub fn after_compose(&mut self, frame: &Frame, scale: f32) {
+        let _dnd_guard = self.dnd_context.enter();
         ensure_all_tf_states_from_frame(&mut self.textfield_states, frame);
         self.prune_textfield_states(frame);
         self.ensure_focused_state_in_frame(frame);
@@ -888,6 +905,8 @@ impl ReposeRuntime {
     /// Touch move with a stable finger id (same pairing as
     /// [`Self::handle_touch_press`]; hover fallback stays mouse).
     pub fn handle_touch_move(&mut self, touch: Option<u64>, pos: Vec2) -> PointerMoveResult {
+        let _event_scope = crate::lifecycle::enter_dispatchers(self.event_dispatchers());
+        let _dnd_guard = self.dnd_context.enter();
         self.mouse_pos_px = (pos.x, pos.y);
         if let Some(tid) = touch {
             self.touch_positions.insert(tid, pos);
@@ -1065,6 +1084,8 @@ impl ReposeRuntime {
         pos: Vec2,
         button: PointerButton,
     ) -> PointerButtonResult {
+        let _event_scope = crate::lifecycle::enter_dispatchers(self.event_dispatchers());
+        let _dnd_guard = self.dnd_context.enter();
         self.mouse_pos_px = (pos.x, pos.y);
         if let Some(tid) = touch {
             self.touch_positions.insert(tid, pos);
@@ -1316,6 +1337,8 @@ impl ReposeRuntime {
         pos: Vec2,
         button: PointerButton,
     ) -> PointerButtonResult {
+        let _event_scope = crate::lifecycle::enter_dispatchers(self.event_dispatchers());
+        let _dnd_guard = self.dnd_context.enter();
         self.mouse_pos_px = (pos.x, pos.y);
         if let Some(tid) = touch {
             self.touch_positions.insert(tid, pos);
@@ -1643,6 +1666,8 @@ impl ReposeRuntime {
     }
 
     pub fn handle_touch_cancel_at(&mut self, tid: u64, pos: Vec2) {
+        let _event_scope = crate::lifecycle::enter_dispatchers(self.event_dispatchers());
+        let _dnd_guard = self.dnd_context.enter();
         let was_primary = self.touch_primary == Some(tid);
         let capture_id = self
             .touch_presses
@@ -1681,6 +1706,8 @@ impl ReposeRuntime {
     }
 
     pub fn handle_pointer_cancel(&mut self) {
+        let _event_scope = crate::lifecycle::enter_dispatchers(self.event_dispatchers());
+        let _dnd_guard = self.dnd_context.enter();
         self.sched.pointer_pos_px = None;
         self.held_mouse.clear();
         self.sched.mouse_primary = false;
@@ -1984,6 +2011,13 @@ impl ReposeRuntime {
 
     /// Process a keyboard key event. Returns true if consumed.
     pub fn handle_key(&mut self, event: &KeyEvent) -> bool {
+        let _event_scope = crate::lifecycle::enter_dispatchers(self.event_dispatchers());
+        let shortcut_state = self.shortcuts.clone();
+        repose_core::shortcuts::with_runtime_state(&shortcut_state, || self.handle_key_inner(event))
+    }
+
+    fn handle_key_inner(&mut self, event: &KeyEvent) -> bool {
+        let _dnd_guard = self.dnd_context.enter();
         if event.event_type == KeyEventType::Down {
             let _ = repose_core::request_input_mode(repose_core::InputMode::Keyboard);
         }
@@ -1993,12 +2027,23 @@ impl ReposeRuntime {
         };
         let f = &frame;
 
-        // Escape / BrowserBack: cancel DnD first so a grabbed pointer does
-        // not swallow back / exit handling, then fall through to the normal
-        // key pipeline so ancestors up to the root see the event.
         if event.event_type == KeyEventType::Down && !event.is_repeat && event.key == Key::Escape {
             self.cancel_keyboard_press();
             if self.cancel_active_dnd() {
+                request_frame();
+                return true;
+            }
+        }
+
+        if event.event_type == KeyEventType::Down && !event.is_repeat {
+            let is_back = event.key == Key::Escape
+                || self
+                    .resolve_shortcut_action(&repose_core::shortcuts::KeyChord::new(
+                        event.key.clone(),
+                        self.modifiers,
+                    ))
+                    .is_some_and(|action| matches!(action, repose_core::shortcuts::Action::Back));
+            if is_back && self.overlay.handle_back() {
                 request_frame();
                 return true;
             }
@@ -2500,6 +2545,9 @@ impl ReposeRuntime {
                 true
             }
             Action::Copy => {
+                if hit.is_some_and(tf_is_sensitive) {
+                    return true;
+                }
                 let st = state_rc.borrow();
                 let (a, b) = (
                     st.selection.start.min(st.selection.end),
@@ -2516,6 +2564,9 @@ impl ReposeRuntime {
                 true
             }
             Action::Cut => {
+                if hit.is_some_and(tf_is_sensitive) {
+                    return true;
+                }
                 if !is_tf_editable(&f, fid) {
                     return true;
                 }
@@ -3369,6 +3420,18 @@ fn is_multiline_id(f: &Frame, id: u64) -> bool {
 /// edits but keeps selection/focus/copy working.
 fn tf_can_edit(hit: &HitRegion) -> bool {
     hit.tf_enabled && !hit.tf_read_only
+}
+
+fn tf_is_sensitive(hit: &HitRegion) -> bool {
+    hit.tf_sensitive
+        || matches!(
+            hit.keyboard_type,
+            repose_core::KeyboardType::Password
+                | repose_core::KeyboardType::NumberPassword
+                | repose_core::KeyboardType::DecimalPassword
+                | repose_core::KeyboardType::NumberPasswordSigned
+                | repose_core::KeyboardType::DecimalPasswordSigned
+        )
 }
 
 fn is_tf_editable(f: &Frame, id: u64) -> bool {

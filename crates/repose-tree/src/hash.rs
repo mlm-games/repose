@@ -636,6 +636,7 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
             input.value.hash(hasher);
             input.enabled.hash(hasher);
             input.read_only.hash(hasher);
+            input.sensitive.hash(hasher);
             input.max_lines.hash(hasher);
             input.min_lines.hash(hasher);
             std::mem::discriminant(&input.keyboard_type).hash(hasher);
@@ -755,6 +756,19 @@ fn hash_brush(b: &Brush, hasher: &mut impl Hasher) {
     match b {
         Brush::Solid(c) => hash_color(c, hasher),
         Brush::Linear {
+            start,
+            end,
+            start_color,
+            end_color,
+        } => {
+            hash_f32(start.x, hasher);
+            hash_f32(start.y, hasher);
+            hash_f32(end.x, hasher);
+            hash_f32(end.y, hasher);
+            hash_color(start_color, hasher);
+            hash_color(end_color, hasher);
+        }
+        Brush::LinearNormalized {
             start,
             end,
             start_color,

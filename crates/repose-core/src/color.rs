@@ -328,6 +328,14 @@ pub enum Brush {
         end_color: Color,
     },
 
+    /// Linear gradient with endpoints normalized to the shape bounds.
+    LinearNormalized {
+        start: Vec2,
+        end: Vec2,
+        start_color: Color,
+        end_color: Color,
+    },
+
     /// Radial gradient centered at `center` with the given `radius`.
     ///
     /// Like [`Brush::Linear`], coordinates are shape-local px from the
@@ -375,13 +383,11 @@ pub struct LinearGradient {
 }
 
 impl LinearGradient {
-    /// Vertical gradient spanning the shape's full height. Endpoints are
-    /// shape-local px `(0,0)` → `(0,h)` only when the shape is `h` px tall;
-    /// prefer explicit px endpoints for canvas shapes.
+    /// Vertical gradient spanning the shape's full height.
     pub fn vertical(top: Color, bottom: Color) -> Brush {
-        Brush::Linear {
+        Brush::LinearNormalized {
             start: Vec2 { x: 0.0, y: 0.0 },
-            end: Vec2 { x: 0.0, y: 1.0 }, // normalized; interpreted in rect size
+            end: Vec2 { x: 0.0, y: 1.0 },
             start_color: top,
             end_color: bottom,
         }
@@ -390,7 +396,7 @@ impl LinearGradient {
     /// Horizontal gradient spanning the shape's full width. Same
     /// shape-local caveat as [`vertical`](Self::vertical).
     pub fn horizontal(left: Color, right: Color) -> Brush {
-        Brush::Linear {
+        Brush::LinearNormalized {
             start: Vec2 { x: 0.0, y: 0.0 },
             end: Vec2 { x: 1.0, y: 0.0 },
             start_color: left,

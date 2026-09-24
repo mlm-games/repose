@@ -3215,6 +3215,14 @@ fn text_field_view(
         auto_correct_enabled,
         enabled,
         read_only,
+        sensitive: matches!(
+            keyboard_type,
+            repose_core::KeyboardType::Password
+                | repose_core::KeyboardType::NumberPassword
+                | repose_core::KeyboardType::DecimalPassword
+                | repose_core::KeyboardType::NumberPasswordSigned
+                | repose_core::KeyboardType::DecimalPasswordSigned
+        ),
         max_lines,
         min_lines,
         cursor_color,

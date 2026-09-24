@@ -161,6 +161,10 @@ fn build_accesskit_node(sem: &SemNode, children: &[u64], scale: f64) -> Node {
         node.set_label(label.clone());
     }
 
+    if matches!(sem.role, CoreRole::Dialog) {
+        node.set_modal();
+    }
+
     if !children.is_empty() {
         node.set_children(children.iter().copied().map(NodeId).collect::<Vec<_>>());
     }
@@ -206,6 +210,7 @@ fn map_role(role: CoreRole) -> Role {
         CoreRole::Slider => Role::Slider,
         CoreRole::ProgressBar => Role::ProgressIndicator,
         CoreRole::Tab => Role::Tab,
+        CoreRole::Dialog => Role::Dialog,
     }
 }
 

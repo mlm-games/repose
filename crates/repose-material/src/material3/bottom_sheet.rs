@@ -320,7 +320,7 @@ pub fn ModalBottomSheet(
                         })
                         .focus_group()
                         .semantics(Semantics {
-                            role: Role::Container,
+                            role: Role::Dialog,
                             label: Some("Bottom sheet".into()),
                             ..Default::default()
                         });
@@ -424,7 +424,13 @@ pub fn ModalBottomSheet(
                 }
             });
 
-            *overlay_guard.borrow_mut() = Some(overlay.show_guard(builder, 800.0, false));
+            let back_state = state.clone();
+            let back_handler: Rc<dyn Fn() -> bool> = Rc::new(move || {
+                back_state.dismiss();
+                true
+            });
+            *overlay_guard.borrow_mut() =
+                Some(overlay.show_guard_with_back(builder, 800.0, false, back_handler));
         }
     } else {
         *overlay_guard.borrow_mut() = None;

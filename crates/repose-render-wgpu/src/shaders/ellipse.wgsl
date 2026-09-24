@@ -119,7 +119,10 @@ fn ellipse_local_px(pos_ndc: vec2<f32>, xywh: vec4<f32>, fwd_mat: vec4<f32>) -> 
         (fwd_mat.w * rel.x - fwd_mat.y * rel.y) / det,
         (-fwd_mat.z * rel.x + fwd_mat.x * rel.y) / det,
     );
-    return (unrotated_ndc - center) * G.ndc_to_px + 0.5 * xywh.zw * G.ndc_to_px;
+    return vec2(
+        unrotated_ndc.x - center.x,
+        -(unrotated_ndc.y - center.y),
+    ) * G.ndc_to_px + 0.5 * xywh.zw * G.ndc_to_px;
 }
 
 @fragment

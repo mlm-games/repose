@@ -172,8 +172,8 @@ pub fn run_android_app_with_options(
             self.options.continuous_redraw || CONTINUOUS_REDRAW.load(Ordering::Relaxed)
         }
 
-        fn notify_lifecycle(&self, state: AppLifecycle) {
-            crate::push_lifecycle(state);
+        fn notify_lifecycle(&mut self, state: AppLifecycle) {
+            self.rt.push_lifecycle(state);
         }
 
         fn set_foreground(&mut self, foreground: bool) {
@@ -443,6 +443,7 @@ pub fn run_android_app_with_options(
             false
         }
         fn overlay_drag_indicator(&self, scene: &mut Scene) {
+            let _dnd_guard = self.rt.dnd_context.enter();
             Self::overlay_drag_indicator_static(scene, self.rt.mouse_pos_px);
         }
 
@@ -453,6 +454,8 @@ pub fn run_android_app_with_options(
 
     impl ApplicationHandler<()> for AppState {
         fn suspended(&mut self, _el: &winit::event_loop::ActiveEventLoop) {
+            let _event_scope =
+                repose_app::lifecycle::enter_dispatchers(self.rt.event_dispatchers());
             self.surface_active = false;
             self.set_foreground(false);
             self.os_focused = false;
@@ -467,6 +470,8 @@ pub fn run_android_app_with_options(
         }
 
         fn resumed(&mut self, el: &winit::event_loop::ActiveEventLoop) {
+            let _event_scope =
+                repose_app::lifecycle::enter_dispatchers(self.rt.event_dispatchers());
             self.set_foreground(true);
             if self.os_focused {
                 self.rt.sched.window_focused = !self.occluded;
@@ -527,6 +532,9 @@ pub fn run_android_app_with_options(
             _id: winit::window::WindowId,
             event: WindowEvent,
         ) {
+            let _event_scope =
+                repose_app::lifecycle::enter_dispatchers(self.rt.event_dispatchers());
+            let _dnd_guard = self.rt.dnd_context.enter();
             match event {
                 WindowEvent::CloseRequested => el.exit(),
 
@@ -704,6 +712,11 @@ pub fn run_android_app_with_options(
                         && !key_event.repeat
                         && (rc::is_back_key(&key_event) || rc::is_escape_key(&key_event))
                     {
+                        if self.rt.overlay.handle_back() {
+                            self.dirty = true;
+                            self.request_redraw();
+                            return;
+                        }
                         use repose_navigation::back;
                         if back::handle() {
                             self.dirty = true;
@@ -853,8 +866,11 @@ pub fn run_android_app_with_options(
         }
 
         fn about_to_wait(&mut self, el: &winit::event_loop::ActiveEventLoop) {
-            crate::process_deeplinks();
-            crate::process_lifecycle();
+            let _event_scope =
+                repose_app::lifecycle::enter_dispatchers(self.rt.event_dispatchers());
+            let _dnd_guard = self.rt.dnd_context.enter();
+            self.rt.process_deeplinks();
+            self.rt.process_lifecycle();
 
             #[cfg(feature = "gamepad")]
             {

@@ -134,6 +134,48 @@ impl Default for LifecycleDispatcher {
     }
 }
 
+#[derive(Clone)]
+pub struct RuntimeDispatchers {
+    pub lifecycle: Arc<LifecycleDispatcher>,
+    pub deeplink: Arc<DeeplinkDispatcher>,
+}
+
+pub struct ActiveDispatcherScope {
+    previous: Option<RuntimeDispatchers>,
+}
+
+static EXTERNAL_LIFECYCLE: Mutex<Vec<AppLifecycle>> = Mutex::new(Vec::new());
+static EXTERNAL_DEEPLINKS: Mutex<Vec<Vec<u8>>> = Mutex::new(Vec::new());
+
+thread_local! {
+    static ACTIVE_DISPATCHERS: RefCell<Option<RuntimeDispatchers>> = const { RefCell::new(None) };
+}
+
+pub fn enter_dispatchers(dispatchers: RuntimeDispatchers) -> ActiveDispatcherScope {
+    let lifecycle = std::mem::take(&mut *lock(&EXTERNAL_LIFECYCLE));
+    for state in lifecycle {
+        dispatchers.lifecycle.push(state);
+    }
+    let deeplinks = std::mem::take(&mut *lock(&EXTERNAL_DEEPLINKS));
+    for data in deeplinks {
+        dispatchers.deeplink.push(data);
+    }
+    let previous = ACTIVE_DISPATCHERS.with(|slot| slot.borrow_mut().replace(dispatchers));
+    ActiveDispatcherScope { previous }
+}
+
+impl Drop for ActiveDispatcherScope {
+    fn drop(&mut self) {
+        ACTIVE_DISPATCHERS.with(|slot| {
+            *slot.borrow_mut() = self.previous.take();
+        });
+    }
+}
+
+fn active_dispatchers() -> Option<RuntimeDispatchers> {
+    ACTIVE_DISPATCHERS.with(|slot| slot.borrow().clone())
+}
+
 pub struct DeeplinkDispatcher {
     primary: Mutex<Option<Arc<DeeplinkSlot>>>,
     pending: Mutex<Vec<Vec<u8>>>,
@@ -262,47 +304,87 @@ pub fn run_pre_redraw(ctx: &repose_core::RenderContext) {
 }
 
 pub fn set_on_lifecycle(callback: Box<dyn Fn(AppLifecycle) + Send>) {
-    LIFECYCLE_DISPATCHER.set_callback(callback);
+    if let Some(dispatchers) = active_dispatchers() {
+        dispatchers.lifecycle.set_callback(callback);
+    } else {
+        LIFECYCLE_DISPATCHER.set_callback(callback);
+    }
 }
 
 pub fn add_lifecycle_listener(callback: Box<dyn Fn(AppLifecycle) + Send>) -> u64 {
-    LIFECYCLE_DISPATCHER.add_listener(callback)
+    if let Some(dispatchers) = active_dispatchers() {
+        dispatchers.lifecycle.add_listener(callback)
+    } else {
+        LIFECYCLE_DISPATCHER.add_listener(callback)
+    }
 }
 
 pub fn remove_lifecycle_listener(id: u64) -> bool {
-    LIFECYCLE_DISPATCHER.remove_listener(id)
+    active_dispatchers()
+        .map(|dispatchers| dispatchers.lifecycle.remove_listener(id))
+        .unwrap_or_else(|| LIFECYCLE_DISPATCHER.remove_listener(id))
 }
 
 pub fn current_lifecycle() -> Option<AppLifecycle> {
-    LIFECYCLE_DISPATCHER.current()
+    active_dispatchers()
+        .map(|dispatchers| dispatchers.lifecycle.current())
+        .unwrap_or_else(|| LIFECYCLE_DISPATCHER.current())
 }
 
 pub fn push_lifecycle(state: AppLifecycle) {
-    LIFECYCLE_DISPATCHER.push(state);
+    if let Some(dispatchers) = active_dispatchers() {
+        dispatchers.lifecycle.push(state);
+    } else {
+        LIFECYCLE_DISPATCHER.push(state);
+        lock(&EXTERNAL_LIFECYCLE).push(state);
+    }
 }
 
 pub fn process_lifecycle() {
-    LIFECYCLE_DISPATCHER.process();
+    if let Some(dispatchers) = active_dispatchers() {
+        dispatchers.lifecycle.process();
+    } else {
+        LIFECYCLE_DISPATCHER.process();
+    }
 }
 
 pub fn set_on_deeplink(callback: Box<dyn Fn(Vec<u8>) + Send>) {
-    DEEPLINK_DISPATCHER.set_callback(callback);
+    if let Some(dispatchers) = active_dispatchers() {
+        dispatchers.deeplink.set_callback(callback);
+    } else {
+        DEEPLINK_DISPATCHER.set_callback(callback);
+    }
 }
 
 pub fn add_deeplink_listener(callback: Box<dyn Fn(Vec<u8>) + Send>) -> u64 {
-    DEEPLINK_DISPATCHER.add_listener(callback)
+    if let Some(dispatchers) = active_dispatchers() {
+        dispatchers.deeplink.add_listener(callback)
+    } else {
+        DEEPLINK_DISPATCHER.add_listener(callback)
+    }
 }
 
 pub fn remove_deeplink_listener(id: u64) -> bool {
-    DEEPLINK_DISPATCHER.remove_listener(id)
+    active_dispatchers()
+        .map(|dispatchers| dispatchers.deeplink.remove_listener(id))
+        .unwrap_or_else(|| DEEPLINK_DISPATCHER.remove_listener(id))
 }
 
 pub fn push_deeplink(data: Vec<u8>) {
-    DEEPLINK_DISPATCHER.push(data);
+    if let Some(dispatchers) = active_dispatchers() {
+        dispatchers.deeplink.push(data);
+    } else {
+        DEEPLINK_DISPATCHER.push(data.clone());
+        lock(&EXTERNAL_DEEPLINKS).push(data);
+    }
 }
 
 pub fn process_deeplinks() {
-    DEEPLINK_DISPATCHER.process();
+    if let Some(dispatchers) = active_dispatchers() {
+        dispatchers.deeplink.process();
+    } else {
+        DEEPLINK_DISPATCHER.process();
+    }
 }
 
 fn lifecycle_code(state: AppLifecycle) -> u8 {
@@ -406,4 +488,30 @@ fn panic_message(error: &Box<dyn std::any::Any + Send>) -> &str {
         .map(String::as_str)
         .or_else(|| error.downcast_ref::<&str>().copied())
         .unwrap_or("unknown")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn active_dispatchers_receive_legacy_global_calls() {
+        let lifecycle = Arc::new(LifecycleDispatcher::default());
+        let deeplink = Arc::new(DeeplinkDispatcher::default());
+        let seen = Arc::new(AtomicUsize::new(0));
+        let callback_seen = seen.clone();
+        {
+            let _scope = enter_dispatchers(RuntimeDispatchers {
+                lifecycle: lifecycle.clone(),
+                deeplink: deeplink.clone(),
+            });
+            set_on_lifecycle(Box::new(move |_state| {
+                callback_seen.fetch_add(1, Ordering::Relaxed);
+            }));
+            push_lifecycle(AppLifecycle::Foreground);
+            process_lifecycle();
+        }
+        assert_eq!(seen.load(Ordering::Relaxed), 1);
+    }
 }

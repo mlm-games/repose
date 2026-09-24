@@ -108,6 +108,8 @@ impl OffscreenRenderer {
             .await?;
         let format = TextureFormat::Rgba8UnormSrgb;
         let msaa = crate::pick_surface_msaa(&adapter, format, msaa);
+        let working_space_msaa =
+            crate::pick_surface_msaa_for_mode(&adapter, TextureFormat::Rgba16Float, msaa, true);
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("repose-offscreen"),
@@ -118,7 +120,13 @@ impl OffscreenRenderer {
                 trace: wgpu::Trace::Off,
             })
             .await?;
-        let renderer = WgpuSceneRenderer::from_device(device, queue, format, msaa);
+        let renderer = WgpuSceneRenderer::from_device_with_working_space_msaa(
+            device,
+            queue,
+            format,
+            msaa,
+            working_space_msaa,
+        );
         Self::from_renderer(renderer, width, height)
     }
 
@@ -160,7 +168,15 @@ impl OffscreenRenderer {
         let height = height.max(1);
         let format = TextureFormat::Rgba8UnormSrgb;
         let msaa = crate::pick_surface_msaa(adapter, format, msaa);
-        let renderer = WgpuSceneRenderer::from_device(device, queue, format, msaa);
+        let working_space_msaa =
+            crate::pick_surface_msaa_for_mode(adapter, TextureFormat::Rgba16Float, msaa, true);
+        let renderer = WgpuSceneRenderer::from_device_with_working_space_msaa(
+            device,
+            queue,
+            format,
+            msaa,
+            working_space_msaa,
+        );
         Self::from_renderer(renderer, width, height)
     }
 
