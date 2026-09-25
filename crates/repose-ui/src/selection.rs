@@ -6,17 +6,19 @@
 //! - Triple-tap -> select all
 //! - Shift+click / shift+drag -> extend from previous anchor
 //! - Primary selection (middle-click paste) + Ctrl/Cmd+C via `Action::Copy`
+//!
+//! The highlight itself is painted by the layout engine from the node's real
+//! text layout (Compose's `SelectionController` drawing
+//! `getPathForRange`), so it tracks wrapping, line height and text alignment.
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
 use repose_core::prelude::*;
-use repose_core::{Brush, CursorIcon, FontStyle, PointerEvent, Rect, Scene, SceneNode, View};
+use repose_core::{CursorIcon, FontStyle, PointerEvent, TextRange, TextSelection, View};
 use web_time::{Duration, Instant};
 
-use crate::textfield::{
-    TextFieldMetrics, caret_xy_for_byte_with_metrics, index_for_xy_bytes_with_metrics, word_range,
-};
+use crate::textfield::{TextFieldMetrics, index_for_xy_bytes_with_metrics, word_range};
 use crate::{Text, TextStyle};
 
 // Shared tap-timing with TextFieldState (textfield.rs): 300ms double-tap
@@ -98,12 +100,10 @@ fn make_selectable(
     on_selection_change: impl Fn(Option<(usize, usize)>) + 'static,
 ) -> View {
     let text_for_handlers = text.clone();
-    let text_for_paint = text.clone();
 
-    let selection: Rc<RefCell<Option<(usize, usize)>>> = remember(|| RefCell::new(None));
+    let selection = TextSelection::clone(&remember(TextSelection::default));
     let anchor: Rc<RefCell<usize>> = remember(|| RefCell::new(0));
     let dragging: Rc<RefCell<bool>> = remember(|| RefCell::new(false));
-    let last_rect: Rc<RefCell<Rect>> = remember(|| RefCell::new(Rect::default()));
 
     // Tap counting for double/triple
     let last_tap_time: Rc<RefCell<Option<Instant>>> = remember(|| RefCell::new(None));
@@ -117,8 +117,37 @@ fn make_selectable(
         let selection = selection.clone();
         let callback = callback.clone();
         move |s: Option<(usize, usize)>| {
-            *selection.borrow_mut() = s;
+            selection.set_range(s.map(|(a, b)| TextRange { start: a, end: b }));
             callback(s);
+        }
+    };
+
+    // Map a pointer position to a byte offset using the geometry the engine
+    // published for this node, so wrapping and line height match what is painted.
+    let hit_test = {
+        let text = text_for_handlers.clone();
+        let selection = selection.clone();
+        let metrics = metrics.clone();
+        move |x: f32, y: f32| -> usize {
+            let geo = selection.geometry();
+            if geo.wrap_width_px <= 0.0 {
+                return 0;
+            }
+            let layout_metrics = TextFieldMetrics {
+                line_height_px: if geo.line_height_px > 0.0 {
+                    geo.line_height_px
+                } else {
+                    metrics.line_height_px
+                },
+                ..(*metrics).clone()
+            };
+            index_for_xy_bytes_with_metrics(
+                &text,
+                geo.wrap_width_px,
+                (x - geo.origin.0).max(0.0),
+                (y - geo.origin.1).max(0.0),
+                &layout_metrics,
+            )
         }
     };
 
@@ -127,21 +156,13 @@ fn make_selectable(
         let selection = selection.clone();
         let anchor = anchor.clone();
         let dragging = dragging.clone();
-        let last_rect = last_rect.clone();
         let last_tap_time = last_tap_time.clone();
         let last_tap_pos = last_tap_pos.clone();
         let tap_count = tap_count.clone();
         let set_sel = set_sel.clone();
-        let metrics = metrics.clone();
+        let hit_test = hit_test.clone();
         move |ev: PointerEvent| {
-            let r = *last_rect.borrow();
-            if r.w <= 0.0 || r.h <= 0.0 {
-                return;
-            }
-            let lx = ev.position.x.max(0.0);
-            let ly = ev.position.y.max(0.0);
-            let wrap_w = r.w.max(1.0);
-            let byte = index_for_xy_bytes_with_metrics(&text, wrap_w, lx, ly, &metrics);
+            let byte = hit_test(ev.position.x, ev.position.y);
 
             // Tap counting
             let now = Instant::now();
@@ -211,9 +232,9 @@ fn make_selectable(
             // Single tap / start drag
             if shift {
                 let a = selection
-                    .borrow()
-                    .map(|(s, e)| {
-                        let _ = (s, e);
+                    .range()
+                    .map(|range| {
+                        let _ = range;
                         *anchor.borrow()
                     })
                     .unwrap_or(*anchor.borrow());
@@ -232,21 +253,13 @@ fn make_selectable(
         let text = text_for_handlers.clone();
         let anchor = anchor.clone();
         let dragging = dragging.clone();
-        let last_rect = last_rect.clone();
         let set_sel = set_sel.clone();
-        let metrics = metrics.clone();
+        let hit_test = hit_test.clone();
         move |ev: PointerEvent| {
             if !*dragging.borrow() {
                 return;
             }
-            let r = *last_rect.borrow();
-            if r.w <= 0.0 || r.h <= 0.0 {
-                return;
-            }
-            let lx = ev.position.x.max(0.0);
-            let ly = ev.position.y.max(0.0);
-            let wrap_w = r.w.max(1.0);
-            let byte = index_for_xy_bytes_with_metrics(&text, wrap_w, lx, ly, &metrics);
+            let byte = hit_test(ev.position.x, ev.position.y);
             let a = *anchor.borrow();
             let sel = Some((a.min(byte), a.max(byte)));
             set_sel(sel);
@@ -265,7 +278,7 @@ fn make_selectable(
         let set_sel = set_sel.clone();
         move |_ev: PointerEvent| {
             *dragging.borrow_mut() = false;
-            let sel = *selection.borrow();
+            let sel = selection.range().map(|r| (r.start, r.end));
             if let Some((a, b)) = sel {
                 let s = a.min(b);
                 let e = a.max(b);
@@ -290,105 +303,22 @@ fn make_selectable(
         }
     };
 
-    let painter = {
-        let text = text_for_paint.clone();
-        let selection = selection.clone();
-        let last_rect = last_rect.clone();
-        let metrics = metrics.clone();
-        move |scene: &mut Scene, rect: Rect, _alpha: f32| {
-            *last_rect.borrow_mut() = rect;
-
-            let (s, e) = match *selection.borrow() {
-                Some((a, b)) if a != b => {
-                    if a < b {
-                        (a, b)
-                    } else {
-                        (b, a)
-                    }
-                }
-                _ => return,
-            };
-            if e == 0 || e <= s {
-                return;
-            }
-
-            let wrap_w = rect.w.max(1.0);
-            let (sx, sy, sli) = caret_xy_for_byte_with_metrics(&text, wrap_w, s, &metrics);
-            let (ex, ey, eli) = caret_xy_for_byte_with_metrics(&text, wrap_w, e, &metrics);
-            let th = theme();
-            let brush = Brush::Solid(th.primary.with_alpha(96));
-            let line_h = metrics.line_height_px.max(metrics.font_px);
-
-            if sli == eli {
-                let x = sx.min(ex);
-                let w = (ex - sx).abs().max(2.0);
-                scene.nodes.push(SceneNode::Rect {
-                    rect: Rect {
-                        x: rect.x + x,
-                        y: rect.y + sy,
-                        w,
-                        h: line_h,
-                    },
-                    brush,
-                    radius: [Px::ZERO; 4],
-                });
-            } else {
-                // First partial line
-                scene.nodes.push(SceneNode::Rect {
-                    rect: Rect {
-                        x: rect.x + sx,
-                        y: rect.y + sy,
-                        w: (rect.w - sx).max(2.0),
-                        h: line_h,
-                    },
-                    brush,
-                    radius: [Px::ZERO; 4],
-                });
-                // Full middle lines
-                if eli > sli + 1 {
-                    scene.nodes.push(SceneNode::Rect {
-                        rect: Rect {
-                            x: rect.x,
-                            y: rect.y + (sli as f32 + 1.0) * line_h,
-                            w: rect.w,
-                            h: (eli as f32 - sli as f32 - 1.0) * line_h,
-                        },
-                        brush,
-                        radius: [Px::ZERO; 4],
-                    });
-                }
-                // Last partial line
-                scene.nodes.push(SceneNode::Rect {
-                    rect: Rect {
-                        x: rect.x,
-                        y: rect.y + ey,
-                        w: ex.max(2.0),
-                        h: line_h,
-                    },
-                    brush,
-                    radius: [Px::ZERO; 4],
-                });
-            }
-        }
-    };
-
     v.modifier = v
         .modifier
         .on_pointer_down(on_down)
         .on_pointer_move(on_move)
         .on_pointer_up(on_up)
         .on_pointer_cancel(on_cancel)
-        .painter(painter)
+        .text_selection(selection.clone())
         .cursor(CursorIcon::Text)
         .on_action({
             let selection = selection.clone();
             let text = text_for_handlers.clone();
             move |action| match action {
                 repose_core::shortcuts::Action::Copy => {
-                    let sel = *selection.borrow();
-                    if let Some((a, b)) = sel {
-                        let s = a.min(b);
-                        let e = a.max(b);
+                    if let Some(range) = selection.range() {
+                        let s = range.min();
+                        let e = range.max();
                         if e > s {
                             repose_core::clipboard::copy_to_clipboard(&text[s..e]);
                             return true;
@@ -398,7 +328,7 @@ fn make_selectable(
                 }
                 repose_core::shortcuts::Action::SelectAll => {
                     let len = text.len();
-                    *selection.borrow_mut() = Some((0, len));
+                    selection.set_range(Some(TextRange { start: 0, end: len }));
                     if len > 0 {
                         repose_core::clipboard::set_primary_selection(&text);
                     }

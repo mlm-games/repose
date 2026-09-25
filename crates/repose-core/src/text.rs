@@ -66,6 +66,59 @@ impl From<(usize, usize)> for TextRange {
     }
 }
 
+/// Geometry the layout engine measured for a selectable `Text` node.
+///
+/// Published so hit testing wraps and measures lines exactly like the paint
+/// pass does, instead of re-deriving them from font size alone.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct TextLayoutGeometry {
+    /// Width the text was wrapped into, in px.
+    pub wrap_width_px: f32,
+    /// Distance between consecutive line tops, in px.
+    pub line_height_px: f32,
+    /// Top-left of the text block, relative to the node's top-left, in px.
+    pub origin: (f32, f32),
+}
+
+/// Selected range of a `Text` node, drawn by the layout engine behind the
+/// glyphs the way Compose's `SelectionController` draws from a
+/// `TextLayoutResult`.
+///
+/// A range with `start > end` is reversed (the anchor sits at `end`);
+/// painting normalizes it.
+#[derive(Clone, Default)]
+pub struct TextSelection {
+    range: Rc<std::cell::RefCell<Option<TextRange>>>,
+    geometry: Rc<std::cell::RefCell<TextLayoutGeometry>>,
+}
+
+impl TextSelection {
+    pub fn range(&self) -> Option<TextRange> {
+        *self.range.borrow()
+    }
+
+    pub fn set_range(&self, range: Option<TextRange>) {
+        *self.range.borrow_mut() = range;
+    }
+
+    pub fn geometry(&self) -> TextLayoutGeometry {
+        *self.geometry.borrow()
+    }
+
+    /// Called by the layout engine after measuring the node.
+    pub fn set_geometry(&self, geometry: TextLayoutGeometry) {
+        *self.geometry.borrow_mut() = geometry;
+    }
+}
+
+impl Debug for TextSelection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TextSelection")
+            .field("range", &self.range())
+            .finish_non_exhaustive()
+    }
+}
+
 /// Snapshot of a text field's editing state including text, selection, and
 /// IME composition range. Corresponds to Compose's `TextFieldValue`.
 #[derive(Clone, Debug, PartialEq)]

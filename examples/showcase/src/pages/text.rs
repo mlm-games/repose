@@ -232,9 +232,19 @@ pub fn screen() -> View {
                 tf_state.borrow_mut().text = pw.get();
             }
             Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child((
+                // BasicSecureTextField draws no chrome of its own, so the demo
+                // supplies the container and the placeholder the Material
+                // components would normally provide.
                 BasicSecureTextField(
                     tf_state.clone(),
-                    Modifier::new().fill_max_width(),
+                    Modifier::new()
+                        .height(Dp(56.0))
+                        .fill_max_width()
+                        .padding(sp::SM)
+                        .background(theme().surface)
+                        .border(Dp(1.0), theme().outline, Dp(10.0))
+                        .clip_rounded(Dp(10.0)),
+                    "Password",
                     TextFieldConfig {
                         on_change: Some(Rc::new({
                             let p = pw.clone();

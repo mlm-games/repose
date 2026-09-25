@@ -129,7 +129,7 @@ macro_rules! impl_option_fields {
                     on_drag_start, on_drag_end, on_drag_enter, on_drag_over, on_drag_leave, on_drop,
                     drag_preview,
                     on_action, cursor, animate_content_size, focus_requester, on_focus_changed,
-                    interaction_source, text_input,
+                    interaction_source, text_input, text_selection,
                 );
                         merge_flags!(self, other;
                     hit_passthrough, input_blocker, repaint_boundary, click, disabled,
@@ -869,6 +869,10 @@ pub struct Modifier {
     /// Text input configuration. When set, this box acts as a text input field.
     pub text_input: Option<TextInputConfig>,
 
+    /// Selected range for a `Text` node. The layout engine paints the highlight
+    /// behind the glyphs from the node's real text layout.
+    pub text_selection: Option<crate::text::TextSelection>,
+
     /// Indication (ripple/overlay) factory for visual feedback on interaction.
     pub indication: Option<Rc<dyn IndicationNodeFactory>>,
 }
@@ -985,6 +989,7 @@ impl std::fmt::Debug for Modifier {
             on_focus_changed,
             interaction_source,
             text_input,
+            text_selection,
             layout,
         );
 
@@ -2108,6 +2113,13 @@ impl Modifier {
     /// Mark this Box as a text input field with the given configuration.
     pub fn text_input(mut self, config: TextInputConfig) -> Self {
         self.text_input = Some(config);
+        self
+    }
+
+    /// Attach a text selection to this `Text` node. The layout engine paints the
+    /// highlight behind the glyphs, using this node's real text layout.
+    pub fn text_selection(mut self, selection: crate::text::TextSelection) -> Self {
+        self.text_selection = Some(selection);
         self
     }
 

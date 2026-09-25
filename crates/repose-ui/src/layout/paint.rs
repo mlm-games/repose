@@ -14,7 +14,8 @@ use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
 use crate::Interactions;
 use crate::anim::{animate_color, animate_f32};
 use crate::hit_testing::{HitContext, register_hit, restore_metadata};
-use crate::textfield::{TextFieldState, TextMeasureConfig, measure_text};
+use crate::text_selection::{SelectionLine, push_selection, selection_brush, selection_rects};
+use crate::textfield::{TextFieldState, TextMeasureConfig, byte_to_char_index, measure_text};
 
 use super::*;
 
@@ -302,6 +303,16 @@ impl LayoutEngine {
                             ((y * 8.0) as i32).hash(&mut h);
                         }
                     }
+                }
+            }
+            if let Some(selection) = &n.modifier.text_selection {
+                match selection.range() {
+                    Some(range) => {
+                        1u8.hash(&mut h);
+                        range.start.hash(&mut h);
+                        range.end.hash(&mut h);
+                    }
+                    None => 0u8.hash(&mut h),
                 }
             }
             if n.modifier.text_input.is_some() {
@@ -1368,6 +1379,89 @@ impl LayoutEngine {
                     (0, lines.len())
                 };
 
+                let line_align_x = |line_w: f32| -> f32 {
+                    match text_align {
+                        TextAlign::End | TextAlign::Right => (content_rect.w - line_w).max(0.0),
+                        TextAlign::Center => (content_rect.w - line_w).max(0.0) * 0.5,
+                        _ => 0.0,
+                    }
+                };
+
+                if let Some(selection) = &modifier.text_selection {
+                    selection.set_geometry(TextLayoutGeometry {
+                        wrap_width_px: content_rect.w,
+                        line_height_px: line_h_px,
+                        origin: (content_rect.x - rect.x, content_rect.y - rect.y),
+                    });
+                    if let Some(range) = selection.range()
+                        && !range.is_collapsed()
+                        && let Some(ref ranges) = line_ranges
+                    {
+                        let measure_cfg = TextMeasureConfig {
+                            font_family: *font_family,
+                            font_weight: font_weight.0,
+                            font_style: if matches!(font_style, FontStyle::Italic) {
+                                1
+                            } else {
+                                0
+                            },
+                            letter_spacing: font_px(*letter_spacing),
+                            font_variation_settings: font_variation_settings
+                                .as_ref()
+                                .map(|s| s.to_string()),
+                        };
+                        let x_for = |line: &SelectionLine, byte: usize| -> f32 {
+                            let local = byte.saturating_sub(line.start);
+                            let m = measure_text(
+                                &text[line.start..line.end],
+                                size_px,
+                                measure_cfg.clone(),
+                            );
+                            m.positions
+                                .get(byte_to_char_index(&m, local))
+                                .copied()
+                                .unwrap_or(0.0)
+                        };
+                        let line_width_of = |i: usize| -> f32 {
+                            if let Some(w) = line_widths.as_ref().and_then(|w| w.get(i).copied()) {
+                                return w;
+                            }
+                            let (start, end) = ranges[i];
+                            measure_text(&text[start..end], size_px, measure_cfg.clone())
+                                .positions
+                                .last()
+                                .copied()
+                                .unwrap_or(0.0)
+                        };
+                        let sel_lines: Vec<SelectionLine> = (first_line..last_line)
+                            .filter_map(|i| {
+                                let &(start, end) = ranges.get(i)?;
+                                let line_w = line_width_of(i);
+                                let left = line_align_x(line_w);
+                                Some(SelectionLine {
+                                    start,
+                                    end,
+                                    left,
+                                    right: left + line_w,
+                                    top: line_y_offsets[i],
+                                    height: line_h_for(i),
+                                })
+                            })
+                            .collect();
+                        let rects = selection_rects(
+                            &sel_lines,
+                            &(range.min()..range.max()),
+                            &x_for,
+                            (content_rect.x, content_rect.y),
+                        );
+                        push_selection(
+                            scene,
+                            rects,
+                            mul_alpha_brush(selection_brush(locals::theme().primary), alpha_accum),
+                        );
+                    }
+                }
+
                 if has_annotations {
                     let annos = annotations.as_ref().unwrap();
                     for i in first_line..last_line {
@@ -1672,19 +1766,8 @@ impl LayoutEngine {
                                 .copied()
                                 .unwrap_or(0.0)
                             });
-                        let align_x = |line_w: f32| -> f32 {
-                            match text_align {
-                                TextAlign::End | TextAlign::Right => {
-                                    content_rect.x + (content_rect.w - line_w).max(0.0)
-                                }
-                                TextAlign::Center => {
-                                    content_rect.x + (content_rect.w - line_w).max(0.0) * 0.5
-                                }
-                                _ => content_rect.x,
-                            }
-                        };
                         let seg_rect = repose_core::Rect {
-                            x: align_x(line_w),
+                            x: content_rect.x + line_align_x(line_w),
                             y: content_rect.y + line_y_offsets[i],
                             w: content_rect.w,
                             h: line_h_for(i),

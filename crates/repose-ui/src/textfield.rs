@@ -49,6 +49,9 @@ use web_time::Duration;
 use web_time::Instant;
 
 use crate::layout::mul_alpha_color;
+use crate::text_selection::{
+    SELECTION_BACKGROUND_ALPHA, SelectionLine, push_selection, selection_brush, selection_rects,
+};
 
 static NEXT_TEXTFIELD_TRANSFORM_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -386,6 +389,7 @@ pub struct TextMetrics {
     pub byte_offsets: Vec<usize>,
 }
 
+#[derive(Clone)]
 pub struct TextMeasureConfig {
     pub font_family: Option<&'static str>,
     pub font_weight: u16,
@@ -2208,9 +2212,13 @@ pub fn BasicTextField(
 ///
 /// Wraps `BasicTextField` with secure defaults: single-line, password keyboard,
 /// text obfuscation, and disabled cut/copy.
+///
+/// Like `BasicTextField` this draws no chrome of its own, so without a `hint` or
+/// a `decorator` an empty field is invisible. Pass a hint, a decorator, or both.
 pub fn BasicSecureTextField(
     state: Rc<RefCell<TextFieldState>>,
     modifier: repose_core::Modifier,
+    hint: impl Into<String>,
     config: TextFieldConfig,
 ) -> repose_core::View {
     let mask = config.text_obfuscation_character;
@@ -2224,7 +2232,7 @@ pub fn BasicSecureTextField(
         },
         ..config
     };
-    BasicTextField(state, modifier, "", secure_config)
+    BasicTextField(state, modifier, hint, secure_config)
 }
 
 #[derive(Clone, Debug)]
@@ -2581,7 +2589,7 @@ pub(crate) fn paint_text_field(
                     .copied()
                     .unwrap_or(sx)
                     - st.scroll_offset;
-                let selection = th.focus.with_alpha_f32(85.0 / 255.0);
+                let selection = th.primary.with_alpha(SELECTION_BACKGROUND_ALPHA);
                 let vis_x = sx.max(0.0);
                 let vis_ex = ex.max(0.0);
                 scene.nodes.push(SceneNode::Rect {
@@ -2832,46 +2840,39 @@ pub(crate) fn paint_text_field(
                 } else {
                     sel_b_orig
                 };
-                let selection = th.focus.with_alpha_f32(85.0 / 255.0);
-                for i in first_visible_line..last_visible_line {
-                    let (s, e) = layout.ranges[i];
-                    let os = sel_a.max(s);
-                    let oe = sel_b.min(e);
-                    if os >= oe {
-                        continue;
-                    }
-                    let ln = &render_text[s..e];
-                    let m = measure_text(ln, font_val, metrics.measure_config());
-                    let ls = os - s;
-                    let le = oe - s;
-                    let sx = m
-                        .positions
-                        .get(byte_to_char_index(&m, ls))
+                let measure_cfg = metrics.measure_config();
+                let x_for = |line: &SelectionLine, byte: usize| -> f32 {
+                    let m = measure_text(
+                        &render_text[line.start..line.end],
+                        font_val,
+                        measure_cfg.clone(),
+                    );
+                    m.positions
+                        .get(byte_to_char_index(&m, byte.saturating_sub(line.start)))
                         .copied()
-                        .unwrap_or(0.0);
-                    let newline_covered = sel_b > e && i + 1 < layout.ranges.len();
-                    let draw_y = rect.y + (i as f32) * lh - st.scroll_offset_y;
-                    let w = if newline_covered {
-                        (rect.x + rect.w - (rect.x + sx)).max(0.0)
-                    } else {
-                        let ex = m
-                            .positions
-                            .get(byte_to_char_index(&m, le))
-                            .copied()
-                            .unwrap_or(sx);
-                        (ex - sx).max(0.0)
-                    };
-                    scene.nodes.push(SceneNode::Rect {
-                        rect: repose_core::Rect {
-                            x: rect.x + sx,
-                            y: draw_y,
-                            w,
-                            h: lh,
-                        },
-                        brush: Brush::Solid(selection),
-                        radius: [Px::ZERO; 4],
-                    });
-                }
+                        .unwrap_or(0.0)
+                };
+                let sel_lines: Vec<SelectionLine> = (first_visible_line..last_visible_line)
+                    .filter_map(|i| {
+                        let &(start, end) = layout.ranges.get(i)?;
+                        let line_w =
+                            measure_text(&render_text[start..end], font_val, measure_cfg.clone())
+                                .positions
+                                .last()
+                                .copied()
+                                .unwrap_or(0.0);
+                        Some(SelectionLine {
+                            start,
+                            end,
+                            left: 0.0,
+                            right: line_w,
+                            top: (i as f32) * lh - st.scroll_offset_y,
+                            height: lh,
+                        })
+                    })
+                    .collect();
+                let rects = selection_rects(&sel_lines, &(sel_a..sel_b), &x_for, (rect.x, rect.y));
+                push_selection(scene, rects, selection_brush(th.primary));
             }
 
             // IME composition underline (multi-line): intersect the preedit

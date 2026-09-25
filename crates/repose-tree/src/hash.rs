@@ -543,6 +543,7 @@ fn facet_hash_modifier(modifier: &Modifier, hashers: &mut FacetHashers) {
     hashers.hash(FACET_PAINT, |h| {
         hash_cursor(&modifier.cursor, h);
         modifier.painter.is_some().hash(h);
+        modifier.text_selection.is_some().hash(h);
         modifier.paint_callback.is_some().hash(h);
         modifier.indication.is_some().hash(h);
         modifier.drag_preview.is_some().hash(h);
@@ -1712,6 +1713,7 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
         }
         None => 0u8.hash(hasher),
     }
+    m.text_selection.is_some().hash(hasher);
     match &m.state_colors {
         Some(colors) => {
             1u8.hash(hasher);

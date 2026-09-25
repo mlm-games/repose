@@ -126,6 +126,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use repose_core::*;
 
+pub(crate) mod text_selection;
 pub mod textfield;
 use repose_core::locals;
 pub use selection::{SelectableText, SelectableTextExt};
