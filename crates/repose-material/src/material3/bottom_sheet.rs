@@ -90,40 +90,21 @@ pub fn BottomSheet(
         })
         .shadow(config.shadow_elevation, Dp::ZERO)
         .clip_rounded(config.shape_radius))
-    .child(
-        Column(Modifier::new().fill_max_width()).child((
-            Box(Modifier::new()
-                .align_self(AlignSelf::CENTER)
-                .width(config.drag_handle_width)
-                .height(config.drag_handle_height)
-                .background(config.drag_handle_color)
-                .clip_rounded(config.drag_handle_height * 0.5)),
-            with_content_color(config.content_color, move || content),
-        )),
-    );
+    .child(with_content_color(config.content_color, move || content));
 
     let dismiss_target = if config.gestures_enabled {
         Box(Modifier::new()
-            .fill_max_size()
-            .background(config.scrim_color)
+            .width(Dp(1.0))
+            .height(Dp(0.0))
+            .fill_max_width()
             .alpha(opacity)
-            .input_blocker()
-            .focusable(false)
-            .on_scroll(|_| Vec2::default())
-            .on_click(move || on_dismiss()))
+            .hit_passthrough()
+            .on_pointer_down(move |_| on_dismiss()))
     } else {
         Box(Modifier::new())
     };
 
-    ZStack(Modifier::new().fill_max_size())
-        .child(dismiss_target)
-        .child(
-            Box(Modifier::new()
-                .fill_max_size()
-                .justify_content(JustifyContent::FLEX_END)
-                .align_items(AlignItems::CENTER))
-            .child(sheet),
-        )
+    Column(Modifier::new().fill_max_width()).child((sheet, dismiss_target))
 }
 
 /// State for `ModalBottomSheet` - manages visibility and drag offset.
