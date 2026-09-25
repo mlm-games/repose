@@ -260,6 +260,7 @@ pub fn ModalBottomSheet(
                         .clone()
                         .fill_max_width()
                         .max_width(config.max_width)
+                        .align_self(AlignSelf::CENTER)
                         .translate(0.0, off)
                         .background(config.container_color)
                         .state_elevation(StateElevation {
@@ -378,10 +379,12 @@ pub fn ModalBottomSheet(
                         )),
                     );
 
-                    let sheet = Box(Modifier::new()
-                        .fill_max_size()
-                        .justify_content(JustifyContent::CENTER)
-                        .align_items(AlignItems::FLEX_END))
+                    let sheet = Column(
+                        Modifier::new()
+                            .fill_max_size()
+                            .justify_content(JustifyContent::FLEX_END)
+                            .align_items(AlignItems::CENTER),
+                    )
                     .child(sheet_body);
 
                     let scrim_alpha = if state.is_visible() {
@@ -418,4 +421,61 @@ pub fn ModalBottomSheet(
     }
 
     Box(Modifier::new())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use repose_core::runtime::ComposeGuard;
+    use repose_core::scope::Scope;
+    use repose_ui::Text;
+    use repose_ui::layout::LayoutEngine;
+    use repose_ui::overlay::{OverlayHandle, with_ambient_overlay};
+    use std::collections::HashMap;
+
+    #[test]
+    fn modal_sheet_is_bottom_anchored_with_intrinsic_height() {
+        let overlay = OverlayHandle::new();
+        let state = Rc::new(SheetState::new(Dp(56.0)));
+        state.show();
+        let config = BottomSheetConfig::default();
+        let container_color = config.container_color;
+        let scope = Scope::new();
+        let guard = ComposeGuard::begin();
+        scope.run(|| {
+            let view = with_ambient_overlay(overlay.clone(), || {
+                ModalBottomSheet(
+                    state.clone(),
+                    Modifier::new(),
+                    Text("Sheet"),
+                    config.clone(),
+                )
+            });
+            let root = overlay.host(Modifier::new().fill_max_size(), view);
+            let (scene, _, _) = LayoutEngine::new().layout_frame(
+                &root,
+                (800, 600),
+                &HashMap::new(),
+                &repose_ui::Interactions::default(),
+                None,
+            );
+            let sheet = scene
+                .nodes
+                .iter()
+                .find_map(|node| match node {
+                    SceneNode::Rect {
+                        rect,
+                        brush: Brush::Solid(color),
+                        ..
+                    } if *color == container_color => Some(*rect),
+                    _ => None,
+                })
+                .expect("modal sheet surface");
+            assert!(sheet.h < 600.0);
+            assert!((sheet.y + sheet.h - 600.0).abs() < 1.0);
+            assert!((sheet.x - (800.0 - sheet.w) * 0.5).abs() < 1.0);
+        });
+        drop(guard);
+        scope.dispose();
+    }
 }

@@ -17,6 +17,7 @@ pub struct CircularProgressIndicatorConfig {
     pub modifier: Modifier,
     pub color: Color,
     pub track_color: Color,
+    pub indeterminate_track_color: Color,
     pub stroke_width: Dp,
     pub stroke_cap: StrokeCap,
     pub gap_size: Dp,
@@ -28,6 +29,8 @@ impl Default for CircularProgressIndicatorConfig {
             modifier: Modifier::new(),
             color: ProgressIndicatorDefaults::circular_color(),
             track_color: ProgressIndicatorDefaults::circular_track_color(),
+            indeterminate_track_color:
+                ProgressIndicatorDefaults::circular_indeterminate_track_color(),
             stroke_width: ProgressIndicatorDefaults::CIRCULAR_STROKE_WIDTH,
             stroke_cap: StrokeCap::Round,
             gap_size: ProgressIndicatorDefaults::CIRCULAR_TRACK_ACTIVE_SPACE,
@@ -69,6 +72,56 @@ fn indeterminate_animation(key: &str, duration: Duration) -> Rc<RefCell<Animated
     });
     request_frame();
     animation
+}
+
+const LINEAR_INDETERMINATE_DURATION_MS: f32 = 1750.0;
+
+fn linear_progress_keyframe(delay_ms: f32, duration_ms: f32) -> KeyframesSpec<f32> {
+    let start = (delay_ms / LINEAR_INDETERMINATE_DURATION_MS).clamp(0.0, 1.0);
+    let end = ((delay_ms + duration_ms) / LINEAR_INDETERMINATE_DURATION_MS).clamp(0.0, 1.0);
+    let easing = Easing::Custom(CubicBezier::new(0.3, 0.0, 0.8, 0.15));
+    let mut keyframes = Vec::with_capacity(4);
+    if start > 0.0 {
+        keyframes.push((0.0, 0.0, None));
+    }
+    keyframes.push((start, 0.0, Some(easing)));
+    keyframes.push((end, 1.0, None));
+    if end < 1.0 {
+        keyframes.push((1.0, 1.0, None));
+    }
+    KeyframesSpec { keyframes }
+}
+
+fn draw_linear_progress_segment(
+    scene: &mut Scene,
+    rect: Rect,
+    start: f32,
+    end: f32,
+    color: Color,
+    cap_radius: f32,
+) {
+    let start = start.clamp(0.0, 1.0);
+    let end = end.clamp(0.0, 1.0);
+    if end <= start {
+        return;
+    }
+    let min_x = rect.x + cap_radius;
+    let max_x = rect.x + rect.w - cap_radius;
+    let start_x = (rect.x + start * rect.w).clamp(min_x, max_x);
+    let end_x = (rect.x + end * rect.w).clamp(min_x, max_x);
+    if end_x <= start_x {
+        return;
+    }
+    scene.nodes.push(SceneNode::Rect {
+        rect: Rect {
+            x: start_x,
+            y: rect.y,
+            w: end_x - start_x,
+            h: rect.h,
+        },
+        brush: Brush::Solid(color),
+        radius: [Px(cap_radius); 4],
+    });
 }
 
 /// M3 Circular Progress Indicator.
@@ -127,14 +180,14 @@ pub fn CircularProgressIndicator(
         move |scene: &mut Scene, rect: Rect, alpha: f32| {
             let stroke_px = config.stroke_width.to_px().0;
             let gap_px = config.gap_size.to_px().0;
-            let circle_diameter_px = (rect.w.min(rect.h) - stroke_px).max(1.0);
-            let adjusted_gap_px = (if config.stroke_cap == StrokeCap::Butt {
+            let outer_diameter_px = rect.w.max(1.0);
+            let adjusted_gap_px = (if config.stroke_cap == StrokeCap::Butt || rect.h > rect.w {
                 gap_px
             } else {
                 gap_px + stroke_px
             })
             .max(0.0);
-            let gap_sweep_rad = adjusted_gap_px / circle_diameter_px * 2.0;
+            let gap_sweep_rad = adjusted_gap_px / outer_diameter_px * 2.0;
             let (global_rotation, additional_rotation, sweep_val) =
                 if let Some(animation) = &animation {
                     let t = *animation.borrow().get();
@@ -203,7 +256,7 @@ pub fn CircularProgressIndicator(
                 None => {
                     let radians =
                         (global_rotation + additional_rotation) * std::f32::consts::PI / 180.0;
-                    let start_angle = -std::f32::consts::FRAC_PI_2 + radians;
+                    let start_angle = radians;
                     let sweep_rad = sweep_val * std::f32::consts::TAU;
                     let effective_gap = gap_sweep_rad.min(sweep_rad);
 
@@ -226,7 +279,7 @@ pub fn CircularProgressIndicator(
                             start_angle: track_start,
                             sweep_angle: track_sweep,
                             stroke_width: Px(stroke_px),
-                            brush: Brush::Solid(mul_c(config.track_color)),
+                            brush: Brush::Solid(mul_c(config.indeterminate_track_color)),
                             cap: config.stroke_cap,
                         });
                     }
@@ -284,19 +337,43 @@ pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicat
     });
     let animation = value
         .is_none()
-        .then(|| indeterminate_animation(&identity, Duration::from_millis(1800)));
+        .then(|| indeterminate_animation(&identity, Duration::from_millis(1750)));
+    let motion = value.is_none().then(|| {
+        (
+            remember_state_with_key(format!("{identity}:linear-head-1"), || {
+                linear_progress_keyframe(0.0, 1000.0)
+            }),
+            remember_state_with_key(format!("{identity}:linear-tail-1"), || {
+                linear_progress_keyframe(250.0, 1000.0)
+            }),
+            remember_state_with_key(format!("{identity}:linear-head-2"), || {
+                linear_progress_keyframe(650.0, 850.0)
+            }),
+            remember_state_with_key(format!("{identity}:linear-tail-2"), || {
+                linear_progress_keyframe(900.0, 850.0)
+            }),
+        )
+    });
 
     Box(Modifier::new()
         .fill_max_width()
         .height(ProgressIndicatorDefaults::LINEAR_INDICATOR_HEIGHT)
         .then(config.modifier)
         .painter(move |scene: &mut Scene, rect: Rect, alpha: f32| {
-            let (head, tail) = if let Some(animation) = &animation {
-                let t = *animation.borrow().get();
-                ((t * 1.5).fract(), ((t * 1.5) - 0.4).fract().max(0.0))
-            } else {
-                (0.0, 0.0)
-            };
+            let (first_head, first_tail, second_head, second_tail) =
+                if let (Some(animation), Some((head_1, tail_1, head_2, tail_2))) =
+                    (&animation, &motion)
+                {
+                    let t = *animation.borrow().get();
+                    (
+                        head_1.borrow().evaluate(t),
+                        tail_1.borrow().evaluate(t),
+                        head_2.borrow().evaluate(t),
+                        tail_2.borrow().evaluate(t),
+                    )
+                } else {
+                    (0.0, 0.0, 0.0, 0.0)
+                };
             let mul_c = |c: Color| {
                 Color(
                     c.0,
@@ -316,37 +393,20 @@ pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicat
             let dot_r = (config.stop_size.to_px().0 * 0.5).max(0.0);
             let gap_px = config.gap_size.to_px().0.max(0.0);
 
-            // Full track background
-            scene.nodes.push(SceneNode::Rect {
-                rect: Rect {
-                    x: rect.x,
-                    y: cy - corner,
-                    w: rect.w,
-                    h: track_h,
-                },
-                brush: Brush::Solid(mul_c(config.track_color)),
-                radius: [Px(cap_radius); 4],
-            });
+            let gap_fraction = if config.stroke_cap == StrokeCap::Butt || track_h > rect.w {
+                gap_px / rect.w.max(1.0)
+            } else {
+                (gap_px + track_h) / rect.w.max(1.0)
+            }
+            .clamp(0.0, 1.0);
+            let track = mul_c(config.track_color);
+            let indicator = mul_c(config.color);
 
             if let Some(t) = value {
-                let cap_ofs = cap_radius;
-                let ind_end = (t * rect.w - gap_px).clamp(cap_ofs, rect.w - cap_ofs);
-                let ind_w = (ind_end - cap_ofs).max(0.0);
+                let track_start = t + t.min(gap_fraction);
+                draw_linear_progress_segment(scene, rect, track_start, 1.0, track, cap_radius);
+                draw_linear_progress_segment(scene, rect, 0.0, t, indicator, cap_radius);
 
-                if t > 0.0 && ind_w > 0.0 {
-                    scene.nodes.push(SceneNode::Rect {
-                        rect: Rect {
-                            x: rect.x + cap_ofs,
-                            y: cy - corner,
-                            w: ind_w,
-                            h: track_h,
-                        },
-                        brush: Brush::Solid(mul_c(config.color)),
-                        radius: [Px(cap_radius); 4],
-                    });
-                }
-
-                // Stop indicator (M3 determinate)
                 let sx = rect.x + rect.w - dot_r;
                 scene.nodes.push(SceneNode::Ellipse {
                     rect: Rect {
@@ -355,34 +415,48 @@ pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicat
                         w: dot_r * 2.0,
                         h: dot_r * 2.0,
                     },
-                    brush: Brush::Solid(mul_c(config.color)),
+                    brush: Brush::Solid(indicator),
                 });
             } else {
-                // Indeterminate: two sliding segments (head leading, tail trailing)
-                let w = rect.w.max(1.0);
-                for (start_frac, end_frac) in
-                    [(tail, head), ((tail + 0.5).fract(), (head + 0.5).fract())]
-                {
-                    let a = start_frac.min(end_frac);
-                    let b = start_frac.max(end_frac);
-                    if b - a < 0.05 {
-                        continue; // too small
-                    }
-                    let x0 = rect.x + a * w;
-                    let x1 = rect.x + b * w;
-                    let ww = (x1 - x0).max(0.0);
-                    if ww > 1.0 {
-                        scene.nodes.push(SceneNode::Rect {
-                            rect: Rect {
-                                x: x0,
-                                y: cy - corner,
-                                w: ww,
-                                h: track_h,
-                            },
-                            brush: Brush::Solid(mul_c(config.color)),
-                            radius: [Px(cap_radius); 4],
-                        });
-                    }
+                if first_head < 1.0 - gap_fraction {
+                    let start = if first_head > 0.0 {
+                        first_head + gap_fraction
+                    } else {
+                        0.0
+                    };
+                    draw_linear_progress_segment(scene, rect, start, 1.0, track, cap_radius);
+                }
+                draw_linear_progress_segment(
+                    scene, rect, first_tail, first_head, indicator, cap_radius,
+                );
+                if first_tail > gap_fraction {
+                    let start = if second_head > 0.0 {
+                        second_head + gap_fraction
+                    } else {
+                        0.0
+                    };
+                    let end = if first_tail < 1.0 {
+                        first_tail - gap_fraction
+                    } else {
+                        1.0
+                    };
+                    draw_linear_progress_segment(scene, rect, start, end, track, cap_radius);
+                }
+                draw_linear_progress_segment(
+                    scene,
+                    rect,
+                    second_tail,
+                    second_head,
+                    indicator,
+                    cap_radius,
+                );
+                if second_tail > gap_fraction {
+                    let end = if second_tail < 1.0 {
+                        second_tail - gap_fraction
+                    } else {
+                        1.0
+                    };
+                    draw_linear_progress_segment(scene, rect, 0.0, end, track, cap_radius);
                 }
             }
         }))
@@ -404,6 +478,30 @@ pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicat
 mod tests {
     use super::*;
     use repose_core::locals::{Density, with_density};
+
+    #[test]
+    fn circular_indeterminate_track_defaults_to_transparent() {
+        assert_eq!(
+            CircularProgressIndicatorConfig::default().indeterminate_track_color,
+            Color::TRANSPARENT
+        );
+    }
+
+    #[test]
+    fn linear_motion_uses_compose_delays() {
+        let first_head = linear_progress_keyframe(0.0, 1000.0);
+        let first_tail = linear_progress_keyframe(250.0, 1000.0);
+        let second_head = linear_progress_keyframe(650.0, 850.0);
+        let second_tail = linear_progress_keyframe(900.0, 850.0);
+        let total = LINEAR_INDETERMINATE_DURATION_MS;
+        assert_eq!(first_head.evaluate(0.0), 0.0);
+        assert_eq!(first_tail.evaluate(250.0 / total), 0.0);
+        assert!(first_tail.evaluate(1250.0 / total) > 0.0);
+        assert_eq!(second_head.evaluate(650.0 / total), 0.0);
+        assert!(second_head.evaluate(1500.0 / total) > 0.0);
+        assert_eq!(second_tail.evaluate(900.0 / total), 0.0);
+        assert!(second_tail.evaluate(1750.0 / total) > 0.0);
+    }
 
     #[test]
     fn circular_progress_uses_material_track_active_space() {

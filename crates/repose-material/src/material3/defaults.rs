@@ -112,6 +112,9 @@ impl ProgressIndicatorDefaults {
     pub fn circular_track_color() -> Color {
         theme().secondary_container
     }
+    pub fn circular_indeterminate_track_color() -> Color {
+        Color::TRANSPARENT
+    }
     pub const CIRCULAR_INDICATOR_SIZE: Dp = Dp(40.0);
     pub const CIRCULAR_STROKE_WIDTH: Dp = Dp(4.0);
     pub const CIRCULAR_TRACK_ACTIVE_SPACE: Dp = Dp(4.0);
