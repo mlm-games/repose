@@ -438,6 +438,23 @@ mod tests {
     }
 
     #[test]
+    fn spring_target_change_preserves_velocity() {
+        let t0 = Instant::now();
+        set_clock(Box::new(TestClock { t: t0 }));
+
+        let mut animation =
+            AnimatedValue::new(100.0, AnimationSpec::spring(SpringSpec::new(0.9, 700.0)));
+        animation.set_target_with_velocity(0.0, 1000.0);
+        assert!((animation.current_velocity() - 1000.0).abs() < 0.001);
+
+        set_clock(Box::new(TestClock {
+            t: t0 + Duration::from_millis(1),
+        }));
+        assert!(animation.update());
+        assert!(*animation.get() > 100.0);
+    }
+
+    #[test]
     fn mutable_requests_frame() {
         clear_composer();
         let m = remember_mutable(|| 0);

@@ -1,9 +1,10 @@
 #![allow(non_snake_case)]
 
 use std::cell::{Cell, RefCell};
+use std::collections::VecDeque;
 use std::rc::Rc;
 
-use web_time::Instant;
+use web_time::{Duration, Instant};
 
 use repose_core::animation::{AnimationSpec, SpringSpec};
 use repose_core::*;
@@ -152,11 +153,55 @@ impl SheetState {
 }
 
 fn modal_sheet_offset(value: f32, distance: f32) -> f32 {
+    if value.is_finite() {
+        value
+    } else {
+        distance.max(0.0)
+    }
+}
+
+fn modal_sheet_drag_offset(value: f32, distance: f32) -> f32 {
     value.clamp(0.0, distance.max(0.0))
 }
 
 const MODAL_SHEET_POSITIONAL_THRESHOLD: Dp = Dp(56.0);
 const MODAL_SHEET_VELOCITY_THRESHOLD: Dp = Dp(125.0);
+const MODAL_SHEET_SPRING_VISIBILITY_THRESHOLD_PX: f32 = 0.01;
+
+type DragSample = (f32, Instant);
+
+fn update_drag_velocity(samples: &mut VecDeque<DragSample>, y: f32, now: Instant) -> f32 {
+    samples.push_back((y, now));
+    while samples.len() > 1
+        && samples.front().is_some_and(|(_, time)| {
+            now.saturating_duration_since(*time) > Duration::from_millis(100)
+        })
+    {
+        samples.pop_front();
+    }
+    if samples.len() < 2 {
+        return 0.0;
+    }
+    let origin = samples.front().map(|(_, time)| *time).unwrap_or(now);
+    let count = samples.len() as f32;
+    let mut sum_time = 0.0;
+    let mut sum_position = 0.0;
+    let mut sum_time_time = 0.0;
+    let mut sum_time_position = 0.0;
+    for (position, time) in samples.iter() {
+        let time = time.saturating_duration_since(origin).as_secs_f32();
+        sum_time += time;
+        sum_position += *position;
+        sum_time_time += time * time;
+        sum_time_position += time * *position;
+    }
+    let denominator = sum_time_time - sum_time * sum_time / count;
+    if denominator <= f32::EPSILON {
+        return 0.0;
+    }
+    let velocity = (sum_time_position - sum_time * sum_position / count) / denominator;
+    if velocity.is_finite() { velocity } else { 0.0 }
+}
 
 fn modal_sheet_release_target(
     offset: f32,
@@ -165,22 +210,52 @@ fn modal_sheet_release_target(
     positional_threshold: f32,
     velocity_threshold: f32,
 ) -> f32 {
-    let velocity_threshold = velocity_threshold.max(0.0);
-    let dismiss = if velocity.is_finite() && velocity < 0.0 {
-        false
+    let distance = distance.max(0.0);
+    if distance <= f32::EPSILON {
+        return 0.0;
+    }
+    let offset = offset.clamp(0.0, distance);
+    let velocity = if velocity.is_finite() { velocity } else { 0.0 };
+    let velocity_threshold = velocity_threshold.abs();
+    if velocity == 0.0 {
+        return if offset >= distance * 0.5 {
+            distance
+        } else {
+            0.0
+        };
+    }
+    if velocity.abs() >= velocity_threshold {
+        return if velocity > 0.0 { distance } else { 0.0 };
+    }
+    if velocity > 0.0 {
+        if offset >= positional_threshold.max(0.0) {
+            distance
+        } else {
+            0.0
+        }
+    } else if distance - offset >= positional_threshold.max(0.0) {
+        0.0
     } else {
-        offset >= positional_threshold.max(0.0)
-            || (velocity.is_finite() && velocity >= velocity_threshold)
-    };
-    if dismiss { distance.max(0.0) } else { 0.0 }
+        distance
+    }
 }
 
-fn modal_sheet_show_spec() -> AnimationSpec {
-    AnimationSpec::spring(SpringSpec::new(0.9, 700.0))
+fn modal_sheet_spatial_spec(travel: f32) -> AnimationSpec {
+    let settle_progress = (MODAL_SHEET_SPRING_VISIBILITY_THRESHOLD_PX
+        / travel.abs().max(MODAL_SHEET_SPRING_VISIBILITY_THRESHOLD_PX))
+    .min(1.0);
+    AnimationSpec::spring(SpringSpec::new(0.9, 700.0).with_settle_progress(settle_progress))
 }
 
-fn modal_sheet_hide_spec() -> AnimationSpec {
-    AnimationSpec::spring(SpringSpec::new(1.0, 3800.0))
+fn modal_sheet_hide_spec(travel: f32) -> AnimationSpec {
+    let settle_progress = (MODAL_SHEET_SPRING_VISIBILITY_THRESHOLD_PX
+        / travel.abs().max(MODAL_SHEET_SPRING_VISIBILITY_THRESHOLD_PX))
+    .min(1.0);
+    AnimationSpec::spring(SpringSpec::new(1.0, 3800.0).with_settle_progress(settle_progress))
+}
+
+fn modal_sheet_effects_spec() -> AnimationSpec {
+    AnimationSpec::spring(SpringSpec::new(1.0, 1600.0).with_settle_progress(0.01))
 }
 
 /// M3 Modal Bottom Sheet - slides up from the bottom with a drag handle.
@@ -227,12 +302,14 @@ pub fn ModalBottomSheet(
         remember_state_with_key(format!("mbs_drag_base_{mbs_id}"), || 0.0);
     let is_dragging: Rc<RefCell<bool>> =
         remember_state_with_key(format!("mbs_drag_{mbs_id}"), || false);
-    let drag_last_y: Rc<Cell<Option<f32>>> =
-        remember_with_key(format!("mbs_drag_last_y_{mbs_id}"), || Cell::new(None));
-    let drag_last_time: Rc<Cell<Option<Instant>>> =
-        remember_with_key(format!("mbs_drag_last_time_{mbs_id}"), || Cell::new(None));
+    let drag_samples: Rc<RefCell<VecDeque<DragSample>>> =
+        remember_with_key(format!("mbs_drag_samples_{mbs_id}"), || {
+            RefCell::new(VecDeque::new())
+        });
     let drag_velocity: Rc<Cell<f32>> =
         remember_with_key(format!("mbs_drag_velocity_{mbs_id}"), || Cell::new(0.0));
+    let drag_release_in_flight: Rc<Cell<bool>> =
+        remember_with_key(format!("mbs_drag_release_{mbs_id}"), || Cell::new(false));
 
     let positional_threshold_px = MODAL_SHEET_POSITIONAL_THRESHOLD.to_px().0;
     let velocity_threshold_px = MODAL_SHEET_VELOCITY_THRESHOLD.to_px().0;
@@ -242,39 +319,85 @@ pub fn ModalBottomSheet(
         MutableInteractionSource::new,
     );
 
-    // Animated offset: anim_distance_px (off-screen) -> 0px (visible)
     let anim = remember_state_with_key(format!("mbs_anim_{mbs_id}"), || {
-        AnimatedValue::new(anim_distance_px.get(), modal_sheet_show_spec())
+        AnimatedValue::new(
+            anim_distance_px.get(),
+            modal_sheet_spatial_spec(anim_distance_px.get()),
+        )
     });
     let last_target = remember_state_with_key(format!("mbs_anim_target_{mbs_id}"), || f32::NAN);
+    let last_spatial_motion =
+        remember_with_key(format!("mbs_anim_spatial_{mbs_id}"), || Cell::new(true));
+    let anim_key = format!("mbs_anim_driver_{mbs_id}");
+    repose_core::animation_driver::touch(&anim_key);
+
+    if state.is_visible() && drag_release_in_flight.get() {
+        drag_release_in_flight.set(false);
+    }
+    let release_in_flight = drag_release_in_flight.get();
     let anim_target = if state.is_visible() {
         0.0
     } else {
         anim_distance_px.get()
     };
+    let spatial_motion = state.is_visible() || release_in_flight;
 
     {
         let mut a = anim.borrow_mut();
         let mut lt = last_target.borrow_mut();
-        if lt.is_nan() || (*lt - anim_target).abs() > 1e-6 {
-            a.set_spec(if state.is_visible() {
-                modal_sheet_show_spec()
+        if lt.is_nan()
+            || (*lt - anim_target).abs() > 1e-6
+            || last_spatial_motion.get() != spatial_motion
+        {
+            let velocity = a.current_velocity();
+            let travel = anim_target - *a.get();
+            a.set_spec(if spatial_motion {
+                modal_sheet_spatial_spec(travel)
             } else {
-                modal_sheet_hide_spec()
+                modal_sheet_hide_spec(travel)
             });
-            a.set_target(anim_target);
+            a.set_target_with_velocity(anim_target, velocity);
             *lt = anim_target;
+            last_spatial_motion.set(spatial_motion);
         }
-        drop(lt);
-        let still_animating = a.update();
+        let still_animating = a.is_animating();
+        if still_animating && !repose_core::animation_driver::is_registered(&anim_key) {
+            let registered_anim = anim.clone();
+            let registered_release_target = drag_release_in_flight.clone();
+            repose_core::animation_driver::register(
+                anim_key.clone(),
+                Rc::new(RefCell::new(move || {
+                    let still = registered_anim.borrow_mut().update();
+                    if !still {
+                        registered_release_target.set(false);
+                    }
+                    still
+                })),
+            );
+        }
         if still_animating {
             request_frame();
         }
     }
 
-    let distance = anim_distance_px.get();
-    let offset = modal_sheet_offset(*anim.borrow().get(), distance);
-    let sheet_visible = state.is_visible() || offset < distance - 10.0;
+    let scrim_target = if *is_dragging.borrow() {
+        *anim.borrow().get() < anim_distance_px.get() * 0.5
+    } else {
+        state.is_visible() && !drag_release_in_flight.get()
+    };
+    let scrim_progress =
+        remember_with_key(format!("mbs_scrim_progress_{mbs_id}"), || Cell::new(0.0));
+    scrim_progress.set(animate_f32_from(
+        format!("mbs_scrim_{mbs_id}"),
+        if scrim_target { 1.0 } else { 0.0 },
+        if scrim_target { 1.0 } else { 0.0 },
+        modal_sheet_effects_spec(),
+    ));
+
+    let sheet_visible = state.is_visible()
+        || anim.borrow().is_animating()
+        || *is_dragging.borrow()
+        || (!state.is_visible() && scrim_progress.get() > 0.01);
 
     if sheet_visible {
         if overlay_guard.borrow().is_none()
@@ -291,11 +414,13 @@ pub fn ModalBottomSheet(
                 let drag_anchor_y = drag_anchor_y.clone();
                 let offset_at_drag_start = offset_at_drag_start.clone();
                 let is_dragging = is_dragging.clone();
-                let drag_last_y = drag_last_y.clone();
-                let drag_last_time = drag_last_time.clone();
+                let drag_samples = drag_samples.clone();
                 let drag_velocity = drag_velocity.clone();
-                let positional_threshold_px = positional_threshold_px;
-                let velocity_threshold_px = velocity_threshold_px;
+                let drag_release_in_flight = drag_release_in_flight.clone();
+                let last_target = last_target.clone();
+                let last_spatial_motion = last_spatial_motion.clone();
+                let scrim_progress = scrim_progress.clone();
+
                 let dh_source = dh_source.clone();
                 move || {
                     let modifier = current_modifier.borrow().clone();
@@ -326,8 +451,11 @@ pub fn ModalBottomSheet(
                             let anim = anim.clone();
                             let anim_distance_px = anim_distance_px.clone();
                             let state = state.clone();
+                            let drag_release_in_flight = drag_release_in_flight.clone();
+                            let last_target = last_target.clone();
+                            let last_spatial_motion = last_spatial_motion.clone();
                             let viewport_height = Dp(viewport_height);
-                            let sheet_peek_height = sheet_peek_height;
+
                             move |size| {
                                 if size.y.is_finite() {
                                     let height = size.y.max(0.0);
@@ -341,7 +469,26 @@ pub fn ModalBottomSheet(
                                         .0;
                                         anim_distance_px.set(distance);
                                         if !state.is_visible() {
-                                            anim.borrow_mut().snap_to(distance);
+                                            let current = *anim.borrow().get();
+                                            let velocity = anim.borrow().current_velocity();
+                                            if anim.borrow().is_animating()
+                                                || drag_release_in_flight.get()
+                                            {
+                                                let spatial = last_spatial_motion.get()
+                                                    || drag_release_in_flight.get();
+                                                let mut animation = anim.borrow_mut();
+                                                animation.set_spec(if spatial {
+                                                    modal_sheet_spatial_spec(distance - current)
+                                                } else {
+                                                    modal_sheet_hide_spec(distance - current)
+                                                });
+                                                animation
+                                                    .set_target_with_velocity(distance, velocity);
+                                                *last_target.borrow_mut() = distance;
+                                                last_spatial_motion.set(spatial);
+                                            } else {
+                                                anim.borrow_mut().snap_to(distance);
+                                            }
                                         }
                                         request_frame();
                                     }
@@ -360,11 +507,13 @@ pub fn ModalBottomSheet(
                         sheet_mod = sheet_mod
                             .on_pointer_down({
                                 let anim = anim.clone();
+                                let state = state.clone();
+                                let drag_release_in_flight = drag_release_in_flight.clone();
                                 let drag_anchor_y = drag_anchor_y.clone();
                                 let offset_at_drag_start = offset_at_drag_start.clone();
                                 let is_dragging = is_dragging.clone();
-                                let drag_last_y = drag_last_y.clone();
-                                let drag_last_time = drag_last_time.clone();
+
+                                let drag_samples = drag_samples.clone();
                                 let drag_velocity = drag_velocity.clone();
                                 let drag_distance = anim_distance_px.clone();
                                 move |ev| {
@@ -374,15 +523,24 @@ pub fn ModalBottomSheet(
                                     ) {
                                         return;
                                     }
+                                    if !state.is_visible() {
+                                        drag_release_in_flight.set(false);
+                                        state.show();
+                                    }
                                     let y = ev.position_in_window().y;
                                     *drag_anchor_y.borrow_mut() = y;
                                     *offset_at_drag_start.borrow_mut() = modal_sheet_offset(
                                         *anim.borrow().get(),
                                         drag_distance.get(),
                                     );
-                                    drag_last_y.set(Some(y));
-                                    drag_last_time.set(Some(Instant::now()));
-                                    drag_velocity.set(0.0);
+
+                                    let now = Instant::now();
+                                    drag_samples.borrow_mut().clear();
+                                    drag_velocity.set(update_drag_velocity(
+                                        &mut drag_samples.borrow_mut(),
+                                        y,
+                                        now,
+                                    ));
                                     *is_dragging.borrow_mut() = true;
                                 }
                             })
@@ -391,32 +549,29 @@ pub fn ModalBottomSheet(
                                 let drag_anchor_y = drag_anchor_y.clone();
                                 let offset_at_drag_start = offset_at_drag_start.clone();
                                 let is_dragging = is_dragging.clone();
-                                let drag_last_y = drag_last_y.clone();
-                                let drag_last_time = drag_last_time.clone();
+
+                                let drag_samples = drag_samples.clone();
                                 let drag_velocity = drag_velocity.clone();
+                                let drag_distance = anim_distance_px.clone();
                                 move |ev| {
                                     if !*is_dragging.borrow() {
                                         return;
                                     }
                                     let y = ev.position_in_window().y;
                                     let now = Instant::now();
-                                    if let (Some(last_y), Some(last_time)) =
-                                        (drag_last_y.get(), drag_last_time.get())
-                                    {
-                                        let dt = now
-                                            .duration_since(last_time)
-                                            .as_secs_f32()
-                                            .max(1.0 / 240.0);
-                                        let velocity = (y - last_y) / dt;
-                                        if velocity.is_finite() {
-                                            drag_velocity.set(velocity);
-                                        }
-                                    }
-                                    drag_last_y.set(Some(y));
-                                    drag_last_time.set(Some(now));
+                                    let velocity = update_drag_velocity(
+                                        &mut drag_samples.borrow_mut(),
+                                        y,
+                                        now,
+                                    );
+                                    drag_velocity.set(velocity);
+
                                     let delta = y - *drag_anchor_y.borrow();
                                     let start_off = *offset_at_drag_start.borrow();
-                                    let total = (start_off + delta).max(0.0);
+                                    let total = modal_sheet_drag_offset(
+                                        start_off + delta,
+                                        drag_distance.get(),
+                                    );
                                     anim.borrow_mut().snap_to(total);
                                     request_frame();
                                 }
@@ -426,37 +581,32 @@ pub fn ModalBottomSheet(
                                 let is_dragging = is_dragging.clone();
                                 let state = state.clone();
                                 let anim_distance_px = drag_distance.clone();
-                                let drag_last_y = drag_last_y.clone();
-                                let drag_last_time = drag_last_time.clone();
+
+                                let drag_samples = drag_samples.clone();
                                 let drag_velocity = drag_velocity.clone();
-                                let positional_threshold_px = positional_threshold_px;
-                                let velocity_threshold_px = velocity_threshold_px;
+                                let drag_release_in_flight = drag_release_in_flight.clone();
+                                let last_target = last_target.clone();
+                                let last_spatial_motion = last_spatial_motion.clone();
+
                                 move |ev| {
                                     if !*is_dragging.borrow() {
                                         return;
                                     }
                                     let y = ev.position_in_window().y;
                                     let now = Instant::now();
-                                    if let (Some(last_y), Some(last_time)) =
-                                        (drag_last_y.get(), drag_last_time.get())
-                                    {
-                                        let dt = now
-                                            .duration_since(last_time)
-                                            .as_secs_f32()
-                                            .max(1.0 / 240.0);
-                                        let velocity = (y - last_y) / dt;
-                                        if velocity.is_finite() {
-                                            drag_velocity.set(velocity);
-                                        }
-                                    }
+                                    let velocity = update_drag_velocity(
+                                        &mut drag_samples.borrow_mut(),
+                                        y,
+                                        now,
+                                    );
+                                    drag_velocity.set(velocity);
                                     let release_velocity = drag_velocity.get();
                                     *is_dragging.borrow_mut() = false;
-                                    drag_last_y.set(None);
-                                    drag_last_time.set(None);
-                                    drag_velocity.set(0.0);
+                                    drag_samples.borrow_mut().clear();
+
                                     let distance = anim_distance_px.get();
                                     let current_off =
-                                        modal_sheet_offset(*anim.borrow().get(), distance);
+                                        modal_sheet_drag_offset(*anim.borrow().get(), distance);
                                     let target = modal_sheet_release_target(
                                         current_off,
                                         distance,
@@ -464,28 +614,68 @@ pub fn ModalBottomSheet(
                                         positional_threshold_px,
                                         velocity_threshold_px,
                                     );
-                                    anim.borrow_mut().set_target(target);
+                                    {
+                                        let mut animation = anim.borrow_mut();
+                                        animation.set_spec(modal_sheet_spatial_spec(
+                                            target - current_off,
+                                        ));
+                                        animation
+                                            .set_target_with_velocity(target, release_velocity);
+                                    }
+                                    *last_target.borrow_mut() = target;
+                                    last_spatial_motion.set(true);
                                     if target > 0.0 {
+                                        drag_release_in_flight.set(true);
                                         state.dismiss();
+                                    } else {
+                                        drag_release_in_flight.set(false);
                                     }
                                     request_frame();
                                 }
                             })
                             .on_pointer_cancel({
                                 let anim = anim.clone();
+                                let state = state.clone();
                                 let is_dragging = is_dragging.clone();
-                                let drag_last_y = drag_last_y.clone();
-                                let drag_last_time = drag_last_time.clone();
-                                let drag_velocity = drag_velocity.clone();
+
+                                let drag_samples = drag_samples.clone();
+                                let drag_release_in_flight = drag_release_in_flight.clone();
+                                let last_target = last_target.clone();
+                                let last_spatial_motion = last_spatial_motion.clone();
+
+                                let anim_distance_px = anim_distance_px.clone();
+
                                 move |_| {
                                     if !*is_dragging.borrow() {
                                         return;
                                     }
                                     *is_dragging.borrow_mut() = false;
-                                    drag_last_y.set(None);
-                                    drag_last_time.set(None);
-                                    drag_velocity.set(0.0);
-                                    anim.borrow_mut().set_target(0.0);
+                                    drag_samples.borrow_mut().clear();
+
+                                    let distance = anim_distance_px.get();
+                                    let current =
+                                        modal_sheet_drag_offset(*anim.borrow().get(), distance);
+                                    let target = modal_sheet_release_target(
+                                        current,
+                                        distance,
+                                        0.0,
+                                        positional_threshold_px,
+                                        velocity_threshold_px,
+                                    );
+                                    {
+                                        let mut animation = anim.borrow_mut();
+                                        animation
+                                            .set_spec(modal_sheet_spatial_spec(target - current));
+                                        animation.set_target_with_velocity(target, 0.0);
+                                    }
+                                    *last_target.borrow_mut() = target;
+                                    last_spatial_motion.set(true);
+                                    if target > 0.0 {
+                                        drag_release_in_flight.set(true);
+                                        state.dismiss();
+                                    } else {
+                                        drag_release_in_flight.set(false);
+                                    }
                                     request_frame();
                                 }
                             });
@@ -521,12 +711,8 @@ pub fn ModalBottomSheet(
                     )
                     .child(sheet_body);
 
-                    let scrim_alpha = if state.is_visible() {
-                        config.scrim_color.3
-                    } else {
-                        let t = (off / anim_distance_px.get()).clamp(0.0, 1.0);
-                        (config.scrim_color.3 as f32 * (1.0 - t)) as u8
-                    };
+                    let scrim_alpha =
+                        (config.scrim_color.3 as f32 * scrim_progress.get().clamp(0.0, 1.0)) as u8;
                     let scrim = Box(Modifier::new()
                         .fill_max_size()
                         .background(config.scrim_color.with_alpha(scrim_alpha))
@@ -568,10 +754,40 @@ mod tests {
     use std::collections::HashMap;
 
     #[test]
-    fn modal_sheet_offset_stays_within_anchor_range() {
-        assert_eq!(modal_sheet_offset(-100.0, 600.0), 0.0);
+    fn modal_sheet_release_target_uses_velocity_direction() {
+        assert_eq!(
+            modal_sheet_release_target(30.0, 600.0, 100.0, 56.0, 125.0),
+            0.0
+        );
+        assert_eq!(
+            modal_sheet_release_target(100.0, 600.0, 0.0, 56.0, 125.0),
+            0.0
+        );
+        assert_eq!(
+            modal_sheet_release_target(301.0, 600.0, 0.0, 56.0, 125.0),
+            600.0
+        );
+        assert_eq!(
+            modal_sheet_release_target(590.0, 600.0, -50.0, 56.0, 125.0),
+            600.0
+        );
+        assert_eq!(
+            modal_sheet_release_target(500.0, 600.0, -50.0, 56.0, 125.0),
+            0.0
+        );
+        assert_eq!(
+            modal_sheet_release_target(100.0, 600.0, 200.0, 56.0, 125.0),
+            600.0
+        );
+    }
+
+    #[test]
+    fn modal_sheet_offset_preserves_spring_overshoot() {
+        assert_eq!(modal_sheet_offset(-100.0, 600.0), -100.0);
         assert_eq!(modal_sheet_offset(250.0, 600.0), 250.0);
-        assert_eq!(modal_sheet_offset(700.0, 600.0), 600.0);
+        assert_eq!(modal_sheet_offset(700.0, 600.0), 700.0);
+        assert_eq!(modal_sheet_drag_offset(-100.0, 600.0), 0.0);
+        assert_eq!(modal_sheet_drag_offset(700.0, 600.0), 600.0);
     }
 
     #[test]

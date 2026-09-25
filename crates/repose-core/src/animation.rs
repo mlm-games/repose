@@ -528,14 +528,14 @@ fn spring_analytical(zeta: f32, stiffness: f32, t: f32, x0: f32, v0: f32) -> (f3
 
     if (zeta - 1.0).abs() < 1e-6 {
         // Critically damped: x(t) = 1 - (A + B*t) * e^{-ωt}
-        let b = v0 + omega * a;
+        let b = omega * a - v0;
         let progress = 1.0 - (a + b * t) * exp;
         let velocity = (a * omega - b + b * omega * t) * exp;
         (progress, velocity)
     } else if zeta < 1.0 {
         // Underdamped: x(t) = 1 - e^{-ζωt}[A*cos(ωd*t) + C*sin(ωd*t)]
         let wd = omega * (1.0 - zeta * zeta).sqrt();
-        let c = (v0 + zeta * omega * a) / wd;
+        let c = (zeta * omega * a - v0) / wd;
         let cos_wd = (wd * t).cos();
         let sin_wd = (wd * t).sin();
         let env = a * cos_wd + c * sin_wd;
@@ -546,7 +546,7 @@ fn spring_analytical(zeta: f32, stiffness: f32, t: f32, x0: f32, v0: f32) -> (f3
     } else {
         // Overdamped: x(t) = 1 - e^{-ζωt}[A*cosh(ωd'*t) + D*sinh(ωd'*t)]
         let wd = omega * (zeta * zeta - 1.0).sqrt();
-        let d = (v0 + zeta * omega * a) / wd;
+        let d = (zeta * omega * a - v0) / wd;
         let cosh_wd = (wd * t).cosh();
         let sinh_wd = (wd * t).sinh();
         let env = a * cosh_wd + d * sinh_wd;
@@ -880,6 +880,30 @@ impl DecayAnimationSpec {
 }
 
 impl AnimatedValue<f32> {
+    pub fn set_target_with_velocity(&mut self, target: f32, velocity: f32) {
+        let start = self.current;
+        let distance = target - start;
+        if distance.abs() <= f32::EPSILON {
+            self.snap_to(target);
+            return;
+        }
+        self.set_target(target);
+        self.spring_v0 = if velocity.is_finite() {
+            velocity / distance
+        } else {
+            0.0
+        };
+        self.velocity = self.spring_v0;
+    }
+
+    pub fn current_velocity(&self) -> f32 {
+        if self.start_time.is_none() {
+            0.0
+        } else {
+            self.velocity * (self.target - self.start)
+        }
+    }
+
     /// Tick the decay animation. Returns `true` if still animating.
     pub fn update_decay(&mut self, friction: f32, stop_threshold: f32) -> bool {
         let _start = match self.start_time {
@@ -1029,7 +1053,7 @@ impl Clock for TestClock {
 /// Supports two modes:
 /// - **Tween** (when `spec.spring` is `None`): interpolates between `start` and `target`
 ///   over a fixed duration using an easing curve.
-/// - **Spring** (when `spec.spring` is `Some`): numerically integrates a physical spring ODE
+/// - **Spring** (when `spec.spring` is `Some`): analytically evaluates a physical spring ODE
 ///   (`x'' = -k·(x - target) - d·x'`) with emergent duration. When the target changes
 ///   mid-animation, the current value and velocity carry forward seamlessly.
 pub struct AnimatedValue<T: Interpolate + Clone> {
@@ -1268,6 +1292,15 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
             self.spring_v0,
         );
         let progress = progress.clamp(-0.1, 2.0);
+        if !progress.is_finite() || !velocity.is_finite() {
+            self.progress = 1.0;
+            self.velocity = 0.0;
+            self.spring_v0 = 0.0;
+            self.current = self.target.clone();
+            self.start_time = None;
+            self.last_update = None;
+            return false;
+        }
 
         if (progress - 1.0).abs() < spring.settle_progress
             && velocity.abs() < spring.settle_velocity
