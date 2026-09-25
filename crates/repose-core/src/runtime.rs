@@ -556,6 +556,7 @@ pub struct Composer {
     pub slots: Vec<Box<dyn Any>>,
     pub slot_callers: Vec<&'static Location<'static>>,
     pub cursor: usize,
+    pub auto_counts: FxHashMap<String, usize>,
     pub keyed_slots: FxHashMap<String, Box<dyn Any>>,
     pub keyed_owner: FxHashMap<String, String>,
     pub keyed_owners: FxHashMap<String, rustc_hash::FxHashSet<String>>,
@@ -681,6 +682,7 @@ impl ComposeGuard {
         COMPOSER.with(|c| {
             let mut c = c.borrow_mut();
             c.cursor = 0;
+            c.auto_counts.clear();
             c.live_scope_keys.clear();
             c.live_keyed_owners.clear();
             c.live_scope_keys.insert(String::new());
@@ -748,6 +750,7 @@ pub fn shutdown_composition() {
         c.live_keyed_owners.clear();
         c.live_scope_keys.clear();
         c.cursor = 0;
+        c.auto_counts.clear();
         (slots, callers, keyed, caches)
     });
     drop(removed);
@@ -932,6 +935,44 @@ pub fn remember<T: 'static>(init: impl FnOnce() -> T) -> Rc<T> {
     initializer.commit();
     drop(old);
     rc
+}
+
+fn push_key_part(key: &mut String, part: &str) {
+    key.push_str(&part.len().to_string());
+    key.push(':');
+    key.push_str(part);
+    key.push('|');
+}
+
+#[track_caller]
+pub fn remember_auto<T: 'static>(slot: &str, init: impl FnOnce() -> T) -> Rc<T> {
+    let caller = Location::caller();
+    let scope = current_scope_key_for_remember().unwrap_or_default();
+    let mut base = String::from("auto:v1|");
+    push_key_part(&mut base, &scope);
+    push_key_part(&mut base, caller.file());
+    push_key_part(&mut base, &caller.line().to_string());
+    push_key_part(&mut base, &caller.column().to_string());
+    push_key_part(&mut base, slot);
+    let occurrence = COMPOSER.with(|composer| {
+        let mut composer = composer.borrow_mut();
+        let count = composer.auto_counts.entry(base.clone()).or_insert(0);
+        let occurrence = *count;
+        *count += 1;
+        occurrence
+    });
+    push_key_part(&mut base, &occurrence.to_string());
+    remember_with_key(base, init)
+}
+
+pub fn keyed<T>(key: impl Into<String>, f: impl FnOnce() -> T) -> T {
+    let key = key.into();
+    assert!(!key.is_empty(), "keyed scopes need non-empty keys");
+    let parent = current_scope_key_for_remember().unwrap_or_default();
+    let mut full_key = String::new();
+    push_key_part(&mut full_key, &parent);
+    push_key_part(&mut full_key, &key);
+    crate::scope_cache::with_scope_key(&full_key, f)
 }
 
 /// Key-based remember.

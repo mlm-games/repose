@@ -202,7 +202,7 @@ pub fn PermanentNavigationDrawer(
                 .color(config.content_color)
                 .child(drawer_content),
         ),
-        Box(Modifier::new().flex_grow(1.0)).child(content),
+        Box(Modifier::new().weight(1.0).fill_max_height()).child(content),
     ))
 }
 
@@ -309,7 +309,7 @@ pub fn NavigationDrawerItem(
                 .icon
                 .unwrap_or(Box(Modifier::new().width(Dp(24.0)).height(Dp(24.0)))),
             Box(Modifier::new().width(Dp(12.0)).height(Dp(1.0))),
-            Box(Modifier::new().flex_grow(1.0)).child(label),
+            Box(Modifier::new().weight(1.0)).child(label),
             config.badge.unwrap_or(Box(Modifier::new())),
         ))
     }))

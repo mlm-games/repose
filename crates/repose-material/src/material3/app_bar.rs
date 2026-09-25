@@ -309,7 +309,7 @@ fn top_app_bar_layout(
                 .fill_max_size()
                 .align_items(AlignItems::CENTER)
                 .padding_values(content_padding))
-            .child((nav, Box(Modifier::new().flex_grow(1.0)), actions_row)),
+            .child((nav, Box(Modifier::new().weight(1.0)), actions_row)),
             Box(Modifier::new()
                 .absolute()
                 .offset(Some(Dp(0.0)), Some(Dp(0.0)), Some(Dp(0.0)), Some(Dp(0.0)))
@@ -329,7 +329,7 @@ fn top_app_bar_layout(
                     top: Dp(0.0),
                     bottom: Dp(0.0),
                 })
-                .flex_grow(1.0))
+                .weight(1.0))
             .child(title_column),
             actions_row,
         ))

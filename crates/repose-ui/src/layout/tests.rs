@@ -1274,6 +1274,130 @@ fn test_row_baseline_alignment_grows_row() {
 }
 
 #[test]
+fn weighted_text_stays_within_lazy_row_bounds() {
+    use crate::{LazyColumn, LazyColumnConfig};
+
+    let description = "supercalifragilisticexpialidocious-supercalifragilisticexpialidocious-supercalifragilisticexpialidocious-supercalifragilisticexpialidocious";
+    let leading_color = Color::from_rgb(255, 0, 0);
+    let action_color = Color::from_rgb(0, 0, 255);
+    let list = LazyColumn(
+        vec![description],
+        104.0_f32,
+        |text: &&str| text.len() as u64,
+        move |text: &str, _| {
+            Row(Modifier::new()
+                .fill_max_width()
+                .height(Dp(104.0))
+                .padding(Dp(12.0))
+                .align_items(AlignItems::CENTER))
+            .child((
+                RBox(
+                    Modifier::new()
+                        .size(Dp(40.0), Dp(40.0))
+                        .flex_shrink(0.0)
+                        .background(leading_color),
+                ),
+                RBox(Modifier::new().width(Dp(12.0)).flex_shrink(0.0)),
+                Column(Modifier::new().weight(1.0).gap(Dp(3.0))).child((
+                    Text("PackageName").single_line().overflow_ellipsize(),
+                    Text(text)
+                        .max_lines(2)
+                        .overflow_ellipsize()
+                        .modifier(Modifier::new().fill_max_width().min_width(Dp(0.0))),
+                    Text("v1").single_line(),
+                )),
+                RBox(Modifier::new().width(Dp(12.0)).flex_shrink(0.0)),
+                RBox(
+                    Modifier::new()
+                        .width(Dp(92.0))
+                        .height(Dp(40.0))
+                        .flex_shrink(0.0)
+                        .background(action_color),
+                ),
+            ))
+        },
+        LazyColumnConfig {
+            modifier: Modifier::new().fill_max_width().weight(1.0),
+            ..Default::default()
+        },
+    );
+    let root = Row(Modifier::new().fill_max_size()).child((
+        RBox(Modifier::new().width(Dp(224.0)).fill_max_height()),
+        RBox(Modifier::new().weight(1.0).fill_max_height()).child(list),
+    ));
+
+    let mut engine = make_engine();
+    let _ = engine.layout_frame(
+        &root,
+        (1200, 200),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
+    let (scene, _, _) = engine.layout_frame(
+        &root,
+        (900, 200),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
+    let texts: Vec<_> = scene
+        .nodes
+        .iter()
+        .filter_map(|node| match node {
+            SceneNode::Text { text, .. } => Some(text.as_ref()),
+            _ => None,
+        })
+        .collect();
+    let name_index = texts
+        .iter()
+        .position(|text| *text == "PackageName")
+        .expect("package name text");
+    let version_index = texts
+        .iter()
+        .position(|text| *text == "v1")
+        .expect("package version text");
+    let description_lines = &texts[name_index + 1..version_index];
+    assert_eq!(description_lines.len(), 2, "texts: {texts:?}");
+    assert!(
+        description_lines
+            .last()
+            .is_some_and(|line| line.ends_with('…')),
+        "bounded description should be ellipsized: {texts:?}"
+    );
+
+    let action = scene
+        .nodes
+        .iter()
+        .find_map(|node| match node {
+            SceneNode::Rect {
+                rect,
+                brush: Brush::Solid(color),
+                ..
+            } if *color == action_color => Some(*rect),
+            _ => None,
+        })
+        .expect("fixed action bounds");
+    assert!(
+        action.x + action.w <= 900.5,
+        "fixed action pushed outside shell: {action:?}"
+    );
+    for node in &scene.nodes {
+        if let SceneNode::Text { rect, text, .. } = node
+            && description_lines.contains(&text.as_ref())
+        {
+            assert!(
+                rect.x + rect.w <= action.x + 0.5,
+                "description {:?} exceeds action bounds: {:?} vs {:?}",
+                text,
+                rect,
+                action
+            );
+        }
+    }
+}
+
+#[test]
 fn test_intrinsic_and_fit_content_sizing() {
     // `intrinsic_width(Max)` sizes to max-content; `fit_content_width(limit)`
     // shrink-wraps clamped to the limit.

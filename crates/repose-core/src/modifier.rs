@@ -1891,8 +1891,10 @@ impl Modifier {
         let w = w.max(0.0);
         self.flex_grow = Some(w);
         self.flex_shrink = Some(1.0);
-        // Dp units; 0 is fine.
         self.flex_basis = Some(Dp::ZERO);
+        self.flex_basis_content = false;
+        self.min_width = Some(Dp::ZERO);
+        self.min_height = Some(Dp::ZERO);
         self
     }
     /// Marks this view as a repaint boundary candidate.

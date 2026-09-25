@@ -31,8 +31,8 @@ pub use crate::modifier::{
 pub use crate::nested_scroll::{NestedScrollConnection, NestedScrollSource};
 pub use crate::render_api::{GlyphRasterConfig, RenderBackend};
 pub use crate::runtime::{
-    ComposeGuard, FocusDirection, FocusManager, FocusRequester, Frame, Scheduler, remember,
-    remember_state, remember_state_with_key, remember_with_key, take_focus_request,
+    ComposeGuard, FocusDirection, FocusManager, FocusRequester, Frame, Scheduler, keyed, remember,
+    remember_auto, remember_state, remember_state_with_key, remember_with_key, take_focus_request,
 };
 pub use crate::scope::{Scope, current_scope, scope_memo, scoped_effect, scoped_effect_once};
 pub use crate::scroll::{

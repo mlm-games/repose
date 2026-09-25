@@ -114,7 +114,8 @@ fn sdf_ellipse(pos_ndc: vec2<f32>, xywh: vec4<f32>, fwd_mat: vec4<f32>) -> f32 {
 
 fn local_angle(pos_ndc: vec2<f32>, xywh: vec4<f32>, fwd_mat: vec4<f32>) -> f32 {
     let rel = unrotated_rel(pos_ndc, xywh, fwd_mat);
-    return -atan2(rel.y, rel.x);
+    let radii = max(0.5 * xywh.zw, vec2<f32>(1e-6));
+    return -atan2(rel.y / radii.y, rel.x / radii.x);
 }
 
 // Arc coverage: 1.0 inside the sweep, smoothly fading to 0.0 at the boundaries.
@@ -234,9 +235,10 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
     let d = sdf_ellipse(in.pos_ndc, in.xywh, in.fwd_mat);
     let grad = vec2(dpdx(d), dpdy(d));
     let w = max(length(grad), 1e-5);
+    let edge_width = max(w * 0.5, 1e-5);
     let half_width_px = 0.5 * in.stroke_px;
     let half = half_width_px * w;
-    let stroke_cov = 1.0 - smoothstep(-w, w, abs(d) - half);
+    let stroke_cov = 1.0 - smoothstep(-edge_width, edge_width, abs(d) - half);
 
     let angle = local_angle(in.pos_ndc, in.xywh, in.fwd_mat);
     let rel = unrotated_rel(in.pos_ndc, in.xywh, in.fwd_mat);
@@ -244,12 +246,14 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
         fwidth(rel.x) / max(0.5 * in.xywh.z, 1e-3),
         fwidth(rel.y) / max(0.5 * in.xywh.w, 1e-3),
     )), 1e-4);
-    let angle_cov = arc_coverage(angle, in.start_angle, in.sweep_angle, angle_w * 2.0);
+    let angle_cov = arc_coverage(angle, in.start_angle, in.sweep_angle, angle_w);
 
     let cap_aa = max(
-        fwidth(unrotated_rel(in.pos_ndc, in.xywh, in.fwd_mat).x * G.ndc_to_px.x)
-        + fwidth(unrotated_rel(in.pos_ndc, in.xywh, in.fwd_mat).y * G.ndc_to_px.y),
-        0.25,
+        max(
+            fwidth(unrotated_rel(in.pos_ndc, in.xywh, in.fwd_mat).x * G.ndc_to_px.x),
+            fwidth(unrotated_rel(in.pos_ndc, in.xywh, in.fwd_mat).y * G.ndc_to_px.y),
+        ) * 0.5,
+        0.125,
     );
     let cap_cov = cap_coverage(
         in.pos_ndc,

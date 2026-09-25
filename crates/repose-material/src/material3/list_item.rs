@@ -346,7 +346,7 @@ pub fn ListItem(
             .unwrap_or(Box(Modifier::new())),
         Column(
             Modifier::new()
-                .flex_grow(1.0)
+                .weight(1.0)
                 .justify_content(JustifyContent::CENTER),
         )
         .child((

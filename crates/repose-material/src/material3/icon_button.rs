@@ -153,7 +153,13 @@ fn icon_button_render(
         .interaction_source
         .clone()
         .map(Rc::new)
-        .unwrap_or_else(|| remember(MutableInteractionSource::new));
+        .unwrap_or_else(|| match config.modifier.key {
+            Some(key) => remember_with_key(
+                format!("m3_icon_btn_src:{key}"),
+                MutableInteractionSource::new,
+            ),
+            None => remember_auto("interaction", MutableInteractionSource::new),
+        });
 
     let (bounded, r) = if ripple_bounded {
         (true, None)

@@ -344,6 +344,44 @@ fn sweep_arc_renders_without_panic() {
 }
 
 #[test]
+fn round_arc_uses_physical_angles_on_non_square_targets() {
+    use repose_core::StrokeCap;
+    let Some(mut off) = try_offscreen(64, 32) else {
+        return;
+    };
+    let scene = Scene {
+        clear_color: Color::from_rgba(0, 0, 0, 0),
+        nodes: vec![SceneNode::Arc {
+            rect: Rect {
+                x: 16.0,
+                y: 0.0,
+                w: 32.0,
+                h: 32.0,
+            },
+            start_angle: std::f32::consts::FRAC_PI_4,
+            sweep_angle: std::f32::consts::FRAC_PI_2,
+            stroke_width: Px(4.0),
+            brush: Brush::Solid(Color::from_rgba(255, 0, 0, 255)),
+            cap: StrokeCap::Round,
+        }],
+    };
+    let px = off.render_rgba(&scene, None).expect("render");
+    let at = |x: usize, y: usize| (y * 64 + x) * 4;
+    let interior = at(41, 29);
+    assert!(
+        px[interior + 3] > 180 && px[interior] > 180,
+        "arc body should cover the physical interior point, got {:?}",
+        &px[interior..interior + 4]
+    );
+    let outside = at(46, 24);
+    assert!(
+        px[outside + 3] < 20,
+        "arc angular coverage should not extend outside its physical sweep, got {:?}",
+        &px[outside..outside + 4]
+    );
+}
+
+#[test]
 fn radial_rect_fill_center_matches_start_color() {
     use repose_core::Vec2;
     let Some(mut off) = try_offscreen(16, 16) else {

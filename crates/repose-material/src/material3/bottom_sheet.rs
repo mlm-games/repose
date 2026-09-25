@@ -3,7 +3,7 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use repose_core::animation::AnimationSpec;
+use repose_core::animation::{AnimationSpec, SpringSpec};
 use repose_core::*;
 use repose_ui::{
     Box, Column, Row, ViewExt, ZStack, anim::animate_f32_from, overlay::OverlayGuard,
@@ -149,6 +149,18 @@ impl SheetState {
     }
 }
 
+fn modal_sheet_offset(value: f32, distance: f32) -> f32 {
+    value.clamp(0.0, distance.max(0.0))
+}
+
+fn modal_sheet_show_spec() -> AnimationSpec {
+    AnimationSpec::spring(SpringSpec::new(0.9, 700.0))
+}
+
+fn modal_sheet_hide_spec() -> AnimationSpec {
+    AnimationSpec::spring(SpringSpec::new(1.0, 3800.0))
+}
+
 /// M3 Modal Bottom Sheet - slides up from the bottom with a drag handle.
 ///
 /// Renders as an overlay so it is not clipped by parent containers.
@@ -160,7 +172,6 @@ pub fn ModalBottomSheet(
     config: BottomSheetConfig,
 ) -> View {
     let overlay = ambient_overlay();
-    let th = theme();
     // Peek heights are Dp; the slide animation runs in px (pointer space).
     let peek_h = Dp(state.peek_height.get().max(config.peek_height.0));
     let mbs_id = state.key("modal");
@@ -202,7 +213,7 @@ pub fn ModalBottomSheet(
 
     // Animated offset: anim_distance_px (off-screen) -> 0px (visible)
     let anim = remember_state_with_key(format!("mbs_anim_{mbs_id}"), || {
-        AnimatedValue::new(anim_distance_px.get(), theme().motion.spring)
+        AnimatedValue::new(anim_distance_px.get(), modal_sheet_show_spec())
     });
     let last_target = remember_state_with_key(format!("mbs_anim_target_{mbs_id}"), || f32::NAN);
     let anim_target = if state.is_visible() {
@@ -215,11 +226,11 @@ pub fn ModalBottomSheet(
         let mut a = anim.borrow_mut();
         let mut lt = last_target.borrow_mut();
         if lt.is_nan() || (*lt - anim_target).abs() > 1e-6 {
-            if state.is_visible() {
-                a.set_spec(th.motion.spring);
+            a.set_spec(if state.is_visible() {
+                modal_sheet_show_spec()
             } else {
-                a.set_spec(AnimationSpec::fast());
-            }
+                modal_sheet_hide_spec()
+            });
             a.set_target(anim_target);
             *lt = anim_target;
         }
@@ -230,8 +241,9 @@ pub fn ModalBottomSheet(
         }
     }
 
-    let offset = *anim.borrow().get();
-    let sheet_visible = state.is_visible() || offset < anim_distance_px.get() - 10.0;
+    let distance = anim_distance_px.get();
+    let offset = modal_sheet_offset(*anim.borrow().get(), distance);
+    let sheet_visible = state.is_visible() || offset < distance - 10.0;
 
     if sheet_visible {
         if overlay_guard.borrow().is_none()
@@ -252,7 +264,7 @@ pub fn ModalBottomSheet(
                 move || {
                     let modifier = current_modifier.borrow().clone();
                     let config = current_config.borrow().clone();
-                    let off = *anim.borrow().get();
+                    let off = modal_sheet_offset(*anim.borrow().get(), anim_distance_px.get());
                     let content = current_content.borrow().clone();
                     let sheet_peek_height = Dp(state.peek_height.get().max(config.peek_height.0));
 
@@ -315,9 +327,13 @@ pub fn ModalBottomSheet(
                                 let drag_anchor_y = drag_anchor_y.clone();
                                 let offset_at_drag_start = offset_at_drag_start.clone();
                                 let is_dragging = is_dragging.clone();
+                                let drag_distance = anim_distance_px.clone();
                                 move |ev| {
                                     *drag_anchor_y.borrow_mut() = ev.position.y;
-                                    *offset_at_drag_start.borrow_mut() = *anim.borrow().get();
+                                    *offset_at_drag_start.borrow_mut() = modal_sheet_offset(
+                                        *anim.borrow().get(),
+                                        drag_distance.get(),
+                                    );
                                     *is_dragging.borrow_mut() = true;
                                 }
                             })
@@ -344,8 +360,9 @@ pub fn ModalBottomSheet(
                                 let anim_distance_px = drag_distance.clone();
                                 move |_| {
                                     *is_dragging.borrow_mut() = false;
-                                    let current_off = *anim.borrow().get();
                                     let distance = anim_distance_px.get();
+                                    let current_off =
+                                        modal_sheet_offset(*anim.borrow().get(), distance);
                                     let threshold = distance * 0.3;
                                     if current_off > threshold {
                                         anim.borrow_mut().set_target(distance);
@@ -432,6 +449,13 @@ mod tests {
     use repose_ui::layout::LayoutEngine;
     use repose_ui::overlay::{OverlayHandle, with_ambient_overlay};
     use std::collections::HashMap;
+
+    #[test]
+    fn modal_sheet_offset_stays_within_anchor_range() {
+        assert_eq!(modal_sheet_offset(-100.0, 600.0), 0.0);
+        assert_eq!(modal_sheet_offset(250.0, 600.0), 250.0);
+        assert_eq!(modal_sheet_offset(700.0, 600.0), 600.0);
+    }
 
     #[test]
     fn modal_sheet_is_bottom_anchored_with_intrinsic_height() {
