@@ -411,7 +411,7 @@ fn pointer_coordinates(
         y: metadata.local_rect.y,
     };
     let local_position = local - local_origin;
-    let origin = apply_matrix(metadata.world_to_local, local_origin);
+    let origin = apply_matrix(metadata.local_to_world, local_origin);
     (origin, local_position)
 }
 
@@ -653,4 +653,30 @@ fn invert_matrix(matrix: [f64; 9]) -> Option<[f64; 9]> {
         -(a * h - b * g) * inv,
         (a * e - b * d) * inv,
     ])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pointer_coordinates_preserve_global_position_with_transform() {
+        let mut hit = HitRegion {
+            id: 9_876_543,
+            rect: Rect {
+                x: 10.0,
+                y: 20.0,
+                w: 100.0,
+                h: 50.0,
+            },
+            ..Default::default()
+        };
+        let context = HitContext::root().with_transform(Transform::translate(30.0, 40.0));
+        register_hit(&mut hit, &context, None);
+
+        let global = Vec2 { x: 50.0, y: 70.0 };
+        let (origin, local) = hit_region_pointer_coordinates(&hit, global);
+        assert_eq!(origin, Vec2 { x: 40.0, y: 60.0 });
+        assert_eq!(origin + local, global);
+    }
 }
