@@ -1,6 +1,6 @@
 #![allow(non_snake_case)]
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -595,12 +595,14 @@ fn tooltip_surface(config: &TooltipConfig, container: Color, shape: Dp, content:
 struct TooltipBodyCache {
     text: Rc<str>,
     config: TooltipConfig,
+    theme: u64,
     body: View,
 }
 
 struct TooltipPopupCache {
     config: Rc<TooltipConfig>,
     text: Rc<str>,
+    theme: u64,
     anchor: Rect,
     window: (f32, f32),
     measured: Vec2,
@@ -629,6 +631,11 @@ pub fn TooltipBox(
     let id = state.id();
     let th = theme();
     let spec = th.motion.overlay;
+    let theme_key = theme_fingerprint_of(&th);
+    let theme_state = remember_with_key(format!("tt_theme_{id}"), || Rc::new(Cell::new(theme_key)));
+    theme_state.set(theme_key);
+    let spec_state = remember_with_key(format!("tt_spec_{id}"), || Rc::new(Cell::new(spec)));
+    spec_state.set(spec);
 
     let current_config = remember_with_key(format!("tt_cfg_{id}"), || {
         RefCell::new(Rc::new(config.clone()))
@@ -696,9 +703,11 @@ pub fn TooltipBox(
     let tooltip_visible = state_visible || alpha > 0.01;
     if tooltip_visible {
         let mut body = body_cache.borrow_mut();
-        let rebuild = body
-            .as_ref()
-            .is_none_or(|cached| cached.text.as_ref() != text.as_ref() || cached.config != config);
+        let rebuild = body.as_ref().is_none_or(|cached| {
+            cached.text.as_ref() != text.as_ref()
+                || cached.config != config
+                || cached.theme != theme_key
+        });
         if rebuild {
             let built = match config.kind {
                 TooltipKind::Plain => PlainTooltip(text.to_string(), &config),
@@ -707,6 +716,7 @@ pub fn TooltipBox(
             *body = Some(TooltipBodyCache {
                 text: text.clone(),
                 config: config.clone(),
+                theme: theme_key,
                 body: built,
             });
         }
@@ -725,15 +735,18 @@ pub fn TooltipBox(
             let body_cache = body_cache.clone();
             let popup_cache = popup_cache.clone();
             let current_config = current_config.clone();
+            let theme_state = theme_state.clone();
+            let spec_state = spec_state.clone();
             let anchor_rect = anchor_rect.clone();
             let popup_size = popup_size.clone();
             let state_for_scrim = state.clone();
             // The overlay entry rebuilds every frame, so re-read the animation
             // target-tracked value here instead of capturing the frame's copy.
             let anim_key = anim_key.clone();
-            let spec = spec;
             *overlay_guard.borrow_mut() = Some(overlay.show_guard(
                 Rc::new(move || {
+                    let theme_key = theme_state.get();
+                    let spec = spec_state.get();
                     let frame_alpha = animate_f32(
                         anim_key.clone(),
                         if state_for_scrim.is_visible() {
@@ -780,6 +793,7 @@ pub fn TooltipBox(
                     let reusable = popup_cache.borrow().as_ref().is_some_and(|cached| {
                         cached.config.as_ref() == config.as_ref()
                             && cached.text.as_ref() == text.as_ref()
+                            && cached.theme == theme_key
                             && cached.anchor == anchor
                             && cached.window == (win_w, win_h)
                             && cached.measured == measured
@@ -817,6 +831,7 @@ pub fn TooltipBox(
                         *popup_cache.borrow_mut() = Some(TooltipPopupCache {
                             config: config.clone(),
                             text: text.clone(),
+                            theme: theme_key,
                             anchor,
                             window: (win_w, win_h),
                             measured,

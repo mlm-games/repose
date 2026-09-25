@@ -233,7 +233,7 @@ pub fn CircularProgressIndicator(
         (None, None, None)
     };
 
-    Box(Modifier::new().then(config.modifier).size(sz, sz).painter(
+    Box(Modifier::new().size(sz, sz).then(config.modifier).painter(
         move |scene: &mut Scene, rect: Rect, alpha: f32| {
             let stroke_px = config.stroke_width.to_px().0;
             let gap_px = config.gap_size.to_px().0;
@@ -742,5 +742,23 @@ mod tests {
             })
         );
         assert_eq!(stroke, Px(8.0));
+    }
+
+    #[test]
+    fn circular_progress_preserves_caller_size() {
+        let scope = Scope::new();
+        let guard = ComposeGuard::begin();
+        scope.run(|| {
+            let view = CircularProgressIndicator(
+                Some(0.5),
+                CircularProgressIndicatorConfig {
+                    modifier: Modifier::new().size(Dp(80.0), Dp(32.0)),
+                    ..Default::default()
+                },
+            );
+            assert_eq!(view.modifier.size, Some(DpSize::new(Dp(80.0), Dp(32.0))));
+        });
+        drop(guard);
+        scope.dispose();
     }
 }

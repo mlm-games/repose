@@ -386,7 +386,7 @@ impl LayoutEngine {
         result
     }
 
-    fn descendants_have_transform_or_layer(&mut self, node_id: NodeId) -> bool {
+    fn subtree_may_paint_outside(&mut self, node_id: NodeId) -> bool {
         if let Some(&cached) = self.transform_layer_cache.get(&node_id) {
             return cached;
         }
@@ -394,13 +394,23 @@ impl LayoutEngine {
             self.transform_layer_cache.insert(node_id, false);
             return false;
         };
+        let modifier = &node.modifier;
+        // Effects that emit pixels outside the layout rect. A plain background
+        // draw is bounded by the rect, so anything that can spill has to opt in
+        // through one of these. `overflow` is deliberately not a signal: the
+        // default is already visible, and a descendant that actually spills
+        // carries one of these itself, which the recursive walk picks up.
+        let node_may_paint_outside = modifier.transform.is_some()
+            || modifier.graphics_layer.is_some()
+            || modifier.shadow.is_some()
+            || modifier.blur.is_some()
+            || modifier.painter.is_some()
+            || modifier.paint_callback.is_some();
         let children = node.children.clone();
-        let result = children.into_iter().any(|child_id| {
-            let child_has_layer = self.tree.get(child_id).is_some_and(|child| {
-                child.modifier.transform.is_some() || child.modifier.graphics_layer.is_some()
-            });
-            child_has_layer || self.descendants_have_transform_or_layer(child_id)
-        });
+        let result = node_may_paint_outside
+            || children
+                .into_iter()
+                .any(|child_id| self.subtree_may_paint_outside(child_id));
         self.transform_layer_cache.insert(node_id, result);
         result
     }
@@ -2225,7 +2235,7 @@ impl LayoutEngine {
                                     .with_transform(resolved_transform(child_rect, transform))
                             })
                             .unwrap_or_else(|| scroll_hit_context.clone());
-                        if !self.descendants_have_transform_or_layer(child_id)
+                        if !self.subtree_may_paint_outside(child_id)
                             && !cull_context.intersects(child_rect, cull_viewport)
                         {
                             self.stats.paint_culled += 1;
@@ -2263,7 +2273,7 @@ impl LayoutEngine {
                             off,
                             modifier.z_index,
                             ScrollbarAxis::V,
-                            &modifier.scrollbar_style,
+                            &modifier.scrollbar_style_or_default(),
                             alpha_accum,
                             b.set_offset_main.clone(),
                             &scroll_hit_context,
@@ -2333,7 +2343,7 @@ impl LayoutEngine {
                                     .with_transform(resolved_transform(child_rect, transform))
                             })
                             .unwrap_or_else(|| scroll_hit_context.clone());
-                        if !self.descendants_have_transform_or_layer(child_id)
+                        if !self.subtree_may_paint_outside(child_id)
                             && !cull_context.intersects(child_rect, cull_viewport)
                         {
                             self.stats.paint_culled += 1;
@@ -2371,7 +2381,7 @@ impl LayoutEngine {
                             off,
                             modifier.z_index,
                             ScrollbarAxis::H,
-                            &modifier.scrollbar_style,
+                            &modifier.scrollbar_style_or_default(),
                             alpha_accum,
                             b.set_offset_main.clone(),
                             &scroll_hit_context,
@@ -2459,7 +2469,7 @@ impl LayoutEngine {
                                     .with_transform(resolved_transform(child_rect, transform))
                             })
                             .unwrap_or_else(|| scroll_hit_context.clone());
-                        if !self.descendants_have_transform_or_layer(child_id)
+                        if !self.subtree_may_paint_outside(child_id)
                             && !cull_context.intersects(child_rect, cull_viewport)
                         {
                             self.stats.paint_culled += 1;
@@ -2528,7 +2538,7 @@ impl LayoutEngine {
                             oy,
                             modifier.z_index,
                             ScrollbarAxis::V,
-                            &modifier.scrollbar_style,
+                            &modifier.scrollbar_style_or_default(),
                             alpha_accum,
                             set_y,
                             &scroll_hit_context,
@@ -2543,7 +2553,7 @@ impl LayoutEngine {
                             ox,
                             modifier.z_index,
                             ScrollbarAxis::H,
-                            &modifier.scrollbar_style,
+                            &modifier.scrollbar_style_or_default(),
                             alpha_accum,
                             set_x,
                             &scroll_hit_context,

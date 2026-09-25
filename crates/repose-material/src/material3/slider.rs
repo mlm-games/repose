@@ -139,12 +139,32 @@ fn slider_tick_fractions(min: f32, max: f32, step: Option<f32>) -> Vec<f32> {
     if intervals <= 1 {
         return vec![0.0, 1.0];
     }
-    let samples = intervals.min(MAX_SLIDER_TICKS.saturating_sub(1));
-    let mut fractions = Vec::with_capacity(samples + 1);
-    for sample in 0..=samples {
-        fractions.push(sample as f32 / samples as f32);
+    let max_intervals = MAX_SLIDER_TICKS.saturating_sub(1);
+    if intervals <= max_intervals {
+        return (0..=intervals)
+            .map(|interval| interval as f32 / intervals as f32)
+            .collect();
+    }
+    let stride = intervals.div_ceil(max_intervals).max(1);
+    let mut fractions = Vec::with_capacity(MAX_SLIDER_TICKS);
+    for interval in (0..intervals).step_by(stride) {
+        fractions.push(interval as f32 / intervals as f32);
+    }
+    if fractions.last().copied() != Some(1.0) {
+        fractions.push(1.0);
     }
     fractions
+}
+
+fn slider_tick_stride(count: usize, span: f32, min_gap: f32) -> usize {
+    if count <= 2 || !span.is_finite() || span <= 0.0 || min_gap <= 0.0 {
+        return 1;
+    }
+    let spacing = span / (count - 1) as f32;
+    if !spacing.is_finite() || spacing <= 0.0 {
+        return 1;
+    }
+    ((min_gap / spacing).ceil() as usize).max(1)
 }
 
 fn cached_slider_ticks(
@@ -371,15 +391,14 @@ pub fn Slider(
             let tick_start = track_x + corner;
             let tick_end = track_x + track_w - corner;
             let min_tick_gap = dot_r * MIN_TICK_GAP_FACTOR;
-            let mut last_tick_x = f32::NEG_INFINITY;
-            for (i, &tf) in tick_frac.iter().enumerate() {
+            let tick_stride = slider_tick_stride(
+                tick_frac.len(),
+                (tick_end - tick_start).max(0.0),
+                min_tick_gap,
+            );
+            for i in (1..tick_frac.len().saturating_sub(1)).step_by(tick_stride) {
+                let tf = tick_frac[i];
                 let tx = tick_start + tf * (tick_end - tick_start);
-                if i == 0 || i == tick_frac.len() - 1 {
-                    continue;
-                }
-                if tx - last_tick_x < min_tick_gap {
-                    continue;
-                }
                 if tx >= kx - gap && tx <= kx + gap {
                     continue;
                 }
@@ -393,7 +412,6 @@ pub fn Slider(
                     },
                     brush: Brush::Solid(mul_c(if on_active { act_tick } else { inact_tick })),
                 });
-                last_tick_x = tx;
             }
             let tw = if da && resize_thumb_on_drag {
                 thumb_w * 0.5
@@ -738,15 +756,14 @@ pub fn RangeSlider(
             let tick_start = track_x + corner;
             let tick_end = track_x + track_w - corner;
             let min_tick_gap = dot_r * MIN_TICK_GAP_FACTOR;
-            let mut last_tick_x = f32::NEG_INFINITY;
-            for (i, &tf) in tick_frac.iter().enumerate() {
+            let tick_stride = slider_tick_stride(
+                tick_frac.len(),
+                (tick_end - tick_start).max(0.0),
+                min_tick_gap,
+            );
+            for i in (1..tick_frac.len().saturating_sub(1)).step_by(tick_stride) {
+                let tf = tick_frac[i];
                 let tx = tick_start + tf * (tick_end - tick_start);
-                if i == 0 || i == tick_frac.len() - 1 {
-                    continue;
-                }
-                if tx - last_tick_x < min_tick_gap {
-                    continue;
-                }
                 let in_lgap = tx >= active_l - gap && tx <= active_l + gap;
                 let in_rgap = tx >= active_r - gap && tx <= active_r + gap;
                 if in_lgap || in_rgap {
@@ -762,7 +779,6 @@ pub fn RangeSlider(
                     },
                     brush: Brush::Solid(mul_c(if on_active { act_tick } else { inact_tick })),
                 });
-                last_tick_x = tx;
             }
             let at = *active_thumb_p.get();
             let thumbs = [k0, k1];
@@ -956,4 +972,30 @@ pub fn RangeSlider(
         value: Some(format!("{start}..{end}")),
         ..Default::default()
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::slider_tick_fractions;
+
+    #[test]
+    fn capped_ticks_stay_on_the_step_grid() {
+        let ticks = slider_tick_fractions(0.0, 1.0, Some(0.01));
+        assert!(ticks.len() <= 64);
+        assert_eq!(ticks.first(), Some(&0.0));
+        assert_eq!(ticks.last(), Some(&1.0));
+        for pair in ticks.windows(2) {
+            let interval = (pair[1] - pair[0]) * 100.0;
+            assert!((interval - interval.round()).abs() < 1e-4);
+        }
+        let stride = (ticks[1] - ticks[0]) * 100.0;
+        assert!((stride - stride.round()).abs() < 1e-4);
+    }
+
+    #[test]
+    fn uncapped_ticks_include_every_step() {
+        let ticks = slider_tick_fractions(0.0, 1.0, Some(0.1));
+        assert_eq!(ticks.len(), 11);
+        assert_eq!(ticks[3], 0.3);
+    }
 }

@@ -52,6 +52,8 @@ pub struct PointerEvent {
     pub position: Vec2,
     /// Top-left of the hit region this event is being delivered to (physical px).
     pub origin: Vec2,
+    /// Absolute pointer position in window/surface physical pixels.
+    pub window_position: Vec2,
     pub pressure: f32,
     pub modifiers: Modifiers,
     /// Shared consumed state -> every clone of this event points to the same
@@ -74,6 +76,7 @@ impl PointerEvent {
             event,
             position,
             origin: Vec2::ZERO,
+            window_position: position,
             pressure,
             modifiers,
             consumed: Rc::new(Cell::new(false)),
@@ -82,7 +85,7 @@ impl PointerEvent {
 
     /// Absolute position in window/surface physical pixels.
     pub fn position_in_window(&self) -> Vec2 {
-        self.position + self.origin
+        self.window_position
     }
 
     /// Mark this event as consumed. Once consumed, subsequent handlers in the

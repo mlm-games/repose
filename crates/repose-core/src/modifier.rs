@@ -105,6 +105,7 @@ macro_rules! impl_option_fields {
                     baseline_align,
                     clip_rounded, clip_rect, overflow, render_z_index,
                     on_scroll,
+                    scrollbar_style,
                     nested_scroll_connection,
                     scroll,
                     on_pointer_down, on_pointer_move, on_pointer_up,
@@ -743,7 +744,7 @@ pub struct Modifier {
     /// Use `Modifier::vertical_scroll()`, `Modifier::horizontal_scroll()`, or
     /// `Modifier::scrollable()` to set this.
     pub scroll: Option<crate::scroll::ScrollBinding>,
-    pub scrollbar_style: crate::scroll::ScrollbarStyle,
+    pub scrollbar_style: Option<crate::scroll::ScrollbarStyle>,
     /// Nested scroll connection for coordinated scrolling between this element
     /// and its scrollable descendants.
     ///
@@ -1514,8 +1515,11 @@ impl Modifier {
         self
     }
     pub fn scrollbar_style(mut self, style: crate::scroll::ScrollbarStyle) -> Self {
-        self.scrollbar_style = style;
+        self.scrollbar_style = Some(style);
         self
+    }
+    pub fn scrollbar_style_or_default(&self) -> crate::scroll::ScrollbarStyle {
+        self.scrollbar_style.clone().unwrap_or_default()
     }
     /// Attach a nested scroll connection that descendant scrollable containers
     /// will discover during layout. Mirrors Compose's `Modifier.nestedScroll`.
@@ -1899,6 +1903,9 @@ impl Modifier {
         self.flex_shrink = Some(1.0);
         self.flex_basis = Some(Dp::ZERO);
         self.flex_basis_content = false;
+        // Zero the automatic min size so the item may shrink below its content
+        // width (the flexbox `min-width: auto` trap). Callers that need a floor
+        // must set it *after* `weight`.
         self.min_width = Some(Dp::ZERO);
         self.min_height = Some(Dp::ZERO);
         self

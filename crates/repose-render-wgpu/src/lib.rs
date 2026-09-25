@@ -308,12 +308,17 @@ pub struct WgpuSceneRenderer {
     atlas_mask_bind: wgpu::BindGroup,
     atlas_color_bind: wgpu::BindGroup,
     atlas_generation: u64,
-    atlas_mask_full: bool,
-    atlas_color_full: bool,
+    atlas_mask_pending: AtlasPending,
+    atlas_color_pending: AtlasPending,
+    atlas_last_compact_frame: u64,
     atlas_mask_failures: HashSet<repose_text::CacheKey>,
     atlas_color_failures: HashSet<repose_text::CacheKey>,
+    /// Glyphs that rasterized fine but had no room. Skipped until the next
+    /// repack so a full atlas does not re-rasterize every frame.
+    atlas_mask_deferred: HashSet<repose_text::CacheKey>,
+    atlas_color_deferred: HashSet<repose_text::CacheKey>,
 
-    glyph_outline_cache: HashMap<repose_text::CacheKey, Option<Arc<[repose_text::Command]>>>,
+    glyph_outline_cache: HashMap<repose_text::CacheKey, GlyphOutlineEntry>,
     legacy_shaped_text_cache: HashMap<TextShapeKey, TextShapeCacheEntry>,
 
     // Image management
@@ -2170,6 +2175,9 @@ struct AtlasA8 {
     next_y: u32,
     row_h: u32,
     map: HashMap<repose_text::CacheKey, GlyphInfo>,
+    /// Summed `w * h` of every live entry. The pixel budget is what actually
+    /// binds a shelf packer, so eviction trims on area, not entry count.
+    used_area: u64,
 }
 
 struct AtlasRGBA {
@@ -2181,6 +2189,19 @@ struct AtlasRGBA {
     next_y: u32,
     row_h: u32,
     map: HashMap<repose_text::CacheKey, GlyphInfo>,
+    used_area: u64,
+}
+
+/// Work an atlas could not do yet, applied at the next frame boundary. Both
+/// growth and compaction re-pack the atlas, which would invalidate UVs already
+/// batched into the frame in flight, so neither may run mid-frame.
+#[derive(Default, Clone, Copy)]
+struct AtlasPending {
+    /// A cell did not fit and the atlas is still below its size cap.
+    grow: bool,
+    /// The atlas is at its cap, so the only remedy left is dropping cold
+    /// entries.
+    compact: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -2191,6 +2212,11 @@ struct GlyphInfo {
     v1: f32,
     w: f32,
     h: f32,
+    /// `cache_touch_clock` at the last request, and the frame this glyph was
+    /// last batched into. Entries in flight are never evicted: the instance
+    /// buffer already holds their UVs, and a repack would move them.
+    last_touch: u64,
+    last_used_frame: u64,
 }
 
 #[derive(Clone, Hash, PartialEq, Eq)]
@@ -2463,6 +2489,77 @@ struct SlugDrawCacheEntry {
     last_touch_frame: u64,
 }
 
+/// Vector outline for one glyph, cached so repeated text at the same size does
+/// not re-run outline extraction. `commands` is `None` for glyphs the extractor
+/// rejects; that negative result is cached too, so a bad glyph is not retried.
+struct GlyphOutlineEntry {
+    commands: Option<Arc<[repose_text::Command]>>,
+    last_touch: u64,
+}
+
+/// Drop least-recently-used atlas entries until the live set fits `target_area`
+/// pixels, skipping glyphs batched into the frame in flight. Never empties the
+/// atlas, so a repack always has something left to pack around. Returns false
+/// when nothing is evictable.
+fn evict_atlas_lru(
+    map: &mut HashMap<repose_text::CacheKey, GlyphInfo>,
+    used_area: &mut u64,
+    frame_index: u64,
+    target_area: u64,
+) -> bool {
+    let mut victims: Vec<(u64, repose_text::CacheKey)> = map
+        .iter()
+        .filter(|(_, info)| info.last_used_frame != frame_index)
+        .map(|(key, info)| (info.last_touch, *key))
+        .collect();
+    if victims.is_empty() {
+        return false;
+    }
+    // Ties are equally cold, so their relative order does not matter.
+    victims.sort_unstable_by_key(|victim| victim.0);
+    let mut evicted = false;
+    for (_, key) in victims {
+        if *used_area <= target_area || map.len() <= 1 {
+            break;
+        }
+        if let Some(info) = map.remove(&key) {
+            *used_area = used_area.saturating_sub(glyph_cell_area(&info));
+            evicted = true;
+        }
+    }
+    evicted
+}
+
+/// Pixels a packed cell occupies. `w`/`h` are exact small integers by the time
+/// they reach `GlyphInfo`, so the round trip through `f32` is lossless.
+fn glyph_cell_area(info: &GlyphInfo) -> u64 {
+    (info.w as u64).saturating_mul(info.h as u64)
+}
+
+/// Remember that a glyph had no room, so it is skipped instead of re-rasterized
+/// every frame until the next repack. Capped like the failure sets; dropping
+/// the oldest entries only costs an earlier retry.
+fn defer_atlas_glyph(deferred: &mut HashSet<repose_text::CacheKey>, key: repose_text::CacheKey) {
+    if deferred.len() >= MAX_GLYPH_ATLAS_ENTRIES {
+        deferred.clear();
+    }
+    deferred.insert(key);
+}
+
+/// What one slug draw cache entry really costs: the vertex array plus the key,
+/// the entry record and the map slot holding it. Charging only the array makes
+/// the byte budget silently optimistic.
+fn slug_draw_cache_entry_bytes(vertices: usize) -> u64 {
+    let per_entry = (std::mem::size_of::<SlugDrawKey>()
+        + std::mem::size_of::<SlugDrawCacheEntry>()
+        + std::mem::size_of::<(SlugDrawKey, SlugDrawCacheEntry)>()) as u64;
+    u64::try_from(vertices)
+        .ok()
+        .and_then(|count| count.checked_mul(std::mem::size_of::<slug::TessVertex>() as u64))
+        .and_then(|payload| payload.checked_add(per_entry))
+        .unwrap_or(u64::MAX)
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct MeshUniform {
@@ -2483,6 +2580,18 @@ const MAX_RETAINED_IMAGES: usize = 512;
 const MAX_BLEND_SNAPSHOT_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_BLEND_SNAPSHOT_POOL_ENTRIES: usize = 64;
 const MAX_GLYPH_ATLAS_ENTRIES: usize = 32768;
+/// Hard ceiling on atlas edge length. Past this the atlas is compacted instead
+/// of grown, dropping least-recently-used glyphs.
+const MAX_GLYPH_ATLAS_SIZE: u32 = 4096;
+/// Fraction of the live set a compaction keeps. Trimming to a fraction of the
+/// current area (rather than an absolute budget) guarantees a repack always
+/// reclaims shelf space, even when the atlas is only a few large glyphs deep.
+const ATLAS_COMPACT_KEEP_NUM: u64 = 3;
+const ATLAS_COMPACT_KEEP_DEN: u64 = 4;
+/// Minimum frames between compactions. A working set that genuinely exceeds
+/// atlas capacity then costs a few missing glyphs per interval instead of
+/// re-uploading the whole atlas every frame.
+const ATLAS_COMPACT_MIN_FRAME_INTERVAL: u64 = 30;
 const MAX_GPU_RESOURCE_BYTES: u64 = 1024 * 1024 * 1024;
 const MAX_UPLOAD_RING_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_MESH_CACHE_BYTES: u64 = 256 * 1024 * 1024;
@@ -3295,10 +3404,13 @@ impl WgpuSceneRenderer {
             atlas_mask_bind,
             atlas_color_bind,
             atlas_generation: repose_text::font_generation(),
-            atlas_mask_full: false,
-            atlas_color_full: false,
+            atlas_mask_pending: AtlasPending::default(),
+            atlas_color_pending: AtlasPending::default(),
+            atlas_last_compact_frame: 0,
             atlas_mask_failures: HashSet::new(),
             atlas_color_failures: HashSet::new(),
+            atlas_mask_deferred: HashSet::new(),
+            atlas_color_deferred: HashSet::new(),
             glyph_outline_cache: HashMap::new(),
             legacy_shaped_text_cache: HashMap::new(),
 
@@ -5702,8 +5814,180 @@ impl WgpuSceneRenderer {
                 },
             ],
         });
-        self.atlas_mask_full = false;
-        self.atlas_color_full = false;
+        self.atlas_mask_pending = AtlasPending::default();
+        self.atlas_color_pending = AtlasPending::default();
+        self.atlas_mask_deferred.clear();
+        self.atlas_color_deferred.clear();
+    }
+
+    /// Apply atlas growth and compaction scheduled during the previous frame.
+    /// Called from `begin_frame`, before any glyph is batched: both operations
+    /// re-pack the atlas, so running them mid-frame would leave already-batched
+    /// instances pointing at the old packing.
+    fn apply_atlas_pending(&mut self) {
+        if self.atlas_mask_pending.grow {
+            self.atlas_mask_pending.grow = false;
+            let size = (self.atlas_mask.size * 2).min(MAX_GLYPH_ATLAS_SIZE);
+            self.repack_mask(size);
+        }
+        if self.atlas_color_pending.grow {
+            self.atlas_color_pending.grow = false;
+            let size = (self.atlas_color.size * 2).min(MAX_GLYPH_ATLAS_SIZE);
+            self.repack_color(size);
+        }
+        if self.frame_index.wrapping_sub(self.atlas_last_compact_frame)
+            < ATLAS_COMPACT_MIN_FRAME_INTERVAL
+        {
+            return;
+        }
+        // Stay armed when a compaction finds nothing evictable, so the deferred
+        // glyphs it would rescue get another chance next frame.
+        if self.atlas_mask_pending.compact && self.compact_atlas_mask() {
+            self.atlas_mask_pending.compact = false;
+        }
+        if self.atlas_color_pending.compact && self.compact_atlas_color() {
+            self.atlas_color_pending.compact = false;
+        }
+    }
+
+    /// Drop the least recently used mask glyphs and re-pack at the same size.
+    /// A shelf packer cannot hand back an individual cell, so reclaiming space
+    /// means evicting cold entries and rebuilding around the warm ones. Returns
+    /// false when there was nothing to evict.
+    fn compact_atlas_mask(&mut self) -> bool {
+        let target = self.atlas_mask.used_area / ATLAS_COMPACT_KEEP_DEN * ATLAS_COMPACT_KEEP_NUM;
+        if !evict_atlas_lru(
+            &mut self.atlas_mask.map,
+            &mut self.atlas_mask.used_area,
+            self.frame_index,
+            target,
+        ) {
+            return false;
+        }
+        let size = self.atlas_mask.size;
+        self.repack_mask(size);
+        self.atlas_last_compact_frame = self.frame_index;
+        true
+    }
+
+    fn compact_atlas_color(&mut self) -> bool {
+        let target = self.atlas_color.used_area / ATLAS_COMPACT_KEEP_DEN * ATLAS_COMPACT_KEEP_NUM;
+        if !evict_atlas_lru(
+            &mut self.atlas_color.map,
+            &mut self.atlas_color.used_area,
+            self.frame_index,
+            target,
+        ) {
+            return false;
+        }
+        let size = self.atlas_color.size;
+        self.repack_color(size);
+        self.atlas_last_compact_frame = self.frame_index;
+        true
+    }
+
+    /// Re-pack the mask atlas into a `new_size` texture and re-upload every
+    /// surviving entry, preserving its recency so a repack does not make warm
+    /// glyphs look cold.
+    fn repack_mask(&mut self, new_size: u32) {
+        let tex = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("glyph atlas A8 (repacked)"),
+            size: wgpu::Extent3d {
+                width: new_size,
+                height: new_size,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        self.atlas_mask.tex = tex;
+        self.atlas_mask.view = self
+            .atlas_mask
+            .tex
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        self.atlas_mask.size = new_size;
+        self.atlas_mask.next_x = 1;
+        self.atlas_mask.next_y = 1;
+        self.atlas_mask.row_h = 0;
+        self.atlas_mask.used_area = 0;
+        self.atlas_mask_bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("atlas mask bind"),
+            layout: &self.text_bind_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&self.atlas_mask.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.atlas_mask.sampler),
+                },
+            ],
+        });
+        let survivors: Vec<_> = self.atlas_mask.map.drain().collect();
+        self.atlas_mask_deferred.clear();
+        for (key, previous) in survivors {
+            let _ = self.upload_glyph_mask(key, f32::from_bits(key.font_size_bits));
+            if let Some(info) = self.atlas_mask.map.get_mut(&key) {
+                info.last_touch = previous.last_touch;
+                info.last_used_frame = previous.last_used_frame;
+            }
+        }
+    }
+
+    /// Re-pack the color atlas into a `new_size` texture. See [`Self::repack_mask`].
+    fn repack_color(&mut self, new_size: u32) {
+        let tex = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("glyph atlas RGBA (repacked)"),
+            size: wgpu::Extent3d {
+                width: new_size,
+                height: new_size,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        self.atlas_color.tex = tex;
+        self.atlas_color.view = self
+            .atlas_color
+            .tex
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        self.atlas_color.size = new_size;
+        self.atlas_color.next_x = 1;
+        self.atlas_color.next_y = 1;
+        self.atlas_color.row_h = 0;
+        self.atlas_color.used_area = 0;
+        self.atlas_color_bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("atlas color bind"),
+            layout: &self.text_bind_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&self.atlas_color.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.atlas_color.sampler),
+                },
+            ],
+        });
+        let survivors: Vec<_> = self.atlas_color.map.drain().collect();
+        self.atlas_color_deferred.clear();
+        for (key, previous) in survivors {
+            let _ = self.upload_glyph_color(key, f32::from_bits(key.font_size_bits));
+            if let Some(info) = self.atlas_color.map.get_mut(&key) {
+                info.last_touch = previous.last_touch;
+                info.last_used_frame = previous.last_used_frame;
+            }
+        }
     }
 
     fn sync_text_caches(&mut self) {
@@ -5888,10 +6172,7 @@ impl WgpuSceneRenderer {
             entry.last_touch_frame = touch;
             return entry.vertices.clone();
         }
-        let bytes = u64::try_from(vertices.len())
-            .ok()
-            .and_then(|count| count.checked_mul(std::mem::size_of::<slug::TessVertex>() as u64))
-            .unwrap_or(u64::MAX);
+        let bytes = slug_draw_cache_entry_bytes(vertices.len());
         if bytes > MAX_SLUG_DRAW_CACHE_BYTES || !self.reserve_slug_draw_cache(bytes) {
             return Arc::from(vertices);
         }
@@ -5914,15 +6195,42 @@ impl WgpuSceneRenderer {
         &mut self,
         cache_key: repose_text::CacheKey,
     ) -> Option<Arc<[repose_text::Command]>> {
-        if let Some(value) = self.glyph_outline_cache.get(&cache_key).cloned() {
-            return value;
+        let touch = self.next_cache_touch();
+        if let Some(entry) = self.glyph_outline_cache.get_mut(&cache_key) {
+            entry.last_touch = touch;
+            return entry.commands.clone();
         }
         let commands = repose_text::extract_outline_commands(cache_key).map(Arc::from);
         if self.glyph_outline_cache.len() >= MAX_GLYPH_OUTLINE_CACHE_ENTRIES {
-            self.glyph_outline_cache.clear();
+            self.trim_glyph_outline_cache();
         }
-        self.glyph_outline_cache.insert(cache_key, commands.clone());
+        self.glyph_outline_cache.insert(
+            cache_key,
+            GlyphOutlineEntry {
+                commands: commands.clone(),
+                last_touch: touch,
+            },
+        );
         commands
+    }
+
+    /// Drop the coldest outlines so a working set larger than the cap degrades
+    /// into steady churn instead of a full rebuild on every miss.
+    fn trim_glyph_outline_cache(&mut self) {
+        let target = (MAX_GLYPH_OUTLINE_CACHE_ENTRIES / ATLAS_COMPACT_KEEP_DEN as usize)
+            * ATLAS_COMPACT_KEEP_NUM as usize;
+        let mut victims: Vec<(u64, repose_text::CacheKey)> = self
+            .glyph_outline_cache
+            .iter()
+            .map(|(key, entry)| (entry.last_touch, *key))
+            .collect();
+        victims.sort_unstable_by_key(|victim| victim.0);
+        for (_, key) in victims {
+            if self.glyph_outline_cache.len() <= target {
+                break;
+            }
+            self.glyph_outline_cache.remove(&key);
+        }
     }
 
     fn atlas_bind_group_mask(&self) -> wgpu::BindGroup {
@@ -5957,10 +6265,13 @@ impl WgpuSceneRenderer {
             font_size_bits: px.to_bits(),
             ..cache_key
         };
-        if let Some(info) = self.atlas_mask.map.get(&keyp) {
+        let touch = self.next_cache_touch();
+        if let Some(info) = self.atlas_mask.map.get_mut(&keyp) {
+            info.last_touch = touch;
+            info.last_used_frame = self.frame_index;
             return Some(*info);
         }
-        if self.atlas_mask_full || self.atlas_mask_failures.contains(&keyp) {
+        if self.atlas_mask_failures.contains(&keyp) || self.atlas_mask_deferred.contains(&keyp) {
             return None;
         }
 
@@ -5984,20 +6295,12 @@ impl WgpuSceneRenderer {
             self.mark_atlas_mask_failure(keyp);
             return None;
         }
-        if self.atlas_mask.map.len() >= MAX_GLYPH_ATLAS_ENTRIES {
-            self.atlas_mask_full = true;
+        if w >= MAX_GLYPH_ATLAS_SIZE || h >= MAX_GLYPH_ATLAS_SIZE {
+            self.mark_atlas_mask_failure(keyp);
             return None;
         }
-
-        if !self.alloc_space_mask(w, h) {
-            self.grow_mask_and_rebuild();
-        }
-        if !self.alloc_space_mask(w, h) {
-            if w >= self.atlas_mask.size || h >= self.atlas_mask.size {
-                self.mark_atlas_mask_failure(keyp);
-            } else {
-                self.atlas_mask_full = true;
-            }
+        if !self.alloc_or_schedule_mask(w, h) {
+            defer_atlas_glyph(&mut self.atlas_mask_deferred, keyp);
             return None;
         }
         let x = self.atlas_mask.next_x;
@@ -6034,7 +6337,13 @@ impl WgpuSceneRenderer {
             v1: (y + h) as f32 / self.atlas_mask.size as f32,
             w: w as f32,
             h: h as f32,
+            last_touch: touch,
+            last_used_frame: self.frame_index,
         };
+        self.atlas_mask.used_area = self
+            .atlas_mask
+            .used_area
+            .saturating_add(u64::from(w).saturating_mul(u64::from(h)));
         self.atlas_mask.map.insert(keyp, info);
         Some(info)
     }
@@ -6049,10 +6358,13 @@ impl WgpuSceneRenderer {
             font_size_bits: px.to_bits(),
             ..cache_key
         };
-        if let Some(info) = self.atlas_color.map.get(&keyp) {
+        let touch = self.next_cache_touch();
+        if let Some(info) = self.atlas_color.map.get_mut(&keyp) {
+            info.last_touch = touch;
+            info.last_used_frame = self.frame_index;
             return Some(*info);
         }
-        if self.atlas_color_full || self.atlas_color_failures.contains(&keyp) {
+        if self.atlas_color_failures.contains(&keyp) || self.atlas_color_deferred.contains(&keyp) {
             return None;
         }
         let Some(gb) = repose_text::rasterize_cache_key(keyp) else {
@@ -6070,19 +6382,12 @@ impl WgpuSceneRenderer {
             self.mark_atlas_color_failure(keyp);
             return None;
         }
-        if self.atlas_color.map.len() >= MAX_GLYPH_ATLAS_ENTRIES {
-            self.atlas_color_full = true;
+        if w >= MAX_GLYPH_ATLAS_SIZE || h >= MAX_GLYPH_ATLAS_SIZE {
+            self.mark_atlas_color_failure(keyp);
             return None;
         }
-        if !self.alloc_space_color(w, h) {
-            self.grow_color_and_rebuild();
-        }
-        if !self.alloc_space_color(w, h) {
-            if w >= self.atlas_color.size || h >= self.atlas_color.size {
-                self.mark_atlas_color_failure(keyp);
-            } else {
-                self.atlas_color_full = true;
-            }
+        if !self.alloc_or_schedule_color(w, h) {
+            defer_atlas_glyph(&mut self.atlas_color_deferred, keyp);
             return None;
         }
         let x = self.atlas_color.next_x;
@@ -6118,7 +6423,13 @@ impl WgpuSceneRenderer {
             v1: (y + h) as f32 / self.atlas_color.size as f32,
             w: w as f32,
             h: h as f32,
+            last_touch: touch,
+            last_used_frame: self.frame_index,
         };
+        self.atlas_color.used_area = self
+            .atlas_color
+            .used_area
+            .saturating_add(u64::from(w).saturating_mul(u64::from(h)));
         self.atlas_color.map.insert(keyp, info);
         Some(info)
     }
@@ -6156,56 +6467,6 @@ impl WgpuSceneRenderer {
         y_end < self.atlas_mask.size
     }
 
-    fn grow_mask_and_rebuild(&mut self) {
-        let new_size = (self.atlas_mask.size * 2).min(4096);
-        if new_size == self.atlas_mask.size {
-            return;
-        }
-        let tex = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("glyph atlas A8 (grown)"),
-            size: wgpu::Extent3d {
-                width: new_size,
-                height: new_size,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::R8Unorm,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-        self.atlas_mask.tex = tex;
-        self.atlas_mask.view = self
-            .atlas_mask
-            .tex
-            .create_view(&wgpu::TextureViewDescriptor::default());
-        self.atlas_mask.size = new_size;
-        self.atlas_mask.next_x = 1;
-        self.atlas_mask.next_y = 1;
-        self.atlas_mask.row_h = 0;
-        self.atlas_mask_full = false;
-        self.atlas_mask_bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("atlas mask bind"),
-            layout: &self.text_bind_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&self.atlas_mask.view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&self.atlas_mask.sampler),
-                },
-            ],
-        });
-        let keys: Vec<repose_text::CacheKey> = self.atlas_mask.map.keys().copied().collect();
-        self.atlas_mask.map.clear();
-        for key in keys {
-            let _ = self.upload_glyph_mask(key, f32::from_bits(key.font_size_bits));
-        }
-    }
-
     fn alloc_space_color(&mut self, w: u32, h: u32) -> bool {
         let Some(x_end) = self
             .atlas_color
@@ -6239,54 +6500,53 @@ impl WgpuSceneRenderer {
         y_end < self.atlas_color.size
     }
 
-    fn grow_color_and_rebuild(&mut self) {
-        let new_size = (self.atlas_color.size * 2).min(4096);
-        if new_size == self.atlas_color.size {
-            return;
+    /// Place a `w` x `h` cell in the mask atlas, or schedule the work needed to
+    /// make room. Growth and eviction both re-pack the atlas, which would move
+    /// glyphs already batched into the frame in flight, so they are deferred to
+    /// the next `begin_frame`; the caller treats a `false` as "skip this glyph".
+    fn alloc_or_schedule_mask(&mut self, w: u32, h: u32) -> bool {
+        if self.atlas_mask.map.len() >= MAX_GLYPH_ATLAS_ENTRIES
+            || self
+                .atlas_mask
+                .used_area
+                .saturating_add(u64::from(w) * u64::from(h))
+                >= self.atlas_mask.size as u64 * self.atlas_mask.size as u64
+        {
+            self.atlas_mask_pending.compact = true;
+            return false;
         }
-        let tex = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("glyph atlas RGBA (grown)"),
-            size: wgpu::Extent3d {
-                width: new_size,
-                height: new_size,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-        self.atlas_color.tex = tex;
-        self.atlas_color.view = self
-            .atlas_color
-            .tex
-            .create_view(&wgpu::TextureViewDescriptor::default());
-        self.atlas_color.size = new_size;
-        self.atlas_color.next_x = 1;
-        self.atlas_color.next_y = 1;
-        self.atlas_color.row_h = 0;
-        self.atlas_color_full = false;
-        self.atlas_color_bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("atlas color bind"),
-            layout: &self.text_bind_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&self.atlas_color.view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&self.atlas_color.sampler),
-                },
-            ],
-        });
-        let keys: Vec<repose_text::CacheKey> = self.atlas_color.map.keys().copied().collect();
-        self.atlas_color.map.clear();
-        for key in keys {
-            let _ = self.upload_glyph_color(key, f32::from_bits(key.font_size_bits));
+        if self.alloc_space_mask(w, h) {
+            return true;
         }
+        if self.atlas_mask.size < MAX_GLYPH_ATLAS_SIZE {
+            self.atlas_mask_pending.grow = true;
+        } else {
+            self.atlas_mask_pending.compact = true;
+        }
+        false
+    }
+
+    /// See [`Self::alloc_or_schedule_mask`].
+    fn alloc_or_schedule_color(&mut self, w: u32, h: u32) -> bool {
+        if self.atlas_color.map.len() >= MAX_GLYPH_ATLAS_ENTRIES
+            || self
+                .atlas_color
+                .used_area
+                .saturating_add(u64::from(w) * u64::from(h))
+                >= self.atlas_color.size as u64 * self.atlas_color.size as u64
+        {
+            self.atlas_color_pending.compact = true;
+            return false;
+        }
+        if self.alloc_space_color(w, h) {
+            return true;
+        }
+        if self.atlas_color.size < MAX_GLYPH_ATLAS_SIZE {
+            self.atlas_color_pending.grow = true;
+        } else {
+            self.atlas_color_pending.compact = true;
+        }
+        false
     }
 }
 
@@ -6496,6 +6756,7 @@ fn init_atlas_mask(device: &wgpu::Device) -> AtlasA8 {
         next_y: 1,
         row_h: 0,
         map: HashMap::new(),
+        used_area: 0,
     }
 }
 
@@ -6535,6 +6796,7 @@ fn init_atlas_color(device: &wgpu::Device) -> AtlasRGBA {
         next_y: 1,
         row_h: 0,
         map: HashMap::new(),
+        used_area: 0,
     }
 }
 
@@ -7824,6 +8086,7 @@ impl WgpuSceneRenderer {
         self.last_render_error = None;
         self.frame_active = true;
         self.frame_index = self.frame_index.wrapping_add(1);
+        self.apply_atlas_pending();
         self.slug_cache.next_frame();
         if let Some(composite) = self.callback_resources.get_mut::<DepthComposite>() {
             composite.begin_frame();
@@ -11229,6 +11492,72 @@ mod tests {
         assert_eq!(align_up(1, 4).unwrap(), 4);
         assert!(align_up(1, 3).is_err());
         assert!(align_up(u64::MAX, 4).is_err());
+    }
+
+    /// A repack moves every surviving glyph, so eviction must never touch one
+    /// the in-flight frame already holds UVs for, and must never empty the map.
+    /// Glyph 1 is the coldest overall but in flight, so it has to survive even
+    /// though glyphs 3 and 4 are warmer and evictable.
+    #[test]
+    fn atlas_eviction_spares_the_frame_in_flight() {
+        fn key(glyph_id: u32) -> repose_text::CacheKey {
+            repose_text::CacheKey {
+                font_id: 1,
+                glyph_id,
+                font_size_bits: 16.0f32.to_bits(),
+            }
+        }
+        let mut map: HashMap<repose_text::CacheKey, GlyphInfo> = HashMap::new();
+        for (glyph_id, last_touch, last_used_frame) in
+            [(1u32, 10u64, 9u64), (2, 20, 7), (3, 30, 7), (4, 40, 7)]
+        {
+            map.insert(
+                key(glyph_id),
+                GlyphInfo {
+                    u0: 0.0,
+                    v0: 0.0,
+                    u1: 0.1,
+                    v1: 0.1,
+                    w: 10.0,
+                    h: 10.0,
+                    last_touch,
+                    last_used_frame,
+                },
+            );
+        }
+        let mut used_area = 400;
+        assert!(evict_atlas_lru(&mut map, &mut used_area, 9, 250));
+        assert_eq!(used_area, 200);
+        assert!(map.contains_key(&key(1)), "in-flight glyph was evicted");
+        assert!(!map.contains_key(&key(2)) && !map.contains_key(&key(3)));
+        assert!(map.contains_key(&key(4)));
+    }
+
+    #[test]
+    fn atlas_eviction_refuses_to_empty_the_atlas() {
+        let only = repose_text::CacheKey {
+            font_id: 1,
+            glyph_id: 1,
+            font_size_bits: 16.0f32.to_bits(),
+        };
+        let mut map: HashMap<repose_text::CacheKey, GlyphInfo> = HashMap::new();
+        map.insert(
+            only,
+            GlyphInfo {
+                u0: 0.0,
+                v0: 0.0,
+                u1: 0.1,
+                v1: 0.1,
+                w: 10.0,
+                h: 10.0,
+                last_touch: 1,
+                last_used_frame: 1,
+            },
+        );
+        let mut used_area = 100;
+        assert!(!evict_atlas_lru(&mut map, &mut used_area, 2, 0));
+        assert_eq!(map.len(), 1);
+        assert_eq!(used_area, 100);
     }
 
     #[test]

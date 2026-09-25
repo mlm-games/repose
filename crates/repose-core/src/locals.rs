@@ -1152,6 +1152,17 @@ pub fn theme() -> Theme {
     value
 }
 
+pub fn theme_fingerprint() -> u64 {
+    fingerprint_theme(&theme())
+}
+
+/// Same as [`theme_fingerprint`], but reuses a [`Theme`] the caller already
+/// read. Fingerprinting formats the whole theme, so caching code should take
+/// this overload rather than reading the local twice.
+pub fn theme_fingerprint_of(theme: &Theme) -> u64 {
+    fingerprint_theme(theme)
+}
+
 pub fn density() -> Density {
     let value = get_local::<Density>().unwrap_or_else(|| defaults().read().density);
     record_local(LocalId::Density, &value, |value| {

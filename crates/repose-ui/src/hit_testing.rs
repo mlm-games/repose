@@ -721,5 +721,46 @@ mod tests {
         let (origin, local) = hit_region_pointer_coordinates(&hit, global);
         assert_eq!(origin, Vec2 { x: 40.0, y: 60.0 });
         assert_eq!(origin + local, global);
+
+        let mut event = crate::PointerEvent::new(
+            crate::PointerId(1),
+            crate::PointerKind::Mouse,
+            crate::PointerEventKind::Move,
+            global,
+            1.0,
+            crate::Modifiers::default(),
+        );
+        event.origin = origin;
+        event.position = local;
+        assert_eq!(event.position_in_window(), global);
+
+        let mut scaled = HitRegion {
+            id: 9_876_544,
+            rect: Rect {
+                x: 10.0,
+                y: 20.0,
+                w: 100.0,
+                h: 50.0,
+            },
+            ..Default::default()
+        };
+        let scaled_context = HitContext::root().with_transform(Transform {
+            scale_x: 2.0,
+            scale_y: 2.0,
+            ..Transform::identity()
+        });
+        register_hit(&mut scaled, &scaled_context, None);
+        let (origin, local) = hit_region_pointer_coordinates(&scaled, global);
+        let mut event = crate::PointerEvent::new(
+            crate::PointerId(2),
+            crate::PointerKind::Mouse,
+            crate::PointerEventKind::Move,
+            global,
+            1.0,
+            crate::Modifiers::default(),
+        );
+        event.origin = origin;
+        event.position = local;
+        assert_eq!(event.position_in_window(), global);
     }
 }

@@ -4,7 +4,10 @@ mod tests {
     use std::rc::Rc;
 
     use crate::Color;
+    use crate::Dp;
+    use crate::Modifier;
     use crate::Rect;
+    use crate::ScrollbarStyle;
     use crate::Vec2;
     use crate::animation::*;
     use crate::error::{ErrorBoundary, throw_boundary};
@@ -827,5 +830,12 @@ mod tests {
         }
         scope.dispose();
         assert_eq!(&*order.borrow(), &[2, 1, 0]);
+    }
+
+    #[test]
+    fn then_merges_scrollbar_style() {
+        let style = ScrollbarStyle::default().with_thickness(Dp(12.0));
+        let modifier = Modifier::new().then(Modifier::new().scrollbar_style(style.clone()));
+        assert_eq!(modifier.scrollbar_style, Some(style));
     }
 }

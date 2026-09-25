@@ -504,7 +504,7 @@ fn facet_hash_modifier(modifier: &Modifier, hashers: &mut FacetHashers) {
     }
     facet_hash_scroll_binding(modifier.scroll.as_ref(), hashers);
     facet_hash_nested_scroll_connection(modifier.nested_scroll_connection.as_ref(), hashers);
-    facet_hash_scrollbar_style(&modifier.scrollbar_style, hashers);
+    facet_hash_scrollbar_style(modifier.scrollbar_style.as_ref(), hashers);
     hashers.hash(FACET_PAINT, |h| {
         modifier
             .overflow
@@ -851,8 +851,16 @@ fn facet_hash_nested_scroll_connection(
     });
 }
 
-fn facet_hash_scrollbar_style(style: &repose_core::ScrollbarStyle, hashers: &mut FacetHashers) {
+fn facet_hash_scrollbar_style(
+    style: Option<&repose_core::ScrollbarStyle>,
+    hashers: &mut FacetHashers,
+) {
+    let Some(style) = style else {
+        hashers.hash(FACET_PAINT, |h| 0u8.hash(h));
+        return;
+    };
     hashers.hash(FACET_PAINT, |h| {
+        1u8.hash(h);
         style.thickness.0.to_bits().hash(h);
         style.track_inset.0.to_bits().hash(h);
         style.min_thumb_length.0.to_bits().hash(h);
@@ -1336,7 +1344,12 @@ fn hash_control_visual_set(set: &repose_core::ControlVisualSet, hasher: &mut imp
 }
 
 #[allow(dead_code)]
-fn hash_scrollbar_style(style: &repose_core::ScrollbarStyle, hasher: &mut impl Hasher) {
+fn hash_scrollbar_style(style: Option<&repose_core::ScrollbarStyle>, hasher: &mut impl Hasher) {
+    let Some(style) = style else {
+        0u8.hash(hasher);
+        return;
+    };
+    1u8.hash(hasher);
     style.thickness.0.to_bits().hash(hasher);
     style.track_inset.0.to_bits().hash(hasher);
     style.min_thumb_length.0.to_bits().hash(hasher);
@@ -1608,7 +1621,7 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
         Some(binding) => hash_scroll_binding(binding, hasher),
         None => 0u8.hash(hasher),
     }
-    hash_scrollbar_style(&m.scrollbar_style, hasher);
+    hash_scrollbar_style(m.scrollbar_style.as_ref(), hasher);
     m.overflow
         .map(|value| std::mem::discriminant(&value))
         .hash(hasher);
