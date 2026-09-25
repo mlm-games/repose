@@ -30,7 +30,7 @@ impl Default for CircularProgressIndicatorConfig {
             track_color: ProgressIndicatorDefaults::circular_track_color(),
             stroke_width: ProgressIndicatorDefaults::CIRCULAR_STROKE_WIDTH,
             stroke_cap: StrokeCap::Round,
-            gap_size: Dp::ZERO,
+            gap_size: ProgressIndicatorDefaults::CIRCULAR_TRACK_ACTIVE_SPACE,
         }
     }
 }
@@ -56,12 +56,17 @@ fn indeterminate_animation(key: &str, duration: Duration) -> Rc<RefCell<Animated
     if !repose_core::animation_driver::is_registered(&animation_key) {
         let animation_for_driver = animation.clone();
         repose_core::animation_driver::register(
-            animation_key,
+            animation_key.clone(),
             Rc::new(RefCell::new(move || {
                 animation_for_driver.borrow_mut().update()
             })),
         );
     }
+    let cleanup_key = format!("{animation_key}:cleanup");
+    let cleanup_animation_key = animation_key.clone();
+    effect_once_with_key(cleanup_key, move || {
+        on_unmount(move || animation_driver::unregister(&cleanup_animation_key))
+    });
     request_frame();
     animation
 }
@@ -76,8 +81,7 @@ pub fn CircularProgressIndicator(
 ) -> View {
     let instance_id = remember(unique_component_id);
     let identity = progress_identity(&config.modifier, "circular", *instance_id);
-    let sz = ProgressIndicatorDefaults::CIRCULAR_INDICATOR_SIZE.to_px().0;
-    let stroke_px = config.stroke_width.to_px().0;
+    let sz = ProgressIndicatorDefaults::CIRCULAR_INDICATOR_SIZE;
     let val = value.map(|v| {
         if v.is_finite() {
             v.clamp(0.0, 1.0)
@@ -119,21 +123,18 @@ pub fn CircularProgressIndicator(
         })
     });
 
-    // Pre-compute gap angular size in radians
-    let indicator_size_dp = ProgressIndicatorDefaults::CIRCULAR_INDICATOR_SIZE;
-    let adjusted_gap_dp = (if config.stroke_cap == StrokeCap::Butt {
-        config.gap_size
-    } else {
-        config.gap_size + config.stroke_width
-    })
-    .max(Dp::ZERO);
-    let circle_dia_dp = (indicator_size_dp - config.stroke_width).max(Dp(1.0));
-    let gap_sweep_rad = (adjusted_gap_dp / circle_dia_dp) * 2.0;
-
-    Box(Modifier::new()
-        .size(Dp(sz), Dp(sz))
-        .then(config.modifier)
-        .painter(move |scene: &mut Scene, rect: Rect, alpha: f32| {
+    Box(Modifier::new().size(sz, sz).then(config.modifier).painter(
+        move |scene: &mut Scene, rect: Rect, alpha: f32| {
+            let stroke_px = config.stroke_width.to_px().0;
+            let gap_px = config.gap_size.to_px().0;
+            let circle_diameter_px = (rect.w.min(rect.h) - stroke_px).max(1.0);
+            let adjusted_gap_px = (if config.stroke_cap == StrokeCap::Butt {
+                gap_px
+            } else {
+                gap_px + stroke_px
+            })
+            .max(0.0);
+            let gap_sweep_rad = adjusted_gap_px / circle_diameter_px * 2.0;
             let (global_rotation, additional_rotation, sweep_val) =
                 if let Some(animation) = &animation {
                     let t = *animation.borrow().get();
@@ -231,7 +232,8 @@ pub fn CircularProgressIndicator(
                     }
                 }
             }
-        }))
+        },
+    ))
     .semantics(Semantics {
         role: Role::ProgressBar,
         value: val.map(|v| format!("{}%", (v * 100.0).round() as i32)),
@@ -396,4 +398,55 @@ pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicat
         }),
         ..Default::default()
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use repose_core::locals::{Density, with_density};
+
+    #[test]
+    fn circular_progress_uses_material_track_active_space() {
+        assert_eq!(
+            CircularProgressIndicatorConfig::default().gap_size,
+            ProgressIndicatorDefaults::CIRCULAR_TRACK_ACTIVE_SPACE
+        );
+    }
+
+    #[test]
+    fn circular_progress_keeps_dp_size_until_layout() {
+        let (view, stroke) = with_density(Density { scale: 2.0 }, || {
+            let view =
+                CircularProgressIndicator(Some(0.5), CircularProgressIndicatorConfig::default());
+            let painter = view.modifier.painter.as_ref().expect("progress painter");
+            let mut scene = Scene::default();
+            painter(
+                &mut scene,
+                Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 80.0,
+                    h: 80.0,
+                },
+                1.0,
+            );
+            let stroke = scene
+                .nodes
+                .iter()
+                .find_map(|node| match node {
+                    SceneNode::Arc { stroke_width, .. } => Some(*stroke_width),
+                    _ => None,
+                })
+                .expect("progress arc");
+            (view, stroke)
+        });
+        assert_eq!(
+            view.modifier.size,
+            Some(DpSize {
+                width: ProgressIndicatorDefaults::CIRCULAR_INDICATOR_SIZE,
+                height: ProgressIndicatorDefaults::CIRCULAR_INDICATOR_SIZE,
+            })
+        );
+        assert_eq!(stroke, Px(8.0));
+    }
 }

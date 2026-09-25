@@ -178,12 +178,15 @@ pub fn scope_memo<T: 'static>(key: &str, init: impl FnOnce() -> T) -> Rc<T> {
 #[track_caller]
 pub fn scoped_effect_once(f: impl FnOnce() -> Dispose + 'static) {
     let loc = std::panic::Location::caller();
-    let key = format!(
+    let mut key = format!(
         "scoped_effect:{}:{}:{}",
         loc.file(),
         loc.line(),
         loc.column()
     );
+    if let Some(identity) = crate::shortcuts::active_runtime_identity() {
+        key.push_str(&format!(":runtime:{identity}"));
+    }
     if current_scope().is_none() {
         debug_assert!(
             false,

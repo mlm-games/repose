@@ -392,6 +392,10 @@ pub enum BaselineAlign {
 
 static PRESS_COUNTER: AtomicU64 = AtomicU64::new(1);
 
+thread_local! {
+    static INTERACTION_EPOCH: Cell<u64> = const { Cell::new(0) };
+}
+
 /// A press identifier for linking Press -> Release/Cancel pairs.
 pub type PressId = u64;
 
@@ -489,6 +493,14 @@ impl InteractionSource {
     }
 }
 
+pub fn interaction_epoch() -> u64 {
+    INTERACTION_EPOCH.with(Cell::get)
+}
+
+fn bump_interaction_epoch() {
+    INTERACTION_EPOCH.with(|epoch| epoch.set(epoch.get().wrapping_add(1)));
+}
+
 /// Mutable handle to a shared interaction state.
 ///
 /// Create one via [`MutableInteractionSource::new`], then pass the read-only
@@ -521,7 +533,7 @@ impl MutableInteractionSource {
     pub fn emit(&self, interaction: Interaction) {
         let changed = {
             let mut s = self.state.borrow_mut();
-            match interaction {
+            let changed = match interaction {
                 Interaction::Press(id, pos) => {
                     let inserted = s.active_presses.insert(id);
                     s.last_press_id = Some(id);
@@ -578,7 +590,11 @@ impl MutableInteractionSource {
                     s.dragged = s.dragged.saturating_sub(1);
                     was != s.dragged
                 }
+            };
+            if changed {
+                bump_interaction_epoch();
             }
+            changed
         };
         if changed {
             // So source-driven paint (ripple, state layers) cannot stick stale.
@@ -597,6 +613,8 @@ impl MutableInteractionSource {
     pub fn reset(&self) {
         let mut s = self.state.borrow_mut();
         *s = InteractionState::default();
+        drop(s);
+        bump_interaction_epoch();
         crate::frame_clock::request_frame();
     }
 
@@ -605,6 +623,8 @@ impl MutableInteractionSource {
         let mut s = self.state.borrow_mut();
         if s.hovered {
             s.hovered = false;
+            drop(s);
+            bump_interaction_epoch();
             crate::frame_clock::request_frame();
         }
     }

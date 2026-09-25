@@ -185,6 +185,9 @@ impl IndicationDrawNode for RippleDrawNode {
         let k_alpha = format!("{}:a", base);
         let k_rad = format!("{}:r", base);
         let k_ctr = format!("{}:c", base);
+        let alpha_driver_key = format!("{}:drv:a", base);
+        let radius_driver_key = format!("{}:drv:r", base);
+        let center_driver_key = format!("{}:drv:c", base);
 
         let alpha_anim = remember_state_with_key(&k_alpha, || {
             AnimatedValue::new(
@@ -219,9 +222,9 @@ impl IndicationDrawNode for RippleDrawNode {
 
         let prev_pid = *last_pid.borrow();
 
-        animation_driver::touch(&format!("{}:drv:a", base));
-        animation_driver::touch(&format!("{}:drv:r", base));
-        animation_driver::touch(&format!("{}:drv:c", base));
+        animation_driver::touch(&alpha_driver_key);
+        animation_driver::touch(&radius_driver_key);
+        animation_driver::touch(&center_driver_key);
 
         // Use last_press_id which persists after release (unlike is_pressed which is transient
         // because press+release can both happen before the next frame renders).
@@ -243,7 +246,7 @@ impl IndicationDrawNode for RippleDrawNode {
                 a.set_spec(spec_in);
                 a.set_target(1.0);
             }
-            Self::register_driver(&format!("{}:drv:a", base), alpha_anim.clone());
+            Self::register_driver(&alpha_driver_key, alpha_anim.clone());
 
             {
                 let mut r = rad_anim.borrow_mut();
@@ -251,7 +254,7 @@ impl IndicationDrawNode for RippleDrawNode {
                 r.set_spec(spec_rad);
                 r.set_target(1.0);
             }
-            Self::register_driver(&format!("{}:drv:r", base), rad_anim.clone());
+            Self::register_driver(&radius_driver_key, rad_anim.clone());
 
             {
                 let mut c = ctr_anim.borrow_mut();
@@ -259,7 +262,7 @@ impl IndicationDrawNode for RippleDrawNode {
                 c.set_spec(spec_ctr);
                 c.set_target(1.0);
             }
-            Self::register_driver(&format!("{}:drv:c", base), ctr_anim.clone());
+            Self::register_driver(&center_driver_key, ctr_anim.clone());
         }
 
         // Compare against *last_pid.borrow(), not prev_pid, because prev_pid was
@@ -272,16 +275,6 @@ impl IndicationDrawNode for RippleDrawNode {
             *release_pending.borrow_mut() = true;
         }
 
-        if *phase.borrow() != 0 && !animation_driver::is_registered(&format!("{}:drv:a", base)) {
-            *phase.borrow_mut() = 0;
-            *last_pid.borrow_mut() = current_pid;
-            *release_pending.borrow_mut() = false;
-            alpha_anim.borrow_mut().snap_to(0.0);
-            rad_anim.borrow_mut().snap_to(0.0);
-            ctr_anim.borrow_mut().snap_to(0.0);
-            return;
-        }
-
         let fade_pct = *alpha_anim.borrow().get();
 
         if *phase.borrow() == 1 && fade_pct >= 1.0 {
@@ -292,7 +285,7 @@ impl IndicationDrawNode for RippleDrawNode {
                     AnimationSpec::tween(Duration::from_millis(FADE_OUT_MS), Easing::Linear);
                 alpha_anim.borrow_mut().set_target(0.0);
                 alpha_anim.borrow_mut().set_spec(spec_out);
-                Self::register_driver(&format!("{}:drv:a", base), alpha_anim.clone());
+                Self::register_driver(&alpha_driver_key, alpha_anim.clone());
             } else {
                 *phase.borrow_mut() = 2;
             }
@@ -304,7 +297,7 @@ impl IndicationDrawNode for RippleDrawNode {
             let spec_out = AnimationSpec::tween(Duration::from_millis(FADE_OUT_MS), Easing::Linear);
             alpha_anim.borrow_mut().set_target(0.0);
             alpha_anim.borrow_mut().set_spec(spec_out);
-            Self::register_driver(&format!("{}:drv:a", base), alpha_anim.clone());
+            Self::register_driver(&alpha_driver_key, alpha_anim.clone());
         }
 
         if *phase.borrow() == 3 && fade_pct <= 0.01 {
@@ -319,10 +312,16 @@ impl IndicationDrawNode for RippleDrawNode {
             return;
         }
 
-        if *phase.borrow() == 0 {
+        let phase_now = *phase.borrow();
+        if (phase_now == 1 || phase_now == 3) && !animation_driver::is_registered(&alpha_driver_key)
+        {
+            Self::register_driver(&alpha_driver_key, alpha_anim.clone());
+        }
+
+        if phase_now == 0 {
             return;
         }
-        let snap_finish = *release_pending.borrow() && *phase.borrow() == 1;
+        let snap_finish = *release_pending.borrow() && phase_now == 1;
         if fade_pct <= 0.01 && !snap_finish {
             return;
         }
@@ -394,5 +393,86 @@ impl IndicationDrawNode for RippleDrawNode {
                 brush: draw_color.into(),
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use repose_core::animation::{SystemClock, TestClock, set_clock};
+    use repose_core::runtime::ComposeGuard;
+    use repose_core::scope::Scope;
+    use repose_core::{Interaction, MutableInteractionSource};
+    use web_time::Instant;
+
+    fn draw(node: &dyn IndicationDrawNode, scope: &Scope, scene: &mut Scene) {
+        let guard = ComposeGuard::begin();
+        scope.run(|| {
+            node.draw(
+                scene,
+                Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 100.0,
+                    h: 100.0,
+                },
+                [Px::ZERO; 4],
+                1.0,
+            )
+        });
+        drop(guard);
+    }
+
+    #[test]
+    fn held_ripple_survives_fade_in_completion() {
+        let mut clock = TestClock { t: Instant::now() };
+        set_clock(Box::new(clock.clone()));
+        let source = MutableInteractionSource::new();
+        let read_source = source.source();
+        let factory = RippleNodeFactory {
+            config: RippleConfig::default(),
+        };
+        let node = factory.create(&read_source);
+        let scope = Scope::new();
+        let press = Interaction::new_press(Vec2 { x: 20.0, y: 20.0 });
+        let press_id = match press {
+            Interaction::Press(id, _) => id,
+            _ => unreachable!(),
+        };
+        source.emit(press);
+
+        let mut scene = Scene::default();
+        draw(node.as_ref(), &scope, &mut scene);
+        clock.t += Duration::from_millis(80);
+        set_clock(Box::new(clock.clone()));
+        animation_driver::tick();
+        scene.nodes.clear();
+        draw(node.as_ref(), &scope, &mut scene);
+        assert!(
+            scene
+                .nodes
+                .iter()
+                .any(|node| matches!(node, SceneNode::Ellipse { .. }))
+        );
+
+        source.emit(Interaction::Release(press_id));
+        clock.t += Duration::from_millis(80);
+        set_clock(Box::new(clock.clone()));
+        animation_driver::tick();
+        scene.nodes.clear();
+        draw(node.as_ref(), &scope, &mut scene);
+        assert!(
+            scene
+                .nodes
+                .iter()
+                .any(|node| matches!(node, SceneNode::Ellipse { .. }))
+        );
+
+        let base = format!("rp:{:p}", read_source.stable_id());
+        animation_driver::unregister(&format!("{base}:drv:a"));
+        animation_driver::unregister(&format!("{base}:drv:r"));
+        animation_driver::unregister(&format!("{base}:drv:c"));
+        scope.dispose();
+        set_clock(Box::new(SystemClock));
     }
 }

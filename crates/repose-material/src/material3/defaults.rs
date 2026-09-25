@@ -114,6 +114,7 @@ impl ProgressIndicatorDefaults {
     }
     pub const CIRCULAR_INDICATOR_SIZE: Dp = Dp(40.0);
     pub const CIRCULAR_STROKE_WIDTH: Dp = Dp(4.0);
+    pub const CIRCULAR_TRACK_ACTIVE_SPACE: Dp = Dp(4.0);
 
     /// M3 `ActiveHandleLeadingSpace` / `ActiveHandleTrailingSpace`
     pub const SLIDER_THUMB_TRACK_GAP: Dp = Dp(6.0);

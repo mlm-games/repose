@@ -161,6 +161,7 @@ pub struct ShortcutState {
     pub scopes: Vec<ShortcutMap>,
     runtime_installs: Rc<RefCell<RuntimeShortcutInstalls>>,
     use_global_fallback: bool,
+    identity: u64,
 }
 
 struct RuntimeShortcutMapEntry {
@@ -195,6 +196,7 @@ impl ShortcutState {
                 ..RuntimeShortcutInstalls::default()
             })),
             use_global_fallback: true,
+            identity: next_shortcut_state_id(),
         }
     }
 
@@ -323,11 +325,20 @@ thread_local! {
     static SCOPES: RefCell<ShortcutScopeStack> =
         const { RefCell::new(ShortcutScopeStack(Vec::new())) };
     static NEXT_INSTALLER_ID: Cell<u64> = const { Cell::new(1) };
+    static NEXT_SHORTCUT_STATE_ID: Cell<u64> = const { Cell::new(1) };
     static ACTIVE_SHORTCUT_STATE: RefCell<Option<ShortcutState>> = const { RefCell::new(None) };
 }
 
 fn next_installer_id() -> u64 {
     NEXT_INSTALLER_ID.with(|next| {
+        let id = next.get();
+        next.set(id.wrapping_add(1));
+        id
+    })
+}
+
+fn next_shortcut_state_id() -> u64 {
+    NEXT_SHORTCUT_STATE_ID.with(|next| {
         let id = next.get();
         next.set(id.wrapping_add(1));
         id
@@ -350,6 +361,10 @@ pub fn with_runtime_state<R>(state: &ShortcutState, f: impl FnOnce() -> R) -> R 
 
 fn active_runtime_state() -> Option<ShortcutState> {
     ACTIVE_SHORTCUT_STATE.with(|slot| slot.borrow().clone())
+}
+
+pub(crate) fn active_runtime_identity() -> Option<u64> {
+    active_runtime_state().map(|state| state.identity)
 }
 
 fn sync_handler() {
@@ -935,6 +950,60 @@ mod tests {
         assert!(a.resolve_action(&chord).is_none());
         assert_eq!(b.resolve_action(&chord), Some(Action::Custom("b".into())));
         dispose_b.run();
+    }
+
+    #[test]
+    fn scoped_shortcut_effects_are_isolated_per_runtime() {
+        use crate::{effects::Dispose, runtime::ComposeGuard, scope::Scope};
+        use std::cell::Cell;
+
+        fn compose(state: &ShortcutState, action: &'static str, fired: &Rc<Cell<usize>>) -> Scope {
+            let scope = Scope::new();
+            let state = state.clone();
+            let fired = fired.clone();
+            scope.run(|| {
+                let _guard = ComposeGuard::begin();
+                with_runtime_state(&state, || {
+                    crate::scope::scoped_effect_once(move || {
+                        let mut map = ShortcutMap::new();
+                        map.insert(
+                            Key::Character('j'),
+                            Modifiers::default(),
+                            Action::Custom(action.into()),
+                        );
+                        let map_disposer = InstallShortcutMapWithKey("shared-scoped", map);
+                        let handler_disposer = InstallShortcutHandlerWithKey(
+                            "shared-scoped",
+                            Rc::new(move |_action| {
+                                fired.set(fired.get() + 1);
+                                true
+                            }),
+                        );
+                        Dispose::new(move || {
+                            map_disposer.run();
+                            handler_disposer.run();
+                        })
+                    });
+                });
+            });
+            scope
+        }
+
+        let a = ShortcutState::new();
+        let b = ShortcutState::new();
+        let fired_a = Rc::new(Cell::new(0));
+        let fired_b = Rc::new(Cell::new(0));
+        let scope_a = compose(&a, "a", &fired_a);
+        let scope_b = compose(&b, "b", &fired_b);
+        let chord = KeyChord::new(Key::Character('j'), Modifiers::default());
+        let action_a = a.resolve_action(&chord).unwrap();
+        let action_b = b.resolve_action(&chord).unwrap();
+        assert!(a.handle(action_a));
+        assert!(b.handle(action_b));
+        assert_eq!(fired_a.get(), 1);
+        assert_eq!(fired_b.get(), 1);
+        scope_a.dispose();
+        scope_b.dispose();
     }
 
     #[test]

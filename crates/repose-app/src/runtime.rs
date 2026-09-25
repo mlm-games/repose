@@ -2023,6 +2023,14 @@ impl ReposeRuntime {
         }
 
         let Some(frame) = self.frame_cache.clone() else {
+            if event.event_type == KeyEventType::Down
+                && !event.is_repeat
+                && let Some(action) = self.resolve_shortcut_action(
+                    &repose_core::shortcuts::KeyChord::new(event.key.clone(), event.modifiers),
+                )
+            {
+                return self.dispatch_action(action);
+            }
             return false;
         };
         let f = &frame;
@@ -2040,7 +2048,7 @@ impl ReposeRuntime {
                 || self
                     .resolve_shortcut_action(&repose_core::shortcuts::KeyChord::new(
                         event.key.clone(),
-                        self.modifiers,
+                        event.modifiers,
                     ))
                     .is_some_and(|action| matches!(action, repose_core::shortcuts::Action::Back));
             if is_back && self.overlay.handle_back() {
@@ -2058,7 +2066,7 @@ impl ReposeRuntime {
         if event.event_type == KeyEventType::Down
             && !event.is_repeat
             && let Some(action) = self.resolve_shortcut_action(
-                &repose_core::shortcuts::KeyChord::new(event.key.clone(), self.modifiers),
+                &repose_core::shortcuts::KeyChord::new(event.key.clone(), event.modifiers),
             )
         {
             // `dispatch_action` covers focus navigation internally.
@@ -3067,9 +3075,9 @@ impl ReposeRuntime {
         if event.event_type == KeyEventType::Down
             && !event.is_repeat
             && !self.ime_preedit
-            && !self.modifiers.ctrl
-            && !self.modifiers.alt
-            && !self.modifiers.meta
+            && !event.modifiers.ctrl
+            && !event.modifiers.alt
+            && !event.modifiers.meta
             && let Some(text) = composed_text
             && !text.chars().all(|c| c.is_control())
             && self.insert_text_into_focused(text)

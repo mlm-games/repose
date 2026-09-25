@@ -566,6 +566,82 @@ fn pointer_pos_tracks_mouse_only() {
 }
 
 #[test]
+fn shortcut_resolution_uses_event_modifiers() {
+    use std::cell::Cell;
+
+    let mut rt = ReposeRuntime::new();
+    let fired = Rc::new(Cell::new(false));
+    let handler_fired = fired.clone();
+    rt.shortcuts.default_map.insert(
+        Key::Character('s'),
+        Modifiers {
+            ctrl: true,
+            ..Modifiers::default()
+        },
+        Action::Custom("save".into()),
+    );
+    rt.shortcuts.handler = Some(Rc::new(move |action| {
+        if matches!(action, Action::Custom(ref key) if key.as_ref() == "save") {
+            handler_fired.set(true);
+            true
+        } else {
+            false
+        }
+    }));
+    rt.cache_frame(Frame {
+        scene: Scene::default(),
+        hit_regions: Vec::new(),
+        semantics_nodes: Vec::new(),
+        focus_chain: Vec::new(),
+    });
+    let event = key_down(
+        Key::Character('s'),
+        Modifiers {
+            ctrl: true,
+            ..Modifiers::default()
+        },
+        false,
+    );
+    assert!(rt.handle_key(&event));
+    assert!(fired.get());
+}
+
+#[test]
+fn shortcuts_work_before_the_first_frame() {
+    use std::cell::Cell;
+
+    let mut rt = ReposeRuntime::new();
+    let fired = Rc::new(Cell::new(false));
+    let handler_fired = fired.clone();
+    rt.shortcuts.default_map.insert(
+        Key::Character('s'),
+        Modifiers {
+            ctrl: true,
+            ..Modifiers::default()
+        },
+        Action::Custom("save".into()),
+    );
+    rt.shortcuts.handler = Some(Rc::new(move |action| {
+        if matches!(action, Action::Custom(ref key) if key.as_ref() == "save") {
+            handler_fired.set(true);
+            true
+        } else {
+            false
+        }
+    }));
+    let event = key_down(
+        Key::Character('s'),
+        Modifiers {
+            ctrl: true,
+            ..Modifiers::default()
+        },
+        false,
+    );
+    assert!(rt.handle_key(&event));
+    assert!(fired.get());
+}
+
+#[test]
 fn runtime_shortcuts_are_per_runtime() {
     use repose_core::shortcuts::KeyChord;
     let mut a = ReposeRuntime::new();

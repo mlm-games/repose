@@ -771,6 +771,38 @@ mod layer_tests {
     }
 
     #[test]
+    fn test_transformed_graphics_layer_uses_plain_origin_shift() {
+        let view = crate::Box(
+            Modifier::new()
+                .size(Dp(40.0), Dp(40.0))
+                .absolute()
+                .offset(Some(Dp(40.0)), Some(Dp(30.0)), None, None)
+                .graphics_layer(0.5)
+                .scale(0.8),
+        )
+        .child(Text("x"));
+        let nodes = collect_nodes(&view, &|d| d);
+        let begin_index = nodes
+            .iter()
+            .position(|node| matches!(node, SceneNode::BeginLayer { .. }))
+            .expect("graphics layer");
+        let layer_rect = match &nodes[begin_index] {
+            SceneNode::BeginLayer { rect, .. } => *rect,
+            _ => unreachable!(),
+        };
+        let transform = match &nodes[begin_index + 1] {
+            SceneNode::PushTransform { transform } => *transform,
+            node => panic!("expected transform after BeginLayer, got {node:?}"),
+        };
+        assert_eq!(transform.translate_x, -layer_rect.x);
+        assert_eq!(transform.translate_y, -layer_rect.y);
+        assert!(nodes.iter().any(|node| matches!(
+            node,
+            SceneNode::Text { text, .. } if text.as_ref() == "x"
+        )));
+    }
+
+    #[test]
     fn test_graphics_layer_alpha_is_clamped() {
         let m = Modifier::new().graphics_layer(2.0);
         assert_eq!(

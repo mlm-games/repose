@@ -129,6 +129,43 @@ fn preferred_dialog_width_dp(container_w: Dp, container_h: Dp) -> Dp {
     }
 }
 
+fn platform_dialog_state(properties: &DialogProperties) -> (Dp, Dp, PaddingValues) {
+    let insets = window_insets();
+    let mut pad = PaddingValues::default();
+    if properties.use_platform_insets {
+        pad.left = Px(insets.left).to_dp();
+        pad.right = Px(insets.right).to_dp();
+        pad.top = Px(insets.top).to_dp();
+        pad.bottom = Px(insets.bottom).to_dp() + Px(insets.ime_bottom).to_dp();
+    }
+    let win_w = {
+        let w = get_window_container_width();
+        if w.is_finite() && w > 10.0 {
+            Dp(w)
+        } else {
+            Dp(1280.0)
+        }
+    };
+    let win_h = {
+        let h = get_window_container_height();
+        if h.is_finite() && h > 10.0 {
+            Dp(h)
+        } else {
+            Dp(800.0)
+        }
+    };
+    let avail_w = (win_w - pad.left - pad.right).max(Dp::ZERO);
+    let avail_h = (win_h - pad.top - pad.bottom).max(Dp::ZERO);
+    let platform_max_w = if properties.use_platform_default_width {
+        preferred_dialog_width_dp(win_w, win_h)
+            .min(avail_w)
+            .min(super::DialogDefaults::MAX_WIDTH)
+    } else {
+        avail_w.min(super::DialogDefaults::MAX_WIDTH)
+    };
+    (platform_max_w, avail_h, pad)
+}
+
 /// After merging caller modifiers, clamp size so the dialog can never escape the viewport.
 fn clamp_dialog_modifier(mut m: Modifier, platform_max_w: Dp, platform_max_h: Dp) -> Modifier {
     let max_w = m
@@ -330,41 +367,7 @@ pub fn Dialog(
 
     let platform_state: Rc<RefCell<(Dp, Dp, PaddingValues)>> =
         remember_with_key(state.key("plat"), || {
-            let properties = props.borrow();
-            let insets = window_insets();
-            let mut pad = PaddingValues::default();
-            if properties.use_platform_insets {
-                pad.left = Px(insets.left).to_dp();
-                pad.right = Px(insets.right).to_dp();
-                pad.top = Px(insets.top).to_dp();
-                pad.bottom = Px(insets.bottom).to_dp() + Px(insets.ime_bottom).to_dp();
-            }
-            let win_w = {
-                let w = get_window_container_width();
-                if w.is_finite() && w > 10.0 {
-                    Dp(w)
-                } else {
-                    Dp(1280.0)
-                }
-            };
-            let win_h = {
-                let h = get_window_container_height();
-                if h.is_finite() && h > 10.0 {
-                    Dp(h)
-                } else {
-                    Dp(800.0)
-                }
-            };
-            let avail_w = (win_w - pad.left - pad.right).max(Dp::ZERO);
-            let avail_h = (win_h - pad.top - pad.bottom).max(Dp::ZERO);
-            let platform_max_w = if properties.use_platform_default_width {
-                preferred_dialog_width_dp(win_w, win_h)
-                    .min(avail_w)
-                    .min(super::DialogDefaults::MAX_WIDTH)
-            } else {
-                avail_w.min(super::DialogDefaults::MAX_WIDTH)
-            };
-            RefCell::new((platform_max_w, avail_h, pad))
+            RefCell::new(platform_dialog_state(&props.borrow()))
         });
 
     let spec = AnimationSpec::tween(Duration::from_millis(200), Easing::FastOutSlowIn);
@@ -547,6 +550,10 @@ pub fn Dialog(
                         }
                     }
 
+                    {
+                        let current_props = props.borrow().clone();
+                        *platform_state.borrow_mut() = platform_dialog_state(&current_props);
+                    }
                     let (platform_max_w, platform_max_h, pad) = *platform_state.borrow();
 
                     let dialog_mod = clamp_dialog_modifier(
@@ -557,7 +564,6 @@ pub fn Dialog(
                             .justify_content(JustifyContent::CENTER)
                             .background(th.surface_container_high)
                             .clip_rounded(th.shapes.extra_large)
-                            .graphics_layer(1.0)
                             .alpha(alpha)
                             .scale(scale)
                             .transform_origin(0.5, 0.5)
@@ -889,9 +895,15 @@ pub fn TimePickerDialog(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use repose_core::runtime::ComposeGuard;
+    use repose_core::scope::Scope;
     use repose_core::shortcuts::{
         Action, ShortcutMap, ShortcutState, install_shortcut_map_with_key, with_runtime_state,
     };
+    use repose_ui::Text;
+    use repose_ui::layout::LayoutEngine;
+    use repose_ui::overlay::{OverlayHandle, with_ambient_overlay};
+    use std::collections::HashMap;
 
     fn key_event(key: Key, modifiers: Modifiers) -> KeyEvent {
         KeyEvent {
@@ -902,6 +914,40 @@ mod tests {
             utf16_code_point: 0,
             physical: None,
         }
+    }
+
+    #[test]
+    fn visible_dialog_overlay_contains_content() {
+        let overlay = OverlayHandle::new();
+        let state = Rc::new(DialogState::new());
+        state.show();
+        let content = Text("Settings");
+        let scope = Scope::new();
+        let guard = ComposeGuard::begin();
+        scope.run(|| {
+            let view = with_ambient_overlay(overlay.clone(), || {
+                Dialog(
+                    state.clone(),
+                    Modifier::new(),
+                    DialogProperties::default(),
+                    content.clone(),
+                )
+            });
+            let root = overlay.host(Modifier::new().fill_max_size(), view);
+            let (scene, _, _) = LayoutEngine::new().layout_frame(
+                &root,
+                (800, 600),
+                &HashMap::new(),
+                &repose_ui::Interactions::default(),
+                None,
+            );
+            assert!(scene.nodes.iter().any(|node| matches!(
+                node,
+                SceneNode::Text { text, .. } if text.as_ref() == "Settings"
+            )));
+        });
+        drop(guard);
+        scope.dispose();
     }
 
     #[test]

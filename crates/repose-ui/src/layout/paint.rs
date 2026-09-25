@@ -238,6 +238,7 @@ impl LayoutEngine {
         repose_core::input::input_mode().hash(&mut h);
 
         repose_core::animation_driver::live_epoch().hash(&mut h);
+        repose_core::interaction_epoch().hash(&mut h);
         if !interactions.pressed.is_empty() {
             let mut pressed: Vec<u64> = interactions.pressed.iter().copied().collect();
             pressed.sort_unstable();
@@ -962,17 +963,8 @@ impl LayoutEngine {
                     BlurredEdgeTreatment::Rectangle
                 ),
             });
-            let (shift_x, shift_y) = match modifier
-                .transform
-                .as_ref()
-                .and_then(|tf| tf.inverse_linear())
-            {
-                Some(inv) => (
-                    inv[0] * -layer_rect.x + inv[1] * -layer_rect.y,
-                    inv[2] * -layer_rect.x + inv[3] * -layer_rect.y,
-                ),
-                None => (-layer_rect.x, -layer_rect.y),
-            };
+            let shift_x = -layer_rect.x;
+            let shift_y = -layer_rect.y;
             let layer_transform = Transform {
                 translate_x: shift_x,
                 translate_y: shift_y,

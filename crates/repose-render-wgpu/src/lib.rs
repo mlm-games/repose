@@ -3163,8 +3163,13 @@ impl WgpuSurfaceBackend {
 
         let view_formats = view_format.into_iter().collect::<Vec<_>>();
 
+        let surface_usage = if cfg!(target_arch = "wasm32") {
+            wgpu::TextureUsages::RENDER_ATTACHMENT
+        } else {
+            wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC
+        };
         let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            usage: surface_usage,
             format,
             width: size.width.max(1),
             height: size.height.max(1),
@@ -8904,7 +8909,10 @@ impl WgpuSceneRenderer {
                         });
                 let mut active_callback_scopes = HashSet::new();
                 for (key, cb) in &prepare_list {
-                    let descriptors = callback_targets.get(key).unwrap_or(&default_descriptors);
+                    let descriptors = callback_targets
+                        .get(key)
+                        .map(Vec::as_slice)
+                        .unwrap_or(&default_descriptors);
                     for &(target, screen_desc) in descriptors {
                         let scope = callback_scope_key(cb, *key, target, &screen_desc);
                         active_callback_scopes.insert(scope);
@@ -8923,7 +8931,10 @@ impl WgpuSceneRenderer {
                 let mut prepare_buffers = Vec::new();
                 let mut finish_buffers = Vec::new();
                 for (key, cb) in &prepare_list {
-                    let descriptors = callback_targets.get(key).unwrap_or(&default_descriptors);
+                    let descriptors = callback_targets
+                        .get(key)
+                        .map(Vec::as_slice)
+                        .unwrap_or(&default_descriptors);
                     for &(target, screen_desc) in descriptors {
                         let scope = callback_scope_key(cb, *key, target, &screen_desc);
                         self.touch_callback_scope(scope);
@@ -8943,7 +8954,10 @@ impl WgpuSceneRenderer {
                     }
                 }
                 for (key, cb) in &prepare_list {
-                    let descriptors = callback_targets.get(key).unwrap_or(&default_descriptors);
+                    let descriptors = callback_targets
+                        .get(key)
+                        .map(Vec::as_slice)
+                        .unwrap_or(&default_descriptors);
                     for &(target, screen_desc) in descriptors {
                         let scope = callback_scope_key(cb, *key, target, &screen_desc);
                         self.touch_callback_scope(scope);
