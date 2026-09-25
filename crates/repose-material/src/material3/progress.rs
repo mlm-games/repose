@@ -45,14 +45,25 @@ fn progress_identity(modifier: &Modifier, kind: &str, instance_id: u64) -> Strin
     }
 }
 
-fn indeterminate_animation(key: &str, duration: Duration) -> Rc<RefCell<AnimatedValue<f32>>> {
+fn indeterminate_spec(duration: Duration) -> AnimationSpec {
+    AnimationSpec::tween(duration, Easing::Linear).repeated(RepeatableSpec::infinite())
+}
+
+fn indeterminate_value(
+    key: &str,
+    initial: f32,
+    spec: AnimationSpec,
+    target: Option<f32>,
+    keyframes: Option<KeyframesSpec<f32>>,
+) -> Rc<RefCell<AnimatedValue<f32>>> {
     let animation_key = format!("progress:driver:{key}");
-    let animation = remember_state_with_key(animation_key.clone(), || {
-        let mut animation = AnimatedValue::new(
-            0.0,
-            AnimationSpec::tween(duration, Easing::Linear).repeated(RepeatableSpec::infinite()),
-        );
-        animation.set_target(1.0);
+    let animation = remember_state_with_key(animation_key.clone(), move || {
+        let mut animation = AnimatedValue::new(initial, spec);
+        if let Some(keyframes) = keyframes {
+            animation.set_keyframes(keyframes);
+        } else if let Some(target) = target {
+            animation.set_target(target);
+        }
         animation
     });
     repose_core::animation_driver::touch(&animation_key);
@@ -84,8 +95,8 @@ fn linear_progress_keyframe(delay_ms: f32, duration_ms: f32) -> KeyframesSpec<f3
     if start > 0.0 {
         keyframes.push((0.0, 0.0, None));
     }
-    keyframes.push((start, 0.0, Some(easing)));
-    keyframes.push((end, 1.0, None));
+    keyframes.push((start, 0.0, None));
+    keyframes.push((end, 1.0, Some(easing)));
     if end < 1.0 {
         keyframes.push((1.0, 1.0, None));
     }
@@ -98,36 +109,79 @@ fn draw_linear_progress_segment(
     start: f32,
     end: f32,
     color: Color,
-    cap_radius: f32,
+    cap: StrokeCap,
 ) {
     let start = start.clamp(0.0, 1.0);
     let end = end.clamp(0.0, 1.0);
-    if end <= start {
+    if !start.is_finite() || !end.is_finite() || end <= start {
         return;
     }
-    let min_x = rect.x + cap_radius;
-    let max_x = rect.x + rect.w - cap_radius;
-    let start_x = (rect.x + start * rect.w).clamp(min_x, max_x);
-    let end_x = (rect.x + end * rect.w).clamp(min_x, max_x);
-    if end_x <= start_x {
+    let cap_radius = rect.h * 0.5;
+    let use_cap = cap != StrokeCap::Butt && rect.h <= rect.w;
+    let (x0, x1, radius) = if use_cap {
+        let min_x = rect.x + cap_radius;
+        let max_x = rect.x + rect.w - cap_radius;
+        let adjusted_start = (rect.x + start * rect.w).clamp(min_x, max_x);
+        let adjusted_end = (rect.x + end * rect.w).clamp(min_x, max_x);
+        match cap {
+            StrokeCap::Round => (
+                adjusted_start - cap_radius,
+                adjusted_end + cap_radius,
+                cap_radius,
+            ),
+            StrokeCap::Square => (adjusted_start - cap_radius, adjusted_end + cap_radius, 0.0),
+            StrokeCap::Butt => (rect.x + start * rect.w, rect.x + end * rect.w, 0.0),
+        }
+    } else {
+        (rect.x + start * rect.w, rect.x + end * rect.w, 0.0)
+    };
+    if x1 <= x0 {
         return;
     }
     scene.nodes.push(SceneNode::Rect {
         rect: Rect {
-            x: start_x,
+            x: x0,
             y: rect.y,
-            w: end_x - start_x,
+            w: x1 - x0,
             h: rect.h,
         },
         brush: Brush::Solid(color),
-        radius: [Px(cap_radius); 4],
+        radius: [Px(radius); 4],
     });
+}
+
+fn circular_additional_rotation_keyframes() -> KeyframesSpec<f32> {
+    let easing = Easing::Custom(CubicBezier::new(0.05, 0.7, 0.1, 1.0));
+    KeyframesSpec {
+        keyframes: vec![
+            (0.0, 0.0, None),
+            (0.05, 90.0, None),
+            (0.25, 90.0, Some(easing)),
+            (0.30, 180.0, None),
+            (0.50, 180.0, None),
+            (0.55, 270.0, None),
+            (0.75, 270.0, None),
+            (0.80, 360.0, None),
+            (1.0, 360.0, None),
+        ],
+    }
+}
+
+fn circular_sweep_keyframes() -> KeyframesSpec<f32> {
+    let easing = Easing::Custom(CubicBezier::new(0.2, 0.0, 0.0, 1.0));
+    KeyframesSpec {
+        keyframes: vec![
+            (0.0, 0.1, None),
+            (0.5, 0.87, None),
+            (1.0, 0.1, Some(easing)),
+        ],
+    }
 }
 
 /// M3 Circular Progress Indicator.
 ///
 /// Determinate (`Some(0..1)`): draws arc from 12 o'clock clockwise.
-/// Indeterminate (`None`): animates a spinning 270° arc.
+/// Indeterminate (`None`): animates a spinning variable-length arc.
 pub fn CircularProgressIndicator(
     value: Option<f32>,
     config: CircularProgressIndicatorConfig,
@@ -136,47 +190,50 @@ pub fn CircularProgressIndicator(
     let identity = progress_identity(&config.modifier, "circular", *instance_id);
     let sz = ProgressIndicatorDefaults::CIRCULAR_INDICATOR_SIZE;
     let val = value.map(|v| {
-        if v.is_finite() {
-            v.clamp(0.0, 1.0)
+        if v.is_nan() {
+            f32::NAN
         } else {
-            0.0
+            v.clamp(0.0, 1.0)
         }
     });
-    let animation = value
-        .is_none()
-        .then(|| indeterminate_animation(&identity, Duration::from_millis(6000)));
-    let add_kf = value.is_none().then(|| {
-        remember_state_with_key(format!("{identity}:circular-add"), || {
-            let emph = Easing::Custom(CubicBezier::new(0.05, 0.7, 0.1, 1.0));
-            KeyframesSpec {
-                keyframes: vec![
-                    (0.0, 0.0, None),
-                    (0.05, 90.0, Some(emph)),
-                    (0.25, 90.0, None),
-                    (0.30, 180.0, None),
-                    (0.50, 180.0, None),
-                    (0.55, 270.0, None),
-                    (0.75, 270.0, None),
-                    (0.80, 360.0, None),
-                    (1.0, 360.0, None),
-                ],
-            }
-        })
-    });
-    let sweep_kf = value.is_none().then(|| {
-        remember_state_with_key(format!("{identity}:circular-sweep"), || {
-            let std_dec = Easing::Custom(CubicBezier::new(0.2, 0.0, 0.0, 1.0));
-            KeyframesSpec {
-                keyframes: vec![
-                    (0.0, 0.1, None),
-                    (0.5, 0.87, Some(std_dec)),
-                    (1.0, 0.1, None),
-                ],
-            }
-        })
-    });
+    let (global_animation, add_animation, sweep_animation) = if value.is_none() {
+        let spec = indeterminate_spec(Duration::from_millis(6000));
+        let add_kf = remember_state_with_key(
+            format!("{identity}:circular-add"),
+            circular_additional_rotation_keyframes,
+        );
+        let sweep_kf = remember_state_with_key(
+            format!("{identity}:circular-sweep"),
+            circular_sweep_keyframes,
+        );
+        (
+            Some(indeterminate_value(
+                &format!("{identity}:circular-global"),
+                0.0,
+                spec,
+                Some(1080.0),
+                None,
+            )),
+            Some(indeterminate_value(
+                &format!("{identity}:circular-add"),
+                0.0,
+                spec,
+                None,
+                Some(add_kf.borrow().clone()),
+            )),
+            Some(indeterminate_value(
+                &format!("{identity}:circular-sweep"),
+                0.1,
+                spec,
+                None,
+                Some(sweep_kf.borrow().clone()),
+            )),
+        )
+    } else {
+        (None, None, None)
+    };
 
-    Box(Modifier::new().size(sz, sz).then(config.modifier).painter(
+    Box(Modifier::new().then(config.modifier).size(sz, sz).painter(
         move |scene: &mut Scene, rect: Rect, alpha: f32| {
             let stroke_px = config.stroke_width.to_px().0;
             let gap_px = config.gap_size.to_px().0;
@@ -189,17 +246,14 @@ pub fn CircularProgressIndicator(
             .max(0.0);
             let gap_sweep_rad = adjusted_gap_px / outer_diameter_px * 2.0;
             let (global_rotation, additional_rotation, sweep_val) =
-                if let Some(animation) = &animation {
-                    let t = *animation.borrow().get();
-                    let av = add_kf
-                        .as_ref()
-                        .map(|keyframe| keyframe.borrow().evaluate(t))
-                        .unwrap_or(0.0);
-                    let sv = sweep_kf
-                        .as_ref()
-                        .map(|keyframe| keyframe.borrow().evaluate(t))
-                        .unwrap_or(0.0);
-                    (t * 1080.0, av, sv)
+                if let (Some(global), Some(additional), Some(sweep)) =
+                    (&global_animation, &add_animation, &sweep_animation)
+                {
+                    (
+                        *global.borrow().get(),
+                        *additional.borrow().get(),
+                        *sweep.borrow().get(),
+                    )
                 } else {
                     (0.0, 0.0, 0.0)
                 };
@@ -227,6 +281,20 @@ pub fn CircularProgressIndicator(
                     let start_angle = -std::f32::consts::FRAC_PI_2;
                     let effective_gap = gap_sweep_rad.min(sweep_rad);
 
+                    // Track arc (with gap from indicator)
+                    let track_start = start_angle + sweep_rad + effective_gap;
+                    let track_sweep = std::f32::consts::TAU - sweep_rad - 2.0 * effective_gap;
+                    if config.track_color.3 > 0 && track_sweep.abs() > f32::EPSILON {
+                        scene.nodes.push(SceneNode::Arc {
+                            rect: circle,
+                            start_angle: track_start,
+                            sweep_angle: track_sweep,
+                            stroke_width: Px(stroke_px),
+                            brush: Brush::Solid(mul_c(config.track_color)),
+                            cap: config.stroke_cap,
+                        });
+                    }
+
                     // Indicator arc
                     if p > 0.0 {
                         scene.nodes.push(SceneNode::Arc {
@@ -238,20 +306,6 @@ pub fn CircularProgressIndicator(
                             cap: config.stroke_cap,
                         });
                     }
-
-                    // Track arc (with gap from indicator)
-                    let track_start = start_angle + sweep_rad + effective_gap;
-                    let track_sweep = std::f32::consts::TAU - sweep_rad - 2.0 * effective_gap;
-                    if track_sweep > 0.0 {
-                        scene.nodes.push(SceneNode::Arc {
-                            rect: circle,
-                            start_angle: track_start,
-                            sweep_angle: track_sweep,
-                            stroke_width: Px(stroke_px),
-                            brush: Brush::Solid(mul_c(config.track_color)),
-                            cap: config.stroke_cap,
-                        });
-                    }
                 }
                 None => {
                     let radians =
@@ -259,6 +313,20 @@ pub fn CircularProgressIndicator(
                     let start_angle = radians;
                     let sweep_rad = sweep_val * std::f32::consts::TAU;
                     let effective_gap = gap_sweep_rad.min(sweep_rad);
+
+                    // Track arc (with gap from indicator)
+                    let track_start = start_angle + sweep_rad + effective_gap;
+                    let track_sweep = std::f32::consts::TAU - sweep_rad - 2.0 * effective_gap;
+                    if config.indeterminate_track_color.3 > 0 && track_sweep.abs() > f32::EPSILON {
+                        scene.nodes.push(SceneNode::Arc {
+                            rect: circle,
+                            start_angle: track_start,
+                            sweep_angle: track_sweep,
+                            stroke_width: Px(stroke_px),
+                            brush: Brush::Solid(mul_c(config.indeterminate_track_color)),
+                            cap: config.stroke_cap,
+                        });
+                    }
 
                     // Indicator arc
                     scene.nodes.push(SceneNode::Arc {
@@ -269,27 +337,16 @@ pub fn CircularProgressIndicator(
                         brush: Brush::Solid(mul_c(config.color)),
                         cap: config.stroke_cap,
                     });
-
-                    // Track arc (with gap from indicator)
-                    let track_start = start_angle + sweep_rad + effective_gap;
-                    let track_sweep = std::f32::consts::TAU - sweep_rad - 2.0 * effective_gap;
-                    if track_sweep > 0.0 {
-                        scene.nodes.push(SceneNode::Arc {
-                            rect: circle,
-                            start_angle: track_start,
-                            sweep_angle: track_sweep,
-                            stroke_width: Px(stroke_px),
-                            brush: Brush::Solid(mul_c(config.indeterminate_track_color)),
-                            cap: config.stroke_cap,
-                        });
-                    }
                 }
             }
         },
     ))
     .semantics(Semantics {
         role: Role::ProgressBar,
-        value: val.map(|v| format!("{}%", (v * 100.0).round() as i32)),
+        value: val.map(|v| {
+            let semantic = if v.is_finite() { v } else { 0.0 };
+            format!("{}%", (semantic * 100.0).round() as i32)
+        }),
         ..Default::default()
     })
 }
@@ -329,51 +386,64 @@ pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicat
     let instance_id = remember(unique_component_id);
     let identity = progress_identity(&config.modifier, "linear", *instance_id);
     let value = value.map(|v| {
-        if v.is_finite() {
-            v.clamp(0.0, 1.0)
+        if v.is_nan() {
+            f32::NAN
         } else {
-            0.0
+            v.clamp(0.0, 1.0)
         }
     });
-    let animation = value
-        .is_none()
-        .then(|| indeterminate_animation(&identity, Duration::from_millis(1750)));
-    let motion = value.is_none().then(|| {
-        (
-            remember_state_with_key(format!("{identity}:linear-head-1"), || {
-                linear_progress_keyframe(0.0, 1000.0)
-            }),
-            remember_state_with_key(format!("{identity}:linear-tail-1"), || {
-                linear_progress_keyframe(250.0, 1000.0)
-            }),
-            remember_state_with_key(format!("{identity}:linear-head-2"), || {
-                linear_progress_keyframe(650.0, 850.0)
-            }),
-            remember_state_with_key(format!("{identity}:linear-tail-2"), || {
-                linear_progress_keyframe(900.0, 850.0)
-            }),
-        )
-    });
+    let motion = if value.is_none() {
+        let spec = indeterminate_spec(Duration::from_millis(1750));
+        Some((
+            indeterminate_value(
+                &format!("{identity}:linear-head-1"),
+                0.0,
+                spec,
+                None,
+                Some(linear_progress_keyframe(0.0, 1000.0)),
+            ),
+            indeterminate_value(
+                &format!("{identity}:linear-tail-1"),
+                0.0,
+                spec,
+                None,
+                Some(linear_progress_keyframe(250.0, 1000.0)),
+            ),
+            indeterminate_value(
+                &format!("{identity}:linear-head-2"),
+                0.0,
+                spec,
+                None,
+                Some(linear_progress_keyframe(650.0, 850.0)),
+            ),
+            indeterminate_value(
+                &format!("{identity}:linear-tail-2"),
+                0.0,
+                spec,
+                None,
+                Some(linear_progress_keyframe(900.0, 850.0)),
+            ),
+        ))
+    } else {
+        None
+    };
 
     Box(Modifier::new()
         .fill_max_width()
         .height(ProgressIndicatorDefaults::LINEAR_INDICATOR_HEIGHT)
         .then(config.modifier)
         .painter(move |scene: &mut Scene, rect: Rect, alpha: f32| {
-            let (first_head, first_tail, second_head, second_tail) =
-                if let (Some(animation), Some((head_1, tail_1, head_2, tail_2))) =
-                    (&animation, &motion)
-                {
-                    let t = *animation.borrow().get();
+            let (first_head, first_tail, second_head, second_tail) = motion
+                .as_ref()
+                .map(|(head_1, tail_1, head_2, tail_2)| {
                     (
-                        head_1.borrow().evaluate(t),
-                        tail_1.borrow().evaluate(t),
-                        head_2.borrow().evaluate(t),
-                        tail_2.borrow().evaluate(t),
+                        *head_1.borrow().get(),
+                        *tail_1.borrow().get(),
+                        *head_2.borrow().get(),
+                        *tail_2.borrow().get(),
                     )
-                } else {
-                    (0.0, 0.0, 0.0, 0.0)
-                };
+                })
+                .unwrap_or((0.0, 0.0, 0.0, 0.0));
             let mul_c = |c: Color| {
                 Color(
                     c.0,
@@ -383,14 +453,9 @@ pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicat
                 )
             };
             let track_h = rect.h;
-            let corner = track_h * 0.5;
             let cy = rect.y + rect.h * 0.5;
-            let cap_radius = if config.stroke_cap == StrokeCap::Butt {
-                0.0
-            } else {
-                corner
-            };
-            let dot_r = (config.stop_size.to_px().0 * 0.5).max(0.0);
+            let stop_size = config.stop_size.to_px().0.min(track_h).max(0.0);
+            let stop_offset = ((track_h - stop_size) * 0.5).min(Dp(6.0).to_px().0);
             let gap_px = config.gap_size.to_px().0.max(0.0);
 
             let gap_fraction = if config.stroke_cap == StrokeCap::Butt || track_h > rect.w {
@@ -404,19 +469,35 @@ pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicat
 
             if let Some(t) = value {
                 let track_start = t + t.min(gap_fraction);
-                draw_linear_progress_segment(scene, rect, track_start, 1.0, track, cap_radius);
-                draw_linear_progress_segment(scene, rect, 0.0, t, indicator, cap_radius);
+                draw_linear_progress_segment(
+                    scene,
+                    rect,
+                    track_start,
+                    1.0,
+                    track,
+                    config.stroke_cap,
+                );
+                draw_linear_progress_segment(scene, rect, 0.0, t, indicator, config.stroke_cap);
 
-                let sx = rect.x + rect.w - dot_r;
-                scene.nodes.push(SceneNode::Ellipse {
-                    rect: Rect {
-                        x: sx - dot_r,
-                        y: cy - dot_r,
-                        w: dot_r * 2.0,
-                        h: dot_r * 2.0,
-                    },
-                    brush: Brush::Solid(indicator),
-                });
+                let stop_x = rect.x + rect.w - stop_size - stop_offset;
+                let stop_rect = Rect {
+                    x: stop_x,
+                    y: cy - stop_size * 0.5,
+                    w: stop_size,
+                    h: stop_size,
+                };
+                if config.stroke_cap == StrokeCap::Round {
+                    scene.nodes.push(SceneNode::Ellipse {
+                        rect: stop_rect,
+                        brush: Brush::Solid(indicator),
+                    });
+                } else {
+                    scene.nodes.push(SceneNode::Rect {
+                        rect: stop_rect,
+                        brush: Brush::Solid(indicator),
+                        radius: [Px(0.0); 4],
+                    });
+                }
             } else {
                 if first_head < 1.0 - gap_fraction {
                     let start = if first_head > 0.0 {
@@ -424,10 +505,15 @@ pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicat
                     } else {
                         0.0
                     };
-                    draw_linear_progress_segment(scene, rect, start, 1.0, track, cap_radius);
+                    draw_linear_progress_segment(scene, rect, start, 1.0, track, config.stroke_cap);
                 }
                 draw_linear_progress_segment(
-                    scene, rect, first_tail, first_head, indicator, cap_radius,
+                    scene,
+                    rect,
+                    first_tail,
+                    first_head,
+                    indicator,
+                    config.stroke_cap,
                 );
                 if first_tail > gap_fraction {
                     let start = if second_head > 0.0 {
@@ -440,7 +526,7 @@ pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicat
                     } else {
                         1.0
                     };
-                    draw_linear_progress_segment(scene, rect, start, end, track, cap_radius);
+                    draw_linear_progress_segment(scene, rect, start, end, track, config.stroke_cap);
                 }
                 draw_linear_progress_segment(
                     scene,
@@ -448,7 +534,7 @@ pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicat
                     second_tail,
                     second_head,
                     indicator,
-                    cap_radius,
+                    config.stroke_cap,
                 );
                 if second_tail > gap_fraction {
                     let end = if second_tail < 1.0 {
@@ -456,7 +542,7 @@ pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicat
                     } else {
                         1.0
                     };
-                    draw_linear_progress_segment(scene, rect, 0.0, end, track, cap_radius);
+                    draw_linear_progress_segment(scene, rect, 0.0, end, track, config.stroke_cap);
                 }
             }
         }))
@@ -478,6 +564,8 @@ pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicat
 mod tests {
     use super::*;
     use repose_core::locals::{Density, with_density};
+    use repose_core::runtime::ComposeGuard;
+    use repose_core::scope::Scope;
 
     #[test]
     fn circular_indeterminate_track_defaults_to_transparent() {
@@ -488,6 +576,51 @@ mod tests {
     }
 
     #[test]
+    fn circular_indeterminate_painter_omits_transparent_track() {
+        let scope = Scope::new();
+        let guard = ComposeGuard::begin();
+        scope.run(|| {
+            let view = CircularProgressIndicator(None, CircularProgressIndicatorConfig::default());
+            let painter = view.modifier.painter.as_ref().expect("progress painter");
+            let mut scene = Scene::default();
+            painter(
+                &mut scene,
+                Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 40.0,
+                    h: 40.0,
+                },
+                1.0,
+            );
+            let has_transparent_track = scene.nodes.iter().any(|node| {
+                matches!(
+                    node,
+                    SceneNode::Arc {
+                        brush: Brush::Solid(color),
+                        ..
+                    } if *color == Color::TRANSPARENT
+                )
+            });
+            assert!(!has_transparent_track);
+        });
+        drop(guard);
+        scope.dispose();
+    }
+
+    #[test]
+    fn circular_motion_uses_compose_keyframe_intervals() {
+        let additional = circular_additional_rotation_keyframes();
+        assert!((additional.evaluate(0.025) - 45.0).abs() < 0.001);
+        assert_eq!(additional.evaluate(0.05), 90.0);
+
+        let sweep = circular_sweep_keyframes();
+        assert!((sweep.evaluate(0.25) - 0.485).abs() < 0.001);
+        assert!((sweep.evaluate(0.5) - 0.87).abs() < 0.001);
+        assert!(sweep.evaluate(0.75) < 0.485);
+    }
+
+    #[test]
     fn linear_motion_uses_compose_delays() {
         let first_head = linear_progress_keyframe(0.0, 1000.0);
         let first_tail = linear_progress_keyframe(250.0, 1000.0);
@@ -495,12 +628,75 @@ mod tests {
         let second_tail = linear_progress_keyframe(900.0, 850.0);
         let total = LINEAR_INDETERMINATE_DURATION_MS;
         assert_eq!(first_head.evaluate(0.0), 0.0);
+        assert!(first_head.evaluate(500.0 / total) < 0.5);
         assert_eq!(first_tail.evaluate(250.0 / total), 0.0);
         assert!(first_tail.evaluate(1250.0 / total) > 0.0);
         assert_eq!(second_head.evaluate(650.0 / total), 0.0);
         assert!(second_head.evaluate(1500.0 / total) > 0.0);
         assert_eq!(second_tail.evaluate(900.0 / total), 0.0);
         assert!(second_tail.evaluate(1750.0 / total) > 0.0);
+    }
+
+    #[test]
+    fn circular_full_progress_preserves_reverse_track_sweep() {
+        let scope = Scope::new();
+        let guard = ComposeGuard::begin();
+        scope.run(|| {
+            let view =
+                CircularProgressIndicator(Some(1.0), CircularProgressIndicatorConfig::default());
+            let painter = view.modifier.painter.as_ref().expect("progress painter");
+            let mut scene = Scene::default();
+            painter(
+                &mut scene,
+                Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 40.0,
+                    h: 40.0,
+                },
+                1.0,
+            );
+            assert!(scene.nodes.iter().any(|node| {
+                matches!(
+                    node,
+                    SceneNode::Arc {
+                        sweep_angle,
+                        brush: Brush::Solid(color),
+                        ..
+                    } if *sweep_angle < 0.0 && *color != Color::TRANSPARENT
+                )
+            }));
+        });
+        drop(guard);
+        scope.dispose();
+    }
+
+    #[test]
+    fn linear_round_segment_uses_compose_cap_extents() {
+        let mut scene = Scene::default();
+        draw_linear_progress_segment(
+            &mut scene,
+            Rect {
+                x: 10.0,
+                y: 20.0,
+                w: 240.0,
+                h: 4.0,
+            },
+            0.0,
+            1.0,
+            Color::WHITE,
+            StrokeCap::Round,
+        );
+        let rect = scene
+            .nodes
+            .iter()
+            .find_map(|node| match node {
+                SceneNode::Rect { rect, .. } => Some(*rect),
+                _ => None,
+            })
+            .expect("progress segment");
+        assert_eq!(rect.x, 10.0);
+        assert_eq!(rect.w, 240.0);
     }
 
     #[test]
