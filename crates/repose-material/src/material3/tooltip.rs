@@ -132,6 +132,7 @@ impl TooltipConfig {
 /// dismissed (for actionable content). Mirrors Compose
 /// `TooltipState.isPersistent`.
 pub struct TooltipState {
+    id: u64,
     visible: Signal<bool>,
     persistent: bool,
     timer: RefCell<Option<timer::TimerHandle>>,
@@ -151,11 +152,16 @@ impl TooltipState {
 
     pub fn persistent(persistent: bool) -> Self {
         Self {
+            id: unique_component_id(),
             visible: signal(false),
             persistent,
             timer: RefCell::new(None),
             on_dismiss: RefCell::new(None),
         }
+    }
+
+    fn id(&self) -> u64 {
+        self.id
     }
 
     pub fn is_persistent(&self) -> bool {
@@ -603,7 +609,7 @@ pub fn TooltipBox(
 ) -> View {
     let overlay = ambient_overlay();
     let text: Rc<str> = Rc::from(text.into());
-    let id = remember(unique_component_id);
+    let id = state.id();
     let th = theme();
     let spec = th.motion.overlay;
 
@@ -616,12 +622,17 @@ pub fn TooltipBox(
     let current_config = remember_state_with_key(format!("tt_cfg_{id}"), || config.clone());
     *current_config.borrow_mut() = config.clone();
 
-    let anchor_rect = remember_state_with_key(format!("tt_anchor_{id}"), Rect::default);
+    let anchor_rect = remember_state_with_key(format!("tt_anchor_{id}"), || None::<Rect>);
     let popup_size = remember_state_with_key(format!("tt_popup_{id}"), || Vec2 { x: 0.0, y: 0.0 });
     let trigger = Box(Modifier::new().on_globally_positioned({
         let anchor_rect = anchor_rect.clone();
         move |rect| {
-            *anchor_rect.borrow_mut() = rect;
+            let mut slot = anchor_rect.borrow_mut();
+            if *slot != Some(rect) {
+                *slot = Some(rect);
+                drop(slot);
+                request_frame();
+            }
         }
     }))
     .child(content);
@@ -691,7 +702,9 @@ pub fn TooltipBox(
                     );
                     let body = current_body.borrow().clone();
                     let config = current_config.borrow().clone();
-                    let anchor = *anchor_rect.borrow();
+                    let Some(anchor) = *anchor_rect.borrow() else {
+                        return Box(Modifier::new());
+                    };
                     let win_w = get_window_container_width();
                     let win_h = get_window_container_height();
                     let measured = *popup_size.borrow();
