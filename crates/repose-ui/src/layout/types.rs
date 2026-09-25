@@ -79,6 +79,12 @@ pub struct LayoutEngine {
     /// ViewTree NodeId -> scope key for ALL nodes belonging to a scope.
     pub(crate) node_to_scope: FxHashMap<NodeId, String>,
 
+    pub(crate) scope_root_ids: FxHashMap<String, Vec<NodeId>>,
+    pub(crate) scope_maps_valid: bool,
+    pub(crate) scroll_node_ids: Vec<NodeId>,
+    pub(crate) deferred_z_cache: FxHashMap<NodeId, bool>,
+    pub(crate) transform_layer_cache: FxHashMap<NodeId, bool>,
+
     /// Cached text layouts for non-scope nodes (persists across frames).
     pub(crate) text_cache: FxHashMap<NodeId, TextLayout>,
 
@@ -116,6 +122,8 @@ pub struct LayoutEngine {
 
     /// Monotonic counter for graphics layer ids, assigned during paint.
     pub(crate) layer_id_counter: u32,
+
+    pub(crate) paint_generation: u64,
 
     /// Previous absolute rects for `on_globally_positioned` / `on_size_changed` callbacks.
     pub(crate) prev_observed_rects: FxHashMap<u64, repose_core::Rect>,
@@ -172,9 +180,10 @@ pub(crate) struct PaintCacheEntry {
     pub(crate) sem_parent: Option<u64>,
     pub(crate) alpha_q: u8,
     pub(crate) hit_context_key: u64,
+    pub(crate) paint_generation: u64,
     pub(crate) nodes: Rc<Vec<SceneNode>>,
     pub(crate) hits: Rc<Vec<HitRegion>>,
-    pub(crate) hit_metadata: Rc<Vec<Option<HitRegionMetadata>>>,
+    pub(crate) hit_metadata: Rc<Vec<Option<Arc<HitRegionMetadata>>>>,
     pub(crate) sems: Rc<Vec<SemNode>>,
 }
 

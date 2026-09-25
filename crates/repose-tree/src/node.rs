@@ -32,13 +32,28 @@ pub struct TreeNode {
     /// Parent node ID (None for root).
     pub parent: Option<NodeId>,
 
-    /// Hash of this node's content (kind + modifier + children structure).
-    /// Used for change detection.
+    /// Legacy aggregate hash of this node's immediate content.
     pub content_hash: u64,
 
-    /// Hash including all descendants.
-    /// If this matches, the entire subtree is unchanged.
+    /// Hash of values that can change layout.
+    pub layout_hash: u64,
+
+    /// Hash of values that can change text or intrinsic measurement.
+    pub measurement_hash: u64,
+
+    /// Hash of values that can change painting.
+    pub paint_hash: u64,
+
+    /// Hash of accessibility semantics.
+    pub semantics_hash: u64,
+
+    /// Legacy aggregate hash including all descendants.
     pub subtree_hash: u64,
+
+    pub layout_subtree_hash: u64,
+    pub measurement_subtree_hash: u64,
+    pub paint_subtree_hash: u64,
+    pub semantics_subtree_hash: u64,
 
     /// Cached layout result.
     pub layout_cache: Option<LayoutCache>,
@@ -75,7 +90,15 @@ impl TreeNode {
             children: SmallVec::new(),
             parent: None,
             content_hash: 0,
+            layout_hash: 0,
+            measurement_hash: 0,
+            paint_hash: 0,
+            semantics_hash: 0,
             subtree_hash: 0,
+            layout_subtree_hash: 0,
+            measurement_subtree_hash: 0,
+            paint_subtree_hash: 0,
+            semantics_subtree_hash: 0,
             layout_cache: None,
             generation,
             user_key: None,

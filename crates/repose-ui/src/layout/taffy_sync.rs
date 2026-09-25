@@ -2,6 +2,7 @@
 
 use repose_core::*;
 use repose_tree::{NodeId, TreeNode};
+use rustc_hash::FxHashSet;
 use taffy::TaffyTree;
 use taffy::prelude::*;
 use taffy::style::FlexDirection;
@@ -64,6 +65,8 @@ impl LayoutEngine {
     }
 
     pub(crate) fn sync_taffy_tree(&mut self, root_id: NodeId, font_px: &dyn Fn(Sp) -> f32) {
+        let mut updated_nodes = FxHashSet::default();
+
         // Removals from root tree (non-scope nodes + scope root markers)
         for &node_id in &self.tree.removed_ids {
             if self.node_to_scope.contains_key(&node_id) {
@@ -97,12 +100,12 @@ impl LayoutEngine {
             {
                 continue;
             }
-            self.update_taffy_node(node_id, font_px);
+            self.update_taffy_node(node_id, font_px, &mut updated_nodes);
         }
 
         // Ensure root
         if !self.taffy_map.contains_key(&root_id) {
-            self.update_taffy_node(root_id, font_px);
+            self.update_taffy_node(root_id, font_px, &mut updated_nodes);
         }
     }
 
@@ -110,7 +113,15 @@ impl LayoutEngine {
         &mut self,
         node_id: NodeId,
         font_px: &dyn Fn(Sp) -> f32,
+        updated_nodes: &mut FxHashSet<NodeId>,
     ) -> taffy::NodeId {
+        if updated_nodes.contains(&node_id)
+            && let Some(&taffy_id) = self.taffy_map.get(&node_id)
+        {
+            return taffy_id;
+        }
+        updated_nodes.insert(node_id);
+
         // Ensure this node has a stable view id
         let _ = self.ensure_view_id(node_id);
 
@@ -151,7 +162,7 @@ impl LayoutEngine {
 
         // Non-scope node: standard path
         if let Some(&t_id) = self.taffy_map.get(&node_id) {
-            self.apply_updates_to_taffy(node_id, t_id, font_px);
+            self.apply_updates_to_taffy(node_id, t_id, font_px, updated_nodes);
             return t_id;
         }
 
@@ -174,7 +185,7 @@ impl LayoutEngine {
 
         let child_taffy_ids: Vec<taffy::NodeId> = children
             .iter()
-            .map(|&child_id| self.update_taffy_node(child_id, font_px))
+            .map(|&child_id| self.update_taffy_node(child_id, font_px, updated_nodes))
             .collect();
 
         let t_id = if child_taffy_ids.is_empty() {
@@ -221,6 +232,7 @@ impl LayoutEngine {
         node_id: NodeId,
         taffy_id: taffy::NodeId,
         font_px: &dyn Fn(Sp) -> f32,
+        updated_nodes: &mut FxHashSet<NodeId>,
     ) {
         // Ensure this node has a stable view id
         let _ = self.ensure_view_id(node_id);
@@ -266,7 +278,7 @@ impl LayoutEngine {
 
         let child_taffy_ids: Vec<taffy::NodeId> = children
             .iter()
-            .map(|&child_id| self.update_taffy_node(child_id, font_px))
+            .map(|&child_id| self.update_taffy_node(child_id, font_px, updated_nodes))
             .collect();
         let _ = self.taffy.set_children(taffy_id, &child_taffy_ids);
 

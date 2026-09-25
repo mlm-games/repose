@@ -1,5 +1,6 @@
 #![allow(non_snake_case)]
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use repose_core::*;
@@ -9,17 +10,19 @@ use super::*;
 
 struct TimeParts {
     hour: Signal<u32>,
+    hour_normalizer: RefCell<Option<SubGuard<u32>>>,
 }
 
 fn install_hour_normalizer(parts: &Rc<TimeParts>) {
     let weak = Rc::downgrade(parts);
-    parts.hour.subscribe(move |hour| {
+    let hour_normalizer = parts.hour.subscribe_guard(move |hour| {
         let Some(parts) = weak.upgrade() else { return };
         let normalized = display_hour(*hour);
         if *hour != normalized {
             parts.hour.set_neq(normalized);
         }
     });
+    *parts.hour_normalizer.borrow_mut() = Some(hour_normalizer);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -42,7 +45,10 @@ impl TimePickerState {
         let hour = hour % 24;
         let is_am = hour < 12;
         let hour = signal(display_hour(hour));
-        let parts = Rc::new(TimeParts { hour: hour.clone() });
+        let parts = Rc::new(TimeParts {
+            hour: hour.clone(),
+            hour_normalizer: RefCell::new(None),
+        });
         install_hour_normalizer(&parts);
         Self {
             hour,

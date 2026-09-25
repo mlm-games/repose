@@ -13,7 +13,8 @@ fn call_tick(callback: &mut dyn FnMut() -> bool) -> bool {
 }
 
 thread_local! {
-    static REGISTRY: RefCell<Vec<(String, TickFn)>> = const { RefCell::new(Vec::new()) };
+    static REGISTRY: RefCell<FxHashMap<String, TickFn>> =
+        RefCell::new(FxHashMap::default());
     static OWNERS: RefCell<FxHashMap<String, FxHashSet<String>>> =
         RefCell::new(FxHashMap::default());
     static TOUCHED: RefCell<FxHashSet<String>> = RefCell::new(FxHashSet::default());
@@ -21,6 +22,8 @@ thread_local! {
         RefCell::new(FxHashSet::default());
     static PENDING_REGISTRATIONS: RefCell<Vec<(String, TickFn, String)>> =
         const { RefCell::new(Vec::new()) };
+    static REGISTRATION_GENERATIONS: RefCell<FxHashMap<String, u64>> =
+        RefCell::new(FxHashMap::default());
     static LIVE_EPOCH: Cell<u64> = const { Cell::new(0) };
     static TICKING: Cell<bool> = const { Cell::new(false) };
     static SHUTTING_DOWN: Cell<bool> = const { Cell::new(false) };
@@ -78,6 +81,31 @@ fn owner_list(key: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
+fn has_owner(key: &str) -> bool {
+    OWNERS
+        .try_with(|owners| {
+            owners
+                .try_borrow()
+                .ok()
+                .map(|owners| owners.get(key).is_some_and(|set| !set.is_empty()))
+        })
+        .ok()
+        .flatten()
+        .unwrap_or(false)
+}
+
+fn for_each_owner(key: &str, mut f: impl FnMut(&str)) {
+    let _ = OWNERS.try_with(|owners| {
+        if let Ok(owners) = owners.try_borrow()
+            && let Some(set) = owners.get(key)
+        {
+            for owner in set {
+                f(owner);
+            }
+        }
+    });
+}
+
 fn clear_key_state(key: &str) {
     let _ = TOUCHED.try_with(|touched| {
         if let Ok(mut touched) = touched.try_borrow_mut() {
@@ -94,17 +122,20 @@ fn clear_key_state(key: &str) {
             pending.retain(|(registered, _, _)| registered != key);
         }
     });
+    let _ = REGISTRATION_GENERATIONS.try_with(|generations| {
+        if let Ok(mut generations) = generations.try_borrow_mut() {
+            generations.remove(key);
+        }
+    });
 }
 
 fn remove_empty_registration(key: &str) {
     let removed = REGISTRY
         .try_with(|registry| {
-            registry.try_borrow_mut().ok().and_then(|mut registry| {
-                let position = registry
-                    .iter()
-                    .position(|(registered, _)| registered == key);
-                position.map(|index| registry.remove(index).1)
-            })
+            registry
+                .try_borrow_mut()
+                .ok()
+                .and_then(|mut registry| registry.remove(key))
         })
         .ok()
         .flatten();
@@ -185,42 +216,38 @@ fn register_for_owner(key: String, tick: TickFn, owner: String) {
         return;
     }
     let current = current_scope();
-    let (old, changed) = REGISTRY
+    let (old, changed, same) = REGISTRY
         .try_with(|registry| match registry.try_borrow_mut() {
             Ok(mut registry) => {
-                let position = registry
-                    .iter()
-                    .position(|(registered, _)| registered == &key);
-                if let Some(index) = position {
-                    if Rc::ptr_eq(&registry[index].1, &tick) {
-                        (None, false)
-                    } else {
-                        let old = registry.remove(index);
-                        registry.push((key.clone(), tick.clone()));
-                        (Some(old.1), true)
-                    }
+                let same = registry
+                    .get(&key)
+                    .is_some_and(|registered| Rc::ptr_eq(registered, &tick));
+                bump_registration_generation(&key);
+                if same {
+                    (None, false, true)
                 } else {
-                    registry.push((key.clone(), tick.clone()));
-                    (None, true)
+                    let old = registry.insert(key.clone(), tick.clone());
+                    (old, true, false)
                 }
             }
             Err(_) => {
                 queue_registration(key.clone(), tick.clone(), owner.clone());
-                (None, false)
+                (None, false, false)
             }
         })
-        .unwrap_or((None, false));
+        .unwrap_or((None, false, false));
     drop(old);
     if changed || is_registered(&key) {
         add_owner(&key, &owner);
     }
+    let re_registered = same && TICKING.with(Cell::get);
     if let Some(scope) = current {
         crate::scope_cache::record_scope_animation_key(&key);
-        if changed {
+        if changed || re_registered {
             crate::scope_cache::mark_scope_dirty(&scope);
         }
     }
-    if changed {
+    if changed || re_registered {
         mark_touched(&key);
         LIVE_EPOCH.with(|epoch| epoch.set(epoch.get().wrapping_add(1)));
         request_frame();
@@ -278,12 +305,10 @@ pub fn unregister(key: &str) {
         release_owner(key, GLOBAL_OWNER);
     } else {
         let owners = owner_list(key);
-        if owners.len() == 1 {
-            release_owner(key, &owners[0]);
-        } else if owners.len() > 1 {
-            return;
-        } else {
-            remove_empty_registration(key);
+        match owners.len() {
+            1 => release_owner(key, &owners[0]),
+            0 => remove_empty_registration(key),
+            _ => {}
         }
     }
 }
@@ -319,7 +344,7 @@ pub fn is_registered(key: &str) -> bool {
         .try_with(|registry| {
             registry
                 .try_borrow()
-                .map(|registry| registry.iter().any(|(registered, _)| registered == key))
+                .map(|registry| registry.contains_key(key))
                 .unwrap_or(false)
         })
         .ok()
@@ -353,6 +378,19 @@ fn take_touched() -> Option<FxHashSet<String>> {
     Some(touched)
 }
 
+fn bump_registration_generation(key: &str) -> u64 {
+    REGISTRATION_GENERATIONS.with(|generations| {
+        let mut generations = generations.borrow_mut();
+        let generation = generations.entry(key.to_string()).or_insert(0);
+        *generation = generation.wrapping_add(1);
+        *generation
+    })
+}
+
+fn registration_generation(key: &str) -> Option<u64> {
+    REGISTRATION_GENERATIONS.with(|generations| generations.borrow().get(key).copied())
+}
+
 pub fn tick() -> bool {
     if SHUTTING_DOWN.with(Cell::get) {
         return false;
@@ -378,13 +416,13 @@ pub fn tick() -> bool {
         .try_with(|registry| match registry.try_borrow_mut() {
             Ok(mut registry) => {
                 let old = std::mem::take(&mut *registry);
-                let mut next = Vec::with_capacity(old.len());
+                let mut next = FxHashMap::default();
                 let mut removed = Vec::new();
-                for entry in old {
-                    if touched.contains(&entry.0) || !owner_list(&entry.0).is_empty() {
-                        next.push(entry);
+                for (key, tick) in old {
+                    if touched.contains(&key) || has_owner(&key) {
+                        next.insert(key, tick);
                     } else {
-                        removed.push(entry);
+                        removed.push(key);
                     }
                 }
                 *registry = next;
@@ -397,23 +435,29 @@ pub fn tick() -> bool {
         })
         .unwrap_or_default();
     let removed_any = !removed.is_empty();
-    let removed_keys: Vec<String> = removed.iter().map(|(key, _)| key.clone()).collect();
-    drop(removed);
-    for key in removed_keys {
+    for key in removed {
         let _ = OWNERS.try_with(|owners| {
             if let Ok(mut owners) = owners.try_borrow_mut() {
                 owners.remove(&key);
             }
         });
+        clear_key_state(&key);
     }
 
     let entries = REGISTRY
-        .try_with(|registry| registry.try_borrow().ok().map(|registry| registry.clone()))
+        .try_with(|registry| {
+            registry.try_borrow().ok().map(|registry| {
+                registry
+                    .iter()
+                    .map(|(key, tick)| (key.clone(), tick.clone(), registration_generation(key)))
+                    .collect::<Vec<_>>()
+            })
+        })
         .ok()
         .flatten()
         .unwrap_or_default();
     let mut results = Vec::with_capacity(entries.len());
-    for (key, tick_fn) in entries {
+    for (key, tick_fn, generation) in entries {
         let still = {
             let callback = tick_fn.try_borrow_mut();
             match callback {
@@ -427,32 +471,27 @@ pub fn tick() -> bool {
                 }
             }
         };
-        for owner in owner_list(&key) {
-            crate::scope_cache::mark_scope_dirty(&owner);
-        }
-        results.push((key, tick_fn, still));
+        for_each_owner(&key, |owner| crate::scope_cache::mark_scope_dirty(owner));
+        results.push((key, tick_fn, still, generation));
     }
 
+    let any_still = results.iter().any(|(_, _, still, _)| *still);
     let removed_after = REGISTRY
         .try_with(|registry| match registry.try_borrow_mut() {
             Ok(mut registry) => {
-                let old = std::mem::take(&mut *registry);
-                let mut next = Vec::with_capacity(old.len());
                 let mut removed = Vec::new();
-                for entry in old {
-                    let keep = results
-                        .iter()
-                        .find(|(key, callback, _)| {
-                            key == &entry.0 && Rc::ptr_eq(callback, &entry.1)
-                        })
-                        .is_none_or(|(_, _, still)| *still);
-                    if keep {
-                        next.push(entry);
-                    } else {
-                        removed.push(entry);
+                for (key, callback, still, generation) in &results {
+                    if *still {
+                        continue;
+                    }
+                    let matches_snapshot = registry
+                        .get(key)
+                        .is_some_and(|registered| Rc::ptr_eq(registered, callback))
+                        && registration_generation(key) == *generation;
+                    if matches_snapshot && let Some(removed_callback) = registry.remove(key) {
+                        removed.push((key.clone(), removed_callback));
                     }
                 }
-                *registry = next;
                 removed
             }
             Err(_) => {
@@ -462,18 +501,16 @@ pub fn tick() -> bool {
         })
         .unwrap_or_default();
     let removed_after_any = !removed_after.is_empty();
-    let removed_keys: Vec<String> = removed_after.iter().map(|(key, _)| key.clone()).collect();
-    drop(removed_after);
-    for key in removed_keys {
+    for (key, _) in &removed_after {
         let _ = OWNERS.try_with(|owners| {
             if let Ok(mut owners) = owners.try_borrow_mut() {
-                owners.remove(&key);
+                owners.remove(key);
             }
         });
-        clear_key_state(&key);
+        clear_key_state(key);
     }
+    drop(removed_after);
 
-    let any_still = results.iter().any(|(_, _, still)| *still);
     if any_still || removed_any || removed_after_any {
         LIVE_EPOCH.with(|epoch| epoch.set(epoch.get().wrapping_add(1)));
     }
@@ -548,11 +585,21 @@ pub fn shutdown() {
         })
         .ok()
         .flatten();
+    let registration_generations = REGISTRATION_GENERATIONS
+        .try_with(|generations| {
+            generations
+                .try_borrow_mut()
+                .ok()
+                .map(|mut generations| std::mem::take(&mut *generations))
+        })
+        .ok()
+        .flatten();
     drop(registry);
     drop(owners);
     drop(touched);
     drop(pending_touches);
     drop(pending_registrations);
+    drop(registration_generations);
     LIVE_EPOCH.with(|epoch| epoch.set(epoch.get().wrapping_add(1)));
     TICKING.with(|ticking| ticking.set(false));
     SHUTTING_DOWN.with(|shutting| shutting.set(false));

@@ -283,6 +283,174 @@ fn dialog_preview_key(
     }
 }
 
+struct PreparedDialog {
+    measure: View,
+    focus_probe: View,
+    platform: (Dp, Dp, PaddingValues),
+}
+
+fn same_platform_state(left: (Dp, Dp, PaddingValues), right: (Dp, Dp, PaddingValues)) -> bool {
+    left.0 == right.0
+        && left.1 == right.1
+        && left.2.left == right.2.left
+        && left.2.right == right.2.right
+        && left.2.top == right.2.top
+        && left.2.bottom == right.2.bottom
+}
+
+fn prepare_dialog(
+    props: Rc<RefCell<DialogProperties>>,
+    platform_state: Rc<RefCell<(Dp, Dp, PaddingValues)>>,
+    focus_requester: Rc<FocusRequester>,
+    focus_pending: Rc<Cell<bool>>,
+    focus_requested: Rc<Cell<bool>>,
+) -> PreparedDialog {
+    let platform = *platform_state.borrow();
+    let props_snapshot = props.borrow().clone();
+    let insets = window_insets();
+    let measure_key = {
+        use std::hash::{Hash, Hasher};
+        let mut hash = std::collections::hash_map::DefaultHasher::new();
+        props_snapshot.use_platform_default_width.hash(&mut hash);
+        props_snapshot.use_platform_insets.hash(&mut hash);
+        insets.left.to_bits().hash(&mut hash);
+        insets.right.to_bits().hash(&mut hash);
+        insets.top.to_bits().hash(&mut hash);
+        insets.bottom.to_bits().hash(&mut hash);
+        insets.ime_bottom.to_bits().hash(&mut hash);
+        hash.finish()
+    };
+    let measure_props = props.clone();
+    let measure_state = platform_state.clone();
+    let measure = box_with_constraints_with_key(
+        measure_key,
+        Modifier::new().fill_max_size().hit_passthrough(),
+        move |scope| {
+            let (use_platform_default_width, use_platform_insets) = {
+                let properties = measure_props.borrow();
+                (
+                    properties.use_platform_default_width,
+                    properties.use_platform_insets,
+                )
+            };
+            let mut pad = PaddingValues::default();
+            if use_platform_insets {
+                let insets = window_insets();
+                pad.left = Px(insets.left).to_dp();
+                pad.right = Px(insets.right).to_dp();
+                pad.top = Px(insets.top).to_dp();
+                pad.bottom = Px(insets.bottom).to_dp() + Px(insets.ime_bottom).to_dp();
+            }
+            let win_w = if scope.max_width.is_finite() && scope.max_width.0 > 10.0 {
+                scope.max_width
+            } else {
+                Dp(1280.0)
+            };
+            let win_h = if scope.max_height.is_finite() && scope.max_height.0 > 10.0 {
+                scope.max_height
+            } else {
+                Dp(800.0)
+            };
+            let avail_w = (win_w - pad.left - pad.right).max(Dp::ZERO);
+            let avail_h = (win_h - pad.top - pad.bottom).max(Dp::ZERO);
+            let platform_max_w = if use_platform_default_width {
+                preferred_dialog_width_dp(win_w, win_h)
+                    .min(avail_w)
+                    .min(super::DialogDefaults::MAX_WIDTH)
+            } else {
+                avail_w.min(super::DialogDefaults::MAX_WIDTH)
+            };
+            *measure_state.borrow_mut() = (platform_max_w, avail_h, pad);
+            Box(Modifier::new().size(Dp(0.0), Dp(0.0)))
+        },
+    );
+
+    let focus_probe = {
+        let focus_requester = focus_requester.clone();
+        let focus_pending = focus_pending.clone();
+        let focus_requested = focus_requested.clone();
+        Box(Modifier::new()
+            .size(Dp(0.0), Dp(0.0))
+            .hit_passthrough()
+            .on_globally_positioned(move |_| {
+                if focus_pending.get()
+                    && !focus_requested.get()
+                    && focus_requester.target.borrow().is_some()
+                {
+                    focus_requester.request_focus();
+                    focus_requested.set(true);
+                }
+            }))
+    };
+    PreparedDialog {
+        measure,
+        focus_probe,
+        platform,
+    }
+}
+
+fn build_dialog(
+    state: Rc<DialogState>,
+    content: View,
+    modifier: Modifier,
+    props: Rc<RefCell<DialogProperties>>,
+    platform: (Dp, Dp, PaddingValues),
+    scroll_state: Rc<repose_core::scroll::ScrollState>,
+    focus_requester: &FocusRequester,
+    focus_pending: Rc<Cell<bool>>,
+    th: Theme,
+) -> View {
+    let (platform_max_w, platform_max_h, _) = platform;
+    let mut content = content;
+    if !attach_focus_requester(&mut content, focus_requester, Some(&focus_pending)) {
+        let pending = focus_pending.clone();
+        content = Box(Modifier::new()
+            .focusable(true)
+            .focus_requester(focus_requester.clone())
+            .on_focus_changed(move |focused| {
+                if focused {
+                    pending.set(false);
+                }
+            }))
+        .child(content);
+    }
+
+    let axis_binding = match scroll_state.to_binding() {
+        repose_core::scroll::ScrollBinding::Vertical(binding) => binding,
+        _ => unreachable!(),
+    };
+    let scrollable_body = Box(Modifier::new()
+        .fill_max_width()
+        .max_height(platform_max_h)
+        .vertical_scroll(axis_binding))
+    .child(content);
+    let dialog_modifier = clamp_dialog_modifier(
+        Modifier::new()
+            .min_width(super::DialogDefaults::MIN_WIDTH)
+            .max_width(super::DialogDefaults::MAX_WIDTH)
+            .then(modifier)
+            .justify_content(JustifyContent::CENTER)
+            .background(th.surface_container_high)
+            .clip_rounded(th.shapes.extra_large)
+            .focus_group()
+            .clickable()
+            .focusable(true)
+            .semantics(Semantics {
+                role: Role::Dialog,
+                label: Some("Dialog".into()),
+                ..Default::default()
+            })
+            .on_preview_key_event({
+                let state = state.clone();
+                let props = props.clone();
+                move |event| dialog_preview_key(state.clone(), props.clone(), event)
+            }),
+        platform_max_w,
+        platform_max_h,
+    );
+    Box(dialog_modifier).child(scrollable_body)
+}
+
 /// A modal dialog rendered in the overlay layer with scrim and spring animation.
 ///
 /// Unlike the inline `AlertDialog`, this version renders outside the layout tree
@@ -316,6 +484,8 @@ pub fn Dialog(
 
     let current_modifier = remember_state_with_key(state.key("m"), Modifier::new);
     *current_modifier.borrow_mut() = modifier;
+    let current_theme = remember_state_with_key(state.key("theme"), theme);
+    *current_theme.borrow_mut() = theme();
 
     let scroll_state: Rc<repose_core::scroll::ScrollState> =
         remember_with_key(state.key("scroll"), repose_core::scroll::ScrollState::new);
@@ -369,6 +539,14 @@ pub fn Dialog(
         remember_with_key(state.key("plat"), || {
             RefCell::new(platform_dialog_state(&props.borrow()))
         });
+    let prepared = remember_with_key(state.key("prepared"), || {
+        RefCell::new(None::<PreparedDialog>)
+    });
+    let desired_platform = platform_dialog_state(&props.borrow());
+    let platform_changed = !same_platform_state(*platform_state.borrow(), desired_platform);
+    if platform_changed {
+        *platform_state.borrow_mut() = desired_platform;
+    }
 
     let spec = AnimationSpec::tween(Duration::from_millis(200), Easing::FastOutSlowIn);
     let anim_key = state.key("anim");
@@ -414,6 +592,26 @@ pub fn Dialog(
         request_frame();
     }
     let visible = visible_now || progress > 0.01;
+    let animation_active = anim.borrow().is_animating();
+    let platform_snapshot = *platform_state.borrow();
+    let prepared_snapshot = prepared.borrow().as_ref().map(|view| view.platform);
+    let needs_prepare = visible
+        && (prepared_snapshot.is_none()
+            || prepared_snapshot
+                .is_some_and(|snapshot| !same_platform_state(snapshot, platform_snapshot)));
+    if needs_prepare {
+        let prepared_view = prepare_dialog(
+            props.clone(),
+            platform_state.clone(),
+            focus_requester.clone(),
+            focus_pending.clone(),
+            focus_requested.clone(),
+        );
+        *prepared.borrow_mut() = Some(prepared_view);
+    }
+    if !visible && !animation_active {
+        prepared.borrow_mut().take();
+    }
 
     if visible {
         if overlay_guard.borrow().is_none()
@@ -422,9 +620,11 @@ pub fn Dialog(
             let builder: Rc<dyn Fn() -> View> = Rc::new({
                 let state = state.clone();
                 let anim = anim.clone();
-                let current_modifier = current_modifier.clone();
-                let current_content = current_content.clone();
                 let props = props.clone();
+                let prepared = prepared.clone();
+                let current_content = current_content.clone();
+                let current_modifier = current_modifier.clone();
+                let current_theme = current_theme.clone();
                 let scroll_state = scroll_state.clone();
                 let focus_requester = focus_requester.clone();
                 let focus_pending = focus_pending.clone();
@@ -432,115 +632,36 @@ pub fn Dialog(
                 move || {
                     let progress_outer = *anim.borrow().get();
                     let alpha_outer = progress_outer.min(1.0);
-                    let scrim_color = state
-                        .scrim_color
-                        .borrow()
-                        .clone()
-                        .unwrap_or_else(AlertDialogDefaults::scrim_color);
-                    let scrim_alpha = (scrim_color.3 as f32 / 255.0) * alpha_outer;
-                    let scrim = Box(Modifier::new()
-                        .fill_max_size()
-                        .background(scrim_color.with_alpha_f32(scrim_alpha.clamp(0.0, 1.0)))
-                        .focusable(false)
-                        .input_blocker()
-                        .on_scroll(|_| Vec2::default())
-                        .on_click({
-                            let s = state.clone();
-                            let props = props.clone();
-                            move || {
-                                let (dismiss, cb) = {
-                                    let p = props.borrow();
-                                    (p.dismiss_on_click_outside, p.on_dismiss_request.clone())
-                                };
-                                if dismiss {
-                                    if let Some(cb) = cb {
-                                        cb();
-                                    } else {
-                                        s.dismiss();
-                                    }
-                                }
-                            }
-                        }));
-
-                    let p_for_measure = props.clone();
-                    let platform_state_for_measure = platform_state.clone();
-                    let props_snap = p_for_measure.borrow().clone();
-                    let insets_snap = window_insets();
-                    let measure_key = {
-                        use std::hash::{Hash, Hasher};
-                        let mut h = std::collections::hash_map::DefaultHasher::new();
-                        props_snap.use_platform_default_width.hash(&mut h);
-                        props_snap.use_platform_insets.hash(&mut h);
-                        insets_snap.left.to_bits().hash(&mut h);
-                        insets_snap.right.to_bits().hash(&mut h);
-                        insets_snap.top.to_bits().hash(&mut h);
-                        insets_snap.bottom.to_bits().hash(&mut h);
-                        insets_snap.ime_bottom.to_bits().hash(&mut h);
-                        h.finish()
+                    let (measure, focus_probe, platform) = {
+                        let prepared_ref = prepared.borrow();
+                        let Some(prepared) = prepared_ref.as_ref() else {
+                            return Box(Modifier::new());
+                        };
+                        (
+                            prepared.measure.clone(),
+                            prepared.focus_probe.clone(),
+                            prepared.platform,
+                        )
                     };
-                    let measure = box_with_constraints_with_key(
-                        measure_key,
-                        Modifier::new().fill_max_size().hit_passthrough(),
-                        move |scope| {
-                            let p = p_for_measure.borrow().clone();
-                            let mut pad = PaddingValues::default();
-                            if p.use_platform_insets {
-                                let insets = window_insets();
-                                pad.left = Px(insets.left).to_dp();
-                                pad.right = Px(insets.right).to_dp();
-                                pad.top = Px(insets.top).to_dp();
-                                pad.bottom =
-                                    Px(insets.bottom).to_dp() + Px(insets.ime_bottom).to_dp();
-                            }
-                            let win_w = if scope.max_width.is_finite() && scope.max_width.0 > 10.0 {
-                                scope.max_width
-                            } else {
-                                Dp(1280.0)
-                            };
-                            let win_h = if scope.max_height.is_finite() && scope.max_height.0 > 10.0
-                            {
-                                scope.max_height
-                            } else {
-                                Dp(800.0)
-                            };
-                            let avail_w = (win_w - pad.left - pad.right).max(Dp::ZERO);
-                            let avail_h = (win_h - pad.top - pad.bottom).max(Dp::ZERO);
-                            let platform_max_w = if p.use_platform_default_width {
-                                preferred_dialog_width_dp(win_w, win_h)
-                                    .min(avail_w)
-                                    .min(super::DialogDefaults::MAX_WIDTH)
-                            } else {
-                                avail_w.min(super::DialogDefaults::MAX_WIDTH)
-                            };
-                            *platform_state_for_measure.borrow_mut() =
-                                (platform_max_w, avail_h, pad);
-                            Box(Modifier::new().size(Dp(0.0), Dp(0.0)))
-                        },
+                    let content = current_content.borrow().clone();
+                    let mut dialog = build_dialog(
+                        state.clone(),
+                        content,
+                        current_modifier.borrow().clone(),
+                        props.clone(),
+                        platform,
+                        scroll_state.clone(),
+                        focus_requester.as_ref(),
+                        focus_pending.clone(),
+                        *current_theme.borrow(),
                     );
+                    let mut animated_modifier = dialog.modifier.clone();
+                    animated_modifier.alpha = Some(alpha_outer);
+                    animated_modifier = animated_modifier
+                        .scale(0.8 + 0.2 * progress_outer)
+                        .transform_origin(0.5, 0.5);
+                    dialog.modifier = animated_modifier;
 
-                    let mut content = current_content.borrow().clone();
-                    let progress = *anim.borrow().get();
-                    let alpha = progress.min(1.0);
-                    let scale = 0.8 + 0.2 * progress;
-                    let th = theme();
-                    let content = if attach_focus_requester(
-                        &mut content,
-                        &focus_requester,
-                        Some(&focus_pending),
-                    ) {
-                        content
-                    } else {
-                        let focus_pending = focus_pending.clone();
-                        Box(Modifier::new()
-                            .focusable(true)
-                            .focus_requester((*focus_requester).clone())
-                            .on_focus_changed(move |focused| {
-                                if focused {
-                                    focus_pending.set(false);
-                                }
-                            }))
-                        .child(content)
-                    };
                     if focus_pending.get() && !focus_requested.get() {
                         if focus_requester.target.borrow().is_some() {
                             focus_requester.request_focus();
@@ -550,79 +671,45 @@ pub fn Dialog(
                         }
                     }
 
-                    {
-                        let current_props = props.borrow().clone();
-                        *platform_state.borrow_mut() = platform_dialog_state(&current_props);
-                    }
-                    let (platform_max_w, platform_max_h, pad) = *platform_state.borrow();
-
-                    let dialog_mod = clamp_dialog_modifier(
-                        Modifier::new()
-                            .min_width(super::DialogDefaults::MIN_WIDTH)
-                            .max_width(super::DialogDefaults::MAX_WIDTH)
-                            .then(current_modifier.borrow().clone())
-                            .justify_content(JustifyContent::CENTER)
-                            .background(th.surface_container_high)
-                            .clip_rounded(th.shapes.extra_large)
-                            .alpha(alpha)
-                            .scale(scale)
-                            .transform_origin(0.5, 0.5)
-                            .focus_group()
-                            .clickable()
-                            .focusable(true)
-                            .semantics(Semantics {
-                                role: Role::Dialog,
-                                label: Some("Dialog".into()),
-                                ..Default::default()
-                            })
-                            .on_preview_key_event({
-                                let s = state.clone();
-                                let p = props.clone();
-                                move |ke| dialog_preview_key(s.clone(), p.clone(), ke)
-                            }),
-                        platform_max_w,
-                        platform_max_h,
-                    );
-
-                    let axis_binding = match scroll_state.to_binding() {
-                        repose_core::scroll::ScrollBinding::Vertical(a) => a,
-                        _ => unreachable!(),
-                    };
-                    let scrollable_body = Box(Modifier::new()
-                        .fill_max_width()
-                        .max_height(platform_max_h)
-                        .vertical_scroll(axis_binding))
-                    .child(content);
-
-                    let dialog = Box(dialog_mod).child(scrollable_body);
-                    let focus_probe = {
-                        let focus_requester = focus_requester.clone();
-                        let focus_pending = focus_pending.clone();
-                        let focus_requested = focus_requested.clone();
-                        Box(Modifier::new()
-                            .size(Dp(0.0), Dp(0.0))
-                            .hit_passthrough()
-                            .on_globally_positioned(move |_| {
-                                if focus_pending.get()
-                                    && !focus_requested.get()
-                                    && focus_requester.target.borrow().is_some()
-                                {
-                                    focus_requester.request_focus();
-                                    focus_requested.set(true);
+                    let scrim_color = state
+                        .scrim_color
+                        .borrow()
+                        .clone()
+                        .unwrap_or_else(AlertDialogDefaults::scrim_color);
+                    let scrim = Box(Modifier::new()
+                        .fill_max_size()
+                        .background(scrim_color)
+                        .alpha(alpha_outer)
+                        .focusable(false)
+                        .input_blocker()
+                        .on_scroll(|_| Vec2::default())
+                        .on_click({
+                            let state = state.clone();
+                            let props = props.clone();
+                            move || {
+                                let (dismiss, callback) = {
+                                    let properties = props.borrow();
+                                    (
+                                        properties.dismiss_on_click_outside,
+                                        properties.on_dismiss_request.clone(),
+                                    )
+                                };
+                                if dismiss {
+                                    if let Some(callback) = callback {
+                                        callback();
+                                    } else {
+                                        state.dismiss();
+                                    }
                                 }
-                            }))
-                    };
-
+                            }
+                        }));
                     let dialog_container = Box(Modifier::new()
                         .fill_max_size()
-                        .padding_values(pad)
-                        // Safe centering: an oversized dialog stays reachable
-                        // instead of overflowing past both viewport edges.
+                        .padding_values(platform.2)
                         .justify_content(JustifyContent::SAFE_CENTER)
                         .align_items(AlignItems::SAFE_CENTER)
                         .hit_passthrough())
                     .child((dialog, focus_probe));
-
                     ZStack(Modifier::new().fill_max_size().absolute()).child((
                         scrim,
                         measure,

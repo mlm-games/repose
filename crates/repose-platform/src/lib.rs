@@ -3,7 +3,6 @@
 use accesskit_winit::Adapter;
 use repose_core::a11y::ReposeActionHandler;
 use repose_core::*;
-use std::cell::Cell;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use web_time::Instant;
@@ -221,20 +220,47 @@ pub fn run_desktop_app_with_config(
     use repose_core::a11y::A11yTree;
 
     struct ReposeActivationHandler {
-        initial_tree: Option<accesskit::TreeUpdate>,
+        active: Arc<AtomicBool>,
+        needs_full: Arc<AtomicBool>,
     }
 
     impl accesskit::ActivationHandler for ReposeActivationHandler {
         fn request_initial_tree(&mut self) -> Option<accesskit::TreeUpdate> {
-            self.initial_tree.take()
+            self.active.store(true, Ordering::Release);
+            self.needs_full.store(true, Ordering::Release);
+            wake_event_loop();
+            Some(A11yTree::initial_tree())
         }
     }
 
-    struct ReposeDeactivationHandler;
+    struct ReposeDeactivationHandler {
+        active: Arc<AtomicBool>,
+    }
 
     impl accesskit::DeactivationHandler for ReposeDeactivationHandler {
         fn deactivate_accessibility(&mut self) {
-            // Nothing to clean up for now
+            self.active.store(false, Ordering::Release);
+        }
+    }
+
+    #[derive(Clone, Copy, PartialEq)]
+    struct ImeState {
+        allowed: bool,
+        purpose: repose_core::ImePurposeHint,
+        auto_correct: bool,
+        capitalization: repose_core::KeyboardCapitalization,
+        cursor_area: Option<(f64, f64, f64, f64)>,
+    }
+
+    impl Default for ImeState {
+        fn default() -> Self {
+            Self {
+                allowed: false,
+                purpose: repose_core::ImePurposeHint::Normal,
+                auto_correct: true,
+                capitalization: repose_core::KeyboardCapitalization::Unspecified,
+                cursor_area: None,
+            }
         }
     }
 
@@ -246,7 +272,6 @@ pub fn run_desktop_app_with_config(
         rt: ReposeRuntime,
         inspector: Option<repose_devtools::Inspector>,
         msaa_samples: u32,
-        max_fps: Option<f32>,
         present_mode: PresentModePref,
         window_title: String,
         window_size: (u32, u32),
@@ -259,12 +284,13 @@ pub fn run_desktop_app_with_config(
         external_file_drag: bool,
         hovered_files: Vec<std::path::PathBuf>,
 
-        clipboard: Option<clipawl::Clipboard>,
         a11y: Box<dyn A11yBridge>,
 
         accesskit_adapter: Option<Adapter>,
         a11y_actions: Arc<Mutex<Vec<accesskit::ActionRequest>>>,
         a11y_tree: A11yTree,
+        a11y_active: Arc<AtomicBool>,
+        a11y_needs_full: Arc<AtomicBool>,
 
         // Last applied OS window theme (dark/light) to avoid spamming set_theme.
         last_window_theme: Option<bool>,
@@ -272,14 +298,12 @@ pub fn run_desktop_app_with_config(
         custom_cursor: Option<(u64, winit::window::CustomCursor)>,
         last_cursor_key: Option<(u8, u64)>,
 
-        last_redraw: Instant,
-        pending_redraw: bool,
+        frame_pacer: rc::FramePacer,
+        redraw_deferred: bool,
         occluded: bool,
         os_focused: bool,
         ime_output_allowed: bool,
-
-        // Tracks whether a redraw was requested by app code
-        redraw_requested: Cell<bool>,
+        ime_state: ImeState,
 
         // Shared touch-scroll / pinch / swipe gesture state (touchscreens)
         touch_gestures: rc::TouchGestureState,
@@ -338,7 +362,6 @@ pub fn run_desktop_app_with_config(
                     None
                 },
                 msaa_samples: config.common.msaa_samples,
-                max_fps: config.common.max_fps,
                 present_mode: config.common.present_mode,
                 window_title: config.window_title,
                 window_size: config.window_size,
@@ -348,7 +371,6 @@ pub fn run_desktop_app_with_config(
                 external_file_drag: false,
                 hovered_files: Vec::new(),
 
-                clipboard: None,
                 a11y: {
                     #[cfg(target_os = "linux")]
                     {
@@ -363,16 +385,18 @@ pub fn run_desktop_app_with_config(
                 accesskit_adapter: None,
                 a11y_actions: Arc::new(Mutex::new(Vec::new())),
                 a11y_tree: A11yTree::default(),
+                a11y_active: Arc::new(AtomicBool::new(false)),
+                a11y_needs_full: Arc::new(AtomicBool::new(false)),
 
-                last_redraw: Instant::now(),
-                pending_redraw: false,
+                frame_pacer: rc::FramePacer::new(config.common.max_fps),
+                redraw_deferred: false,
                 occluded: false,
                 os_focused: true,
                 ime_output_allowed: false,
+                ime_state: ImeState::default(),
                 last_window_theme: None,
                 custom_cursor: None,
                 last_cursor_key: None,
-                redraw_requested: Cell::new(false),
                 touch_gestures: rc::TouchGestureState::default(),
                 gamepad: gamepad::create_backend()
                     .map(|b| Box::new(b) as Box<dyn gamepad::GamepadBackend>),
@@ -380,9 +404,7 @@ pub fn run_desktop_app_with_config(
         }
 
         fn request_redraw(&self) {
-            self.redraw_requested.set(true);
             repose_core::request_frame();
-            rc::request_redraw(&self.window);
         }
 
         fn ime_allowed_for_frame(&self, frame: &repose_core::runtime::Frame) -> bool {
@@ -415,38 +437,65 @@ pub fn run_desktop_app_with_config(
         }
 
         fn sync_ime_for_focus(&mut self) {
+            let hit = self.rt.frame_cache.as_ref().and_then(|frame| {
+                (self.ime_allowed_for_frame(frame))
+                    .then(|| {
+                        self.rt.sched.focused.and_then(|id| {
+                            rc::editable_textfield_hit(
+                                &frame.hit_regions,
+                                &frame.semantics_nodes,
+                                id,
+                            )
+                        })
+                    })
+                    .flatten()
+            });
+            let state = match hit {
+                Some(hit) => {
+                    let scale = self.window.as_ref().map(|window| window.scale_factor());
+                    ImeState {
+                        allowed: true,
+                        purpose: hit.keyboard_type.ime_purpose_hint(),
+                        auto_correct: hit.auto_correct.unwrap_or(true),
+                        capitalization: hit.capitalization,
+                        cursor_area: scale.map(|scale| {
+                            (
+                                hit.rect.x as f64 / scale,
+                                hit.rect.y as f64 / scale,
+                                hit.rect.w as f64 / scale,
+                                hit.rect.h as f64 / scale,
+                            )
+                        }),
+                    }
+                }
+                None => ImeState::default(),
+            };
+            self.apply_ime_state(state);
+        }
+
+        fn apply_ime_state(&mut self, state: ImeState) {
+            if self.ime_state == state {
+                return;
+            }
             let Some(window) = self.window.clone() else {
                 return;
             };
-            let allowed = self
-                .rt
-                .frame_cache
-                .as_ref()
-                .is_some_and(|frame| self.ime_allowed_for_frame(frame));
-            if allowed {
-                let hit = self.rt.frame_cache.as_ref().and_then(|frame| {
-                    self.rt.sched.focused.and_then(|id| {
-                        rc::editable_textfield_hit(&frame.hit_regions, &frame.semantics_nodes, id)
-                    })
-                });
-                if let Some(hit) = hit {
-                    rc::set_ime_for_textfield_ex(
-                        &window,
-                        true,
-                        hit.keyboard_type.ime_purpose_hint(),
-                        hit.auto_correct.unwrap_or(true),
-                        hit.capitalization,
-                    );
-                    let scale = window.scale_factor();
-                    window.set_ime_cursor_area(
-                        LogicalPosition::new(hit.rect.x as f64 / scale, hit.rect.y as f64 / scale),
-                        LogicalSize::new(hit.rect.w as f64 / scale, hit.rect.h as f64 / scale),
-                    );
-                    return;
+            self.ime_state = state;
+            if state.allowed {
+                rc::set_ime_for_textfield_ex(
+                    &window,
+                    true,
+                    state.purpose,
+                    state.auto_correct,
+                    state.capitalization,
+                );
+                if let Some((x, y, w, h)) = state.cursor_area {
+                    window.set_ime_cursor_area(LogicalPosition::new(x, y), LogicalSize::new(w, h));
                 }
+            } else {
+                rc::set_ime_for_textfield(&window, false);
+                self.rt.finish_compositions();
             }
-            rc::set_ime_for_textfield(&window, false);
-            self.rt.finish_compositions();
         }
 
         fn dispatch_action(&mut self, action: repose_core::shortcuts::Action) -> bool {
@@ -455,18 +504,6 @@ pub fn run_desktop_app_with_config(
                 return true;
             }
             false
-        }
-
-        /// Minimum time between CPU-side redraw requests derived from
-        /// `max_fps`. `Duration::ZERO` means uncapped (redraw immediately).
-        fn frame_interval(&self) -> web_time::Duration {
-            match self.max_fps.filter(|f| *f > 0.0) {
-                Some(fps) => {
-                    let secs = (1.0 / fps as f64).clamp(0.0, 1.0);
-                    web_time::Duration::from_secs_f64(secs)
-                }
-                None => web_time::Duration::ZERO,
-            }
         }
 
         fn paste_from_primary(&self) -> Option<String> {
@@ -623,9 +660,7 @@ pub fn run_desktop_app_with_config(
             self.rt.key_pressed_active = None;
             self.external_file_drag = false;
             self.hovered_files.clear();
-            if let Some(window) = &self.window {
-                rc::set_ime_for_textfield(window, false);
-            }
+            self.apply_ime_state(ImeState::default());
         }
 
         fn reset_pointer_state(&mut self) {
@@ -642,7 +677,7 @@ pub fn run_desktop_app_with_config(
             self.occluded = false;
             WINDOW_OCCLUDED.store(false, Ordering::Relaxed);
             self.rt.sched.window_focused = self.os_focused;
-            self.clipboard = rc::setup_clipboard();
+            let _ = rc::setup_clipboard();
 
             if self.window.is_none() {
                 match el.create_window(
@@ -655,14 +690,17 @@ pub fn run_desktop_app_with_config(
                         let w = Arc::new(win);
 
                         let activation_handler = ReposeActivationHandler {
-                            initial_tree: Some(A11yTree::initial_tree()),
+                            active: self.a11y_active.clone(),
+                            needs_full: self.a11y_needs_full.clone(),
                         };
 
                         let action_handler = ReposeActionHandler {
                             pending_actions: self.a11y_actions.clone(),
                         };
 
-                        let deactivation_handler = ReposeDeactivationHandler;
+                        let deactivation_handler = ReposeDeactivationHandler {
+                            active: self.a11y_active.clone(),
+                        };
 
                         let adapter = Adapter::with_direct_handlers(
                             el,
@@ -1145,42 +1183,67 @@ pub fn run_desktop_app_with_config(
                     // Allow media (etc.) to queue texture uploads without compose.
                     crate::run_pre_redraw(&self.render);
 
-                    // 1. Check our redraw flag before processing a11y.
-                    if !self.redraw_requested.replace(false) {
-                        self.process_a11y_actions();
-                        self.process_render_commands();
-                        // Present-only: redraw last cached scene with updated textures
+                    let now = Instant::now();
+                    let has_frame = self.rt.frame_cache.is_some();
+                    if (has_frame || repose_core::frame_clock::peek_frame_request())
+                        && !self.frame_pacer.due(now)
+                    {
+                        self.redraw_deferred = true;
+                        if let Some(deadline) = self.frame_pacer.deadline(now) {
+                            el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
+                                deadline,
+                            ));
+                        }
+                        return;
+                    }
+                    self.redraw_deferred = false;
+                    let compose_requested = take_frame_request();
+
+                    self.process_a11y_actions();
+                    self.process_render_commands();
+
+                    let Some(win) = self.window.clone() else {
+                        return;
+                    };
+                    if !compose_requested {
                         if let (Some(backend), Some(frame)) =
                             (self.backend.as_mut(), self.rt.frame_cache.as_ref())
                         {
-                            let scale = self
-                                .window
+                            let scale = win.scale_factor() as f32;
+                            let inspector_active = self
+                                .inspector
                                 .as_ref()
-                                .map(|w| w.scale_factor() as f32)
-                                .unwrap_or(1.0);
-                            let mut scene = frame.scene.clone();
-                            if let Some(inspector) = &mut self.inspector {
-                                inspector.frame(&mut scene);
+                                .is_some_and(|inspector| inspector.hud.inspector_enabled);
+                            let _dnd_guard = self.rt.dnd_context.enter();
+                            let drag_active =
+                                repose_core::dnd::is_dragging() || self.external_file_drag;
+                            let mut overlay =
+                                (inspector_active || drag_active).then(|| frame.scene.clone());
+                            if let Some(scene) = &mut overlay {
+                                if let Some(inspector) = &mut self.inspector {
+                                    inspector.frame(scene);
+                                }
+                                repose_core::dnd::overlay_drag_indicator(
+                                    scene,
+                                    self.rt.mouse_pos_px,
+                                    self.external_file_drag,
+                                );
                             }
-                            backend.frame(
-                                &scene,
+                            let _ = take_present_request();
+                            let presented = backend.frame(
+                                overlay.as_ref().unwrap_or(&frame.scene),
                                 GlyphRasterConfig {
                                     px: Px(18.0 * scale),
                                 },
                             );
+                            if presented {
+                                self.frame_pacer.rendered(Instant::now());
+                            }
                         }
-                        log::trace!("RedrawRequested: no frame request, skipping compose");
                         return;
                     }
                     log::trace!("RedrawRequested: frame request pending, composing");
 
-                    // 2. Process a11y actions and render commands before compose.
-                    self.process_a11y_actions();
-                    self.process_render_commands();
-
-                    let Some(win) = self.window.as_ref() else {
-                        return;
-                    };
                     if self.backend.is_none() {
                         return;
                     }
@@ -1223,45 +1286,49 @@ pub fn run_desktop_app_with_config(
                         &output.semantics_nodes,
                         output.platform.ime_allowed,
                     );
-                    if ime_allowed {
-                        rc::set_ime_for_textfield_ex(
-                            win,
-                            true,
-                            output.platform.ime_purpose,
-                            output.platform.ime_auto_correct,
-                            output.platform.ime_capitalization,
-                        );
-                        if let Some((x, y, w, h)) = output.platform.ime_cursor_area {
-                            win.set_ime_cursor_area(
-                                LogicalPosition::new(x, y),
-                                LogicalSize::new(w, h),
-                            );
+                    self.apply_ime_state(if ime_allowed {
+                        ImeState {
+                            allowed: true,
+                            purpose: output.platform.ime_purpose,
+                            auto_correct: output.platform.ime_auto_correct,
+                            capitalization: output.platform.ime_capitalization,
+                            cursor_area: output.platform.ime_cursor_area,
                         }
                     } else {
-                        rc::set_ime_for_textfield(win, false);
-                        self.rt.finish_compositions();
-                    }
+                        ImeState::default()
+                    });
 
-                    let frame = output.into_frame();
+                    let frame = output.into_shared_frame();
 
                     let build_layout_ms = (Instant::now() - t0).as_secs_f32() * 1000.0;
 
-                    // UPDATE ACCESSIBILITY TREE
-                    if let (Some(adapter), Some(win)) = (&mut self.accesskit_adapter, &self.window)
-                    {
-                        let scale = win.scale_factor();
-                        if let Some(update) = self.a11y_tree.update(
-                            &frame.semantics_nodes,
-                            scale,
-                            self.rt.sched.focused,
-                        ) {
-                            adapter.update_if_active(|| update);
+                    if self.a11y_active.load(Ordering::Acquire) {
+                        if self.a11y_needs_full.swap(false, Ordering::AcqRel) {
+                            self.a11y_tree = A11yTree::default();
+                        }
+                        if let Some(adapter) = &mut self.accesskit_adapter {
+                            let scale = win.scale_factor();
+                            if let Some(update) = self.a11y_tree.update(
+                                &frame.semantics_nodes,
+                                scale,
+                                self.rt.sched.focused,
+                            ) {
+                                adapter.update_if_active(|| update);
+                            }
                         }
                     }
 
-                    // Render
-                    let mut scene = frame.scene.clone();
-                    // Update HUD metrics before overlay draws
+                    self.rt.after_compose_shared(frame.clone(), scale);
+
+                    let inspector_active = self
+                        .inspector
+                        .as_ref()
+                        .is_some_and(|inspector| inspector.hud.inspector_enabled);
+                    let _dnd_guard = self.rt.dnd_context.enter();
+                    let drag_active = repose_core::dnd::is_dragging() || self.external_file_drag;
+                    let mut overlay =
+                        (inspector_active || drag_active).then(|| frame.scene.clone());
+                    let scene = overlay.as_ref().unwrap_or(&frame.scene);
                     if let Some(inspector) = &mut self.inspector {
                         let widget_count = frame.semantics_nodes.len() + frame.hit_regions.len();
                         let signal_count = self.rt.sched.id_count() as usize;
@@ -1281,48 +1348,42 @@ pub fn run_desktop_app_with_config(
                             paint_cache_misses: ls.paint_cache_misses,
                             paint_culled: ls.paint_culled,
                         });
-                        inspector.frame(&mut scene);
+                        if let Some(scene) = &mut overlay {
+                            inspector.frame(scene);
+                        }
                     }
-
-                    // Drag indicator overlay (internal + file drop)
-                    let _dnd_guard = self.rt.dnd_context.enter();
-                    repose_core::dnd::overlay_drag_indicator(
-                        &mut scene,
-                        self.rt.mouse_pos_px,
-                        self.external_file_drag,
-                    );
+                    if let Some(scene) = &mut overlay {
+                        repose_core::dnd::overlay_drag_indicator(
+                            scene,
+                            self.rt.mouse_pos_px,
+                            self.external_file_drag,
+                        );
+                    }
 
                     // Drain upload commands queued during compose (e.g. VideoSink set_image_*)
                     // before presenting to avoid 1-frame GPU texture lag.
                     self.process_render_commands();
 
-                    // Now borrow backend mutably only for the frame() call
-                    let Some(win) = self.window.as_ref() else {
-                        return;
-                    };
-                    let scale = win.scale_factor() as f32;
-                    if let Some(backend) = self.backend.as_mut() {
+                    let _ = take_present_request();
+                    let presented = if let Some(backend) = self.backend.as_mut() {
                         backend.frame(
-                            &scene,
+                            overlay.as_ref().unwrap_or(&frame.scene),
                             GlyphRasterConfig {
                                 px: Px(18.0 * scale),
                             },
-                        );
-                    }
+                        )
+                    } else {
+                        false
+                    };
 
-                    // Initialize TextFieldState for any focused TextField that
-                    // doesn't have one yet (e.g. after FocusRequester::request_focus),
-                    // reconcile hover, and publish the DnD frame/scale.
-                    self.rt.after_compose(&frame, scale);
-
-                    // NOTE: hover was already reconciled inside `compose()`.
-                    // `cache_frame` rebuilds the retained hover-leave map.
                     self.rt.cache_frame(frame);
 
                     self.dispatch_file_drop_now();
 
                     self.rt.tick_overlays();
-                    self.last_redraw = Instant::now();
+                    if presented {
+                        self.frame_pacer.rendered(Instant::now());
+                    }
                 }
 
                 _ => {}
@@ -1400,61 +1461,78 @@ pub fn run_desktop_app_with_config(
                 }
             }
 
-            let needs_compose = take_frame_request();
-            let needs_present = take_present_request();
-
-            if needs_compose {
-                self.pending_redraw = true;
-            }
-
-            // Present-only: texture was updated, redraw last cached scene without compose.
-            if !self.pending_redraw && needs_present && self.rt.frame_cache.is_some() {
+            if self.redraw_deferred {
                 let now = Instant::now();
-                let interval = self.frame_interval();
-                if now.saturating_duration_since(self.last_redraw) >= interval {
+                if self.frame_pacer.due(now) {
+                    self.redraw_deferred = false;
                     rc::request_redraw(&self.window);
-                    self.last_redraw = now;
+                } else if let Some(deadline) = self.frame_pacer.deadline(now) {
+                    el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(deadline));
                 } else {
-                    el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
-                        self.last_redraw + interval,
-                    ));
-                }
-                return;
-            }
-
-            if !self.pending_redraw {
-                let now = Instant::now();
-                let idle_cap = web_time::Duration::from_millis(1000);
-                let deadline = self.rt.next_frame_deadline(now, idle_cap);
-
-                if now.saturating_duration_since(self.last_redraw) >= idle_cap
-                    || self.rt.is_wakeup_due(now)
-                {
-                    self.redraw_requested.set(true);
-                    request_frame();
+                    self.redraw_deferred = false;
                     rc::request_redraw(&self.window);
-                    self.last_redraw = now;
                 }
-                el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(Ord::min(
-                    deadline,
-                    now + idle_cap,
-                )));
                 return;
             }
 
             let now = Instant::now();
-            let interval = self.frame_interval();
-
-            if now.saturating_duration_since(self.last_redraw) >= interval {
-                self.pending_redraw = false;
-                self.redraw_requested.set(true);
-                rc::request_redraw(&self.window);
-                self.last_redraw = now;
-            } else {
-                el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
-                    self.last_redraw + interval,
-                ));
+            let idle_cap = web_time::Duration::from_millis(1000);
+            let idle_deadline = now + idle_cap;
+            let wakeup_due = self.rt.is_wakeup_due(now);
+            if wakeup_due
+                || self.frame_pacer.idle_due(now, idle_cap)
+                || repose_core::animation_driver::is_active()
+                || (self.a11y_active.load(Ordering::Acquire)
+                    && self.a11y_needs_full.load(Ordering::Acquire))
+            {
+                request_frame();
             }
+
+            let wakeup_deadline = self
+                .rt
+                .next_wakeup_deadline()
+                .filter(|deadline| *deadline > now);
+            if wakeup_due {
+                rc::request_redraw(&self.window);
+                return;
+            }
+
+            let compose_requested = repose_core::frame_clock::peek_frame_request();
+            let present_requested = repose_core::frame_clock::peek_present_request();
+            if compose_requested {
+                if self.frame_pacer.due(now) {
+                    rc::request_redraw(&self.window);
+                } else if let Some(deadline) = self
+                    .frame_pacer
+                    .deadline(now)
+                    .into_iter()
+                    .chain(wakeup_deadline)
+                    .chain(Some(idle_deadline))
+                    .min()
+                {
+                    el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(deadline));
+                }
+                return;
+            }
+
+            if present_requested && self.rt.frame_cache.is_some() {
+                if self.frame_pacer.due(now) {
+                    rc::request_redraw(&self.window);
+                } else if let Some(deadline) = self
+                    .frame_pacer
+                    .deadline(now)
+                    .into_iter()
+                    .chain(wakeup_deadline)
+                    .chain(Some(idle_deadline))
+                    .min()
+                {
+                    el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(deadline));
+                }
+                return;
+            }
+
+            let deadline = wakeup_deadline.unwrap_or(idle_deadline);
+            el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(deadline));
         }
 
         fn new_events(
@@ -1464,7 +1542,7 @@ pub fn run_desktop_app_with_config(
         ) {
         }
         fn user_event(&mut self, _: &winit::event_loop::ActiveEventLoop, _: ()) {
-            self.pending_redraw = true;
+            request_frame();
         }
         fn device_event(
             &mut self,
@@ -1479,6 +1557,8 @@ pub fn run_desktop_app_with_config(
             push_runtime_window_lifecycle(&mut self.rt, false);
         }
         fn exiting(&mut self, _: &winit::event_loop::ActiveEventLoop) {
+            #[cfg(not(target_arch = "wasm32"))]
+            rc::flush_clipboard_writes();
             repose_core::shutdown_composition();
         }
         fn memory_warning(&mut self, _: &winit::event_loop::ActiveEventLoop) {

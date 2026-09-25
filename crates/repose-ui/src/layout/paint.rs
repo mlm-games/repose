@@ -39,20 +39,22 @@ struct PaintedDeferred {
 }
 
 impl LayoutEngine {
-    pub(crate) fn walk_tick(&self, root_id: NodeId) {
-        let mut stack = vec![root_id];
-        while let Some(id) = stack.pop() {
-            let Some(n) = self.tree.get(id) else { continue };
-            let scroll_tick = n.modifier.scroll.as_ref().and_then(|s| match s {
-                ScrollBinding::Vertical(b) => b.tick.clone(),
-                ScrollBinding::Horizontal(b) => b.tick.clone(),
-                ScrollBinding::Both(b) => b.tick.clone(),
-            });
-            if let Some(tick) = scroll_tick {
+    pub(crate) fn walk_tick(&self, _root_id: NodeId) {
+        for &id in &self.scroll_node_ids {
+            let Some(node) = self.tree.get(id) else {
+                continue;
+            };
+            let tick = node
+                .modifier
+                .scroll
+                .as_ref()
+                .and_then(|scroll| match scroll {
+                    ScrollBinding::Vertical(binding) => binding.tick.as_ref(),
+                    ScrollBinding::Horizontal(binding) => binding.tick.as_ref(),
+                    ScrollBinding::Both(binding) => binding.tick.as_ref(),
+                });
+            if let Some(tick) = tick {
                 tick();
-            }
-            for &ch in n.children.iter() {
-                stack.push(ch);
             }
         }
     }
@@ -99,12 +101,12 @@ impl LayoutEngine {
         let mut next_order = pending.len();
         let mut painted = Vec::new();
         while !pending.is_empty() {
-            pending.sort_by(|a, b| {
-                a.z.partial_cmp(&b.z)
+            pending.sort_unstable_by(|a, b| {
+                b.z.partial_cmp(&a.z)
                     .unwrap_or(Ordering::Equal)
-                    .then_with(|| a.order.cmp(&b.order))
+                    .then_with(|| b.order.cmp(&a.order))
             });
-            let item = pending.remove(0);
+            let item = pending.pop().expect("deferred queue is non-empty");
             self.focus_group_stack = item.focus_group_stack.clone();
             let mut nested = Vec::new();
             let mut local_scene = Scene {
@@ -181,33 +183,28 @@ impl LayoutEngine {
         sems.extend(before_sems);
         sems.extend(after_sems);
 
-        hits.sort_by(|a, b| a.z_index.partial_cmp(&b.z_index).unwrap_or(Ordering::Equal));
+        if !hits.is_empty() {
+            hits.sort_by(|a, b| a.z_index.partial_cmp(&b.z_index).unwrap_or(Ordering::Equal));
 
-        {
-            let mut parent_view: FxHashMap<u64, Option<u64>> = FxHashMap::default();
+            let hit_ids: FxHashSet<u64> = hits.iter().map(|hit| hit.id).collect();
+            let mut parents: FxHashMap<u64, Option<u64>> = FxHashMap::default();
             let mut stack: Vec<(NodeId, Option<u64>)> = vec![(root_id, None)];
-            while let Some((id, pvid)) = stack.pop() {
-                let vid = self.view_ids.get(&id).copied().unwrap_or(0);
-                if vid != 0 {
-                    parent_view.insert(vid, pvid);
-                }
+            while let Some((id, nearest_hit)) = stack.pop() {
+                let view_id = self.view_ids.get(&id).copied().unwrap_or(0);
+                let next_nearest = if view_id != 0 && hit_ids.contains(&view_id) {
+                    parents.insert(view_id, nearest_hit);
+                    Some(view_id)
+                } else {
+                    nearest_hit
+                };
                 if let Some(node) = self.tree.get(id) {
                     for &child in node.children.iter() {
-                        stack.push((child, (vid != 0).then_some(vid)));
+                        stack.push((child, next_nearest));
                     }
                 }
             }
-            let hit_ids: FxHashSet<u64> = hits.iter().map(|h| h.id).collect();
-            for h in hits.iter_mut() {
-                h.parent = None;
-                let mut cur = h.id;
-                while let Some(p) = parent_view.get(&cur).copied().flatten() {
-                    if hit_ids.contains(&p) {
-                        h.parent = Some(p);
-                        break;
-                    }
-                    cur = p;
-                }
+            for hit in &mut hits {
+                hit.parent = parents.get(&hit.id).copied().flatten();
             }
         }
 
@@ -248,132 +245,57 @@ impl LayoutEngine {
         {
             let mut cur = self.tree.get(root).and_then(|n| n.parent);
             while let Some(pid) = cur {
-                if let Some(pnode) = self.tree.get(pid) {
-                    format!("{:?}", pnode.kind).hash(&mut h);
-                    format!("{:?}", pnode.modifier).hash(&mut h);
-                    if let Some(tf) = &pnode.modifier.transform {
-                        tf.scale_x.to_bits().hash(&mut h);
-                        tf.scale_y.to_bits().hash(&mut h);
-                        tf.translate_x.to_bits().hash(&mut h);
-                        tf.translate_y.to_bits().hash(&mut h);
-                        tf.rotate.to_bits().hash(&mut h);
-                        tf.shear_x.to_bits().hash(&mut h);
-                        tf.shear_y.to_bits().hash(&mut h);
-                        tf.origin_x.to_bits().hash(&mut h);
-                        tf.origin_y.to_bits().hash(&mut h);
-                        tf.perspective[0].to_bits().hash(&mut h);
-                        tf.perspective[1].to_bits().hash(&mut h);
-                        tf.perspective[2].to_bits().hash(&mut h);
-                    }
-                    if let Some(a) = pnode.modifier.alpha {
-                        a.to_bits().hash(&mut h);
-                    }
-                    if let Some(g) = pnode.modifier.graphics_layer {
-                        g.to_bits().hash(&mut h);
-                    }
-                    cur = pnode.parent;
-                } else {
+                let Some(pnode) = self.tree.get(pid) else {
                     break;
+                };
+                pnode.content_hash.hash(&mut h);
+                pnode.scope_key.hash(&mut h);
+                if let Some(tf) = &pnode.modifier.transform {
+                    tf.scale_x.to_bits().hash(&mut h);
+                    tf.scale_y.to_bits().hash(&mut h);
+                    tf.translate_x.to_bits().hash(&mut h);
+                    tf.translate_y.to_bits().hash(&mut h);
+                    tf.rotate.to_bits().hash(&mut h);
+                    tf.shear_x.to_bits().hash(&mut h);
+                    tf.shear_y.to_bits().hash(&mut h);
+                    tf.origin_x.to_bits().hash(&mut h);
+                    tf.origin_y.to_bits().hash(&mut h);
+                    tf.perspective[0].to_bits().hash(&mut h);
+                    tf.perspective[1].to_bits().hash(&mut h);
+                    tf.perspective[2].to_bits().hash(&mut h);
                 }
+                if let Some(a) = pnode.modifier.alpha {
+                    a.to_bits().hash(&mut h);
+                }
+                if let Some(g) = pnode.modifier.graphics_layer {
+                    g.to_bits().hash(&mut h);
+                }
+                cur = pnode.parent;
             }
         }
 
-        let mut stack = Vec::new();
-        stack.push(root);
+        let mut stack = vec![root];
         while let Some(id) = stack.pop() {
             let Some(n) = self.tree.get(id) else { continue };
+            n.content_hash.hash(&mut h);
             n.scope_key.hash(&mut h);
             self.view_ids.get(&id).copied().hash(&mut h);
-            format!("{:?}", n.kind).hash(&mut h);
-            format!("{:?}", n.modifier).hash(&mut h);
             if let repose_core::ViewKind::SubcomposeLayout { content } = &n.kind {
                 (Arc::as_ptr(content) as *const () as usize).hash(&mut h);
-            }
-            macro_rules! callback_id {
-                ($callback:expr) => {
-                    $callback
-                        .as_ref()
-                        .map(|callback| Rc::as_ptr(callback) as *const () as usize)
-                        .hash(&mut h);
-                };
-            }
-            callback_id!(n.modifier.on_pointer_down);
-            callback_id!(n.modifier.on_pointer_move);
-            callback_id!(n.modifier.on_pointer_up);
-            callback_id!(n.modifier.on_pointer_cancel);
-            callback_id!(n.modifier.on_pointer_enter);
-            callback_id!(n.modifier.on_pointer_leave);
-            callback_id!(n.modifier.on_click);
-            callback_id!(n.modifier.on_double_click);
-            callback_id!(n.modifier.on_long_click);
-            callback_id!(n.modifier.on_action);
-            callback_id!(n.modifier.on_key_event);
-            callback_id!(n.modifier.on_preview_key_event);
-            callback_id!(n.modifier.on_globally_positioned);
-            callback_id!(n.modifier.on_size_changed);
-            callback_id!(n.modifier.on_focus_changed);
-            callback_id!(n.modifier.painter);
-            callback_id!(n.modifier.on_drag_start);
-            callback_id!(n.modifier.on_drag_end);
-            callback_id!(n.modifier.on_drag_enter);
-            callback_id!(n.modifier.on_drag_over);
-            callback_id!(n.modifier.on_drag_leave);
-            callback_id!(n.modifier.on_drop);
-            callback_id!(n.modifier.drag_preview);
-            if let Some(requester) = &n.modifier.focus_requester {
-                (Rc::as_ptr(&requester.target) as *const () as usize).hash(&mut h);
-            }
-            if let Some(input) = &n.modifier.text_input {
-                format!("{:?}", input).hash(&mut h);
-                format!("{:?}", input.text_style).hash(&mut h);
-                callback_id!(input.on_change);
-                callback_id!(input.on_submit);
-                callback_id!(input.on_text_layout);
-                callback_id!(input.visual_transformation);
-                if let Some(actions) = &input.keyboard_actions {
-                    callback_id!(actions.on_done);
-                    callback_id!(actions.on_go);
-                    callback_id!(actions.on_next);
-                    callback_id!(actions.on_previous);
-                    callback_id!(actions.on_search);
-                    callback_id!(actions.on_send);
-                }
             }
             if let Some(s) = &n.modifier.scroll {
                 match s {
                     ScrollBinding::Vertical(b) => {
-                        callback_id!(b.on_scroll);
-                        callback_id!(b.set_viewport_main);
-                        callback_id!(b.set_content_main);
-                        callback_id!(b.get_offset_main);
-                        callback_id!(b.set_offset_main);
-                        callback_id!(b.tick);
                         if let Some(get) = &b.get_offset_main {
-                            let q = (get() * 8.0) as i32;
-                            q.hash(&mut h);
+                            ((get() * 8.0) as i32).hash(&mut h);
                         }
                     }
                     ScrollBinding::Horizontal(b) => {
-                        callback_id!(b.on_scroll);
-                        callback_id!(b.set_viewport_main);
-                        callback_id!(b.set_content_main);
-                        callback_id!(b.get_offset_main);
-                        callback_id!(b.set_offset_main);
-                        callback_id!(b.tick);
                         if let Some(get) = &b.get_offset_main {
-                            let q = (get() * 8.0) as i32;
-                            q.hash(&mut h);
+                            ((get() * 8.0) as i32).hash(&mut h);
                         }
                     }
                     ScrollBinding::Both(b) => {
-                        callback_id!(b.on_scroll);
-                        callback_id!(b.set_viewport_width);
-                        callback_id!(b.set_viewport_height);
-                        callback_id!(b.set_content_width);
-                        callback_id!(b.set_content_height);
-                        callback_id!(b.get_offset_xy);
-                        callback_id!(b.set_offset_xy);
-                        callback_id!(b.tick);
                         if let Some(get) = &b.get_offset_xy {
                             let (x, y) = get();
                             ((x * 8.0) as i32).hash(&mut h);
@@ -444,38 +366,43 @@ impl LayoutEngine {
         }
     }
 
-    fn subtree_has_deferred_render_z(&self, node_id: NodeId) -> bool {
+    fn subtree_has_deferred_render_z(&mut self, node_id: NodeId) -> bool {
+        if let Some(&cached) = self.deferred_z_cache.get(&node_id) {
+            return cached;
+        }
         let Some(node) = self.tree.get(node_id) else {
+            self.deferred_z_cache.insert(node_id, false);
             return false;
         };
-        let mut stack = node.children.clone();
-        while let Some(id) = stack.pop() {
-            let Some(child) = self.tree.get(id) else {
-                continue;
-            };
-            if child.modifier.render_z_index.is_some_and(|z| z != 0.0) {
-                return true;
-            }
-            stack.extend(child.children.iter().copied());
-        }
-        false
+        let children = node.children.clone();
+        let result = children.into_iter().any(|child_id| {
+            let child_has_z = self
+                .tree
+                .get(child_id)
+                .is_some_and(|child| child.modifier.render_z_index.is_some_and(|z| z != 0.0));
+            child_has_z || self.subtree_has_deferred_render_z(child_id)
+        });
+        self.deferred_z_cache.insert(node_id, result);
+        result
     }
 
-    fn descendants_have_transform_or_layer(&self, node_id: NodeId) -> bool {
+    fn descendants_have_transform_or_layer(&mut self, node_id: NodeId) -> bool {
+        if let Some(&cached) = self.transform_layer_cache.get(&node_id) {
+            return cached;
+        }
         let Some(node) = self.tree.get(node_id) else {
+            self.transform_layer_cache.insert(node_id, false);
             return false;
         };
-        let mut stack = node.children.clone();
-        while let Some(id) = stack.pop() {
-            let Some(child) = self.tree.get(id) else {
-                continue;
-            };
-            if child.modifier.transform.is_some() || child.modifier.graphics_layer.is_some() {
-                return true;
-            }
-            stack.extend(child.children.iter().copied());
-        }
-        false
+        let children = node.children.clone();
+        let result = children.into_iter().any(|child_id| {
+            let child_has_layer = self.tree.get(child_id).is_some_and(|child| {
+                child.modifier.transform.is_some() || child.modifier.graphics_layer.is_some()
+            });
+            child_has_layer || self.descendants_have_transform_or_layer(child_id)
+        });
+        self.transform_layer_cache.insert(node_id, result);
+        result
     }
 
     pub(crate) fn walk_paint(
@@ -510,6 +437,7 @@ impl LayoutEngine {
         };
 
         let view_id = *self.view_ids.get(&node_id).unwrap_or(&0);
+        let mut node_hit_context = hit_context.clone();
 
         // Check if this node should be deferred for later painting
         if !skip_defer
@@ -525,7 +453,7 @@ impl LayoutEngine {
                 sem_parent,
                 interaction_source,
                 focus_group_stack: self.focus_group_stack.clone(),
-                hit_context: hit_context.clone(),
+                hit_context: node_hit_context.clone(),
                 z: render_z,
                 order: deferred.len(),
             });
@@ -652,15 +580,28 @@ impl LayoutEngine {
 
         let hit_context_key = {
             let mut hasher = rustc_hash::FxHasher::default();
-            hit_context.cache_key().hash(&mut hasher);
+            node_hit_context.cache_key().hash(&mut hasher);
             self.focus_group_stack.hash(&mut hasher);
             interaction_source.hash(&mut hasher);
             hasher.finish()
         };
 
         // Repaint Boundary
-        if allow_cache && modifier.repaint_boundary && !self.subtree_has_deferred_render_z(node_id)
-        {
+        let mut boundary_stamp = None;
+        let mut boundary_cache_hit = false;
+        let boundary_candidate = self.paint_cache.get(&node_id).is_some_and(|entry| {
+            entry.subtree_hash == subtree_hash
+                && entry.rect == rect
+                && entry.parent_offset_px == parent_offset_px
+                && entry.sem_parent == sem_parent
+                && entry.alpha_q == alpha_q
+                && entry.hit_context_key == hit_context_key
+                && entry.paint_generation == self.paint_generation
+        });
+        let boundary_cacheable = allow_cache
+            && modifier.repaint_boundary
+            && !self.subtree_has_deferred_render_z(node_id);
+        if boundary_cacheable && boundary_candidate {
             let stamp = self.paint_stamp_hash(
                 node_id,
                 interactions,
@@ -669,85 +610,95 @@ impl LayoutEngine {
                 sem_parent,
                 alpha_accum,
             );
-            if let Some(entry) = self.paint_cache.get(&node_id)
-                && entry.subtree_hash == subtree_hash
-                && entry.stamp == stamp
-                && entry.rect == rect
-                && entry.parent_offset_px == parent_offset_px
-                && entry.sem_parent == sem_parent
-                && entry.alpha_q == alpha_q
-                && entry.hit_context_key == hit_context_key
-            {
-                self.stats.paint_cache_hits += 1;
-                for (hit, metadata) in entry.hits.iter().zip(entry.hit_metadata.iter()) {
-                    if let Some(metadata) = metadata {
-                        restore_metadata(hit.id, metadata.clone());
-                    }
+            boundary_stamp = Some(stamp);
+            boundary_cache_hit = self
+                .paint_cache
+                .get(&node_id)
+                .is_some_and(|entry| entry.stamp == stamp);
+        }
+        if boundary_cache_hit {
+            let entry = self.paint_cache.get(&node_id).unwrap();
+            self.stats.paint_cache_hits += 1;
+            for (hit, metadata) in entry.hits.iter().zip(entry.hit_metadata.iter()) {
+                if let Some(metadata) = metadata {
+                    restore_metadata(hit.id, metadata.clone());
                 }
-                for hit in entry.hits.iter() {
-                    if let Some(source) = &hit.interaction_source {
-                        let mutable = source.to_mutable();
-                        let hovered = interactions.hover == Some(hit.id)
-                            || interactions.hover_ancestors.contains(&hit.id);
-                        if source.collect_is_hovered() != hovered {
-                            mutable.emit(if hovered {
-                                Interaction::HoverEnter
-                            } else {
-                                Interaction::HoverLeave
-                            });
-                        }
-                        if source.collect_is_pressed() && !interactions.pressed.contains(&hit.id) {
-                            let press_id = source.collect_last_press_id().unwrap_or(0);
-                            mutable.emit(Interaction::Cancel(press_id));
-                        }
-                        let focused_hit = focused == Some(hit.id);
-                        if source.collect_is_focused() != focused_hit {
-                            mutable.emit(if focused_hit {
-                                Interaction::Focus
-                            } else {
-                                Interaction::Unfocus
-                            });
-                        }
-                        self.focus_interaction_sources
-                            .insert(hit.id, source.clone());
-                    }
-                }
-                if modifier.on_globally_positioned.is_some() || modifier.on_size_changed.is_some() {
-                    let observed = repose_core::Rect {
-                        x: px_to_dp(Px(rect.x)).0,
-                        y: px_to_dp(Px(rect.y)).0,
-                        w: px_to_dp(Px(rect.w)).0,
-                        h: px_to_dp(Px(rect.h)).0,
-                    };
-                    if let Some(callback) = &modifier.on_globally_positioned
-                        && self.prev_observed_rects.get(&view_id).copied() != Some(observed)
-                    {
-                        callback(observed);
-                    }
-                    if let Some(callback) = &modifier.on_size_changed
-                        && self
-                            .prev_observed_rects
-                            .get(&view_id)
-                            .map(|previous| (previous.w, previous.h))
-                            != Some((observed.w, observed.h))
-                    {
-                        callback(Vec2 {
-                            x: observed.w,
-                            y: observed.h,
+            }
+            for hit in entry.hits.iter() {
+                if let Some(source) = &hit.interaction_source {
+                    let mutable = source.to_mutable();
+                    let hovered = interactions.hover == Some(hit.id)
+                        || interactions.hover_ancestors.contains(&hit.id);
+                    if source.collect_is_hovered() != hovered {
+                        mutable.emit(if hovered {
+                            Interaction::HoverEnter
+                        } else {
+                            Interaction::HoverLeave
                         });
                     }
-                    self.prev_observed_rects.insert(view_id, observed);
+                    if source.collect_is_pressed() && !interactions.pressed.contains(&hit.id) {
+                        let press_id = source.collect_last_press_id().unwrap_or(0);
+                        mutable.emit(Interaction::Cancel(press_id));
+                    }
+                    let focused_hit = focused == Some(hit.id);
+                    if source.collect_is_focused() != focused_hit {
+                        mutable.emit(if focused_hit {
+                            Interaction::Focus
+                        } else {
+                            Interaction::Unfocus
+                        });
+                    }
+                    self.focus_interaction_sources
+                        .insert(hit.id, source.clone());
                 }
-                if let Some(callback) = &modifier.on_focus_changed {
-                    self.focus_callbacks.insert(view_id, callback.clone());
-                }
-                set_focus_requester(&modifier, view_id);
-                scene.nodes.extend(entry.nodes.iter().cloned());
-                hits.extend(entry.hits.iter().cloned());
-                sems.extend(entry.sems.iter().cloned());
-                return;
             }
+            if modifier.on_globally_positioned.is_some() || modifier.on_size_changed.is_some() {
+                let observed = repose_core::Rect {
+                    x: px_to_dp(Px(rect.x)).0,
+                    y: px_to_dp(Px(rect.y)).0,
+                    w: px_to_dp(Px(rect.w)).0,
+                    h: px_to_dp(Px(rect.h)).0,
+                };
+                if let Some(callback) = &modifier.on_globally_positioned
+                    && self.prev_observed_rects.get(&view_id).copied() != Some(observed)
+                {
+                    callback(observed);
+                }
+                if let Some(callback) = &modifier.on_size_changed
+                    && self
+                        .prev_observed_rects
+                        .get(&view_id)
+                        .map(|previous| (previous.w, previous.h))
+                        != Some((observed.w, observed.h))
+                {
+                    callback(Vec2 {
+                        x: observed.w,
+                        y: observed.h,
+                    });
+                }
+                self.prev_observed_rects.insert(view_id, observed);
+            }
+            if let Some(callback) = &modifier.on_focus_changed {
+                self.focus_callbacks.insert(view_id, callback.clone());
+            }
+            set_focus_requester(&modifier, view_id);
+            scene.nodes.extend(entry.nodes.iter().cloned());
+            hits.extend(entry.hits.iter().cloned());
+            sems.extend(entry.sems.iter().cloned());
+            return;
+        }
+        if boundary_cacheable {
             self.stats.paint_cache_misses += 1;
+            let stamp = boundary_stamp.unwrap_or_else(|| {
+                self.paint_stamp_hash(
+                    node_id,
+                    interactions,
+                    focused,
+                    textfield_states,
+                    sem_parent,
+                    alpha_accum,
+                )
+            });
             let mut local_scene = Scene {
                 clear_color: scene.clear_color,
                 nodes: Vec::new(),
@@ -774,6 +725,15 @@ impl LayoutEngine {
                 Some(node_id),
             );
 
+            let cached_nodes = Rc::new(std::mem::take(&mut local_scene.nodes));
+            let hit_metadata = Rc::new(
+                local_hits
+                    .iter()
+                    .map(crate::hit_testing::metadata_for)
+                    .collect(),
+            );
+            let cached_hits = Rc::new(local_hits);
+            let cached_sems = Rc::new(local_sems);
             let entry = PaintCacheEntry {
                 subtree_hash,
                 stamp,
@@ -782,20 +742,16 @@ impl LayoutEngine {
                 sem_parent,
                 alpha_q,
                 hit_context_key,
-                nodes: Rc::new(local_scene.nodes.clone()),
-                hits: Rc::new(local_hits.clone()),
-                hit_metadata: Rc::new(
-                    local_hits
-                        .iter()
-                        .map(crate::hit_testing::metadata_for)
-                        .collect(),
-                ),
-                sems: Rc::new(local_sems.clone()),
+                paint_generation: self.paint_generation,
+                nodes: cached_nodes.clone(),
+                hits: cached_hits.clone(),
+                hit_metadata,
+                sems: cached_sems.clone(),
             };
             self.paint_cache.insert(node_id, entry);
-            scene.nodes.extend(local_scene.nodes);
-            hits.extend(local_hits);
-            sems.extend(local_sems);
+            scene.nodes.extend(cached_nodes.iter().cloned());
+            hits.extend(cached_hits.iter().cloned());
+            sems.extend(cached_sems.iter().cloned());
             return;
         }
 
@@ -878,10 +834,9 @@ impl LayoutEngine {
             content_rect.h = (content_rect.h - dh).max(0.0);
         }
 
-        let mut node_hit_context = hit_context.clone();
         if let Some(tf) = modifier.transform {
             let adjusted = resolved_transform(rect, tf);
-            node_hit_context = hit_context.with_transform(adjusted);
+            node_hit_context = node_hit_context.with_transform(adjusted);
             scene.nodes.push(SceneNode::PushTransform {
                 transform: adjusted,
             });
@@ -1395,10 +1350,27 @@ impl LayoutEngine {
                         line_h_px
                     }
                 };
+                let (first_line, last_line) = if need_clip && content_rect.h > 0.0 {
+                    let clip_top = -1.0;
+                    let clip_bottom = content_rect.h + 2.0;
+                    let mut first = lines.len();
+                    let mut last = 0;
+                    for (index, offset) in line_y_offsets.iter().copied().enumerate() {
+                        let line_bottom = offset + line_h_for(index);
+                        if line_bottom >= clip_top && offset <= clip_bottom {
+                            first = first.min(index);
+                            last = last.max(index + 1);
+                        }
+                    }
+                    (first, last)
+                } else {
+                    (0, lines.len())
+                };
 
                 if has_annotations {
                     let annos = annotations.as_ref().unwrap();
-                    for (i, ln) in lines.iter().enumerate() {
+                    for i in first_line..last_line {
+                        let ln = &lines[i];
                         let line_start = line_ranges
                             .as_ref()
                             .and_then(|r| r.get(i).map(|&(s, _)| s))
@@ -1677,7 +1649,8 @@ impl LayoutEngine {
                     } else {
                         0
                     };
-                    for (i, ln) in lines.iter().enumerate() {
+                    for i in first_line..last_line {
+                        let ln = &lines[i];
                         let line_w = line_widths
                             .as_ref()
                             .and_then(|w| w.get(i).copied())

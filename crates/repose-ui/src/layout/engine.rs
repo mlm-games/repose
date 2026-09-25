@@ -64,12 +64,36 @@ impl LayoutEngine {
             ));
         let root_node_id = self.tree.update(root);
         self.stats.tree = self.tree.stats.clone();
-
-        // 1a. Build scope maps from TreeNode.scope_key (set by scope! macro)
-        self.build_scope_maps();
+        let has_paint_mutation = !self.tree.paint_dirty_nodes().is_empty();
+        let size_changed = self.last_size_px != Some(size_px);
+        if has_paint_mutation || size_changed {
+            self.paint_generation = self.paint_generation.wrapping_add(1);
+        }
+        let has_tree_mutation =
+            !self.tree.dirty_nodes().is_empty() || !self.tree.removed_ids.is_empty();
+        if !self.scope_maps_valid || has_tree_mutation {
+            self.build_scope_maps();
+        }
+        if has_tree_mutation {
+            let mut scroll_node_ids = Vec::new();
+            let mut stack = vec![root_node_id];
+            while let Some(id) = stack.pop() {
+                let Some(node) = self.tree.get(id) else {
+                    continue;
+                };
+                if node.modifier.scroll.is_some() {
+                    scroll_node_ids.push(id);
+                }
+                stack.extend(node.children.iter().copied());
+            }
+            self.scroll_node_ids = scroll_node_ids;
+        }
+        if has_tree_mutation || has_paint_mutation {
+            self.deferred_z_cache.clear();
+            self.transform_layer_cache.clear();
+        }
 
         // 2. Determine layout need
-        let size_changed = self.last_size_px != Some(size_px);
         // 2a. Publish the current window size class as a default local so that
         let class = locals::calculate_window_size_class(
             (max_w_dp * density_scale) as u32,
@@ -80,8 +104,6 @@ impl LayoutEngine {
             locals::set_window_size_class_default(class);
         }
         locals::set_window_container_size(max_w_dp, max_h_dp);
-        let has_tree_mutation =
-            !self.tree.dirty_nodes().is_empty() || !self.tree.removed_ids.is_empty();
         let mut need_layout =
             size_changed || !self.layout_valid || has_tree_mutation || locals_changed;
 
@@ -332,6 +354,11 @@ impl LayoutEngine {
             scope_trees: HashMap::new(),
             scope_root_map: FxHashMap::default(),
             node_to_scope: FxHashMap::default(),
+            scope_root_ids: FxHashMap::default(),
+            scope_maps_valid: false,
+            scroll_node_ids: Vec::new(),
+            deferred_z_cache: FxHashMap::default(),
+            transform_layer_cache: FxHashMap::default(),
             text_cache: FxHashMap::default(),
             baseline_map: FxHashMap::default(),
             baseline_shifts: FxHashMap::default(),
@@ -343,6 +370,7 @@ impl LayoutEngine {
             view_ids: FxHashMap::default(),
             next_view_id: 1,
             layer_id_counter: 0,
+            paint_generation: 0,
             prev_focused: None,
             focus_callbacks: FxHashMap::default(),
             focus_interaction_sources: FxHashMap::default(),

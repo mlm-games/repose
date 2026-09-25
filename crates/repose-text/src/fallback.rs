@@ -18,8 +18,8 @@ const RANGE_VALUE_RADIX: u32 = 26;
 const MAX_CODE_POINT: u32 = 0x10FFFF;
 
 #[cfg(target_arch = "wasm32")]
-fn direct_font_url(font: &NotoFont) -> String {
-    font.url.to_owned()
+fn direct_font_url(font: &NotoFont) -> &'static str {
+    font.url
 }
 
 pub struct IndexedNotoFont {
@@ -193,40 +193,8 @@ impl NotoFontDownloader {
             return Vec::new();
         }
 
-        // We need mutable coverCount tracking. Kotlin uses object fields.
-        // We will create mutable copies of components and fonts.
-        // Approach: clone lookup values into mutable vec, and create indexed fonts map.
-
-        // First, determine which components are involved.
-        // Build maps: codepoint -> component idx
-        // But Kotlin's algorithm does per codepoint lookup and aggregates.
-        // We'll replicate closely.
-
-        // Create a working copy of values (components) with coverCount reset
-        let mut components: Vec<FallbackFontComponent> = self
-            .lookup
-            .values
-            .iter()
-            .map(|c| FallbackFontComponent {
-                fonts: c.fonts.clone(),
-                cover_count: 0,
-            })
-            .collect();
-
-        // Need mapping from font index -> IndexedNotoFont instance
-        // Kotlin's IndexedNotoFont objects are shared across components (same object if same font index appears in multiple components).
-        // We need to deduplicate.
+        let mut cover_counts: HashMap<usize, usize> = HashMap::new();
         let mut font_index_to_obj: HashMap<usize, IndexedNotoFont> = HashMap::new();
-        // Also build component index for each unique codepoint? Actually Kotlin aggregates by component identity:
-        // For each codepoint, lookup returns a FallbackFontComponent reference (with its fonts list). But after decoding,
-        // many codepoints share the same component object (via trie). In our port, each values[i] is a component.
-        // So if two codepoints fall into same range (same boundary interval), they will lookup same values index.
-        // Kotlin then does: if component.coverCount ==0 requiredComponents += component ; component.coverCount++
-        // So deduplication is by component identity (index in values), not by fonts equality.
-        // We must track component instances by their index in `components` vec.
-
-        // To know which component each codepoint maps to, we can binary search boundaries manually (lookup) but need index.
-        // Instead, we can get lookup index by performing same binary search returning idx.
 
         fn lookup_idx(boundaries: &[u32], value: u32) -> Option<usize> {
             if value > MAX_CODE_POINT {
@@ -247,7 +215,6 @@ impl NotoFontDownloader {
             }
         }
 
-        let mut missing: Vec<u32> = Vec::new();
         let mut required_component_indices: Vec<usize> = Vec::new();
         let mut codepoints: Vec<u32> = codepoints.iter().copied().collect();
         codepoints.sort_unstable();
@@ -259,21 +226,18 @@ impl NotoFontDownloader {
             let Some(idx) = lookup_idx(&self.lookup.boundaries, cp) else {
                 continue;
             };
-            let Some(comp) = components.get_mut(idx) else {
+            let Some(comp) = self.lookup.values.get(idx) else {
                 continue;
             };
             if comp.fonts.is_empty() {
-                missing.push(cp);
+                self.code_points_with_no_known_font.insert(cp);
             } else {
-                if comp.cover_count == 0 {
+                let count = cover_counts.entry(idx).or_insert(0);
+                if *count == 0 {
                     required_component_indices.push(idx);
                 }
-                comp.cover_count += 1;
+                *count += 1;
             }
-        }
-
-        if !missing.is_empty() {
-            self.code_points_with_no_known_font.extend(missing);
         }
 
         if required_component_indices.is_empty() {
@@ -282,7 +246,7 @@ impl NotoFontDownloader {
 
         // Ensure font objects exist for all fonts referenced in required components
         for &comp_idx in &required_component_indices {
-            for &font_idx in &components[comp_idx].fonts.clone() {
+            for &font_idx in &self.lookup.values[comp_idx].fonts {
                 font_index_to_obj
                     .entry(font_idx)
                     .or_insert_with(|| IndexedNotoFont {
@@ -298,9 +262,8 @@ impl NotoFontDownloader {
         let mut candidate_font_indices: HashSet<usize> = HashSet::new();
 
         for &comp_idx in &required_component_indices {
-            let comp_cover = components[comp_idx].cover_count;
-            let fonts_clone = components[comp_idx].fonts.clone();
-            for font_idx in fonts_clone {
+            let comp_cover = cover_counts.get(&comp_idx).copied().unwrap_or(0);
+            for &font_idx in &self.lookup.values[comp_idx].fonts {
                 let font_obj = font_index_to_obj.get_mut(&font_idx).unwrap();
                 if font_obj.cover_count == 0 {
                     candidate_font_indices.insert(font_idx);
@@ -322,19 +285,20 @@ impl NotoFontDownloader {
             let best_idx = select_font(&candidate_vec, &font_index_to_obj, language);
             let best_font = font_index_to_obj.get(&best_idx).unwrap();
             selected.push(best_font.font);
-
-            let covered_components: Vec<usize> = best_font.cover_components.clone();
+            let covered_components = {
+                let best_font = font_index_to_obj.get_mut(&best_idx).unwrap();
+                std::mem::take(&mut best_font.cover_components)
+            };
             for comp_idx in covered_components {
-                let comp_cover = components[comp_idx].cover_count;
-                let fonts_in_comp = components[comp_idx].fonts.clone();
-                for f_idx in fonts_in_comp {
+                let comp_cover = cover_counts.get(&comp_idx).copied().unwrap_or(0);
+                for &f_idx in &self.lookup.values[comp_idx].fonts {
                     if let Some(fobj) = font_index_to_obj.get_mut(&f_idx) {
                         fobj.cover_count = fobj.cover_count.saturating_sub(comp_cover);
                         // remove component from its cover list
                         fobj.cover_components.retain(|&c| c != comp_idx);
                     }
                 }
-                components[comp_idx].cover_count = 0;
+                cover_counts.remove(&comp_idx);
             }
 
             candidate_vec.retain(|fid| {
@@ -494,7 +458,7 @@ fn select_best_for_language(
 pub mod wasm_fallback {
     use super::*;
     use std::cell::RefCell;
-    use std::collections::HashSet;
+    use std::collections::{HashSet, VecDeque};
     use std::rc::Rc;
     use wasm_bindgen::JsCast;
     use wasm_bindgen::prelude::*;
@@ -511,7 +475,7 @@ pub mod wasm_fallback {
 
     struct WebFallbackFontDownloader {
         downloader: NotoFontDownloader,
-        queued: Vec<HashSet<u32>>,
+        queued: VecDeque<HashSet<u32>>,
         is_running: bool,
         error_count: u32,
         progress: FontDownloadProgress,
@@ -521,7 +485,7 @@ pub mod wasm_fallback {
         fn new() -> Self {
             Self {
                 downloader: NotoFontDownloader::new(),
-                queued: Vec::new(),
+                queued: VecDeque::new(),
                 is_running: false,
                 error_count: 0,
                 progress: FontDownloadProgress::default(),
@@ -532,7 +496,7 @@ pub mod wasm_fallback {
             if codepoints.is_empty() {
                 return;
             }
-            self.queued.push(codepoints);
+            self.queued.push_back(codepoints);
         }
     }
 
@@ -556,7 +520,7 @@ pub mod wasm_fallback {
     fn enqueue(codepoints: HashSet<u32>) {
         let global = GLOBAL.with(|global| {
             let mut state = global.borrow_mut();
-            if let Some(queued) = state.queued.last_mut() {
+            if let Some(queued) = state.queued.back_mut() {
                 queued.extend(codepoints);
             } else {
                 state.submit(codepoints);
@@ -570,10 +534,9 @@ pub mod wasm_fallback {
         if codepoints.is_empty() {
             return;
         }
+        crate::unresolved::web_unresolved_registry().add_unresolved_codepoints(&codepoints);
         let set: HashSet<u32> = codepoints.into_iter().collect();
         let installed = INSTALLED.with(|installed| *installed.borrow());
-        crate::unresolved::web_unresolved_registry()
-            .add_unresolved_vec(set.iter().copied().collect());
         if !installed {
             enqueue(set);
         }
@@ -624,10 +587,14 @@ pub mod wasm_fallback {
                     state.is_running = false;
                     return;
                 }
-                let mut batch = state.queued.remove(0);
+                let Some(mut batch) = state.queued.pop_front() else {
+                    continue;
+                };
                 let mut count = 1;
                 while count < MAX_BATCH_SIZE && !state.queued.is_empty() {
-                    batch.extend(state.queued.remove(0));
+                    if let Some(next) = state.queued.pop_front() {
+                        batch.extend(next);
+                    }
                     count += 1;
                 }
                 batch
@@ -651,10 +618,10 @@ pub mod wasm_fallback {
 
             let mut any_success = false;
             let mut failed = false;
-            let mut seen_urls: HashSet<String> = HashSet::new();
+            let mut seen_urls: HashSet<&'static str> = HashSet::new();
             for font in &fonts_to_download {
                 let url = direct_font_url(font);
-                if !seen_urls.insert(url.clone()) {
+                if !seen_urls.insert(url) {
                     continue;
                 }
                 let needs_fetch = global.borrow().progress.needs_fetch(&url);
@@ -664,7 +631,7 @@ pub mod wasm_fallback {
                 match fetch_bytes(&url).await {
                     Ok(bytes) => {
                         if crate::register_font_data_if_usable(&bytes) {
-                            global.borrow_mut().progress.record_success(url);
+                            global.borrow_mut().progress.record_success(url.to_owned());
                             any_success = true;
                         } else {
                             failed = true;
@@ -688,7 +655,7 @@ pub mod wasm_fallback {
                 if backoff > 0 {
                     gloo_timers_approx_delay(backoff.saturating_mul(1000)).await;
                 }
-                global.borrow_mut().queued.push(batch);
+                global.borrow_mut().queued.push_back(batch);
                 continue;
             }
 

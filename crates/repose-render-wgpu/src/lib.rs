@@ -247,13 +247,14 @@ pub struct WgpuSceneRenderer {
     slug_enabled: bool,
     slug_ring: UploadRing,
     slug_cache: slug::GlyphSlugCache,
+    slug_draw_cache: HashMap<SlugDrawKey, SlugDrawCacheEntry>,
+    slug_draw_cache_bytes_total: u64,
 
     // Instanced NV12 ring
     nv12: InstancedPipe<Nv12Instance>,
 
-    // Tessellated vector mesh rendering (host-provided, e.g. lyon output).
-    mesh_verts: UploadRing,
-    mesh_indices: UploadRing,
+    mesh_cache: HashMap<MeshCacheKey, MeshCacheEntry>,
+    mesh_cache_bytes_total: u64,
     mesh_uniform_buf: wgpu::Buffer,
     mesh_bind: wgpu::BindGroup,
     mesh_uniform_head: u64,
@@ -269,6 +270,7 @@ pub struct WgpuSceneRenderer {
     /// translation (texture allocated) and populated by a texture copy at
     /// execution time, before the blend composite draws.
     blend_snapshots: std::collections::HashMap<u32, BlendSnapshot>,
+    blend_snapshot_pool: HashMap<BlendSnapshotKey, BlendSnapshot>,
     /// (blend layer id, parent target) copies to run before the pass that
     /// composites the blend. Executed between passes: copies the current
     /// target region into the snapshot texture.
@@ -297,10 +299,22 @@ pub struct WgpuSceneRenderer {
 
     globals_buf: wgpu::Buffer,
     globals_bind: wgpu::BindGroup,
+    globals_staging: wgpu::Buffer,
+    globals_staging_cap: u64,
 
     // Glyph atlas
     atlas_mask: AtlasA8,
     atlas_color: AtlasRGBA,
+    atlas_mask_bind: wgpu::BindGroup,
+    atlas_color_bind: wgpu::BindGroup,
+    atlas_generation: u64,
+    atlas_mask_full: bool,
+    atlas_color_full: bool,
+    atlas_mask_failures: HashSet<repose_text::CacheKey>,
+    atlas_color_failures: HashSet<repose_text::CacheKey>,
+
+    glyph_outline_cache: HashMap<repose_text::CacheKey, Option<Arc<[repose_text::Command]>>>,
+    legacy_shaped_text_cache: HashMap<TextShapeKey, TextShapeCacheEntry>,
 
     // Image management
     next_image_handle: u64,
@@ -315,6 +329,7 @@ pub struct WgpuSceneRenderer {
 
     // Eviction stats
     frame_index: u64,
+    cache_touch_clock: u64,
     image_bytes_total: u64,
     image_evict_after_frames: u64,
     image_budget_bytes: u64,
@@ -322,8 +337,9 @@ pub struct WgpuSceneRenderer {
     // Graphics layer pool. Maps `SceneNode::BeginLayer::layer_id` to a
     // cached offscreen render target.
     layer_pool: HashMap<u32, LayerTarget>,
-    producer_layer_ids: Vec<u32>,
+    producer_layer_ids: HashSet<u32>,
     layer_bytes_total: u64,
+    transient_layer_bytes_total: u64,
 
     // Linear working-space mode (default off -> fast playback path).
     // When enabled, the scene is rendered into an Rgba16Float intermediate
@@ -397,17 +413,24 @@ struct LayerTarget {
     format: wgpu::TextureFormat,
     bytes: u64,
     rect_px: (f32, f32, f32, f32),
+    transient: bool,
 }
 
 /// Backdrop snapshot for one isolated blend: a copy of the current target
 /// region taken before the source layer is composited, sampled as the
 /// "backdrop" input of the blend shader.
-#[derive(Clone)]
-struct BlendSnapshot {
-    texture: wgpu::Texture,
-    bind: wgpu::BindGroup,
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct BlendSnapshotKey {
+    format: wgpu::TextureFormat,
     width: u32,
     height: u32,
+}
+
+#[derive(Clone)]
+struct BlendSnapshot {
+    key: BlendSnapshotKey,
+    texture: wgpu::Texture,
+    bind: wgpu::BindGroup,
     bytes: u64,
 }
 
@@ -430,12 +453,9 @@ enum ActiveClip {
         blocked: bool,
     },
     Vector {
-        voff: u64,
-        vcnt: u32,
-        ioff: u64,
-        icnt: u32,
+        mesh: Option<MeshGpu>,
+        source: Arc<repose_core::VectorMeshData>,
         uoff: u64,
-        mesh: Arc<repose_core::VectorMeshData>,
         affine: [f32; 6],
         difference: bool,
         applied: bool,
@@ -529,6 +549,7 @@ fn callback_scope_key(
 /// twice: once with `sample_count = msaa_samples` for the surface pass, and
 /// once with `sample_count = 1` for graphics-layer render-to-texture passes
 /// (where MSAA is wasted).
+#[derive(Clone)]
 struct Pipelines {
     rects: wgpu::RenderPipeline,
     borders: wgpu::RenderPipeline,
@@ -1754,6 +1775,8 @@ struct FlattenRecord {
 const FLATTEN_ID_BASE: u32 = 0xF000_0000;
 const MAX_GRAPHICS_LAYERS: usize = 128;
 const MAX_GRAPHICS_LAYER_BYTES: u64 = 256 * 1024 * 1024;
+const MAX_TRANSIENT_GRAPHICS_LAYERS: usize = 64;
+const MAX_TRANSIENT_GRAPHICS_LAYER_BYTES: u64 = 128 * 1024 * 1024;
 const STENCIL_BASE: u32 = 128;
 const STENCIL_MAX_DEPTH: u32 = 127;
 
@@ -1823,6 +1846,7 @@ enum Cmd {
         off: u64,
         cnt: u32,
         handle: u64,
+        filter: ImageFilter,
     },
     /// Composite a previously-rendered graphics layer back into the
     /// current target as a textured quad. The quad's vertex buffer
@@ -1858,10 +1882,7 @@ enum Cmd {
     },
     /// Draw a tessellated vector mesh (solid or gradient paint).
     VectorMesh {
-        voff: u64,
-        vcnt: u32,
-        ioff: u64,
-        icnt: u32,
+        mesh: MeshGpu,
         uoff: u64,
         blend: repose_core::BlendMode,
     },
@@ -1881,10 +1902,7 @@ enum Cmd {
     },
     /// Draw a screen-space overlay mesh (identity transform, device pixels).
     VectorOverlay {
-        voff: u64,
-        vcnt: u32,
-        ioff: u64,
-        icnt: u32,
+        mesh: MeshGpu,
         uoff: u64,
     },
     /// Increment the stencil buffer with a tessellated vector mask.
@@ -1892,10 +1910,7 @@ enum Cmd {
     /// *outside* it. The counting still balances (push increments, pop
     /// decrements); only the depth bookkeeping differs (see executor).
     VectorClipPush {
-        voff: u64,
-        vcnt: u32,
-        ioff: u64,
-        icnt: u32,
+        mesh: MeshGpu,
         uoff: u64,
         scissor: (u32, u32, u32, u32),
         difference: bool,
@@ -1903,10 +1918,7 @@ enum Cmd {
     },
     /// Decrement the stencil buffer with the matching vector mask.
     VectorClipPop {
-        voff: u64,
-        vcnt: u32,
-        ioff: u64,
-        icnt: u32,
+        mesh: MeshGpu,
         uoff: u64,
         scissor: (u32, u32, u32, u32),
         difference: bool,
@@ -1972,7 +1984,7 @@ enum ImageTex {
     Nv12 {
         tex_y: wgpu::Texture,
         tex_uv: wgpu::Texture,
-        bind: wgpu::BindGroup,
+        binds: ImageBinds,
         yuv_buf: wgpu::Buffer,
         w: u32,
         h: u32,
@@ -2157,7 +2169,7 @@ struct AtlasA8 {
     next_x: u32,
     next_y: u32,
     row_h: u32,
-    map: HashMap<(repose_text::GlyphKey, u32), GlyphInfo>,
+    map: HashMap<repose_text::CacheKey, GlyphInfo>,
 }
 
 struct AtlasRGBA {
@@ -2168,7 +2180,7 @@ struct AtlasRGBA {
     next_x: u32,
     next_y: u32,
     row_h: u32,
-    map: HashMap<(repose_text::GlyphKey, u32), GlyphInfo>,
+    map: HashMap<repose_text::CacheKey, GlyphInfo>,
 }
 
 #[derive(Clone, Copy)]
@@ -2179,6 +2191,24 @@ struct GlyphInfo {
     v1: f32,
     w: f32,
     h: f32,
+}
+
+#[derive(Clone, Hash, PartialEq, Eq)]
+struct TextShapeKey {
+    text: Arc<str>,
+    px_bits: u32,
+    line_height_bits: u32,
+    font_family: Option<&'static str>,
+    font_weight: u16,
+    font_style: u8,
+    letter_spacing_bits: u32,
+    variation: Option<Arc<str>>,
+    font_generation: u64,
+}
+
+struct TextShapeCacheEntry {
+    glyphs: Arc<[repose_text::ShapedGlyph]>,
+    last_used_frame: u64,
 }
 
 #[repr(C)]
@@ -2383,6 +2413,56 @@ struct MeshVertex {
     uv: [f32; 2],
 }
 
+#[derive(Clone)]
+struct MeshGpu {
+    vertices: wgpu::Buffer,
+    indices: wgpu::Buffer,
+    vertex_count: u32,
+    index_count: u32,
+    bytes: u64,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct MeshCacheKey {
+    source: usize,
+    index: usize,
+    kind: u8,
+    vertex_len: usize,
+    index_len: usize,
+}
+
+#[derive(Clone)]
+enum MeshOwner {
+    Object(Arc<repose_core::VectorMeshData>),
+    Overlay(Arc<[repose_core::VectorMeshData]>),
+}
+
+struct MeshCacheEntry {
+    owner: MeshOwner,
+    gpu: MeshGpu,
+    last_used_frame: u64,
+    last_touch_frame: u64,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct SlugDrawKey {
+    cache_key: repose_text::CacheKey,
+    fill: bool,
+    stroke_hash: u64,
+    transform: [u32; 11],
+    origin: [u32; 2],
+    px_bits: u32,
+    target: [u32; 2],
+    color: [u32; 4],
+}
+
+struct SlugDrawCacheEntry {
+    vertices: Arc<[slug::TessVertex]>,
+    bytes: u64,
+    last_used_frame: u64,
+    last_touch_frame: u64,
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct MeshUniform {
@@ -2401,8 +2481,16 @@ const MESH_UNIFORM_CAP: u64 = 4 * 1024 * 1024;
 const MAX_RETAINED_IMAGE_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_RETAINED_IMAGES: usize = 512;
 const MAX_BLEND_SNAPSHOT_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_BLEND_SNAPSHOT_POOL_ENTRIES: usize = 64;
+const MAX_GLYPH_ATLAS_ENTRIES: usize = 32768;
 const MAX_GPU_RESOURCE_BYTES: u64 = 1024 * 1024 * 1024;
 const MAX_UPLOAD_RING_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_MESH_CACHE_BYTES: u64 = 256 * 1024 * 1024;
+const MAX_MESH_CACHE_ENTRIES: usize = 512;
+const MAX_SLUG_DRAW_CACHE_ENTRIES: usize = 2048;
+const MAX_SLUG_DRAW_CACHE_BYTES: u64 = 32 * 1024 * 1024;
+const MAX_LEGACY_SHAPED_TEXT_CACHE_ENTRIES: usize = 256;
+const MAX_GLYPH_OUTLINE_CACHE_ENTRIES: usize = 4096;
 const MAX_CALLBACK_SCOPES: usize = 256;
 const NV12_FOURCC: u32 = 0x3231_564e;
 const P010_FOURCC: u32 = 0x3031_3050;
@@ -2537,6 +2625,13 @@ fn mesh_aabb(mesh: &repose_core::VectorMeshData, affine: [f32; 6]) -> repose_cor
     }
 }
 
+fn quantize_glyph_px(px: f32) -> f32 {
+    if !px.is_finite() || px <= 0.0 {
+        return 1.0;
+    }
+    ((px * 4.0).round() / 4.0).max(0.25)
+}
+
 fn swash_to_a8_coverage(content: repose_text::SwashContent, data: &[u8]) -> Option<Vec<u8>> {
     match content {
         repose_text::SwashContent::Mask => Some(data.to_vec()),
@@ -2619,6 +2714,14 @@ impl WgpuSceneRenderer {
                 binding: 0,
                 resource: globals_buf.as_entire_binding(),
             }],
+        });
+        let globals_staging_cap =
+            (64 * std::mem::size_of::<Globals>() as u64).max(std::mem::size_of::<Globals>() as u64);
+        let globals_staging = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("globals staging"),
+            size: globals_staging_cap,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
         });
 
         let ds_format = wgpu::TextureFormat::Depth24PlusStencil8;
@@ -2912,34 +3015,42 @@ impl WgpuSceneRenderer {
             &clip_vertex_layout,
             &mesh_bind_layout,
         );
-        let layer_pipes = Pipelines::create(
-            &device,
-            output_format,
-            1,
-            &globals_layout,
-            &text_bind_layout,
-            &image_bind_layout_nv12,
-            &clip_pipeline_layout,
-            &stencil_for_content,
-            &stencil_for_clip_inc,
-            &stencil_for_clip_dec,
-            &clip_vertex_layout,
-            &mesh_bind_layout,
-        );
-        let working_space_layer_pipes = Pipelines::create(
-            &device,
-            wgpu::TextureFormat::Rgba16Float,
-            1,
-            &globals_layout,
-            &text_bind_layout,
-            &image_bind_layout_nv12,
-            &clip_pipeline_layout,
-            &stencil_for_content,
-            &stencil_for_clip_inc,
-            &stencil_for_clip_dec,
-            &clip_vertex_layout,
-            &mesh_bind_layout,
-        );
+        let layer_pipes = if msaa_samples == 1 {
+            surface_pipes.clone()
+        } else {
+            Pipelines::create(
+                &device,
+                output_format,
+                1,
+                &globals_layout,
+                &text_bind_layout,
+                &image_bind_layout_nv12,
+                &clip_pipeline_layout,
+                &stencil_for_content,
+                &stencil_for_clip_inc,
+                &stencil_for_clip_dec,
+                &clip_vertex_layout,
+                &mesh_bind_layout,
+            )
+        };
+        let working_space_layer_pipes = if working_space_msaa_samples == 1 {
+            working_space_pipes.clone()
+        } else {
+            Pipelines::create(
+                &device,
+                wgpu::TextureFormat::Rgba16Float,
+                1,
+                &globals_layout,
+                &text_bind_layout,
+                &image_bind_layout_nv12,
+                &clip_pipeline_layout,
+                &stencil_for_content,
+                &stencil_for_clip_inc,
+                &stencil_for_clip_dec,
+                &clip_vertex_layout,
+                &mesh_bind_layout,
+            )
+        };
 
         // Vector glyph rendering always available with tessellation+MSAA approach.
         let slug_enabled = true;
@@ -2957,6 +3068,34 @@ impl WgpuSceneRenderer {
         // Atlases
         let atlas_mask = init_atlas_mask(&device);
         let atlas_color = init_atlas_color(&device);
+        let atlas_mask_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("atlas mask bind"),
+            layout: &text_bind_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&atlas_mask.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&atlas_mask.sampler),
+                },
+            ],
+        });
+        let atlas_color_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("atlas color bind"),
+            layout: &text_bind_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&atlas_color.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&atlas_color.sampler),
+                },
+            ],
+        });
 
         // Upload rings
         let ring_rect = UploadRing::new(
@@ -3055,21 +3194,6 @@ impl WgpuSceneRenderer {
                 | wgpu::BufferUsages::COPY_DST
                 | wgpu::BufferUsages::COPY_SRC,
         );
-        let ring_mesh_verts = UploadRing::new(
-            &device,
-            "ring mesh verts",
-            1 << 22,
-            wgpu::BufferUsages::VERTEX
-                | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::COPY_SRC,
-        );
-        let ring_mesh_indices = UploadRing::new(
-            &device,
-            "ring mesh indices",
-            1 << 22,
-            wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
-        );
-
         // Placeholder textures
         let depth_stencil_tex = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("temp ds"),
@@ -3123,13 +3247,15 @@ impl WgpuSceneRenderer {
             slug_enabled,
             slug_ring: ring_slug,
             slug_cache: slug::GlyphSlugCache::new(),
+            slug_draw_cache: HashMap::new(),
+            slug_draw_cache_bytes_total: 0,
 
             clip_ring: ring_clip,
 
             nv12: InstancedPipe::new(ring_nv12),
 
-            mesh_verts: ring_mesh_verts,
-            mesh_indices: ring_mesh_indices,
+            mesh_cache: HashMap::new(),
+            mesh_cache_bytes_total: 0,
             mesh_uniform_buf,
             mesh_bind,
             mesh_uniform_head: 0,
@@ -3140,6 +3266,7 @@ impl WgpuSceneRenderer {
             blend_ring,
             flatten_layer_ids: Vec::new(),
             blend_snapshots: std::collections::HashMap::new(),
+            blend_snapshot_pool: HashMap::new(),
             blend_copies: Vec::new(),
 
             msaa_samples,
@@ -3160,9 +3287,20 @@ impl WgpuSceneRenderer {
             gpu_budget_bytes: MAX_GPU_RESOURCE_BYTES,
             globals_bind,
             globals_buf,
+            globals_staging,
+            globals_staging_cap,
 
             atlas_mask,
             atlas_color,
+            atlas_mask_bind,
+            atlas_color_bind,
+            atlas_generation: repose_text::font_generation(),
+            atlas_mask_full: false,
+            atlas_color_full: false,
+            atlas_mask_failures: HashSet::new(),
+            atlas_color_failures: HashSet::new(),
+            glyph_outline_cache: HashMap::new(),
+            legacy_shaped_text_cache: HashMap::new(),
 
             next_image_handle: 1,
             images: HashMap::new(),
@@ -3173,12 +3311,14 @@ impl WgpuSceneRenderer {
             coverages: HashMap::new(),
 
             frame_index: 0,
+            cache_touch_clock: 0,
             image_bytes_total: 0,
             image_evict_after_frames: 600,         // ~10s @ 60fps
             image_budget_bytes: 512 * 1024 * 1024, // 512 MB
             layer_pool: HashMap::new(),
-            producer_layer_ids: Vec::new(),
+            producer_layer_ids: HashSet::new(),
             layer_bytes_total: 0,
+            transient_layer_bytes_total: 0,
 
             working_space: false,
             ws_tex: None,
@@ -3667,6 +3807,47 @@ impl WgpuSceneRenderer {
         }
     }
 
+    fn create_nv12_binds(
+        &self,
+        view_y: &wgpu::TextureView,
+        view_uv: &wgpu::TextureView,
+        yuv_buf: &wgpu::Buffer,
+        label: &str,
+    ) -> ImageBinds {
+        let make = |name: &str, sampler: &wgpu::Sampler| {
+            self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some(name),
+                layout: &self.image_bind_layout_nv12,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(view_y),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(view_uv),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::Sampler(sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                            buffer: yuv_buf,
+                            offset: 0,
+                            size: None,
+                        }),
+                    },
+                ],
+            })
+        };
+        ImageBinds {
+            linear: make(label, &self.image_sampler),
+            nearest: make(label, &self.image_sampler_nearest),
+        }
+    }
+
     fn create_rgba_tex(
         &self,
         w: u32,
@@ -3915,32 +4096,7 @@ impl WgpuSceneRenderer {
             self.queue
                 .write_buffer(&yuv_buf, 0, bytemuck::bytes_of(&yuv_raw));
 
-            let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("nv12 bind"),
-                layout: &self.image_bind_layout_nv12,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&view_y),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::TextureView(&view_uv),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: wgpu::BindingResource::Sampler(&self.image_sampler),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 3,
-                        resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                            buffer: &yuv_buf,
-                            offset: 0,
-                            size: None,
-                        }),
-                    },
-                ],
-            });
+            let binds = self.create_nv12_binds(&view_y, &view_uv, &yuv_buf, "nv12 bind");
 
             let bytes = checked_image_bytes(w, h, 1)?
                 .checked_add(checked_image_bytes(uv_w, uv_h, 2)?)
@@ -3953,7 +4109,7 @@ impl WgpuSceneRenderer {
                 ImageTex::Nv12 {
                     tex_y,
                     tex_uv,
-                    bind,
+                    binds,
                     yuv_buf,
                     w,
                     h,
@@ -3981,13 +4137,13 @@ impl WgpuSceneRenderer {
             }
         }
 
-        let (tex_y, tex_uv, _bind) = match self.images.get(&handle) {
+        let (tex_y, tex_uv, _binds) = match self.images.get(&handle) {
             Some(ImageTex::Nv12 {
                 tex_y,
                 tex_uv,
-                bind,
+                binds,
                 ..
-            }) => (tex_y, tex_uv, bind),
+            }) => (tex_y, tex_uv, binds),
             _ => return Err(anyhow::anyhow!("Handle is not NV12")),
         };
 
@@ -4179,32 +4335,7 @@ impl WgpuSceneRenderer {
             self.queue
                 .write_buffer(&yuv_buf, 0, bytemuck::bytes_of(&yuv_raw));
 
-            let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("p010 bind"),
-                layout: &self.image_bind_layout_nv12,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&view_y),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::TextureView(&view_uv),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: wgpu::BindingResource::Sampler(&self.image_sampler),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 3,
-                        resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                            buffer: &yuv_buf,
-                            offset: 0,
-                            size: None,
-                        }),
-                    },
-                ],
-            });
+            let binds = self.create_nv12_binds(&view_y, &view_uv, &yuv_buf, "p010 bind");
 
             let bytes = checked_image_bytes(w, h, 2)?
                 .checked_add(checked_image_bytes(uv_w, uv_h, 4)?)
@@ -4217,7 +4348,7 @@ impl WgpuSceneRenderer {
                 ImageTex::Nv12 {
                     tex_y,
                     tex_uv,
-                    bind,
+                    binds,
                     yuv_buf,
                     w,
                     h,
@@ -4244,13 +4375,13 @@ impl WgpuSceneRenderer {
             }
         }
 
-        let (tex_y, tex_uv, _bind) = match self.images.get(&handle) {
+        let (tex_y, tex_uv, _binds) = match self.images.get(&handle) {
             Some(ImageTex::Nv12 {
                 tex_y,
                 tex_uv,
-                bind,
+                binds,
                 ..
-            }) => (tex_y, tex_uv, bind),
+            }) => (tex_y, tex_uv, binds),
             _ => return Err(anyhow::anyhow!("Handle is not P010/NV12")),
         };
 
@@ -4512,32 +4643,7 @@ impl WgpuSceneRenderer {
         });
         self.queue
             .write_buffer(&yuv_buf, 0, bytemuck::bytes_of(&yuv_raw));
-        let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("dmabuf yuv bind"),
-            layout: &self.image_bind_layout_nv12,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&view_y),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&view_uv),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&self.image_sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                        buffer: &yuv_buf,
-                        offset: 0,
-                        size: None,
-                    }),
-                },
-            ],
-        });
+        let binds = self.create_nv12_binds(&view_y, &view_uv, &yuv_buf, "dmabuf yuv bind");
         let bytes = y_file_size
             .checked_add(uv_file_size)
             .and_then(|value| value.checked_add(std::mem::size_of::<YuvTransformRaw>() as u64))
@@ -4567,7 +4673,7 @@ impl WgpuSceneRenderer {
             ImageTex::Nv12 {
                 tex_y,
                 tex_uv,
-                bind,
+                binds,
                 yuv_buf,
                 w,
                 h,
@@ -4915,10 +5021,17 @@ impl WgpuSceneRenderer {
         self.evict_budget_excess();
     }
 
+    fn next_cache_touch(&mut self) -> u64 {
+        let touch = self.cache_touch_clock;
+        self.cache_touch_clock = self.cache_touch_clock.wrapping_add(1);
+        touch
+    }
+
     fn gpu_bytes_total(&self) -> u64 {
         self.image_bytes_total
             .saturating_add(self.layer_bytes_total)
             .saturating_add(self.blend_snapshot_bytes_total)
+            .saturating_add(self.mesh_cache_bytes_total)
             .saturating_add(self.working_space_bytes)
             .saturating_add(self.surface_resolve_bytes)
             .saturating_add(self.msaa_bytes)
@@ -4999,6 +5112,11 @@ impl WgpuSceneRenderer {
                 self.evict_image_gpu(h);
             } else {
                 self.remove_image(h);
+            }
+        }
+        while self.gpu_bytes_total() > self.gpu_budget_bytes {
+            if !self.evict_mesh_cache() {
+                break;
             }
         }
         if self.gpu_bytes_total() > self.gpu_budget_bytes {
@@ -5130,15 +5248,38 @@ impl WgpuSceneRenderer {
     /// new size..
     pub fn resize(&mut self, width: u32, height: u32) {
         let max = self.device.limits().max_texture_dimension_2d;
-        self.output_width = if width == 0 { 0 } else { width.min(max) };
-        self.output_height = if height == 0 { 0 } else { height.min(max) };
+        let width = if width == 0 { 0 } else { width.min(max) };
+        let height = if height == 0 { 0 } else { height.min(max) };
+        if self.output_width == width && self.output_height == height {
+            return;
+        }
+        self.output_width = width;
+        self.output_height = height;
+        if width == 0 || height == 0 {
+            self.msaa_tex = None;
+            self.msaa_view = None;
+            self.ws_msaa_tex = None;
+            self.ws_msaa_view = None;
+            self.surface_resolve_tex = None;
+            self.surface_resolve_view = None;
+            self.surface_resolve_bytes = 0;
+            self.msaa_bytes = 0;
+            self.ws_msaa_bytes = 0;
+            self.depth_stencil_bytes = 0;
+            self.working_space_bytes = 0;
+            self.ws_tex = None;
+            self.ws_view = None;
+            self.ws_bind = None;
+            self.evict_budget_excess();
+            return;
+        }
         self.recreate_msaa_and_depth_stencil();
         self.recreate_working_space_texture();
         self.evict_budget_excess();
     }
 
     fn recreate_working_space_texture(&mut self) {
-        if !self.working_space {
+        if !self.working_space || self.output_width == 0 || self.output_height == 0 {
             return;
         }
         self.working_space_bytes = 0;
@@ -5191,6 +5332,19 @@ impl WgpuSceneRenderer {
     }
 
     fn recreate_msaa_and_depth_stencil(&mut self) {
+        if self.output_width == 0 || self.output_height == 0 {
+            self.msaa_tex = None;
+            self.msaa_view = None;
+            self.ws_msaa_tex = None;
+            self.ws_msaa_view = None;
+            self.surface_resolve_tex = None;
+            self.surface_resolve_view = None;
+            self.surface_resolve_bytes = 0;
+            self.msaa_bytes = 0;
+            self.ws_msaa_bytes = 0;
+            self.depth_stencil_bytes = 0;
+            return;
+        }
         self.msaa_bytes = 0;
         self.ws_msaa_bytes = 0;
         self.depth_stencil_bytes = 0;
@@ -5329,6 +5483,7 @@ impl WgpuSceneRenderer {
         width: u32,
         height: u32,
         rect: repose_core::Rect,
+        transient: bool,
     ) -> bool {
         if width == 0
             || height == 0
@@ -5355,10 +5510,18 @@ impl WgpuSceneRenderer {
         let depth_bytes = checked_image_bytes(width.max(1), height.max(1), 4)
             .unwrap_or(MAX_GRAPHICS_LAYER_BYTES + 1);
         let bytes = color_bytes.saturating_add(depth_bytes);
-        let old_bytes = self
+        let old = self.layer_pool.get(&layer_id);
+        let old_bytes = old.map_or(0, |layer| layer.bytes);
+        let old_transient_bytes =
+            old.map_or(0, |layer| if layer.transient { layer.bytes } else { 0 });
+        let transient_count = self
             .layer_pool
-            .get(&layer_id)
-            .map_or(0, |layer| layer.bytes);
+            .values()
+            .filter(|layer| layer.transient)
+            .count();
+        let transient_count = transient_count
+            .saturating_sub(usize::from(old.is_some_and(|layer| layer.transient)))
+            .saturating_add(usize::from(transient));
         let count = self.layer_pool.len() + usize::from(!self.layer_pool.contains_key(&layer_id));
         let total = self
             .layer_bytes_total
@@ -5369,7 +5532,14 @@ impl WgpuSceneRenderer {
             .saturating_sub(old_bytes)
             .checked_add(bytes)
             .unwrap_or(u64::MAX);
+        let projected_transient = self
+            .transient_layer_bytes_total
+            .saturating_sub(old_transient_bytes)
+            .saturating_add(if transient { bytes } else { 0 });
         if count > MAX_GRAPHICS_LAYERS
+            || (transient
+                && (transient_count > MAX_TRANSIENT_GRAPHICS_LAYERS
+                    || projected_transient > MAX_TRANSIENT_GRAPHICS_LAYER_BYTES))
             || bytes > MAX_GRAPHICS_LAYER_BYTES
             || total > MAX_GRAPHICS_LAYER_BYTES
             || projected_gpu > self.gpu_budget_bytes
@@ -5377,11 +5547,19 @@ impl WgpuSceneRenderer {
             log::warn!("graphics layer budget exhausted; layer {layer_id} skipped");
             if let Some(old) = self.layer_pool.remove(&layer_id) {
                 self.layer_bytes_total = self.layer_bytes_total.saturating_sub(old.bytes);
+                if old.transient {
+                    self.transient_layer_bytes_total =
+                        self.transient_layer_bytes_total.saturating_sub(old.bytes);
+                }
             }
             return false;
         }
         if let Some(old) = self.layer_pool.remove(&layer_id) {
             self.layer_bytes_total = self.layer_bytes_total.saturating_sub(old.bytes);
+            if old.transient {
+                self.transient_layer_bytes_total =
+                    self.transient_layer_bytes_total.saturating_sub(old.bytes);
+            }
         }
         let tex = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("graphics layer"),
@@ -5457,15 +5635,47 @@ impl WgpuSceneRenderer {
                 format: self.layer_target_format(),
                 bytes,
                 rect_px: (rect.x, rect.y, rect.w, rect.h),
+                transient,
             },
         );
         self.layer_bytes_total = self.layer_bytes_total.saturating_add(bytes);
+        if transient {
+            self.transient_layer_bytes_total =
+                self.transient_layer_bytes_total.saturating_add(bytes);
+        }
         true
     }
 
-    fn atlas_bind_group_mask(&self) -> wgpu::BindGroup {
-        self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("atlas bind"),
+    fn ensure_globals_staging(&mut self, pass_count: usize) -> bool {
+        let size = std::mem::size_of::<Globals>() as u64;
+        let needed = match (pass_count.max(1) as u64).checked_mul(size) {
+            Some(needed) => needed,
+            None => return false,
+        };
+        if needed <= self.globals_staging_cap {
+            return true;
+        }
+        let cap = needed
+            .next_power_of_two()
+            .min(self.device.limits().max_buffer_size);
+        if cap < needed {
+            return false;
+        }
+        self.globals_staging = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("globals staging"),
+            size: cap,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+        self.globals_staging_cap = cap;
+        true
+    }
+
+    fn reset_atlas_storage(&mut self) {
+        self.atlas_mask = init_atlas_mask(&self.device);
+        self.atlas_color = init_atlas_color(&self.device);
+        self.atlas_mask_bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("atlas mask bind"),
             layout: &self.text_bind_layout,
             entries: &[
                 wgpu::BindGroupEntry {
@@ -5477,12 +5687,9 @@ impl WgpuSceneRenderer {
                     resource: wgpu::BindingResource::Sampler(&self.atlas_mask.sampler),
                 },
             ],
-        })
-    }
-
-    fn atlas_bind_group_color(&self) -> wgpu::BindGroup {
-        self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("atlas bind color"),
+        });
+        self.atlas_color_bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("atlas color bind"),
             layout: &self.text_bind_layout,
             entries: &[
                 wgpu::BindGroupEntry {
@@ -5494,29 +5701,303 @@ impl WgpuSceneRenderer {
                     resource: wgpu::BindingResource::Sampler(&self.atlas_color.sampler),
                 },
             ],
+        });
+        self.atlas_mask_full = false;
+        self.atlas_color_full = false;
+    }
+
+    fn sync_text_caches(&mut self) {
+        let generation = repose_text::font_generation();
+        if generation == self.atlas_generation {
+            return;
+        }
+        self.atlas_generation = generation;
+        self.reset_atlas_storage();
+        self.atlas_mask_failures.clear();
+        self.atlas_color_failures.clear();
+        self.glyph_outline_cache.clear();
+        self.legacy_shaped_text_cache.clear();
+        self.slug_draw_cache.clear();
+        self.slug_draw_cache_bytes_total = 0;
+        self.slug_cache = slug::GlyphSlugCache::new();
+    }
+
+    fn shape_text_cached(
+        &mut self,
+        text: &Arc<str>,
+        px: f32,
+        line_height_ratio: f32,
+        font_family: Option<&'static str>,
+        font_weight: u16,
+        font_style: u8,
+        letter_spacing: f32,
+        variation: Option<&Arc<str>>,
+    ) -> Arc<repose_text::SharedShapedText> {
+        repose_text::shape_line_cached(
+            text.as_ref(),
+            px,
+            line_height_ratio,
+            font_family,
+            font_weight,
+            font_style,
+            letter_spacing,
+            variation.map(AsRef::as_ref),
+        )
+    }
+
+    fn legacy_shape_text_cached(
+        &mut self,
+        text: &Arc<str>,
+        px: f32,
+        line_height_ratio: f32,
+        font_family: Option<&'static str>,
+        font_weight: u16,
+        font_style: u8,
+        letter_spacing: f32,
+        variation: Option<&Arc<str>>,
+    ) -> Arc<[repose_text::ShapedGlyph]> {
+        let key = TextShapeKey {
+            text: text.clone(),
+            px_bits: px.to_bits(),
+            line_height_bits: line_height_ratio.to_bits(),
+            font_family,
+            font_weight,
+            font_style,
+            letter_spacing_bits: letter_spacing.to_bits(),
+            variation: variation.cloned(),
+            font_generation: self.atlas_generation,
+        };
+        if let Some(entry) = self.legacy_shaped_text_cache.get_mut(&key) {
+            entry.last_used_frame = self.frame_index;
+            return entry.glyphs.clone();
+        }
+        let glyphs: Arc<[repose_text::ShapedGlyph]> = Arc::from(repose_text::shape_line(
+            text.as_ref(),
+            px,
+            line_height_ratio,
+            font_family,
+            font_weight,
+            font_style,
+            letter_spacing,
+            variation.map(AsRef::as_ref),
+        ));
+        self.legacy_shaped_text_cache.insert(
+            key,
+            TextShapeCacheEntry {
+                glyphs: glyphs.clone(),
+                last_used_frame: self.frame_index,
+            },
+        );
+        while self.legacy_shaped_text_cache.len() > MAX_LEGACY_SHAPED_TEXT_CACHE_ENTRIES {
+            let Some(victim) = self
+                .legacy_shaped_text_cache
+                .iter()
+                .min_by_key(|(_, entry)| entry.last_used_frame)
+                .map(|(key, _)| key.clone())
+            else {
+                break;
+            };
+            self.legacy_shaped_text_cache.remove(&victim);
+        }
+        glyphs
+    }
+
+    fn slug_draw_key(
+        cache_key: repose_text::CacheKey,
+        fill: bool,
+        stroke_key: Option<&slug::StrokeTessKey>,
+        transform: &Transform,
+        origin: (f32, f32),
+        px: f32,
+        target: (f32, f32),
+        color: [f32; 4],
+    ) -> SlugDrawKey {
+        let linear = transform.linear();
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        stroke_key.hash(&mut hasher);
+        SlugDrawKey {
+            cache_key,
+            fill,
+            stroke_hash: hasher.finish(),
+            transform: [
+                linear[0].to_bits(),
+                linear[1].to_bits(),
+                linear[2].to_bits(),
+                linear[3].to_bits(),
+                transform.scale_x.to_bits(),
+                transform.scale_y.to_bits(),
+                transform.translate_x.to_bits(),
+                transform.translate_y.to_bits(),
+                transform.rotate.to_bits(),
+                transform.shear_x.to_bits(),
+                transform.shear_y.to_bits(),
+            ],
+            origin: [origin.0.to_bits(), origin.1.to_bits()],
+            px_bits: px.to_bits(),
+            target: [target.0.to_bits(), target.1.to_bits()],
+            color: color.map(f32::to_bits),
+        }
+    }
+
+    fn evict_slug_draw_cache(&mut self) -> bool {
+        let victim = self
+            .slug_draw_cache
+            .iter()
+            .filter(|(_, entry)| entry.last_used_frame != self.frame_index)
+            .min_by_key(|(_, entry)| entry.last_touch_frame)
+            .map(|(key, _)| *key);
+        let Some(victim) = victim else {
+            return false;
+        };
+        let Some(entry) = self.slug_draw_cache.remove(&victim) else {
+            return false;
+        };
+        self.slug_draw_cache_bytes_total =
+            self.slug_draw_cache_bytes_total.saturating_sub(entry.bytes);
+        true
+    }
+
+    fn reserve_slug_draw_cache(&mut self, bytes: u64) -> bool {
+        while self.slug_draw_cache.len() >= MAX_SLUG_DRAW_CACHE_ENTRIES
+            || self.slug_draw_cache_bytes_total.saturating_add(bytes) > MAX_SLUG_DRAW_CACHE_BYTES
+        {
+            if !self.evict_slug_draw_cache() {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn get_cached_slug_vertices(&mut self, key: &SlugDrawKey) -> Option<Arc<[slug::TessVertex]>> {
+        let touch = self.next_cache_touch();
+        self.slug_draw_cache.get_mut(key).map(|entry| {
+            entry.last_used_frame = self.frame_index;
+            entry.last_touch_frame = touch;
+            entry.vertices.clone()
         })
     }
 
-    fn upload_glyph_mask(&mut self, key: repose_text::GlyphKey, px: f32) -> Option<GlyphInfo> {
-        let keyp = (key, px.to_bits());
+    fn cached_slug_vertices(
+        &mut self,
+        key: SlugDrawKey,
+        vertices: Vec<slug::TessVertex>,
+    ) -> Arc<[slug::TessVertex]> {
+        let touch = self.next_cache_touch();
+        if let Some(entry) = self.slug_draw_cache.get_mut(&key) {
+            entry.last_used_frame = self.frame_index;
+            entry.last_touch_frame = touch;
+            return entry.vertices.clone();
+        }
+        let bytes = u64::try_from(vertices.len())
+            .ok()
+            .and_then(|count| count.checked_mul(std::mem::size_of::<slug::TessVertex>() as u64))
+            .unwrap_or(u64::MAX);
+        if bytes > MAX_SLUG_DRAW_CACHE_BYTES || !self.reserve_slug_draw_cache(bytes) {
+            return Arc::from(vertices);
+        }
+        let touch = self.next_cache_touch();
+        let vertices: Arc<[slug::TessVertex]> = Arc::from(vertices);
+        self.slug_draw_cache.insert(
+            key,
+            SlugDrawCacheEntry {
+                vertices: vertices.clone(),
+                bytes,
+                last_used_frame: self.frame_index,
+                last_touch_frame: touch,
+            },
+        );
+        self.slug_draw_cache_bytes_total = self.slug_draw_cache_bytes_total.saturating_add(bytes);
+        vertices
+    }
+
+    fn cached_glyph_outline(
+        &mut self,
+        cache_key: repose_text::CacheKey,
+    ) -> Option<Arc<[repose_text::Command]>> {
+        if let Some(value) = self.glyph_outline_cache.get(&cache_key).cloned() {
+            return value;
+        }
+        let commands = repose_text::extract_outline_commands(cache_key).map(Arc::from);
+        if self.glyph_outline_cache.len() >= MAX_GLYPH_OUTLINE_CACHE_ENTRIES {
+            self.glyph_outline_cache.clear();
+        }
+        self.glyph_outline_cache.insert(cache_key, commands.clone());
+        commands
+    }
+
+    fn atlas_bind_group_mask(&self) -> wgpu::BindGroup {
+        self.atlas_mask_bind.clone()
+    }
+
+    fn atlas_bind_group_color(&self) -> wgpu::BindGroup {
+        self.atlas_color_bind.clone()
+    }
+
+    fn mark_atlas_mask_failure(&mut self, key: repose_text::CacheKey) {
+        if self.atlas_mask_failures.len() >= MAX_GLYPH_ATLAS_ENTRIES {
+            self.atlas_mask_failures.clear();
+        }
+        self.atlas_mask_failures.insert(key);
+    }
+
+    fn mark_atlas_color_failure(&mut self, key: repose_text::CacheKey) {
+        if self.atlas_color_failures.len() >= MAX_GLYPH_ATLAS_ENTRIES {
+            self.atlas_color_failures.clear();
+        }
+        self.atlas_color_failures.insert(key);
+    }
+
+    fn upload_glyph_mask(
+        &mut self,
+        cache_key: repose_text::CacheKey,
+        px: f32,
+    ) -> Option<GlyphInfo> {
+        let px = quantize_glyph_px(px);
+        let keyp = repose_text::CacheKey {
+            font_size_bits: px.to_bits(),
+            ..cache_key
+        };
         if let Some(info) = self.atlas_mask.map.get(&keyp) {
             return Some(*info);
         }
-
-        let gb = repose_text::rasterize(key, px)?;
-        if gb.w == 0 || gb.h == 0 || gb.data.is_empty() {
+        if self.atlas_mask_full || self.atlas_mask_failures.contains(&keyp) {
             return None;
         }
 
-        let coverage = swash_to_a8_coverage(gb.content, &gb.data)?;
+        let Some(gb) = repose_text::rasterize_cache_key(keyp) else {
+            self.mark_atlas_mask_failure(keyp);
+            return None;
+        };
+        if gb.w == 0 || gb.h == 0 || gb.data.is_empty() {
+            self.mark_atlas_mask_failure(keyp);
+            return None;
+        }
+        let Some(coverage) = swash_to_a8_coverage(gb.content, &gb.data) else {
+            self.mark_atlas_mask_failure(keyp);
+            return None;
+        };
 
         let w = gb.w.max(1);
         let h = gb.h.max(1);
+        let expected = checked_image_bytes_usize(w, h, 1).ok()?;
+        if coverage.len() < expected {
+            self.mark_atlas_mask_failure(keyp);
+            return None;
+        }
+        if self.atlas_mask.map.len() >= MAX_GLYPH_ATLAS_ENTRIES {
+            self.atlas_mask_full = true;
+            return None;
+        }
 
         if !self.alloc_space_mask(w, h) {
             self.grow_mask_and_rebuild();
         }
         if !self.alloc_space_mask(w, h) {
+            if w >= self.atlas_mask.size || h >= self.atlas_mask.size {
+                self.mark_atlas_mask_failure(keyp);
+            } else {
+                self.atlas_mask_full = true;
+            }
             return None;
         }
         let x = self.atlas_mask.next_x;
@@ -5558,21 +6039,50 @@ impl WgpuSceneRenderer {
         Some(info)
     }
 
-    fn upload_glyph_color(&mut self, key: repose_text::GlyphKey, px: f32) -> Option<GlyphInfo> {
-        let keyp = (key, px.to_bits());
+    fn upload_glyph_color(
+        &mut self,
+        cache_key: repose_text::CacheKey,
+        px: f32,
+    ) -> Option<GlyphInfo> {
+        let px = quantize_glyph_px(px);
+        let keyp = repose_text::CacheKey {
+            font_size_bits: px.to_bits(),
+            ..cache_key
+        };
         if let Some(info) = self.atlas_color.map.get(&keyp) {
             return Some(*info);
         }
-        let gb = repose_text::rasterize(key, px)?;
+        if self.atlas_color_full || self.atlas_color_failures.contains(&keyp) {
+            return None;
+        }
+        let Some(gb) = repose_text::rasterize_cache_key(keyp) else {
+            self.mark_atlas_color_failure(keyp);
+            return None;
+        };
         if !matches!(gb.content, repose_text::SwashContent::Color) {
+            self.mark_atlas_color_failure(keyp);
             return None;
         }
         let w = gb.w.max(1);
         let h = gb.h.max(1);
+        let expected = checked_image_bytes_usize(w, h, 4).ok()?;
+        if gb.data.len() < expected {
+            self.mark_atlas_color_failure(keyp);
+            return None;
+        }
+        if self.atlas_color.map.len() >= MAX_GLYPH_ATLAS_ENTRIES {
+            self.atlas_color_full = true;
+            return None;
+        }
         if !self.alloc_space_color(w, h) {
             self.grow_color_and_rebuild();
         }
         if !self.alloc_space_color(w, h) {
+            if w >= self.atlas_color.size || h >= self.atlas_color.size {
+                self.mark_atlas_color_failure(keyp);
+            } else {
+                self.atlas_color_full = true;
+            }
             return None;
         }
         let x = self.atlas_color.next_x;
@@ -5674,10 +6184,25 @@ impl WgpuSceneRenderer {
         self.atlas_mask.next_x = 1;
         self.atlas_mask.next_y = 1;
         self.atlas_mask.row_h = 0;
-        let keys: Vec<(repose_text::GlyphKey, u32)> = self.atlas_mask.map.keys().copied().collect();
+        self.atlas_mask_full = false;
+        self.atlas_mask_bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("atlas mask bind"),
+            layout: &self.text_bind_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&self.atlas_mask.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.atlas_mask.sampler),
+                },
+            ],
+        });
+        let keys: Vec<repose_text::CacheKey> = self.atlas_mask.map.keys().copied().collect();
         self.atlas_mask.map.clear();
-        for (k, px_bits) in keys {
-            let _ = self.upload_glyph_mask(k, f32::from_bits(px_bits));
+        for key in keys {
+            let _ = self.upload_glyph_mask(key, f32::from_bits(key.font_size_bits));
         }
     }
 
@@ -5742,11 +6267,25 @@ impl WgpuSceneRenderer {
         self.atlas_color.next_x = 1;
         self.atlas_color.next_y = 1;
         self.atlas_color.row_h = 0;
-        let keys: Vec<(repose_text::GlyphKey, u32)> =
-            self.atlas_color.map.keys().copied().collect();
+        self.atlas_color_full = false;
+        self.atlas_color_bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("atlas color bind"),
+            layout: &self.text_bind_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&self.atlas_color.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.atlas_color.sampler),
+                },
+            ],
+        });
+        let keys: Vec<repose_text::CacheKey> = self.atlas_color.map.keys().copied().collect();
         self.atlas_color.map.clear();
-        for (k, px_bits) in keys {
-            let _ = self.upload_glyph_color(k, f32::from_bits(px_bits));
+        for key in keys {
+            let _ = self.upload_glyph_color(key, f32::from_bits(key.font_size_bits));
         }
     }
 }
@@ -6302,18 +6841,15 @@ impl WgpuSceneRenderer {
                     current = next;
                 }
                 ActiveClip::Vector {
-                    voff,
-                    vcnt,
-                    ioff,
-                    icnt,
                     mesh,
+                    source,
                     affine,
                     ..
                 } => {
                     let mut local_affine = *affine;
                     local_affine[2] -= origin.0;
                     local_affine[5] -= origin.1;
-                    let aabb = mesh_aabb(mesh, local_affine);
+                    let aabb = mesh_aabb(source, local_affine);
                     let next = if difference {
                         current
                     } else {
@@ -6330,31 +6866,28 @@ impl WgpuSceneRenderer {
                         && aabb.h.is_finite()
                         && aabb.w > 0.0
                         && aabb.h > 0.0
-                        && *vcnt > 0
-                        && *icnt > 0;
+                        && mesh
+                            .as_ref()
+                            .is_some_and(|mesh| mesh.vertex_count > 0 && mesh.index_count > 0);
                     if blocked || !has_area || (!difference && scissor.2 == 0) {
                         blocked = blocked || !difference;
-                    } else if let Some(uoff) = self.alloc_mesh_uniform(mesh_uniform_from_paint(
-                        local_affine,
-                        &repose_core::PaintDesc::Solid,
-                    )) {
+                    } else if let Some(mesh_gpu) = mesh.clone()
+                        && let Some(uoff) = self.alloc_mesh_uniform(mesh_uniform_from_paint(
+                            local_affine,
+                            &repose_core::PaintDesc::Solid,
+                        ))
+                    {
                         command = Some(Cmd::VectorClipPush {
-                            voff: *voff,
-                            vcnt: *vcnt,
-                            ioff: *ioff,
-                            icnt: *icnt,
+                            mesh: mesh_gpu.clone(),
                             uoff,
                             scissor,
                             difference,
                             applied: true,
                         });
                         replayed.push(ActiveClip::Vector {
-                            voff: *voff,
-                            vcnt: *vcnt,
-                            ioff: *ioff,
-                            icnt: *icnt,
+                            mesh: Some(mesh_gpu),
+                            source: source.clone(),
                             uoff,
-                            mesh: mesh.clone(),
                             affine: *affine,
                             difference,
                             applied: true,
@@ -6391,21 +6924,15 @@ impl WgpuSceneRenderer {
                         blocked,
                     },
                     ActiveClip::Vector {
-                        voff,
-                        vcnt,
-                        ioff,
-                        icnt,
                         mesh,
+                        source,
                         affine,
                         difference,
                         ..
                     } => ActiveClip::Vector {
-                        voff: *voff,
-                        vcnt: *vcnt,
-                        ioff: *ioff,
-                        icnt: *icnt,
-                        uoff: 0,
                         mesh: mesh.clone(),
+                        source: source.clone(),
+                        uoff: 0,
                         affine: *affine,
                         difference: *difference,
                         applied: false,
@@ -6473,8 +7000,9 @@ impl WgpuSceneRenderer {
             w,
             h,
         };
-        // Translator-owned ids live far above producer ids (which start at 1
-        // per scene) and are drained from the pool after each frame.
+        if ids_used.len() >= MAX_TRANSIENT_GRAPHICS_LAYERS {
+            return;
+        }
         let layer_id = *id_head;
         *id_head = id_head.wrapping_add(1);
         ids_used.push(layer_id);
@@ -6529,7 +7057,7 @@ impl WgpuSceneRenderer {
         let saved = std::mem::replace(current_pass, layer_pass);
         passes.push(saved);
         target_stack.push(prev_target);
-        self.get_or_create_layer(layer_id, w as u32, h as u32, layer_rect);
+        self.get_or_create_layer(layer_id, w as u32, h as u32, layer_rect, true);
         *current_target_size = (w, h);
         flatten_stack.push(FlattenRecord {
             stack_len,
@@ -6650,11 +7178,98 @@ impl WgpuSceneRenderer {
         });
     }
 
-    fn upload_mesh_geometry(
+    fn mesh_cache_key(mesh: &Arc<repose_core::VectorMeshData>) -> MeshCacheKey {
+        MeshCacheKey {
+            source: Arc::as_ptr(mesh) as usize,
+            index: 0,
+            kind: 1,
+            vertex_len: mesh.vertices.len(),
+            index_len: mesh.indices.len(),
+        }
+    }
+
+    fn overlay_mesh_cache_key(
+        meshes: &Arc<[repose_core::VectorMeshData]>,
+        index: usize,
+    ) -> MeshCacheKey {
+        let mesh = &meshes[index];
+        MeshCacheKey {
+            source: meshes.as_ptr() as usize,
+            index,
+            kind: 2,
+            vertex_len: mesh.vertices.len(),
+            index_len: mesh.indices.len(),
+        }
+    }
+
+    fn mesh_owner_matches(owner: &MeshOwner, other: &MeshOwner) -> bool {
+        match (owner, other) {
+            (MeshOwner::Object(a), MeshOwner::Object(b)) => Arc::ptr_eq(a, b),
+            (MeshOwner::Overlay(a), MeshOwner::Overlay(b)) => Arc::ptr_eq(a, b),
+            _ => false,
+        }
+    }
+
+    fn evict_mesh_cache(&mut self) -> bool {
+        let victim = self
+            .mesh_cache
+            .iter()
+            .filter(|(_, entry)| entry.last_used_frame != self.frame_index)
+            .min_by_key(|(_, entry)| entry.last_touch_frame)
+            .map(|(key, _)| *key);
+        let Some(victim) = victim else {
+            return false;
+        };
+        let Some(entry) = self.mesh_cache.remove(&victim) else {
+            return false;
+        };
+        self.mesh_cache_bytes_total = self.mesh_cache_bytes_total.saturating_sub(entry.gpu.bytes);
+        true
+    }
+
+    fn reserve_mesh_cache(&mut self, bytes: u64) -> bool {
+        while self.mesh_cache.len() >= MAX_MESH_CACHE_ENTRIES
+            || self.mesh_cache_bytes_total.saturating_add(bytes) > MAX_MESH_CACHE_BYTES
+        {
+            if !self.evict_mesh_cache() {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn reserve_mesh_gpu_budget(&mut self, bytes: u64) -> bool {
+        while self.gpu_bytes_total().saturating_add(bytes) > self.gpu_budget_bytes {
+            if !self.evict_mesh_cache() {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn upload_mesh_geometry_with_owner(
         &mut self,
         mesh: &repose_core::VectorMeshData,
-        encoder: &mut wgpu::CommandEncoder,
-    ) -> Option<(u64, u32, u64, u32)> {
+        key: MeshCacheKey,
+        owner: MeshOwner,
+    ) -> Option<MeshGpu> {
+        let touch = self.next_cache_touch();
+        let cached = self
+            .mesh_cache
+            .get(&key)
+            .filter(|entry| Self::mesh_owner_matches(&entry.owner, &owner))
+            .map(|entry| entry.gpu.clone());
+        if let Some(gpu) = cached {
+            if let Some(entry) = self.mesh_cache.get_mut(&key) {
+                entry.last_used_frame = self.frame_index;
+                entry.last_touch_frame = touch;
+            }
+            return Some(gpu);
+        }
+        if let Some(entry) = self.mesh_cache.remove(&key) {
+            self.mesh_cache_bytes_total =
+                self.mesh_cache_bytes_total.saturating_sub(entry.gpu.bytes);
+        }
         if mesh.vertices.is_empty() || mesh.indices.is_empty() {
             log::warn!("vector mesh has no geometry");
             return None;
@@ -6687,28 +7302,72 @@ impl WgpuSceneRenderer {
             })
             .collect();
         let vbytes = bytemuck::cast_slice(&verts);
-        let vlen = u64::try_from(vbytes.len()).ok()?;
-        self.mesh_verts
-            .grow_to_fit(&self.device, encoder, vlen)
-            .map_err(|error| log::error!("{error:#}"))
-            .ok()?;
-        let voff = self
-            .mesh_verts
-            .alloc_write(&self.queue, vbytes)
-            .map_err(|error| log::error!("{error:#}"))
-            .ok()?;
-        let ibytes = bytemuck::cast_slice(&mesh.indices);
-        let ilen = u64::try_from(ibytes.len()).ok()?;
-        self.mesh_indices
-            .grow_to_fit(&self.device, encoder, ilen)
-            .map_err(|error| log::error!("{error:#}"))
-            .ok()?;
-        let ioff = self
-            .mesh_indices
-            .alloc_write(&self.queue, ibytes)
-            .map_err(|error| log::error!("{error:#}"))
-            .ok()?;
-        Some((voff, vertex_count, ioff, index_count))
+        let ibytes = bytemuck::cast_slice(&mesh.indices[..]);
+        let bytes = u64::try_from(vbytes.len())
+            .ok()?
+            .checked_add(u64::try_from(ibytes.len()).ok()?)?;
+        let max_buffer_size = self.device.limits().max_buffer_size;
+        if vbytes.len() as u64 > max_buffer_size || ibytes.len() as u64 > max_buffer_size {
+            return None;
+        }
+        let cacheable = bytes <= MAX_MESH_CACHE_BYTES
+            && self.reserve_mesh_cache(bytes)
+            && self.reserve_mesh_gpu_budget(bytes);
+        let vertices = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("vector mesh vertices"),
+            size: vbytes.len().max(4) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let indices = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("vector mesh indices"),
+            size: ibytes.len().max(4) as u64,
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.queue.write_buffer(&vertices, 0, vbytes);
+        self.queue.write_buffer(&indices, 0, ibytes);
+        let gpu = MeshGpu {
+            vertices,
+            indices,
+            vertex_count,
+            index_count,
+            bytes,
+        };
+        if cacheable {
+            let touch = self.next_cache_touch();
+            self.mesh_cache.insert(
+                key,
+                MeshCacheEntry {
+                    owner,
+                    gpu: gpu.clone(),
+                    last_used_frame: self.frame_index,
+                    last_touch_frame: touch,
+                },
+            );
+            self.mesh_cache_bytes_total = self.mesh_cache_bytes_total.saturating_add(bytes);
+        }
+        Some(gpu)
+    }
+
+    fn upload_mesh_geometry(&mut self, mesh: &Arc<repose_core::VectorMeshData>) -> Option<MeshGpu> {
+        self.upload_mesh_geometry_with_owner(
+            mesh,
+            Self::mesh_cache_key(mesh),
+            MeshOwner::Object(mesh.clone()),
+        )
+    }
+
+    fn upload_overlay_mesh(
+        &mut self,
+        meshes: &Arc<[repose_core::VectorMeshData]>,
+        index: usize,
+    ) -> Option<MeshGpu> {
+        self.upload_mesh_geometry_with_owner(
+            &meshes[index],
+            Self::overlay_mesh_cache_key(meshes, index),
+            MeshOwner::Overlay(meshes.clone()),
+        )
     }
 
     fn alloc_mesh_uniform(&mut self, u: MeshUniform) -> Option<u64> {
@@ -6801,6 +7460,9 @@ impl WgpuSceneRenderer {
         let w = layer_rect.w;
         let h = layer_rect.h;
         let local_rect = layer_rect;
+        if ids_used.len() >= MAX_TRANSIENT_GRAPHICS_LAYERS {
+            return;
+        }
         let layer_id = *id_head;
         *id_head = id_head.wrapping_add(1);
         ids_used.push(layer_id);
@@ -6846,7 +7508,7 @@ impl WgpuSceneRenderer {
             &mut layer_pass,
             encoder,
         );
-        self.get_or_create_layer(layer_id, w as u32, h as u32, layer_rect);
+        self.get_or_create_layer(layer_id, w as u32, h as u32, layer_rect, true);
         let shift = repose_core::Transform::translate(-local_rect.x, -local_rect.y);
         let local = current_transform.combine(&shift);
         self.emit_vector_mesh(
@@ -6856,7 +7518,6 @@ impl WgpuSceneRenderer {
             &paint,
             repose_core::BlendMode::Alpha,
             &mut layer_pass.cmds,
-            encoder,
         );
         let saved = std::mem::replace(
             current_pass,
@@ -6917,8 +7578,32 @@ impl WgpuSceneRenderer {
         });
     }
 
-    /// Allocate (or reuse) the backdrop snapshot texture for an isolated
-    /// blend layer.
+    fn recycle_blend_snapshot(&mut self, snapshot: BlendSnapshot) {
+        let key = snapshot.key;
+        if let Some(old) = self.blend_snapshot_pool.insert(key, snapshot) {
+            self.blend_snapshot_bytes_total =
+                self.blend_snapshot_bytes_total.saturating_sub(old.bytes);
+        }
+        while self.blend_snapshot_bytes_total > MAX_BLEND_SNAPSHOT_BYTES
+            || self.blend_snapshot_pool.len() > MAX_BLEND_SNAPSHOT_POOL_ENTRIES
+        {
+            let Some(victim) = self.blend_snapshot_pool.keys().next().copied() else {
+                break;
+            };
+            if let Some(snapshot) = self.blend_snapshot_pool.remove(&victim) {
+                self.blend_snapshot_bytes_total = self
+                    .blend_snapshot_bytes_total
+                    .saturating_sub(snapshot.bytes);
+            }
+        }
+    }
+
+    fn recycle_blend_snapshots(&mut self) {
+        for (_, snapshot) in std::mem::take(&mut self.blend_snapshots) {
+            self.recycle_blend_snapshot(snapshot);
+        }
+    }
+
     fn alloc_blend_snapshot(
         &mut self,
         layer_id: u32,
@@ -6926,34 +7611,46 @@ impl WgpuSceneRenderer {
         h: u32,
         format: wgpu::TextureFormat,
     ) -> bool {
-        let reuse = self
+        let key = BlendSnapshotKey {
+            format,
+            width: w,
+            height: h,
+        };
+        if self
             .blend_snapshots
             .get(&layer_id)
-            .is_some_and(|s| s.width == w && s.height == h);
-        if reuse {
+            .is_some_and(|snapshot| snapshot.key == key)
+        {
             return true;
         }
         if w == 0 || h == 0 {
             return false;
         }
+        if let Some(old) = self.blend_snapshots.remove(&layer_id) {
+            self.recycle_blend_snapshot(old);
+        }
+        if let Some(snapshot) = self.blend_snapshot_pool.remove(&key) {
+            self.blend_snapshots.insert(layer_id, snapshot);
+            return true;
+        }
         let Ok(bytes) = texture_storage_bytes(format, w, h) else {
             return false;
         };
-        let old_bytes = self
-            .blend_snapshots
-            .get(&layer_id)
-            .map_or(0, |snapshot| snapshot.bytes);
-        let projected = self
-            .gpu_bytes_total()
-            .saturating_sub(old_bytes)
-            .checked_add(bytes)
-            .unwrap_or(u64::MAX);
-        if bytes > MAX_BLEND_SNAPSHOT_BYTES || projected > self.gpu_budget_bytes {
+        if bytes > MAX_BLEND_SNAPSHOT_BYTES {
             return false;
         }
-        if let Some(old) = self.blend_snapshots.remove(&layer_id) {
-            self.blend_snapshot_bytes_total =
-                self.blend_snapshot_bytes_total.saturating_sub(old.bytes);
+        while self.blend_snapshot_bytes_total.saturating_add(bytes) > MAX_BLEND_SNAPSHOT_BYTES
+            || self.gpu_bytes_total().saturating_add(bytes) > self.gpu_budget_bytes
+        {
+            let Some(victim) = self.blend_snapshot_pool.keys().next().copied() else {
+                return false;
+            };
+            let Some(snapshot) = self.blend_snapshot_pool.remove(&victim) else {
+                return false;
+            };
+            self.blend_snapshot_bytes_total = self
+                .blend_snapshot_bytes_total
+                .saturating_sub(snapshot.bytes);
         }
         let tex = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("blend backdrop snapshot"),
@@ -6988,10 +7685,9 @@ impl WgpuSceneRenderer {
         self.blend_snapshots.insert(
             layer_id,
             BlendSnapshot {
+                key,
                 texture: tex,
                 bind,
-                width: w,
-                height: h,
                 bytes,
             },
         );
@@ -7000,9 +7696,7 @@ impl WgpuSceneRenderer {
 
     fn remove_blend_snapshot(&mut self, layer_id: u32) {
         if let Some(snapshot) = self.blend_snapshots.remove(&layer_id) {
-            self.blend_snapshot_bytes_total = self
-                .blend_snapshot_bytes_total
-                .saturating_sub(snapshot.bytes);
+            self.recycle_blend_snapshot(snapshot);
         }
     }
 
@@ -7016,25 +7710,21 @@ impl WgpuSceneRenderer {
     fn emit_vector_mesh(
         &mut self,
         current_transform: &Transform,
-        mesh: &repose_core::VectorMeshData,
+        mesh: &Arc<repose_core::VectorMeshData>,
         transform: [f32; 6],
         paint: &repose_core::PaintDesc,
         blend: repose_core::BlendMode,
         cmds: &mut Vec<Cmd>,
-        encoder: &mut wgpu::CommandEncoder,
     ) {
         let affine = combine_mesh_affine(current_transform, transform);
-        let Some((voff, vcnt, ioff, icnt)) = self.upload_mesh_geometry(mesh, encoder) else {
+        let Some(mesh_gpu) = self.upload_mesh_geometry(mesh) else {
             return;
         };
         let Some(uoff) = self.alloc_mesh_uniform(mesh_uniform_from_paint(affine, paint)) else {
             return;
         };
         cmds.push(Cmd::VectorMesh {
-            voff,
-            vcnt,
-            ioff,
-            icnt,
+            mesh: mesh_gpu,
             uoff,
             blend,
         });
@@ -7184,6 +7874,10 @@ impl WgpuSceneRenderer {
         target_texture: Option<&wgpu::Texture>,
         clear_color_override: Option<[f64; 4]>,
     ) {
+        if self.output_width == 0 || self.output_height == 0 {
+            return;
+        }
+        self.sync_text_caches();
         /// AABB of a rect under the *plain affine* part of a transform
         /// (linear + translation, no origin re-pivot).
         fn affine_aabb(transform: &Transform, rect: &repose_core::Rect) -> repose_core::Rect {
@@ -7213,6 +7907,31 @@ impl WgpuSceneRenderer {
                 w: (max_x - min_x).max(0.0),
                 h: (max_y - min_y).max(0.0),
             }
+        }
+
+        fn visible(aabb: repose_core::Rect, clip: repose_core::Rect) -> bool {
+            if !aabb.x.is_finite()
+                || !aabb.y.is_finite()
+                || !aabb.w.is_finite()
+                || !aabb.h.is_finite()
+                || aabb.w <= 0.0
+                || aabb.h <= 0.0
+            {
+                return false;
+            }
+            let aabb = repose_core::Rect {
+                x: aabb.x - 1.0,
+                y: aabb.y - 1.0,
+                w: aabb.w + 2.0,
+                h: aabb.h + 2.0,
+            };
+            let clipped = intersect(aabb, clip);
+            clipped.x.is_finite()
+                && clipped.y.is_finite()
+                && clipped.w.is_finite()
+                && clipped.h.is_finite()
+                && clipped.w > 0.0
+                && clipped.h > 0.0
         }
 
         fn to_ndc(x: f32, y: f32, w: f32, h: f32, fb_w: f32, fb_h: f32) -> [f32; 4] {
@@ -7335,7 +8054,6 @@ impl WgpuSceneRenderer {
             arcs: Vec<ArcInstance>,
             masks: Vec<GlyphInstance>,
             colors: Vec<GlyphInstance>,
-            nv12s: Vec<Nv12Instance>,
         }
 
         impl Batch {
@@ -7348,7 +8066,6 @@ impl WgpuSceneRenderer {
                     arcs: vec![],
                     masks: vec![],
                     colors: vec![],
-                    nv12s: vec![],
                 }
             }
 
@@ -7360,7 +8077,6 @@ impl WgpuSceneRenderer {
                     && self.arcs.is_empty()
                     && self.masks.is_empty()
                     && self.colors.is_empty()
-                    && self.nv12s.is_empty()
             }
 
             fn flush(
@@ -7376,7 +8092,6 @@ impl WgpuSceneRenderer {
                     &mut InstancedPipe<GlyphInstance>,
                     &mut InstancedPipe<GlyphInstance>,
                 ),
-                nv12_pipe: &mut InstancedPipe<Nv12Instance>,
                 device: &wgpu::Device,
                 queue: &wgpu::Queue,
                 encoder: &mut wgpu::CommandEncoder,
@@ -7405,14 +8120,6 @@ impl WgpuSceneRenderer {
                 flush_one!(arcs, arcs, Arc);
                 flush_one!(masks, masks, GlyphsMask);
                 flush_one!(colors, colors, GlyphsColor);
-
-                if !self.nv12s.is_empty() {
-                    if let Some((off, cnt)) = nv12_pipe.upload(device, queue, encoder, &self.nv12s)
-                    {
-                        let _ = (off, cnt);
-                    }
-                    self.nv12s.clear();
-                }
             }
         }
 
@@ -7428,31 +8135,24 @@ impl WgpuSceneRenderer {
         self.nv12.reset();
 
         self.slug_ring.reset();
-        self.mesh_verts.reset();
-        self.mesh_indices.reset();
         self.mesh_uniform_head = 0;
         self.projective_ring.reset();
         self.blend_ring.reset();
-        // Translator-owned flatten layers are single-frame by construction:
-        // drop last frame's textures before translating (their composites
-        // were submitted last frame, so GPU-side refs are independent).
-        for id in self
-            .flatten_layer_ids
-            .drain(..)
-            .chain(self.producer_layer_ids.drain(..))
-        {
+        for id in self.flatten_layer_ids.drain(..) {
             if let Some(layer) = self.layer_pool.remove(&id) {
                 self.layer_bytes_total = self.layer_bytes_total.saturating_sub(layer.bytes);
+                if layer.transient {
+                    self.transient_layer_bytes_total =
+                        self.transient_layer_bytes_total.saturating_sub(layer.bytes);
+                }
             }
         }
-        for snapshot in self.blend_snapshots.values() {
-            self.blend_snapshot_bytes_total = self
-                .blend_snapshot_bytes_total
-                .saturating_sub(snapshot.bytes);
-        }
-        self.blend_snapshots.clear();
+        self.producer_layer_ids.clear();
+        self.recycle_blend_snapshots();
         self.blend_copies.clear();
         let mut batch = Batch::new();
+        let mut image_run: Option<(u64, ImageFilter, Vec<GlyphInstance>)> = None;
+        let mut nv12_run: Option<(u64, ImageFilter, Vec<Nv12Instance>)> = None;
         let mut slug_verts_local: Vec<slug::TessVertex> = Vec::new();
         let mut transform_stack: Vec<Transform> = vec![Transform::identity()];
         let mut flatten_stack: Vec<FlattenRecord> = Vec::new();
@@ -7478,8 +8178,37 @@ impl WgpuSceneRenderer {
             };
         }
 
-        macro_rules! flush_batch {
-            () => {
+        macro_rules! flush_image_runs {
+            () => {{
+                if let Some((handle, filter, instances)) = image_run.take()
+                    && let Some((off, cnt)) =
+                        self.glyph_color
+                            .upload(&self.device, &self.queue, encoder, &instances)
+                {
+                    current_pass.cmds.push(Cmd::ImageRgba {
+                        off,
+                        cnt,
+                        handle,
+                        filter,
+                    });
+                }
+                if let Some((handle, filter, instances)) = nv12_run.take()
+                    && let Some((off, cnt)) =
+                        self.nv12
+                            .upload(&self.device, &self.queue, encoder, &instances)
+                {
+                    current_pass.cmds.push(Cmd::ImageNv12 {
+                        off,
+                        cnt,
+                        handle,
+                        filter,
+                    });
+                }
+            }};
+        }
+
+        macro_rules! flush_primitives {
+            () => {{
                 if !batch.is_empty() {
                     batch.flush(
                         (
@@ -7490,14 +8219,20 @@ impl WgpuSceneRenderer {
                             &mut self.arcs,
                         ),
                         (&mut self.glyph_mask, &mut self.glyph_color),
-                        &mut self.nv12,
                         &self.device,
                         &self.queue,
                         encoder,
                         &mut current_pass.cmds,
                     )
                 }
-            };
+            }};
+        }
+
+        macro_rules! flush_batch {
+            () => {{
+                flush_image_runs!();
+                flush_primitives!();
+            }};
         }
         for node in &scene.nodes {
             let t_identity = Transform::identity();
@@ -7509,6 +8244,10 @@ impl WgpuSceneRenderer {
                     brush,
                     radius,
                 } => {
+                    let clip = scissor_stack.last().copied().unwrap_or(root_clip_rect);
+                    if !visible(affine_aabb(current_transform, rect), clip) {
+                        continue;
+                    }
                     flush_if_prim_changed!("rect", &self.rects);
                     let (ndc, fwd_mat) = rect_to_instance_ndc(
                         *rect,
@@ -7539,6 +8278,10 @@ impl WgpuSceneRenderer {
                     width,
                     radius,
                 } => {
+                    let clip = scissor_stack.last().copied().unwrap_or(root_clip_rect);
+                    if !visible(affine_aabb(current_transform, rect), clip) {
+                        continue;
+                    }
                     flush_if_prim_changed!("border", &self.borders);
                     let (ndc, fwd_mat) = rect_to_instance_ndc(
                         *rect,
@@ -7565,6 +8308,10 @@ impl WgpuSceneRenderer {
                     });
                 }
                 SceneNode::Ellipse { rect, brush } => {
+                    let clip = scissor_stack.last().copied().unwrap_or(root_clip_rect);
+                    if !visible(affine_aabb(current_transform, rect), clip) {
+                        continue;
+                    }
                     flush_if_prim_changed!("ellipse", &self.ellipses);
                     let (ndc, fwd_mat) = rect_to_instance_ndc(
                         *rect,
@@ -7589,6 +8336,17 @@ impl WgpuSceneRenderer {
                     });
                 }
                 SceneNode::EllipseBorder { rect, brush, width } => {
+                    let clip = scissor_stack.last().copied().unwrap_or(root_clip_rect);
+                    let cull_pad = width.0.abs() * 0.5 + 2.0;
+                    let cull_rect = repose_core::Rect {
+                        x: rect.x - cull_pad,
+                        y: rect.y - cull_pad,
+                        w: rect.w + cull_pad * 2.0,
+                        h: rect.h + cull_pad * 2.0,
+                    };
+                    if !visible(affine_aabb(current_transform, &cull_rect), clip) {
+                        continue;
+                    }
                     flush_if_prim_changed!("ellipse_border", &self.ellipse_borders);
                     let (ndc, fwd_mat) = rect_to_instance_ndc(
                         *rect,
@@ -7635,6 +8393,17 @@ impl WgpuSceneRenderer {
                         || stroke_width.0 <= 0.0
                         || sweep_angle.abs() <= 1e-6
                     {
+                        continue;
+                    }
+                    let clip = scissor_stack.last().copied().unwrap_or(root_clip_rect);
+                    let cull_pad = stroke_width.0.abs() * 0.5 + 2.0;
+                    let cull_rect = repose_core::Rect {
+                        x: rect.x - cull_pad,
+                        y: rect.y - cull_pad,
+                        w: rect.w + cull_pad * 2.0,
+                        h: rect.h + cull_pad * 2.0,
+                    };
+                    if !visible(affine_aabb(current_transform, &cull_rect), clip) {
                         continue;
                     }
                     flush_if_prim_changed!("arc", &self.arcs);
@@ -7693,9 +8462,29 @@ impl WgpuSceneRenderer {
                     url: _,
                     font_variation_settings,
                 } => {
+                    let px = size.0;
+                    if !px.is_finite()
+                        || px <= 0.0
+                        || !rect.x.is_finite()
+                        || !rect.y.is_finite()
+                        || !rect.w.is_finite()
+                        || !rect.h.is_finite()
+                    {
+                        continue;
+                    }
+                    let margin = px * 4.0 + letter_spacing.0.abs() * 2.0;
+                    let text_bounds = repose_core::Rect {
+                        x: rect.x - margin,
+                        y: rect.y - margin,
+                        w: rect.w + margin * 2.0,
+                        h: rect.h + margin * 2.0,
+                    };
+                    let clip = scissor_stack.last().copied().unwrap_or(root_clip_rect);
+                    if !visible(affine_aabb(current_transform, &text_bounds), clip) {
+                        continue;
+                    }
                     flush_batch!(); // flush any prior primitives
 
-                    let px = size.0;
                     let lh_ratio = rect.h / px;
                     let fw = font_weight.0;
                     let fs = if *font_style == FontStyle::Italic {
@@ -7703,17 +8492,17 @@ impl WgpuSceneRenderer {
                     } else {
                         0
                     };
-                    let shaped = repose_text::shape_line(
-                        text.as_ref(),
+                    let shaped = self.shape_text_cached(
+                        text,
                         px,
                         lh_ratio,
                         *font_family,
                         fw,
                         fs,
                         letter_spacing.0,
-                        font_variation_settings.as_deref(),
+                        font_variation_settings.as_ref(),
                     );
-                    let baseline_y = shaped.first().map(|g| rect.y + g.y);
+                    let baseline_y = shaped.glyphs.first().map(|g| rect.y + g.y);
 
                     let fwd = forward_rs_mat(current_transform);
                     let has_linear = fwd != [1.0, 0.0, 0.0, 1.0];
@@ -7825,16 +8614,60 @@ impl WgpuSceneRenderer {
                         None
                     };
 
-                    for sg in shaped {
-                        let gx = rect.x + sg.x + sg.bearing_x;
-                        let gy = rect.y + sg.y - sg.bearing_y + baseline_shift_y;
-
-                        // Vector glyph path: tessellated geometry with MSAA.
+                    let mut legacy_shaped = None;
+                    for (glyph_index, sg) in shaped.glyphs.iter().enumerate() {
+                        let mut fill_cached = false;
+                        let mut stroke_cached = false;
                         if self.slug_enabled {
-                            let ck = repose_text::lookup_cache_key(sg.key, sg.px);
-                            if let Some(ref ck) = ck {
-                                // Check if cached.
-                                let need_tessellate = self.slug_cache.get(ck).is_none_or(|g| {
+                            let ck = sg.cache_key;
+                            let color_linear = color.to_linear();
+                            let fill_key = draws_fill.then(|| {
+                                Self::slug_draw_key(
+                                    ck,
+                                    true,
+                                    None,
+                                    current_transform,
+                                    (rect.x + sg.x, rect.y + sg.y + baseline_shift_y),
+                                    px,
+                                    current_target_size,
+                                    color_linear,
+                                )
+                            });
+                            let stroke_key = is_stroke.then(|| {
+                                Self::slug_draw_key(
+                                    ck,
+                                    false,
+                                    stroke_tess_key.as_ref(),
+                                    current_transform,
+                                    (rect.x + sg.x, rect.y + sg.y + baseline_shift_y),
+                                    px,
+                                    current_target_size,
+                                    color_linear,
+                                )
+                            });
+                            let mut all_cached = true;
+                            if let Some(key) = fill_key {
+                                if let Some(vertices) = self.get_cached_slug_vertices(&key) {
+                                    slug_verts_local.extend_from_slice(&vertices);
+                                    fill_cached = true;
+                                } else {
+                                    all_cached = false;
+                                }
+                            }
+                            if let Some(key) = stroke_key {
+                                if let Some(vertices) = self.get_cached_slug_vertices(&key) {
+                                    slug_verts_local.extend_from_slice(&vertices);
+                                    stroke_cached = true;
+                                } else {
+                                    all_cached = false;
+                                }
+                            }
+                            if all_cached {
+                                continue;
+                            }
+                            let outline = self.cached_glyph_outline(ck);
+                            if let Some(commands) = outline.as_ref() {
+                                let need_tessellate = self.slug_cache.get(&ck).is_none_or(|g| {
                                     (draws_fill && g.fill_vertices.is_none())
                                         || (is_stroke
                                             && !g
@@ -7842,35 +8675,32 @@ impl WgpuSceneRenderer {
                                                 .contains_key(stroke_tess_key.as_ref().unwrap()))
                                 });
                                 if need_tessellate {
-                                    if let Some((ck2, commands)) =
-                                        repose_text::lookup_and_extract_outline(sg.key, sg.px)
-                                    {
-                                        let font_size_px = f32::from_bits(ck2.font_size_bits);
-                                        if draws_fill {
-                                            self.slug_cache.get_or_insert(
-                                                ck2,
-                                                font_size_px,
-                                                &commands,
-                                            );
-                                        }
-                                        if is_stroke {
-                                            self.slug_cache.get_or_insert_stroke(
-                                                ck2,
-                                                font_size_px,
-                                                &commands,
-                                                stroke_width,
-                                                stroke_cap,
-                                                stroke_join,
-                                                stroke_miter,
-                                                &stroke_path_effect,
-                                            );
-                                        }
+                                    let font_size_px = f32::from_bits(ck.font_size_bits);
+                                    if draws_fill {
+                                        self.slug_cache.get_or_insert(
+                                            ck,
+                                            font_size_px,
+                                            commands.as_ref(),
+                                        );
+                                    }
+                                    if is_stroke {
+                                        self.slug_cache.get_or_insert_stroke(
+                                            ck,
+                                            font_size_px,
+                                            commands.as_ref(),
+                                            stroke_width,
+                                            stroke_cap,
+                                            stroke_join,
+                                            stroke_miter,
+                                            &stroke_path_effect,
+                                        );
                                     }
                                 } else {
-                                    self.slug_cache.touch(ck);
+                                    self.slug_cache.touch(&ck);
                                 }
                             }
-                            if let Some(entry) = ck.as_ref().and_then(|ck| self.slug_cache.get(ck))
+                            if let Some(_commands) = outline.as_ref()
+                                && let Some(entry) = self.slug_cache.get(&ck)
                             {
                                 let ox = rect.x + sg.x;
                                 let oy = rect.y + sg.y + baseline_shift_y;
@@ -7893,29 +8723,49 @@ impl WgpuSceneRenderer {
                                 let tw = current_target_size.0;
                                 let th = current_target_size.1;
 
-                                let mut emit = |verts: &[[f32; 2]]| {
-                                    for &v in verts {
-                                        let (sx, sy) = tf(ox + v[0] * px, oy - v[1] * px);
-                                        let ndc_x = sx / tw * 2.0 - 1.0;
-                                        let ndc_y = -(sy / th) * 2.0 + 1.0;
-                                        slug_verts_local.push(slug::TessVertex {
-                                            ndc_pos: [ndc_x, ndc_y],
-                                            color: color.to_linear(),
-                                        });
-                                    }
+                                let fill_vertices = if draws_fill && !fill_cached {
+                                    entry.fill_vertices.clone().unwrap_or_default()
+                                } else {
+                                    Vec::new()
                                 };
-                                if draws_fill {
-                                    emit(entry.fill_vertices.as_deref().unwrap_or(&[]));
+                                let stroke_vertices = if is_stroke && !stroke_cached {
+                                    stroke_tess_key
+                                        .as_ref()
+                                        .and_then(|key| entry.stroke_variants.get(key))
+                                        .cloned()
+                                        .unwrap_or_default()
+                                } else {
+                                    Vec::new()
+                                };
+                                let mut emit = |verts: Vec<[f32; 2]>, cache_key: SlugDrawKey| {
+                                    let transformed: Vec<slug::TessVertex> = verts
+                                        .iter()
+                                        .map(|v| {
+                                            let (sx, sy) = tf(ox + v[0] * px, oy - v[1] * px);
+                                            slug::TessVertex {
+                                                ndc_pos: [
+                                                    sx / tw * 2.0 - 1.0,
+                                                    -(sy / th) * 2.0 + 1.0,
+                                                ],
+                                                color: color_linear,
+                                            }
+                                        })
+                                        .collect();
+                                    let vertices =
+                                        self.cached_slug_vertices(cache_key, transformed);
+                                    slug_verts_local.extend_from_slice(&vertices);
+                                };
+                                if draws_fill
+                                    && !fill_cached
+                                    && let Some(key) = fill_key
+                                {
+                                    emit(fill_vertices, key);
                                 }
-                                if is_stroke {
-                                    let key = stroke_tess_key.as_ref().unwrap();
-                                    emit(
-                                        entry
-                                            .stroke_variants
-                                            .get(key)
-                                            .map(|v| v.as_slice())
-                                            .unwrap_or(&[]),
-                                    );
+                                if is_stroke
+                                    && !stroke_cached
+                                    && let Some(key) = stroke_key
+                                {
+                                    emit(stroke_vertices, key);
                                 }
 
                                 if !draws_fill {
@@ -7927,11 +8777,35 @@ impl WgpuSceneRenderer {
                         }
 
                         if !draws_fill {
-                            // Don't use atlas fallback for strokes too
                             continue;
                         }
-
-                        if let Some(info) = self.upload_glyph_color(sg.key, sg.px) {
+                        if fill_cached {
+                            continue;
+                        }
+                        if legacy_shaped.is_none() {
+                            legacy_shaped = Some(self.legacy_shape_text_cached(
+                                text,
+                                px,
+                                lh_ratio,
+                                *font_family,
+                                fw,
+                                fs,
+                                letter_spacing.0,
+                                font_variation_settings.as_ref(),
+                            ));
+                        }
+                        let Some(legacy_glyph) = legacy_shaped
+                            .as_ref()
+                            .and_then(|glyphs| glyphs.get(glyph_index))
+                        else {
+                            continue;
+                        };
+                        let gx = rect.x + legacy_glyph.x + legacy_glyph.bearing_x;
+                        let gy =
+                            rect.y + legacy_glyph.y - legacy_glyph.bearing_y + baseline_shift_y;
+                        if let Some(info) =
+                            self.upload_glyph_color(legacy_glyph.cache_key, legacy_glyph.px)
+                        {
                             let (ndc, fwd_mat) = make_glyph_instance(gx, gy, info.w, info.h);
                             batch.colors.push(GlyphInstance {
                                 xywh: ndc,
@@ -7939,7 +8813,9 @@ impl WgpuSceneRenderer {
                                 color: color.to_linear(),
                                 fwd_mat,
                             });
-                        } else if let Some(info) = self.upload_glyph_mask(sg.key, sg.px) {
+                        } else if let Some(info) =
+                            self.upload_glyph_mask(legacy_glyph.cache_key, legacy_glyph.px)
+                        {
                             let (ndc, fwd_mat) = make_glyph_instance(gx, gy, info.w, info.h);
                             batch.masks.push(GlyphInstance {
                                 xywh: ndc,
@@ -8046,6 +8922,10 @@ impl WgpuSceneRenderer {
                     filter,
                     source_rect,
                 } => {
+                    let clip = scissor_stack.last().copied().unwrap_or(root_clip_rect);
+                    if !visible(affine_aabb(current_transform, rect), clip) {
+                        continue;
+                    }
                     flush_batch!();
                     let (img_w, img_h, is_nv12) = match self.resolve_image_for_draw(*handle) {
                         Some(wh) => wh,
@@ -8073,6 +8953,9 @@ impl WgpuSceneRenderer {
                         current_target_size.1,
                     );
                     if is_nv12 {
+                        if image_run.is_some() {
+                            flush_image_runs!();
+                        }
                         let (uv_x_offset, uv_y_offset) =
                             if let Some(ImageTex::Nv12 {
                                 w, h, color_info, ..
@@ -8096,33 +8979,47 @@ impl WgpuSceneRenderer {
                             uv_y_offset,
                             fwd_mat,
                         };
-                        if let Some((off, _)) =
-                            self.nv12
-                                .upload(&self.device, &self.queue, encoder, &[inst])
+                        if nv12_run
+                            .as_ref()
+                            .is_some_and(|(run_handle, run_filter, _)| {
+                                *run_handle != *handle || *run_filter != *filter
+                            })
                         {
-                            current_pass.cmds.push(Cmd::ImageNv12 {
-                                off,
-                                cnt: 1,
-                                handle: *handle,
-                            });
+                            flush_image_runs!();
+                        }
+                        match &mut nv12_run {
+                            Some((run_handle, run_filter, instances))
+                                if *run_handle == *handle && *run_filter == *filter =>
+                            {
+                                instances.push(inst)
+                            }
+                            _ => nv12_run = Some((*handle, *filter, vec![inst])),
                         }
                     } else {
+                        if nv12_run.is_some() {
+                            flush_image_runs!();
+                        }
                         let inst = GlyphInstance {
                             xywh: ndc_center,
                             uv: uv_rect,
                             color: tint.to_linear(),
                             fwd_mat,
                         };
-                        if let Some((off, _)) =
-                            self.glyph_color
-                                .upload(&self.device, &self.queue, encoder, &[inst])
+                        if image_run
+                            .as_ref()
+                            .is_some_and(|(run_handle, run_filter, _)| {
+                                *run_handle != *handle || *run_filter != *filter
+                            })
                         {
-                            current_pass.cmds.push(Cmd::ImageRgba {
-                                off,
-                                cnt: 1,
-                                handle: *handle,
-                                filter: *filter,
-                            });
+                            flush_image_runs!();
+                        }
+                        match &mut image_run {
+                            Some((run_handle, run_filter, instances))
+                                if *run_handle == *handle && *run_filter == *filter =>
+                            {
+                                instances.push(inst)
+                            }
+                            _ => image_run = Some((*handle, *filter, vec![inst])),
                         }
                     }
                 }
@@ -8146,6 +9043,10 @@ impl WgpuSceneRenderer {
                         w: tile_w as f32,
                         h: tile_h as f32,
                     };
+                    let clip = scissor_stack.last().copied().unwrap_or(root_clip_rect);
+                    if !visible(affine_aabb(current_transform, &draw_rect), clip) {
+                        continue;
+                    }
                     let (ndc_center, fwd_mat) = rect_to_instance_ndc(
                         draw_rect,
                         current_transform,
@@ -8311,6 +9212,10 @@ impl WgpuSceneRenderer {
                     elevation: _,
                     color,
                 } => {
+                    let clip = scissor_stack.last().copied().unwrap_or(root_clip_rect);
+                    if !visible(affine_aabb(current_transform, rect), clip) {
+                        continue;
+                    }
                     flush_if_prim_changed!("rect", &self.rects);
                     let (ndc, fwd_mat) = rect_to_instance_ndc(
                         *rect,
@@ -8465,10 +9370,8 @@ impl WgpuSceneRenderer {
                         rectangle_edge: *rectangle_edge,
                     });
                     passes.push(saved);
-                    if self.get_or_create_layer(*layer_id, width, height, *rect)
-                        && !self.producer_layer_ids.contains(layer_id)
-                    {
-                        self.producer_layer_ids.push(*layer_id);
+                    if self.get_or_create_layer(*layer_id, width, height, *rect, false) {
+                        self.producer_layer_ids.insert(*layer_id);
                     }
                     current_target_size = (width as f32, height as f32);
                 }
@@ -8511,6 +9414,20 @@ impl WgpuSceneRenderer {
                     };
                     let local_layer_rect = affine_aabb(&state.parent_transform, &layer_rect);
                     let (parent_width, parent_height) = state.parent_size;
+                    let parent_clip = scissor_stack.last().copied().unwrap_or(root_clip_rect);
+                    let composite_rect = if state.blur.0 > 0.0 || state.blur.1 > 0.0 {
+                        repose_core::Rect {
+                            x: local_layer_rect.x - state.blur.0 * 1.5,
+                            y: local_layer_rect.y - state.blur.1 * 1.5,
+                            w: local_layer_rect.w + state.blur.0 * 3.0,
+                            h: local_layer_rect.h + state.blur.1 * 3.0,
+                        }
+                    } else {
+                        local_layer_rect
+                    };
+                    if !visible(composite_rect, parent_clip) {
+                        continue;
+                    }
                     if state.blur.0 > 0.0 || state.blur.1 > 0.0 {
                         let blur_x = state.blur.0 * 1.5;
                         let blur_y = state.blur.1 * 1.5;
@@ -8585,7 +9502,6 @@ impl WgpuSceneRenderer {
                     offset_px,
                     color,
                 } => {
-                    flush_batch!();
                     if let Some(layer) = self.layer_pool.get(layer_id).cloned() {
                         let layer_rect = repose_core::Rect {
                             x: layer.rect_px.0,
@@ -8601,6 +9517,19 @@ impl WgpuSceneRenderer {
                         let sy = local_layer_rect.y + offset_px.1.0 - blur_y;
                         let sw = local_layer_rect.w + blur_x * 2.0;
                         let sh = local_layer_rect.h + blur_y * 2.0;
+                        let clip = scissor_stack.last().copied().unwrap_or(root_clip_rect);
+                        if !visible(
+                            repose_core::Rect {
+                                x: sx,
+                                y: sy,
+                                w: sw,
+                                h: sh,
+                            },
+                            clip,
+                        ) {
+                            continue;
+                        }
+                        flush_batch!();
                         let bw_uv = blur_x / layer.width.max(1) as f32;
                         let bh_uv = blur_y / layer.height.max(1) as f32;
                         let ndc_tl =
@@ -8646,6 +9575,11 @@ impl WgpuSceneRenderer {
                     clip: _,
                     blend,
                 } => {
+                    let affine = combine_mesh_affine(current_transform, *transform);
+                    let clip = scissor_stack.last().copied().unwrap_or(root_clip_rect);
+                    if !visible(mesh_aabb(mesh, affine), clip) {
+                        continue;
+                    }
                     flush_batch!();
                     let paint_alpha = match paint {
                         repose_core::PaintDesc::Linear {
@@ -8708,25 +9642,30 @@ impl WgpuSceneRenderer {
                             paint,
                             *blend,
                             &mut current_pass.cmds,
-                            encoder,
                         );
                     }
                 }
                 SceneNode::VectorOverlay { meshes } => {
+                    let clip = scissor_stack.last().copied().unwrap_or(root_clip_rect);
+                    let has_visible = meshes
+                        .iter()
+                        .any(|mesh| visible(mesh_aabb(mesh, [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]), clip));
+                    if !has_visible {
+                        continue;
+                    }
                     flush_batch!();
-                    for m in meshes.iter() {
-                        let Some((voff, vcnt, ioff, icnt)) = self.upload_mesh_geometry(m, encoder)
-                        else {
+                    for (index, m) in meshes.iter().enumerate() {
+                        if !visible(mesh_aabb(m, [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]), clip) {
+                            continue;
+                        }
+                        let Some(mesh_gpu) = self.upload_overlay_mesh(meshes, index) else {
                             continue;
                         };
                         let Some(uoff) = self.alloc_mesh_uniform(MeshUniform::identity()) else {
                             continue;
                         };
                         current_pass.cmds.push(Cmd::VectorOverlay {
-                            voff,
-                            vcnt,
-                            ioff,
-                            icnt,
+                            mesh: mesh_gpu,
                             uoff,
                         });
                     }
@@ -8765,24 +9704,27 @@ impl WgpuSceneRenderer {
                         && aabb.w > 0.0
                         && aabb.h > 0.0;
                     let mut applied = false;
-                    let mut geometry = (0, 0, 0, 0);
+                    let mut geometry = None;
                     let mut uoff = 0;
-                    if !blocked && has_area && (difference || scissor.2 > 0 && scissor.3 > 0) {
-                        if let Some((voff, vcnt, ioff, icnt)) =
-                            self.upload_mesh_geometry(mesh, encoder)
+                    if !blocked
+                        && has_area
+                        && (if difference {
+                            visible(aabb, top)
+                        } else {
+                            scissor.2 > 0 && scissor.3 > 0
+                        })
+                    {
+                        if let Some(mesh_gpu) = self.upload_mesh_geometry(mesh)
                             && let Some(slot) = self.alloc_mesh_uniform(mesh_uniform_from_paint(
                                 affine,
                                 &repose_core::PaintDesc::Solid,
                             ))
                         {
-                            geometry = (voff, vcnt, ioff, icnt);
+                            geometry = Some(mesh_gpu.clone());
                             uoff = slot;
                             applied = true;
                             current_pass.cmds.push(Cmd::VectorClipPush {
-                                voff,
-                                vcnt,
-                                ioff,
-                                icnt,
+                                mesh: mesh_gpu,
                                 uoff,
                                 scissor,
                                 difference,
@@ -8800,12 +9742,9 @@ impl WgpuSceneRenderer {
                         (scissor.2 > 0 && scissor.3 > 0).then_some(scissor)
                     };
                     active_clips.push(ActiveClip::Vector {
-                        voff: geometry.0,
-                        vcnt: geometry.1,
-                        ioff: geometry.2,
-                        icnt: geometry.3,
+                        mesh: geometry,
+                        source: mesh.clone(),
                         uoff,
-                        mesh: mesh.clone(),
                         affine,
                         difference,
                         applied,
@@ -8830,20 +9769,14 @@ impl WgpuSceneRenderer {
                         (scissor.2 > 0 && scissor.3 > 0).then_some(scissor);
                     match clip {
                         Some(ActiveClip::Vector {
-                            voff,
-                            vcnt,
-                            ioff,
-                            icnt,
+                            mesh: Some(mesh),
                             uoff,
                             difference,
                             applied,
                             ..
-                        }) if applied && vcnt > 0 && icnt > 0 => {
+                        }) if applied && mesh.vertex_count > 0 && mesh.index_count > 0 => {
                             current_pass.cmds.push(Cmd::VectorClipPop {
-                                voff,
-                                vcnt,
-                                ioff,
-                                icnt,
+                                mesh,
                                 uoff,
                                 scissor,
                                 difference,
@@ -8858,7 +9791,6 @@ impl WgpuSceneRenderer {
                     }
                 }
                 SceneNode::Callback { rect, payload } => {
-                    flush_batch!();
                     let t = transform_stack
                         .last()
                         .copied()
@@ -8876,6 +9808,14 @@ impl WgpuSceneRenderer {
                         current_target_size.0 as u32,
                         current_target_size.1 as u32,
                     );
+                    if current_pass.active_scissor.is_none()
+                        || !visible(transformed, top)
+                        || scissor.2 == 0
+                        || scissor.3 == 0
+                    {
+                        continue;
+                    }
+                    flush_batch!();
                     current_pass.cmds.push(Cmd::Callback {
                         rect: transformed,
                         clip_rect,
@@ -8895,15 +9835,17 @@ impl WgpuSceneRenderer {
         {
             let mut seen: std::collections::HashSet<usize> = std::collections::HashSet::new();
             let mut prepare_list: Vec<(usize, Arc<Callback>)> = Vec::new();
-            for node in &scene.nodes {
-                if let SceneNode::Callback { payload, .. } = node
-                    && payload.downcast_ref::<Callback>().is_some()
-                {
-                    let ptr = Arc::as_ptr(payload) as *const () as usize;
-                    if seen.insert(ptr)
-                        && let Ok(cb_arc) = payload.clone().downcast::<Callback>()
+            for pass in &passes {
+                for command in &pass.cmds {
+                    if let Cmd::Callback { payload, .. } = command
+                        && payload.downcast_ref::<Callback>().is_some()
                     {
-                        prepare_list.push((ptr, cb_arc));
+                        let ptr = Arc::as_ptr(payload) as *const () as usize;
+                        if seen.insert(ptr)
+                            && let Ok(cb_arc) = payload.clone().downcast::<Callback>()
+                        {
+                            prepare_list.push((ptr, cb_arc));
+                        }
                     }
                 }
             }
@@ -9053,12 +9995,9 @@ impl WgpuSceneRenderer {
         }
 
         let globals_bytes = std::mem::size_of::<Globals>() as u64;
-        let globals_staging = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("globals staging"),
-            size: (passes.len().max(1) as u64) * globals_bytes,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
+        if !self.ensure_globals_staging(passes.len()) {
+            return;
+        }
         for (i, pass) in passes.iter().enumerate() {
             let (target_w, target_h) = match pass.target {
                 PassTarget::Surface => (fb_w, fb_h),
@@ -9071,7 +10010,7 @@ impl WgpuSceneRenderer {
                 }
             };
             self.queue.write_buffer(
-                &globals_staging,
+                &self.globals_staging,
                 (i as u64) * globals_bytes,
                 bytemuck::bytes_of(&make_globals(target_w, target_h)),
             );
@@ -9234,7 +10173,7 @@ impl WgpuSceneRenderer {
                 };
 
             encoder.copy_buffer_to_buffer(
-                &globals_staging,
+                &self.globals_staging,
                 (pass_index as u64) * globals_bytes,
                 &self.globals_buf,
                 0,
@@ -9351,17 +10290,18 @@ impl WgpuSceneRenderer {
             }
 
             macro_rules! draw_indexed_mesh {
-                ($pipeline:expr, $uoff:ident, $voff:ident, $vcnt:ident, $ioff:ident, $icnt:ident) => {{
+                ($pipeline:expr, $uoff:ident, $mesh:ident) => {{
                     rpass.set_pipeline($pipeline);
                     rpass.set_bind_group(1, &self.mesh_bind, &[$uoff as u32]);
-                    let vbytes = ($vcnt as u64) * std::mem::size_of::<MeshVertex>() as u64;
-                    rpass.set_vertex_buffer(0, self.mesh_verts.buf.slice($voff..$voff + vbytes));
-                    let ibytes = ($icnt as u64) * std::mem::size_of::<u32>() as u64;
+                    let vbytes =
+                        ($mesh.vertex_count as u64) * std::mem::size_of::<MeshVertex>() as u64;
+                    rpass.set_vertex_buffer(0, $mesh.vertices.slice(0..vbytes));
+                    let ibytes = ($mesh.index_count as u64) * std::mem::size_of::<u32>() as u64;
                     rpass.set_index_buffer(
-                        self.mesh_indices.buf.slice($ioff..$ioff + ibytes),
+                        $mesh.indices.slice(0..ibytes),
                         wgpu::IndexFormat::Uint32,
                     );
-                    rpass.draw_indexed(0..$icnt, 0, 0..1);
+                    rpass.draw_indexed(0..$mesh.index_count, 0, 0..1);
                 }};
             }
 
@@ -9522,13 +10462,14 @@ impl WgpuSceneRenderer {
                         off,
                         cnt: n,
                         handle,
+                        filter,
                     } => {
-                        if let Some(ImageTex::Nv12 { bind, .. }) = self.images.get(&handle) {
+                        if let Some(ImageTex::Nv12 { binds, .. }) = self.images.get(&handle) {
                             draw_with_bind!(
                                 &pipes.image_nv12,
                                 self.nv12.ring,
                                 Nv12Instance,
-                                bind,
+                                binds.get(filter),
                                 off,
                                 n
                             );
@@ -9664,14 +10605,7 @@ impl WgpuSceneRenderer {
                         }
                     }
 
-                    Cmd::VectorMesh {
-                        voff,
-                        vcnt,
-                        ioff,
-                        icnt,
-                        uoff,
-                        blend,
-                    } => {
+                    Cmd::VectorMesh { mesh, uoff, blend } => {
                         let pipe = match blend {
                             repose_core::BlendMode::Add => &pipes.mesh_add,
                             repose_core::BlendMode::Multiply => &pipes.mesh_multiply,
@@ -9680,24 +10614,15 @@ impl WgpuSceneRenderer {
                             repose_core::BlendMode::Lighten => &pipes.mesh_lighten,
                             _ => &pipes.mesh,
                         };
-                        draw_indexed_mesh!(pipe, uoff, voff, vcnt, ioff, icnt);
+                        draw_indexed_mesh!(pipe, uoff, mesh);
                     }
 
-                    Cmd::VectorOverlay {
-                        voff,
-                        vcnt,
-                        ioff,
-                        icnt,
-                        uoff,
-                    } => {
-                        draw_indexed_mesh!(&pipes.mesh_overlay, uoff, voff, vcnt, ioff, icnt);
+                    Cmd::VectorOverlay { mesh, uoff } => {
+                        draw_indexed_mesh!(&pipes.mesh_overlay, uoff, mesh);
                     }
 
                     Cmd::VectorClipPush {
-                        voff,
-                        vcnt,
-                        ioff,
-                        icnt,
+                        mesh,
                         uoff,
                         scissor,
                         difference,
@@ -9714,7 +10639,7 @@ impl WgpuSceneRenderer {
                             } else {
                                 &pipes.mesh_clip_inc
                             };
-                            draw_indexed_mesh!(pipe, uoff, voff, vcnt, ioff, icnt);
+                            draw_indexed_mesh!(pipe, uoff, mesh);
                             if !difference {
                                 clip_depth = (clip_depth + 1).min(STENCIL_MAX_DEPTH);
                             }
@@ -9725,10 +10650,7 @@ impl WgpuSceneRenderer {
                     }
 
                     Cmd::VectorClipPop {
-                        voff,
-                        vcnt,
-                        ioff,
-                        icnt,
+                        mesh,
                         uoff,
                         scissor,
                         difference,
@@ -9742,13 +10664,13 @@ impl WgpuSceneRenderer {
                         } else {
                             active_scissor = None;
                         }
-                        if applied && vcnt > 0 && scissor.2 > 0 && scissor.3 > 0 {
+                        if applied && scissor.2 > 0 && scissor.3 > 0 {
                             let pipe = if difference {
                                 &pipes.mesh_clip_inc
                             } else {
                                 &pipes.mesh_clip_dec
                             };
-                            draw_indexed_mesh!(pipe, uoff, voff, vcnt, ioff, icnt);
+                            draw_indexed_mesh!(pipe, uoff, mesh);
                             if !difference {
                                 clip_depth = clip_depth.saturating_sub(1);
                             }
@@ -9827,7 +10749,24 @@ impl WgpuSceneRenderer {
             }
         }
 
-        // frame's ids so the next translation drains their textures.
+        let transient_ids: HashSet<u32> = flatten_ids_used.iter().copied().collect();
+        let producer_ids = std::mem::take(&mut self.producer_layer_ids);
+        let stale_layers: Vec<u32> = self
+            .layer_pool
+            .iter()
+            .filter_map(|(id, _)| {
+                (!producer_ids.contains(id) && !transient_ids.contains(id)).then_some(*id)
+            })
+            .collect();
+        for id in stale_layers {
+            if let Some(layer) = self.layer_pool.remove(&id) {
+                self.layer_bytes_total = self.layer_bytes_total.saturating_sub(layer.bytes);
+                if layer.transient {
+                    self.transient_layer_bytes_total =
+                        self.transient_layer_bytes_total.saturating_sub(layer.bytes);
+                }
+            }
+        }
         self.flatten_layer_ids = flatten_ids_used;
 
         // Display pass: linear working space -> sRGB OETF -> swapchain
@@ -9856,6 +10795,7 @@ impl WgpuSceneRenderer {
             display_pass.set_bind_group(1, ws_bind, &[]);
             display_pass.draw(0..3, 0..1);
         }
+        self.recycle_blend_snapshots();
     }
 
     /// Render a scene into an externally-provided texture view.
@@ -9877,7 +10817,7 @@ impl WgpuSceneRenderer {
             return;
         }
 
-        if width == 0 || height == 0 {
+        if self.output_width == 0 || self.output_height == 0 {
             self.end_frame();
             return;
         }

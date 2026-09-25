@@ -438,7 +438,7 @@ const LONG_PRESS_MS: u128 = 400;
 
 #[derive(Default)]
 struct DndStorage {
-    frame: Option<Frame>,
+    frame: Option<Rc<Frame>>,
     scale: f32,
     session: Option<DragSession>,
     mouse_down: Option<MouseDownState>,
@@ -498,7 +498,7 @@ fn with_dnd_state<R>(f: impl FnOnce(&mut DndStorage) -> R) -> R {
     }
 }
 
-fn dnd_frame() -> Option<Frame> {
+fn dnd_frame() -> Option<Rc<Frame>> {
     with_dnd_state(|state| state.frame.clone())
 }
 
@@ -544,6 +544,10 @@ fn set_session(session: DragSession) {
 
 /// Set the current frame for DnD hit-testing. Called by platform after each render.
 pub fn set_dnd_frame(frame: Option<Frame>) {
+    set_shared_dnd_frame(frame.map(Rc::new));
+}
+
+pub fn set_shared_dnd_frame(frame: Option<Rc<Frame>>) {
     with_dnd_state(|state| state.frame = frame);
 }
 

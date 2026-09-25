@@ -248,6 +248,41 @@ fn scale_color_alpha(color: Color, alpha: f32) -> Color {
     )
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn control_visual_state_priority_is_stable() {
+        let set = ControlVisualSet {
+            normal: Some(ControlVisual::image(1, None, Color::WHITE)),
+            hovered: Some(ControlVisual::image(2, None, Color::WHITE)),
+            focused: Some(ControlVisual::image(3, None, Color::WHITE)),
+            dragged: Some(ControlVisual::image(4, None, Color::WHITE)),
+            disabled: Some(ControlVisual::image(5, None, Color::WHITE)),
+            ..Default::default()
+        };
+        let focused_hovered = ControlVisualState {
+            hovered: true,
+            focused: true,
+            ..Default::default()
+        };
+        assert!(matches!(
+            set.resolve(focused_hovered),
+            Some(ControlVisual::Image { handle: 3, .. })
+        ));
+        let disabled_dragged = ControlVisualState {
+            enabled: false,
+            dragged: true,
+            ..Default::default()
+        };
+        assert!(matches!(
+            set.resolve(disabled_dragged),
+            Some(ControlVisual::Image { handle: 5, .. })
+        ));
+    }
+}
+
 fn scale_brush_alpha(brush: Brush, alpha: f32) -> Brush {
     match brush {
         Brush::Solid(color) => Brush::Solid(scale_color_alpha(color, alpha)),

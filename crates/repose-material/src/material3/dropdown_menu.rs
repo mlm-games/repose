@@ -1,14 +1,16 @@
 #![allow(non_snake_case)]
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 
+use repose_core::timer::{TimerHandle, delay};
 use repose_core::*;
 use repose_ui::{
-    Box, Column, Row, Text, TextStyle, ViewExt, ZStack, overlay::OverlayGuard,
-    overlay::ambient_overlay,
+    Box, Column, Row, Text, TextStyle, ViewExt, ZStack, anim::animate_f32_from,
+    overlay::OverlayGuard, overlay::ambient_overlay,
 };
+use web_time::Duration;
 
 use super::util::apply_tonal_elevation;
 use super::*;
@@ -198,21 +200,35 @@ pub fn DropdownMenu(
     let overlay_guard = remember_with_key(format!("ddm_oguard_{ddm_id}"), || {
         RefCell::new(None::<OverlayGuard>)
     });
-    let trigger_rect = remember_state_with_key(format!("ddm_tr_{ddm_id}"), Rect::default);
+    let trigger_rect = remember_state_with_key(format!("ddm_tr_{ddm_id}"), || None::<Rect>);
     let scroll_state: Rc<ScrollState> =
         remember_with_key(format!("ddm_scroll_{ddm_id}"), ScrollState::new);
+    let root_popup_size = remember_state_with_key(format!("ddm_popup_size_{ddm_id}"), || {
+        repose_core::Vec2 { x: 0.0, y: 0.0 }
+    });
     let submenu_open = remember_state_with_key(format!("ddm_subopen_{ddm_id}"), || None::<String>);
     let submenu_anchor_rects = remember_state_with_key(
         format!("ddm_subanchor_{ddm_id}"),
         HashMap::<String, Rect>::new,
     );
-    let submenu_popup_size = remember_state_with_key(format!("ddm_subpopup_{ddm_id}"), || {
-        repose_core::Vec2 { x: 0.0, y: 0.0 }
-    });
+    let submenu_popup_sizes = remember_state_with_key(
+        format!("ddm_subpopup_{ddm_id}"),
+        HashMap::<String, repose_core::Vec2>::new,
+    );
     let submenu_guards = remember_state_with_key(
         format!("ddm_subguards_{ddm_id}"),
         HashMap::<String, OverlayGuard>::new,
     );
+    let submenu_hovered =
+        remember_state_with_key(format!("ddm_subhover_{ddm_id}"), || None::<String>);
+    let submenu_popup_hovered: Rc<Cell<bool>> =
+        remember_with_key(format!("ddm_subpopup_hover_{ddm_id}"), || Cell::new(false));
+    let submenu_hover_timer = remember_state_with_key(
+        format!("ddm_subhover_timer_{ddm_id}"),
+        || None::<TimerHandle>,
+    );
+    let submenu_latched =
+        remember_state_with_key(format!("ddm_sublatched_{ddm_id}"), || None::<String>);
 
     let current_items = remember_state_with_key(format!("ddm_items_{ddm_id}"), Vec::new);
     *current_items.borrow_mut() = items;
@@ -222,7 +238,11 @@ pub fn DropdownMenu(
     let trigger = Box(Modifier::new().on_globally_positioned({
         let tr = trigger_rect.clone();
         move |rect| {
-            *tr.borrow_mut() = rect;
+            let changed = tr.borrow().as_ref() != Some(&rect);
+            if changed {
+                *tr.borrow_mut() = Some(rect);
+                request_frame();
+            }
         }
     }))
     .child(trigger);
@@ -251,16 +271,14 @@ pub fn DropdownMenu(
     if !state.is_open() {
         submenu_open.borrow_mut().take();
         submenu_anchor_rects.borrow_mut().clear();
-        *submenu_popup_size.borrow_mut() = repose_core::Vec2 { x: 0.0, y: 0.0 };
+        *root_popup_size.borrow_mut() = repose_core::Vec2 { x: 0.0, y: 0.0 };
+        submenu_popup_sizes.borrow_mut().clear();
         submenu_guards.borrow_mut().clear();
+        submenu_hovered.borrow_mut().take();
+        submenu_latched.borrow_mut().take();
+        submenu_popup_hovered.set(false);
+        submenu_hover_timer.borrow_mut().take();
     }
-
-    // Explicit cursor anchor (window-space Dp via `open_at`) wins over the
-    // trigger rect. Read here so the composition subscribes to it — the
-    // trigger rect below is a plain RefCell filled by layout callbacks and
-    // is stale for exactly the first frame after the trigger moves, which
-    // used to park context menus at the wrong spot.
-    let explicit_anchor = state.anchor.get();
 
     if menu_visible {
         if overlay_guard.borrow().is_none()
@@ -272,10 +290,15 @@ pub fn DropdownMenu(
             let current_config = current_config.clone();
             let trigger_rect = trigger_rect.clone();
             let scroll_state = scroll_state.clone();
+            let root_popup_size = root_popup_size.clone();
             let submenu_open = submenu_open.clone();
             let submenu_anchor_rects = submenu_anchor_rects.clone();
-            let submenu_popup_size = submenu_popup_size.clone();
+            let submenu_popup_sizes = submenu_popup_sizes.clone();
             let submenu_guards = submenu_guards.clone();
+            let submenu_hovered = submenu_hovered.clone();
+            let submenu_popup_hovered = submenu_popup_hovered.clone();
+            let submenu_hover_timer = submenu_hover_timer.clone();
+            let submenu_latched = submenu_latched.clone();
             let back_state = state.clone();
 
             *overlay_guard.borrow_mut() = Some(overlay.show_guard_with_back(
@@ -286,6 +309,7 @@ pub fn DropdownMenu(
                     let scale = DDM_SCALE_FROM + (1.0 - DDM_SCALE_FROM) * p;
                     let alpha = p;
 
+                    let explicit_anchor = state.anchor.get();
                     let rect = explicit_anchor
                         .map(|pos| Rect {
                             x: pos.x,
@@ -293,13 +317,15 @@ pub fn DropdownMenu(
                             w: 1.0,
                             h: 1.0,
                         })
-                        .unwrap_or(*trigger_rect.borrow());
+                        .unwrap_or_else(|| trigger_rect.borrow().clone().unwrap_or_default());
                     let win_w = get_window_container_width();
                     let win_h = get_window_container_height();
-                    let hm = config.vertical_margin.0;
+                    let horizontal_margin = DropdownMenuDefaults::HORIZONTAL_MARGIN.0;
+                    let vertical_margin = config.vertical_margin.0;
 
-                    let space_below = (win_h - hm) - (rect.y + rect.h);
-                    let space_above = rect.y - hm;
+                    let space_below =
+                        (win_h - vertical_margin) - (rect.y + rect.h + config.offset_y.0);
+                    let space_above = rect.y + config.offset_y.0 - vertical_margin;
 
                     let estimated_h = estimate_dropdown_height(&items, &config)
                         .min(space_below.max(space_above))
@@ -315,13 +341,24 @@ pub fn DropdownMenu(
 
                     // Keep the card on-screen horizontally (cursor menus near
                     // the right edge used to overflow off-window).
-                    let menu_w = config.max_width.0.max(config.min_width.0).max(1.0);
-                    let popup_x =
-                        (rect.x + config.offset_x.0).clamp(hm, (win_w - hm - menu_w).max(hm));
-                    let constrained_width = config.max_width;
+                    let viewport_width = (win_w - horizontal_margin * 2.0).max(1.0);
+                    let constrained_min = config.min_width.0.min(viewport_width);
+                    let measured_width = root_popup_size.borrow().x;
+                    let menu_w = if measured_width > 0.0 {
+                        measured_width
+                    } else {
+                        constrained_min.max(1.0)
+                    };
+                    let popup_x = (rect.x + config.offset_x.0).clamp(
+                        horizontal_margin,
+                        (win_w - horizontal_margin - menu_w).max(horizontal_margin),
+                    );
+                    let constrained_width =
+                        config.max_width.0.min(viewport_width).max(constrained_min);
 
                     let mut adjusted_config = config.clone();
-                    adjusted_config.max_width = constrained_width;
+                    adjusted_config.min_width = Dp(constrained_min);
+                    adjusted_config.max_width = Dp(constrained_width);
 
                     let content = render_dropdown_menu_content(
                         &th,
@@ -331,8 +368,12 @@ pub fn DropdownMenu(
                         scroll_state.clone(),
                         submenu_open.clone(),
                         submenu_anchor_rects.clone(),
-                        submenu_popup_size.clone(),
+                        submenu_popup_sizes.clone(),
                         submenu_guards.clone(),
+                        submenu_hovered.clone(),
+                        submenu_popup_hovered.clone(),
+                        submenu_hover_timer.clone(),
+                        submenu_latched.clone(),
                         available_height,
                         *ddm_id,
                     );
@@ -358,17 +399,46 @@ pub fn DropdownMenu(
                         );
                     }
 
-                    let menu = Box(offset_modifier
+                    let mut menu_modifier = offset_modifier
                         .absolute()
                         .scale(scale)
                         .alpha(alpha)
-                        .transform_origin(0.0, transform_origin_y))
-                    .child(content);
+                        .transform_origin(0.0, transform_origin_y);
+                    let popup_size = root_popup_size.clone();
+                    menu_modifier = menu_modifier.on_size_changed(move |size| {
+                        if *popup_size.borrow() != size {
+                            *popup_size.borrow_mut() = size;
+                            request_frame();
+                        }
+                    });
+                    let menu = Box(menu_modifier).child(content);
 
-                    let scrim = Box(Modifier::new().fill_max_size().on_pointer_down({
-                        let s = state.clone();
-                        move |_| s.dismiss()
-                    }));
+                    let scrim = Box(Modifier::new()
+                        .fill_max_size()
+                        .focusable(false)
+                        .input_blocker()
+                        .on_scroll(|_| Vec2::ZERO)
+                        .on_click({
+                            let state = state.clone();
+                            let submenu_open = submenu_open.clone();
+                            let submenu_hovered = submenu_hovered.clone();
+                            let submenu_popup_hovered = submenu_popup_hovered.clone();
+                            let submenu_hover_timer = submenu_hover_timer.clone();
+                            let submenu_latched = submenu_latched.clone();
+                            move || {
+                                let has_child = submenu_open.borrow().is_some();
+                                if has_child {
+                                    submenu_open.borrow_mut().take();
+                                    submenu_hovered.borrow_mut().take();
+                                    submenu_latched.borrow_mut().take();
+                                    submenu_popup_hovered.set(false);
+                                    submenu_hover_timer.borrow_mut().take();
+                                    request_frame();
+                                } else {
+                                    state.dismiss();
+                                }
+                            }
+                        }));
 
                     ZStack(Modifier::new().fill_max_size().absolute()).child((scrim, menu))
                 }),
@@ -459,7 +529,8 @@ fn render_dropdown_item(
             Text(item.text.clone())
                 .color(text_color)
                 .size(th.typography.label_large)
-                .single_line(),
+                .single_line()
+                .overflow_ellipsize(),
         ),
     );
     if let Some(icon) = item.trailing_icon.clone() {
@@ -474,8 +545,38 @@ struct DropdownSubmenuHost {
     parent_state: Rc<MenuState>,
     open_child: Rc<RefCell<Option<String>>>,
     anchor_rects: Rc<RefCell<HashMap<String, Rect>>>,
-    popup_size: Rc<RefCell<repose_core::Vec2>>,
+    popup_sizes: Rc<RefCell<HashMap<String, repose_core::Vec2>>>,
+    hovered_child: Rc<RefCell<Option<String>>>,
+    popup_hovered: Rc<Cell<bool>>,
+    hover_timer: Rc<RefCell<Option<TimerHandle>>>,
+    latched_child: Rc<RefCell<Option<String>>>,
     guards: Weak<RefCell<HashMap<String, OverlayGuard>>>,
+}
+
+fn schedule_submenu_close(
+    open_child: &Rc<RefCell<Option<String>>>,
+    hovered_child: &Rc<RefCell<Option<String>>>,
+    popup_hovered: &Rc<Cell<bool>>,
+    latched_child: &Rc<RefCell<Option<String>>>,
+    hover_timer: &Rc<RefCell<Option<TimerHandle>>>,
+    text: &str,
+) {
+    hover_timer.borrow_mut().take();
+    let open_child = open_child.clone();
+    let hovered_child = hovered_child.clone();
+    let popup_hovered = popup_hovered.clone();
+    let latched_child = latched_child.clone();
+    let text = text.to_string();
+    *hover_timer.borrow_mut() = Some(delay(Duration::from_millis(120), move || {
+        let should_close = !popup_hovered.get()
+            && hovered_child.borrow().is_none()
+            && latched_child.borrow().as_deref() != Some(text.as_str())
+            && open_child.borrow().as_deref() == Some(text.as_str());
+        if should_close {
+            open_child.borrow_mut().take();
+            request_frame();
+        }
+    }));
 }
 
 fn render_dropdown_submenu(
@@ -490,10 +591,22 @@ fn render_dropdown_submenu(
     } else {
         config.disabled_item_text_color
     };
-    let open = parent.open_child.borrow().as_ref() == Some(&sub.text);
+    let open = sub.enabled && parent.open_child.borrow().as_ref() == Some(&sub.text);
     let parent = parent.clone();
     let text = sub.text.clone();
     let enabled = sub.enabled;
+    if !enabled {
+        if parent.open_child.borrow().as_ref() == Some(&text) {
+            parent.open_child.borrow_mut().take();
+        }
+        if parent.latched_child.borrow().as_ref() == Some(&text) {
+            parent.latched_child.borrow_mut().take();
+        }
+        if parent.hovered_child.borrow().as_ref() == Some(&text) {
+            parent.hovered_child.borrow_mut().take();
+        }
+    }
+    let header_source: Rc<MutableInteractionSource> = remember(MutableInteractionSource::new);
     let mut header_modifier = Modifier::new()
         .fill_max_width()
         .min_height(config.item_height.max(DDM_ITEM_MIN_HEIGHT))
@@ -507,51 +620,99 @@ fn render_dropdown_submenu(
     if enabled {
         let parent_toggle = parent.clone();
         let text_toggle = text.clone();
-        let parent_hover = parent.clone();
-        let text_hover = text.clone();
+        let parent_enter = parent.clone();
+        let text_enter = text.clone();
+        let parent_leave = parent.clone();
+        let text_leave = text.clone();
         header_modifier = header_modifier
+            .state_colors(StateColors {
+                default: Color::TRANSPARENT,
+                hovered: Color::TRANSPARENT,
+                focused: Color::TRANSPARENT,
+                pressed: th.on_surface.with_alpha_f32(0.12),
+                dragged: th.on_surface.with_alpha_f32(0.12),
+                disabled: Color::TRANSPARENT,
+            })
+            .interaction_source(&header_source)
+            .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
+                color: Some(th.on_surface),
+                bounded: true,
+                ..Default::default()
+            }))
             .clickable()
             .on_click(move || {
+                parent_toggle.hover_timer.borrow_mut().take();
                 let mut slot = parent_toggle.open_child.borrow_mut();
-                if slot.as_ref() == Some(&text_toggle) {
+                let mut latched = parent_toggle.latched_child.borrow_mut();
+                if latched.as_ref() == Some(&text_toggle) {
+                    *latched = None;
                     *slot = None;
                 } else {
+                    *latched = Some(text_toggle.clone());
                     *slot = Some(text_toggle.clone());
                 }
                 request_frame();
             })
-            .hoverable(
-                move || {
-                    *parent_hover.open_child.borrow_mut() = Some(text_hover.clone());
-                    request_frame();
-                },
-                move || {
-                    request_frame();
-                },
-            );
+            .on_pointer_enter(move |event| {
+                if event.kind == PointerKind::Touch {
+                    return;
+                }
+                parent_enter.hover_timer.borrow_mut().take();
+                *parent_enter.hovered_child.borrow_mut() = Some(text_enter.clone());
+                *parent_enter.open_child.borrow_mut() = Some(text_enter.clone());
+                request_frame();
+            })
+            .on_pointer_leave(move |event| {
+                if event.kind == PointerKind::Touch {
+                    return;
+                }
+                let was_hovered = parent_leave.hovered_child.borrow().as_ref() == Some(&text_leave);
+                if was_hovered {
+                    parent_leave.hovered_child.borrow_mut().take();
+                }
+                schedule_submenu_close(
+                    &parent_leave.open_child,
+                    &parent_leave.hovered_child,
+                    &parent_leave.popup_hovered,
+                    &parent_leave.latched_child,
+                    &parent_leave.hover_timer,
+                    &text_leave,
+                );
+                request_frame();
+            });
     }
     let header = Row(header_modifier).child((
         Box(Modifier::new().flex_grow(1.0)).child(
             Text(sub.text.clone())
                 .color(header_color)
                 .size(th.typography.label_large)
-                .single_line(),
+                .single_line()
+                .overflow_ellipsize(),
         ),
         Box(Modifier::new().width(DDM_ITEM_H_PAD)),
         Icon(DDM_SUBMENU_ARROW).color(header_color).size(Sp(20.0)),
     ));
 
+    let animation_key = format!("ddm_sub_progress_{ddm_id}_{}", sub.text);
+    let animation_target = if open { 1.0 } else { 0.0 };
+    let progress = animate_f32_from(
+        animation_key.clone(),
+        0.0,
+        animation_target,
+        th.motion.overlay,
+    );
+    let visible = open || progress > 0.01;
     let anchor_rect = parent.anchor_rects.borrow().get(&sub.text).cloned();
     let guard_key = format!("ddm_sub_{ddm_id}_{}", sub.text);
     let Some(guards) = parent.guards.upgrade() else {
         return header;
     };
-    if !open {
+    if !visible {
         guards.borrow_mut().remove(&guard_key);
         parent.anchor_rects.borrow_mut().remove(&sub.text);
         return header;
     }
-    let Some(anchor) = anchor_rect else {
+    let Some(initial_anchor) = anchor_rect else {
         return Box(Modifier::new().on_globally_positioned({
             let parent = parent.clone();
             let text = sub.text.clone();
@@ -575,30 +736,70 @@ fn render_dropdown_submenu(
         let children = sub.children.clone();
         let config = config.clone();
         let th = *th;
+        let popup_hovered = parent.popup_hovered.clone();
+        let popup_hovered_child = parent.hovered_child.clone();
+        let popup_hover_timer = parent.hover_timer.clone();
+        let popup_latched = parent.latched_child.clone();
+        let popup_text = text.clone();
         let guard = overlay.show_guard_with_back(
             Rc::new(move || {
+                let animation_target = if parent.open_child.borrow().as_ref() == Some(&text) {
+                    1.0
+                } else {
+                    0.0
+                };
+                let progress = animate_f32_from(
+                    animation_key.clone(),
+                    0.0,
+                    animation_target,
+                    th.motion.overlay,
+                );
+                let scale = DDM_SCALE_FROM + (1.0 - DDM_SCALE_FROM) * progress;
+                let alpha = progress;
                 let win_w = get_window_container_width();
                 let win_h = get_window_container_height();
-                let hm = config.vertical_margin.0;
-                let measured = *parent.popup_size.borrow();
+                let horizontal_margin = DropdownMenuDefaults::HORIZONTAL_MARGIN.0;
+                let vertical_margin = config.vertical_margin.0;
+                let measured = parent
+                    .popup_sizes
+                    .borrow()
+                    .get(&text)
+                    .copied()
+                    .unwrap_or(repose_core::Vec2 { x: 0.0, y: 0.0 });
                 let menu_w = if measured.x > 0.0 {
                     measured.x
                 } else {
-                    config.max_width.0.max(config.min_width.0).max(1.0)
+                    config.min_width.0.max(1.0)
                 };
                 let est_h = if measured.y > 0.0 {
                     measured.y
                 } else {
                     estimate_dropdown_height(&children, &config).max(48.0)
                 };
+                let anchor = parent
+                    .anchor_rects
+                    .borrow()
+                    .get(&text)
+                    .copied()
+                    .unwrap_or(initial_anchor);
                 let mut x = anchor.x + anchor.w + config.offset_x.0;
-                if x + menu_w > win_w - hm {
-                    x = (anchor.x - menu_w - config.offset_x.0).max(hm);
+                if x + menu_w > win_w - horizontal_margin {
+                    x = (anchor.x - menu_w - config.offset_x.0).max(horizontal_margin);
                 }
-                let mut y = (anchor.y - DDM_VERTICAL_PADDING.0).max(hm);
-                if y + est_h > win_h - hm {
-                    y = (win_h - hm - est_h).max(hm);
+                let preferred_y = (anchor.y + config.offset_y.0).max(vertical_margin);
+                let place_above = preferred_y + est_h > win_h - vertical_margin
+                    && anchor.y + anchor.h + config.offset_y.0 - est_h >= vertical_margin;
+                let y = if place_above {
+                    anchor.y + anchor.h + config.offset_y.0 - est_h
+                } else {
+                    preferred_y
+                };
+                let available_height = if place_above {
+                    (y - vertical_margin).max(48.0)
+                } else {
+                    (win_h - vertical_margin - y).max(48.0)
                 }
+                .min((win_h - vertical_margin * 2.0).max(48.0));
                 let items: Vec<View> = children
                     .iter()
                     .map(|entry| match entry {
@@ -611,46 +812,90 @@ fn render_dropdown_submenu(
                         DropdownMenuEntry::Divider => render_dropdown_divider(&config),
                     })
                     .collect();
-                let popup_size = parent.popup_size.clone();
-                let card = render_dropdown_card(
-                    &th,
-                    &config,
-                    Box(Modifier::new().on_size_changed(move |s| {
-                        if *popup_size.borrow() != s {
-                            *popup_size.borrow_mut() = s;
+                let scroll_state: Rc<ScrollState> =
+                    remember_with_key(format!("ddm_sub_scroll_{ddm_id}_{text}"), ScrollState::new);
+                let binding = scroll_state.to_binding();
+                let axis_binding = match &binding {
+                    ScrollBinding::Vertical(axis) => axis.clone(),
+                    _ => unreachable!(),
+                };
+                let popup_enter_hovered = popup_hovered.clone();
+                let popup_enter_timer = popup_hover_timer.clone();
+                let popup_leave_hovered = popup_hovered.clone();
+                let popup_leave_hovered_child = popup_hovered_child.clone();
+                let popup_leave_timer = popup_hover_timer.clone();
+                let popup_leave_latched = popup_latched.clone();
+                let popup_leave_open = parent.open_child.clone();
+                let popup_leave_text = popup_text.clone();
+                let items_column = Box(Modifier::new()
+                    .fill_max_width()
+                    .max_height(Dp(
+                        (available_height - 2.0 * DDM_VERTICAL_PADDING.0).max(0.0)
+                    ))
+                    .vertical_scroll(axis_binding))
+                .child(Column(Modifier::new().fill_max_width()).with_children(items));
+                let popup_sizes = parent.popup_sizes.clone();
+                let popup_size_text = text.clone();
+                let card_modifier = render_dropdown_card_modifier(&th, &config)
+                    .on_pointer_enter(move |event| {
+                        if event.kind == PointerKind::Touch {
+                            return;
+                        }
+                        popup_enter_hovered.set(true);
+                        popup_enter_timer.borrow_mut().take();
+                    })
+                    .on_pointer_leave(move |event| {
+                        if event.kind == PointerKind::Touch {
+                            return;
+                        }
+                        popup_leave_hovered.set(false);
+                        schedule_submenu_close(
+                            &popup_leave_open,
+                            &popup_leave_hovered_child,
+                            &popup_leave_hovered,
+                            &popup_leave_latched,
+                            &popup_leave_timer,
+                            &popup_leave_text,
+                        );
+                    })
+                    .on_size_changed(move |size| {
+                        let mut sizes = popup_sizes.borrow_mut();
+                        if sizes.get(&popup_size_text) != Some(&size) {
+                            sizes.insert(popup_size_text.clone(), size);
+                            drop(sizes);
                             request_frame();
                         }
-                    }))
-                    .child(Column(Modifier::new().fill_max_width()).with_children(items)),
-                );
-                let scrim = Box(Modifier::new().fill_max_size().on_pointer_down({
-                    let parent = parent.clone();
-                    let text = text.clone();
-                    move |_| {
-                        if parent.open_child.borrow().as_ref() == Some(&text) {
-                            *parent.open_child.borrow_mut() = None;
-                            request_frame();
-                        }
-                    }
-                }));
-                let popup =
-                    Box(Modifier::new()
-                        .absolute()
-                        .offset(Some(Dp(x)), Some(Dp(y)), None, None))
-                    .child(card);
-                ZStack(Modifier::new().fill_max_size().absolute()).child((scrim, popup))
+                    });
+                let card = Box(card_modifier).child(items_column);
+                Box(Modifier::new()
+                    .absolute()
+                    .offset(Some(Dp(x)), Some(Dp(y)), None, None)
+                    .scale(scale)
+                    .alpha(alpha)
+                    .transform_origin(0.0, 0.0))
+                .child(card)
             }),
             902.0,
-            false,
+            true,
             Rc::new(move || {
-                let mut slot = back_parent.open_child.borrow_mut();
-                if slot.as_ref() == Some(&back_text) {
-                    *slot = None;
+                let was_open = back_parent.open_child.borrow().as_ref() == Some(&back_text);
+                if was_open {
+                    back_parent.open_child.borrow_mut().take();
+                    let was_latched =
+                        back_parent.latched_child.borrow().as_ref() == Some(&back_text);
+                    if was_latched {
+                        back_parent.latched_child.borrow_mut().take();
+                    }
+                    let was_hovered =
+                        back_parent.hovered_child.borrow().as_ref() == Some(&back_text);
+                    if was_hovered {
+                        back_parent.hovered_child.borrow_mut().take();
+                    }
+                    back_parent.popup_hovered.set(false);
+                    back_parent.hover_timer.borrow_mut().take();
                     request_frame();
-                    true
-                } else {
-                    false
                 }
+                was_open
             }),
         );
         guards.borrow_mut().insert(guard_key, guard);
@@ -661,6 +906,7 @@ fn render_dropdown_submenu(
         move |rect| {
             if parent.anchor_rects.borrow().get(&text) != Some(&rect) {
                 parent.anchor_rects.borrow_mut().insert(text.clone(), rect);
+                request_frame();
             }
         }
     }))
@@ -682,8 +928,12 @@ fn render_dropdown_menu_content(
     scroll_state: Rc<ScrollState>,
     submenu_open: Rc<RefCell<Option<String>>>,
     submenu_anchor_rects: Rc<RefCell<HashMap<String, Rect>>>,
-    submenu_popup_size: Rc<RefCell<repose_core::Vec2>>,
+    submenu_popup_sizes: Rc<RefCell<HashMap<String, repose_core::Vec2>>>,
     submenu_guards: Rc<RefCell<HashMap<String, OverlayGuard>>>,
+    submenu_hovered: Rc<RefCell<Option<String>>>,
+    submenu_popup_hovered: Rc<Cell<bool>>,
+    submenu_hover_timer: Rc<RefCell<Option<TimerHandle>>>,
+    submenu_latched: Rc<RefCell<Option<String>>>,
     max_height: f32,
     ddm_id: u64,
 ) -> View {
@@ -691,7 +941,11 @@ fn render_dropdown_menu_content(
         parent_state: state,
         open_child: submenu_open,
         anchor_rects: submenu_anchor_rects,
-        popup_size: submenu_popup_size,
+        popup_sizes: submenu_popup_sizes,
+        hovered_child: submenu_hovered,
+        popup_hovered: submenu_popup_hovered,
+        hover_timer: submenu_hover_timer,
+        latched_child: submenu_latched,
         guards: Rc::downgrade(&submenu_guards),
     };
     let children: Vec<View> = items
@@ -722,15 +976,14 @@ fn render_dropdown_menu_content(
     Box(render_dropdown_card_modifier(th, config)).child(items_column)
 }
 
-/// Shared card chrome for the root menu and cascading submenu popups.
-fn render_dropdown_card(th: &Theme, config: &DropdownMenuConfig, content: View) -> View {
-    Box(render_dropdown_card_modifier(th, config)).child(content)
-}
-
 fn render_dropdown_card_modifier(th: &Theme, config: &DropdownMenuConfig) -> Modifier {
     let shadow_elevation = config.shadow_elevation.unwrap_or(th.elevation.level2);
 
     let mut card_modifier = Modifier::new()
+        .graphics_layer(1.0)
+        .focus_group()
+        .input_blocker()
+        .on_scroll(|_| Vec2::ZERO)
         .shadow(shadow_elevation, Dp::ZERO)
         .min_width(config.min_width)
         .max_width(config.max_width)

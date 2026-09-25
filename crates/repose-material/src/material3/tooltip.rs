@@ -72,7 +72,7 @@ impl ThemedColor {
 }
 
 /// Configuration for tooltip.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct TooltipConfig {
     pub kind: TooltipKind,
     pub position: TooltipAnchorPosition,
@@ -181,13 +181,13 @@ impl TooltipState {
     /// [`show`](Self::show) directly for the default.
     pub fn show_with_timeout(&self, timeout: Duration) {
         *self.timer.borrow_mut() = None;
-        self.visible.set(true);
+        self.visible.set_neq(true);
         if !self.persistent {
             self.timer.borrow_mut().replace(timer::delay(timeout, {
                 let visible = self.visible.clone();
                 let on_dismiss = self.on_dismiss.borrow().clone();
                 move || {
-                    visible.set(false);
+                    visible.set_neq(false);
                     if let Some(cb) = on_dismiss {
                         cb();
                     }
@@ -204,7 +204,7 @@ impl TooltipState {
 
     pub fn dismiss(&self) {
         *self.timer.borrow_mut() = None;
-        self.visible.set(false);
+        self.visible.set_neq(false);
         if let Some(cb) = self.on_dismiss.borrow().clone() {
             cb();
         }
@@ -592,6 +592,23 @@ fn tooltip_surface(config: &TooltipConfig, container: Color, shape: Dp, content:
     Box(m).child(content)
 }
 
+struct TooltipBodyCache {
+    text: Rc<str>,
+    config: TooltipConfig,
+    body: View,
+}
+
+struct TooltipPopupCache {
+    config: Rc<TooltipConfig>,
+    text: Rc<str>,
+    anchor: Rect,
+    window: (f32, f32),
+    measured: Vec2,
+    position: (f32, f32),
+    body: View,
+    caret: Option<View>,
+}
+
 /// Wraps `content` with a tooltip shown when `state` is visible.
 ///
 /// The popup renders in the ambient overlay layer (never clipped by parents
@@ -613,14 +630,18 @@ pub fn TooltipBox(
     let th = theme();
     let spec = th.motion.overlay;
 
-    let tooltip_body = match config.kind {
-        TooltipKind::Plain => PlainTooltip((*text).to_string(), &config),
-        TooltipKind::Rich => RichTooltip((*text).to_string(), None, None, &config),
-    };
-    let current_body = remember_state_with_key(format!("tt_body_{id}"), || tooltip_body.clone());
-    *current_body.borrow_mut() = tooltip_body;
-    let current_config = remember_state_with_key(format!("tt_cfg_{id}"), || config.clone());
-    *current_config.borrow_mut() = config.clone();
+    let current_config = remember_with_key(format!("tt_cfg_{id}"), || {
+        RefCell::new(Rc::new(config.clone()))
+    });
+    if current_config.borrow().as_ref() != &config {
+        *current_config.borrow_mut() = Rc::new(config.clone());
+    }
+    let body_cache = remember_with_key(format!("tt_body_cache_{id}"), || {
+        RefCell::new(None::<TooltipBodyCache>)
+    });
+    let popup_cache = remember_with_key(format!("tt_popup_cache_{id}"), || {
+        RefCell::new(None::<TooltipPopupCache>)
+    });
 
     let anchor_rect = remember_state_with_key(format!("tt_anchor_{id}"), || None::<Rect>);
     let popup_size = remember_state_with_key(format!("tt_popup_{id}"), || Vec2 { x: 0.0, y: 0.0 });
@@ -666,12 +687,33 @@ pub fn TooltipBox(
     let host_view = Box(host).child(trigger);
 
     let anim_key = format!("tooltip_alpha_{id}");
+    let state_visible = state.is_visible();
     let alpha = animate_f32(
         anim_key.clone(),
-        if state.is_visible() { 1.0 } else { 0.0 },
+        if state_visible { 1.0 } else { 0.0 },
         spec,
     );
-    let tooltip_visible = state.is_visible() || alpha > 0.01;
+    let tooltip_visible = state_visible || alpha > 0.01;
+    if tooltip_visible {
+        let mut body = body_cache.borrow_mut();
+        let rebuild = body
+            .as_ref()
+            .is_none_or(|cached| cached.text.as_ref() != text.as_ref() || cached.config != config);
+        if rebuild {
+            let built = match config.kind {
+                TooltipKind::Plain => PlainTooltip(text.to_string(), &config),
+                TooltipKind::Rich => RichTooltip(text.to_string(), None, None, &config),
+            };
+            *body = Some(TooltipBodyCache {
+                text: text.clone(),
+                config: config.clone(),
+                body: built,
+            });
+        }
+    } else {
+        body_cache.borrow_mut().take();
+        popup_cache.borrow_mut().take();
+    }
     let overlay_guard = remember_with_key(format!("tt_oguard_{id}"), || {
         RefCell::new(None::<OverlayGuard>)
     });
@@ -680,7 +722,8 @@ pub fn TooltipBox(
         if overlay_guard.borrow().is_none()
             && let Some(overlay) = overlay.clone()
         {
-            let current_body = current_body.clone();
+            let body_cache = body_cache.clone();
+            let popup_cache = popup_cache.clone();
             let current_config = current_config.clone();
             let anchor_rect = anchor_rect.clone();
             let popup_size = popup_size.clone();
@@ -700,8 +743,14 @@ pub fn TooltipBox(
                         },
                         spec,
                     );
-                    let body = current_body.borrow().clone();
                     let config = current_config.borrow().clone();
+                    let Some(text) = body_cache
+                        .borrow()
+                        .as_ref()
+                        .map(|cached| cached.text.clone())
+                    else {
+                        return Box(Modifier::new());
+                    };
                     let Some(anchor) = *anchor_rect.borrow() else {
                         return Box(Modifier::new());
                     };
@@ -728,29 +777,59 @@ pub fn TooltipBox(
                         win_h,
                     );
                     let scale = 0.8 + 0.2 * frame_alpha.min(1.0);
-                    let real = Vec2 {
-                        x: popup_w,
-                        y: popup_h,
+                    let reusable = popup_cache.borrow().as_ref().is_some_and(|cached| {
+                        cached.config.as_ref() == config.as_ref()
+                            && cached.text.as_ref() == text.as_ref()
+                            && cached.anchor == anchor
+                            && cached.window == (win_w, win_h)
+                            && cached.measured == measured
+                            && cached.position == (x, y)
+                    });
+                    if !reusable {
+                        let body = body_cache
+                            .borrow()
+                            .as_ref()
+                            .map(|cached| cached.body.clone())
+                            .unwrap_or_else(|| Box(Modifier::new()));
+                        let real = Vec2 {
+                            x: popup_w,
+                            y: popup_h,
+                        };
+                        let side = caret_side(config.position, y, x, anchor);
+                        let container = match config.kind {
+                            TooltipKind::Plain => config
+                                .container_color
+                                .resolve(TooltipDefaults::container_color()),
+                            TooltipKind::Rich => config
+                                .container_color
+                                .resolve(TooltipDefaults::rich_container_color()),
+                        };
+                        let caret = tooltip_caret(&config, container, side, real, anchor, win_w);
+                        let popup_size = popup_size.clone();
+                        let body = Box(Modifier::new().on_size_changed(move |s| {
+                            let mut slot = popup_size.borrow_mut();
+                            if *slot != s {
+                                *slot = s;
+                                request_frame();
+                            }
+                        }))
+                        .child(body);
+                        *popup_cache.borrow_mut() = Some(TooltipPopupCache {
+                            config: config.clone(),
+                            text: text.clone(),
+                            anchor,
+                            window: (win_w, win_h),
+                            measured,
+                            position: (x, y),
+                            body,
+                            caret,
+                        });
+                    }
+                    let (body, caret) = {
+                        let cache = popup_cache.borrow();
+                        let cached = cache.as_ref().expect("tooltip popup cache initialized");
+                        (cached.body.clone(), cached.caret.clone())
                     };
-                    let side = caret_side(config.position, y, x, anchor);
-                    let container = match config.kind {
-                        TooltipKind::Plain => config
-                            .container_color
-                            .resolve(TooltipDefaults::container_color()),
-                        TooltipKind::Rich => config
-                            .container_color
-                            .resolve(TooltipDefaults::rich_container_color()),
-                    };
-                    let caret = tooltip_caret(&config, container, side, real, anchor, win_w);
-                    let popup_size = popup_size.clone();
-                    let body = Box(Modifier::new().on_size_changed(move |s| {
-                        let mut slot = popup_size.borrow_mut();
-                        if *slot != s {
-                            *slot = s;
-                            request_frame();
-                        }
-                    }))
-                    .child(body);
                     let mut popup_children = vec![body];
                     if let Some(caret) = caret {
                         popup_children.push(caret);

@@ -51,7 +51,7 @@ struct ExitingItem<T> {
 }
 
 struct AnimState<T> {
-    prev_keys: Vec<u64>,
+    prev_keys: std::collections::HashSet<u64>,
     item_cache: HashMap<u64, (T, usize, f32, f32)>,
     exiting: Vec<ExitingItem<T>>,
     next_exit_version: u64,
@@ -105,83 +105,81 @@ where
         }
     };
 
-    {
-        let mut seen = std::collections::HashSet::new();
-        for item in &items {
-            let key = get_key(item);
-            if !seen.insert(key) {
+    let current_keys: Vec<u64> = items.iter().map(&get_key).collect();
+    let mut current_key_set: std::collections::HashSet<u64> =
+        current_keys.iter().copied().collect();
+    if current_key_set.len() != items.len() {
+        let mut seen = std::collections::HashSet::with_capacity(items.len());
+        for key in &current_keys {
+            if !seen.insert(*key) {
                 panic!("Duplicate key {key} detected in LazyColumn. Keys must be unique.");
             }
         }
     }
 
-    let heights_dp: Vec<f32> = items
-        .iter()
-        .map(|it| item_height.get(it).max(1.0))
-        .collect();
-    let cumulative_px: Vec<f32> = {
-        let mut cum = Vec::with_capacity(heights_dp.len() + 1);
-        cum.push(0.0);
-        let mut acc = 0.0_f32;
-        for h in &heights_dp {
-            acc += Dp(*h).to_px().0;
-            cum.push(acc);
-        }
-        cum
-    };
     let padding_top_px = content_padding.top.to_px().0;
     let padding_bottom_px = content_padding.bottom.to_px().0;
-    let content_height_px =
-        *cumulative_px.last().unwrap_or(&0.0) + padding_top_px + padding_bottom_px;
+    let uniform_height_dp = item_height.uniform_height().map(|height| height.max(1.0));
+    let uniform_height_px = uniform_height_dp.map(|height| Dp(height).to_px().0);
+    let geometry = uniform_height_dp.is_none().then(|| {
+        let heights_px: Vec<f32> = items
+            .iter()
+            .map(|item| Dp(item_height.get(item).max(1.0)).to_px().0)
+            .collect();
+        state.geometry(&current_keys, &heights_px)
+    });
+    let content_height_px = geometry
+        .as_ref()
+        .map(|geometry| geometry.total())
+        .unwrap_or_else(|| {
+            uniform_height_px
+                .map(|height| height * items.len() as f32)
+                .unwrap_or(0.0)
+        })
+        + padding_top_px
+        + padding_bottom_px;
 
     let scroll_offset_px = state.scroll_offset.get();
     let viewport_height_px = state.viewport_height.get();
-
     let padded_visible_start = scroll_offset_px - padding_top_px;
-    let first_visible = if padded_visible_start <= 0.0 {
-        0
-    } else {
-        match cumulative_px.binary_search_by(|p| {
-            p.partial_cmp(&padded_visible_start)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        }) {
-            Ok(i) => i,
-            Err(i) => i.saturating_sub(1),
-        }
-    };
     let padded_visible_end = (scroll_offset_px + viewport_height_px) - padding_top_px;
-    let last_visible = if padded_visible_end <= 0.0 {
-        0
+    let (first_visible, last_visible) = if let Some(geometry) = geometry.as_ref() {
+        (
+            geometry.first_visible(padded_visible_start),
+            geometry.end_visible(padded_visible_end),
+        )
+    } else if let Some(stride) = uniform_height_px {
+        let first = if padded_visible_start <= 0.0 {
+            0
+        } else {
+            (padded_visible_start / stride).floor() as usize
+        };
+        let last = if padded_visible_end <= 0.0 {
+            0
+        } else {
+            ((padded_visible_end / stride).floor() as usize).saturating_add(1)
+        };
+        (first.min(items.len()), last.min(items.len()))
     } else {
-        match cumulative_px.binary_search_by(|p| {
-            p.partial_cmp(&padded_visible_end)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        }) {
-            Ok(i) => (i + 1).min(items.len()),
-            Err(i) => i.min(items.len()),
-        }
+        (0, 0)
     };
 
     let buffer = 2usize;
     let first_with_buffer = first_visible.saturating_sub(buffer);
-    let last_with_buffer = (last_visible + buffer).min(items.len());
+    let last_with_buffer = last_visible.saturating_add(buffer).min(items.len());
 
     let mut combined_children: Vec<View> = Vec::new();
     let mut exit_views: Vec<View> = Vec::new();
     let mut exit_extent_px = 0.0_f32;
     let state_id = Rc::as_ptr(&state) as usize;
-    let current_keys: Vec<u64> = items.iter().map(&get_key).collect();
-    let current_key_set: std::collections::HashSet<u64> = current_keys.iter().copied().collect();
-    let current_geometry: Vec<(f32, f32)> = items
-        .iter()
-        .enumerate()
-        .map(|(index, item)| {
-            (
-                padding_top_px + cumulative_px[index],
-                Dp(item_height.get(item).max(1.0)).to_px().0,
-            )
-        })
-        .collect();
+    let current_geometry = |index: usize| -> (f32, f32) {
+        if let Some(geometry) = geometry.as_ref() {
+            (padding_top_px + geometry.top(index), geometry.height(index))
+        } else {
+            let height = uniform_height_px.unwrap_or(1.0);
+            (padding_top_px + height * index as f32, height)
+        }
+    };
     let mut entering = std::collections::HashSet::new();
     let animation_id = state_id as u64;
     let animation_spec = animate_spec;
@@ -189,7 +187,7 @@ where
     let animation_slot = animation_spec.map(|_| {
         remember(|| {
             RefCell::new(AnimState::<T> {
-                prev_keys: Vec::new(),
+                prev_keys: std::collections::HashSet::new(),
                 item_cache: HashMap::new(),
                 exiting: Vec::new(),
                 next_exit_version: 1,
@@ -200,15 +198,11 @@ where
         let mut animation = state_slot.borrow_mut();
         let had_prev = !animation.prev_keys.is_empty();
         for (index, item) in items.iter().enumerate() {
-            animation.item_cache.insert(
-                get_key(item),
-                (
-                    item.clone(),
-                    to_data_idx(index),
-                    current_geometry[index].0,
-                    current_geometry[index].1,
-                ),
-            );
+            let key = current_keys[index];
+            let (top_px, height_px) = current_geometry(index);
+            animation
+                .item_cache
+                .insert(key, (item.clone(), to_data_idx(index), top_px, height_px));
         }
         if had_prev {
             entering.extend(
@@ -217,20 +211,22 @@ where
                     .filter(|key| !animation.prev_keys.contains(key))
                     .copied(),
             );
-            let previous_keys = animation.prev_keys.clone();
-            for key in &previous_keys {
-                if current_key_set.contains(key) {
-                    continue;
-                }
+            let previous_keys: Vec<u64> = animation
+                .prev_keys
+                .iter()
+                .filter(|key| !current_key_set.contains(key))
+                .copied()
+                .collect();
+            for key in previous_keys {
                 let Some((item, data_index, top_px, height_px)) =
-                    animation.item_cache.get(key).cloned()
+                    animation.item_cache.get(&key).cloned()
                 else {
                     continue;
                 };
                 let version = animation.next_exit_version;
                 animation.next_exit_version = animation.next_exit_version.wrapping_add(1);
                 animation.exiting.push(ExitingItem {
-                    key: *key,
+                    key,
                     item,
                     data_index,
                     version,
@@ -258,12 +254,21 @@ where
             let visible = exit.top_px + exit.height_px > scroll_offset_px
                 && exit.top_px < scroll_offset_px + viewport_height_px;
             if visible {
-                let revision = state.cache_revision_for_with(
-                    exit.key,
-                    &exit.item as *const T as usize,
-                    exit.height_px,
-                    alpha.to_bits() as u64,
-                );
+                let revision = if uniform_height_dp.is_some() {
+                    state.cache_revision_for_uniform(
+                        exit.key,
+                        &exit.item as *const T as usize,
+                        exit.height_px,
+                        alpha.to_bits() as u64,
+                    )
+                } else {
+                    state.cache_revision_for_with(
+                        exit.key,
+                        &exit.item as *const T as usize,
+                        exit.height_px,
+                        alpha.to_bits() as u64,
+                    )
+                };
                 let full_key = exit_scope_key(state_id, exit.key, exit.version);
                 let top = Px(exit.top_px).to_dp().0.max(0.0);
                 let height = Px(exit.height_px).to_dp().0.max(0.0);
@@ -295,7 +300,7 @@ where
         animation
             .item_cache
             .retain(|key, _| current_key_set.contains(key) || active_exit_keys.contains(key));
-        animation.prev_keys = current_keys;
+        animation.prev_keys = std::mem::take(&mut current_key_set);
     }
 
     let top_padding_dp = Px(padding_top_px).to_dp().0.max(0.0);
@@ -305,7 +310,7 @@ where
         ));
     }
     if first_with_buffer > 0 {
-        let top_spacer_px = cumulative_px[first_with_buffer];
+        let top_spacer_px = current_geometry(first_with_buffer).0 - padding_top_px;
         if top_spacer_px > 0.0 {
             combined_children.push(crate::Box(
                 Modifier::new()
@@ -318,8 +323,8 @@ where
         let Some(item) = items.get(visual_index) else {
             continue;
         };
-        let key = get_key(item);
-        let height_dp = item_height.get(item).max(1.0);
+        let key = current_keys[visual_index];
+        let height_dp = uniform_height_dp.unwrap_or_else(|| item_height.get(item).max(1.0));
         let data_index = to_data_idx(visual_index);
         let is_entering = entering.contains(&key);
         let alpha = if is_entering {
@@ -330,12 +335,21 @@ where
             1.0
         };
         let variation = is_entering.then_some(alpha.to_bits() as u64).unwrap_or(0);
-        let revision = state.cache_revision_for_with(
-            key,
-            item as *const T as usize,
-            Dp(height_dp).to_px().0,
-            variation,
-        );
+        let revision = if uniform_height_dp.is_some() {
+            state.cache_revision_for_uniform(
+                key,
+                item as *const T as usize,
+                Dp(height_dp).to_px().0,
+                variation,
+            )
+        } else {
+            state.cache_revision_for_with(
+                key,
+                item as *const T as usize,
+                Dp(height_dp).to_px().0,
+                variation,
+            )
+        };
         let item_builder_ref = &item_builder;
         if is_entering {
             combined_children.push(scoped_item(key, state_id, revision, move || {
@@ -354,11 +368,20 @@ where
             }));
         }
     }
-    let bottom_start_px = cumulative_px
-        .get(last_with_buffer)
-        .copied()
-        .unwrap_or_else(|| cumulative_px.last().copied().unwrap_or(0.0));
-    let remaining_px = (cumulative_px.last().copied().unwrap_or(0.0) - bottom_start_px).max(0.0);
+    let total_items_height_px = geometry
+        .as_ref()
+        .map(|geometry| geometry.total())
+        .unwrap_or_else(|| {
+            uniform_height_px
+                .map(|height| height * items.len() as f32)
+                .unwrap_or(0.0)
+        });
+    let bottom_start_px = if last_with_buffer >= items.len() {
+        total_items_height_px
+    } else {
+        current_geometry(last_with_buffer).0 - padding_top_px
+    };
+    let remaining_px = (total_items_height_px - bottom_start_px).max(0.0);
     if remaining_px > 0.0 {
         combined_children.push(crate::Box(
             Modifier::new()
@@ -600,9 +623,12 @@ where
                 } else {
                     visual_i
                 };
-                let item = &items[data_i];
-                let revision =
-                    state.cache_revision_for(data_i as u64, item as *const T as usize, item_h_px);
+                let revision = state.cache_revision_for_with(
+                    data_i as u64,
+                    &items[data_i] as *const T as usize,
+                    item_h_px,
+                    0,
+                );
                 scoped_item(data_i as u64, state_id, revision, || {
                     item_builder(items[data_i].clone(), data_i)
                 })
@@ -827,11 +853,11 @@ where
                         } else {
                             visual_i
                         };
-                        let item = &items[data_i];
-                        let revision = state.cache_revision_for(
+                        let revision = state.cache_revision_for_with(
                             data_i as u64,
-                            item as *const T as usize,
+                            &items[data_i] as *const T as usize,
                             item_w_px,
+                            0,
                         );
                         scoped_item(data_i as u64, state_id, revision, || {
                             item_builder(items[data_i].clone(), data_i)
@@ -1056,8 +1082,12 @@ where
         }
         let data_i = to_data_idx(i);
         if let Some(item) = items.get(data_i) {
-            let revision =
-                state.cache_revision_for(data_i as u64, item as *const T as usize, item_w_px);
+            let revision = state.cache_revision_for_with(
+                data_i as u64,
+                &items[data_i] as *const T as usize,
+                item_w_px,
+                0,
+            );
             children.push(scoped_item(data_i as u64, state_id, revision, || {
                 item_builder(item.clone(), data_i)
             }));
@@ -1172,19 +1202,27 @@ where
         .with_children(vec![content])
 }
 
+#[derive(Clone, Copy)]
 struct StaggeredPlacement {
-    col: usize,
     y_px: f32,
     h_px: f32,
+}
+
+struct StaggeredLayout {
+    placements: Vec<StaggeredPlacement>,
+    by_column: Vec<Vec<(usize, StaggeredPlacement)>>,
+    content_height_px: f32,
 }
 
 fn compute_staggered_placements(
     heights_px: &[f32],
     columns: usize,
     gap_px: f32,
-) -> Vec<StaggeredPlacement> {
+) -> StaggeredLayout {
     let mut placements = Vec::with_capacity(heights_px.len());
+    let mut by_column = (0..columns).map(|_| Vec::new()).collect::<Vec<_>>();
     let mut col_heights = vec![0.0_f32; columns];
+    let mut content_height_px = 0.0_f32;
     for (i, h) in heights_px.iter().enumerate() {
         let col = col_heights
             .iter()
@@ -1193,14 +1231,17 @@ fn compute_staggered_placements(
             .map(|(idx, _)| idx)
             .unwrap_or(i % columns);
         let y = col_heights[col];
-        placements.push(StaggeredPlacement {
-            col,
-            y_px: y,
-            h_px: *h,
-        });
-        col_heights[col] = y + h + gap_px;
+        let placement = StaggeredPlacement { y_px: y, h_px: *h };
+        placements.push(placement);
+        by_column[col].push((i, placement));
+        content_height_px = content_height_px.max(y + *h);
+        col_heights[col] = y + *h + gap_px;
     }
-    placements
+    StaggeredLayout {
+        placements,
+        by_column,
+        content_height_px,
+    }
 }
 
 /// Virtualized staggered grid (Pinterest-style).
@@ -1265,12 +1306,10 @@ where
         .iter()
         .map(|it| Dp(item_height_dp(it).max(1.0)).to_px().0)
         .collect();
-    let placements = compute_staggered_placements(&heights_px, columns, gap_px);
+    let staggered = compute_staggered_placements(&heights_px, columns, gap_px);
+    let placements = &staggered.placements;
 
-    let total_content_height_px = placements
-        .iter()
-        .map(|p| p.y_px + p.h_px)
-        .fold(0.0_f32, f32::max)
+    let total_content_height_px = staggered.content_height_px
         + content_padding.top.to_px().0
         + content_padding.bottom.to_px().0;
 
@@ -1320,8 +1359,8 @@ where
 
     for (col, col_child) in col_children.iter_mut().enumerate() {
         let mut prev_y = padding_top_px;
-        for (i, p) in placements.iter().enumerate() {
-            if p.col != col || i < first_idx || i >= last_idx {
+        for &(i, p) in &staggered.by_column[col] {
+            if i < first_idx || i >= last_idx {
                 continue;
             }
             let spacer_y = (p.y_px + padding_top_px) - prev_y;
@@ -1333,15 +1372,19 @@ where
                 ));
             }
             if let Some(item) = items.get(i) {
-                let h_dp = item_height_dp(item).max(1.0);
+                let h_dp = Px(p.h_px).to_dp().0.max(1.0);
                 let vis_top = p.y_px + padding_top_px;
                 let vis_bot = vis_top + p.h_px;
                 let in_view =
                     vis_bot > scroll_offset_px && vis_top < scroll_offset_px + viewport_height_px;
                 let data_i = to_data_idx(i);
                 if in_view {
-                    let revision =
-                        state.cache_revision_for(data_i as u64, item as *const T as usize, p.h_px);
+                    let revision = state.cache_revision_for_with(
+                        data_i as u64,
+                        item as *const T as usize,
+                        p.h_px,
+                        0,
+                    );
                     col_child.push(scoped_item(data_i as u64, state_id, revision, || {
                         crate::Box(Modifier::new().fill_max_width().height(Dp(h_dp)))
                             .child(item_builder(item.clone(), data_i))

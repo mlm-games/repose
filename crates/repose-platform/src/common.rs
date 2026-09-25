@@ -6,34 +6,199 @@ use repose_core::input::Modifiers;
 use repose_core::runtime::Frame;
 use repose_core::{RenderBackend, Vec2};
 
+pub(crate) struct FramePacer {
+    last_render: Option<web_time::Instant>,
+    max_fps: Option<f32>,
+}
+
+impl FramePacer {
+    pub(crate) fn new(max_fps: Option<f32>) -> Self {
+        Self {
+            last_render: None,
+            max_fps,
+        }
+    }
+
+    pub(crate) fn due(&self, now: web_time::Instant) -> bool {
+        self.deadline(now).is_none()
+    }
+
+    pub(crate) fn deadline(&self, now: web_time::Instant) -> Option<web_time::Instant> {
+        let interval = match self.max_fps.filter(|fps| fps.is_finite() && *fps > 0.0) {
+            Some(fps) => web_time::Duration::from_secs_f64((1.0 / f64::from(fps)).clamp(0.0, 1.0)),
+            None => return None,
+        };
+        let deadline = self.last_render.map(|last| last + interval)?;
+        (deadline > now).then_some(deadline)
+    }
+
+    pub(crate) fn rendered(&mut self, now: web_time::Instant) {
+        self.last_render = Some(now);
+    }
+
+    #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
+    pub(crate) fn idle_due(&self, now: web_time::Instant, idle: web_time::Duration) -> bool {
+        self.last_render
+            .is_none_or(|last| now.saturating_duration_since(last) >= idle)
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+enum ClipboardWrite {
+    System(String),
+    Primary(String),
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+struct ClipboardWriteState {
+    next: u64,
+    completed: u64,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+struct ClipboardSync {
+    state: std::sync::Mutex<ClipboardWriteState>,
+    idle: std::sync::Condvar,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+struct ClipboardWriter {
+    sender: std::sync::mpsc::Sender<(u64, ClipboardWrite)>,
+    sync: std::sync::Arc<ClipboardSync>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl ClipboardWriter {
+    fn enqueue(&self, write: ClipboardWrite) {
+        let failed = {
+            let mut state = self
+                .sync
+                .state
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            state.next = state.next.wrapping_add(1);
+            let sequence = state.next;
+            if self.sender.send((sequence, write)).is_err() {
+                state.completed = state.completed.max(sequence);
+                true
+            } else {
+                false
+            }
+        };
+        if failed {
+            self.sync.idle.notify_all();
+            log::warn!("clipboard writer is unavailable");
+        }
+    }
+
+    fn wait(&self) {
+        let mut state = self
+            .sync
+            .state
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        while state.completed < state.next {
+            state = self
+                .sync
+                .idle
+                .wait(state)
+                .unwrap_or_else(|error| error.into_inner());
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl ClipboardSync {
+    fn complete(&self, sequence: u64) {
+        let mut state = self.state.lock().unwrap_or_else(|error| error.into_inner());
+        state.completed = state.completed.max(sequence);
+        self.idle.notify_all();
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn clipboard_writes() -> &'static ClipboardWriter {
+    static WRITES: std::sync::OnceLock<ClipboardWriter> = std::sync::OnceLock::new();
+    WRITES.get_or_init(|| {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let sync = std::sync::Arc::new(ClipboardSync {
+            state: std::sync::Mutex::new(ClipboardWriteState {
+                next: 0,
+                completed: 0,
+            }),
+            idle: std::sync::Condvar::new(),
+        });
+        let writer_sync = sync.clone();
+        let _ = std::thread::Builder::new()
+            .name("repose-clipboard-writes".into())
+            .spawn(move || {
+                let system_clipboard = match clipawl::Clipboard::new() {
+                    Ok(clipboard) => Some(clipboard),
+                    Err(error) => {
+                        log::warn!("clipboard initialization failed: {error}");
+                        None
+                    }
+                };
+                let primary_clipboard = {
+                    let mut opts = clipawl::ClipboardOptions::default();
+                    opts.linux.selection = clipawl::LinuxSelection::Primary;
+                    match clipawl::Clipboard::new_with_options(opts) {
+                        Ok(clipboard) => Some(clipboard),
+                        Err(error) => {
+                            log::warn!("primary clipboard initialization failed: {error}");
+                            None
+                        }
+                    }
+                };
+                for (sequence, write) in receiver {
+                    match write {
+                        ClipboardWrite::System(text) => {
+                            if let Some(clipboard) = system_clipboard.as_ref()
+                                && let Err(error) = pollster::block_on(clipboard.write(&text))
+                            {
+                                log::warn!("clipboard write failed: {error}");
+                            }
+                        }
+                        ClipboardWrite::Primary(text) => {
+                            if let Some(clipboard) = primary_clipboard.as_ref()
+                                && let Err(error) = pollster::block_on(clipboard.write(&text))
+                            {
+                                log::warn!("primary selection write failed: {error}");
+                            }
+                        }
+                    }
+                    writer_sync.complete(sequence);
+                }
+            });
+        ClipboardWriter { sender, sync }
+    })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn flush_clipboard_writes() {
+    clipboard_writes().wait();
+}
+
 pub(crate) fn request_redraw(window: &Option<std::sync::Arc<winit::window::Window>>) {
     if let Some(w) = window {
         w.request_redraw();
     }
 }
 
-/// Setup global clipboard read/write fns for desktop/android (blocking clipawl).
+/// Setup global clipboard read/write functions for desktop/android.
 /// Returns the platform clipboard handle for primary-selection use.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn setup_clipboard() -> Option<clipawl::Clipboard> {
     let cb = clipawl::Clipboard::new().ok();
-    repose_core::clipboard::set_clipboard_read_fn(Box::new(|| clipawl::blocking::read().ok()));
+    repose_core::clipboard::set_clipboard_read_fn(Box::new(|| {
+        flush_clipboard_writes();
+        clipawl::blocking::read().ok()
+    }));
     repose_core::clipboard::set_clipboard_fn(Box::new(|text| {
-        if let Err(e) = clipawl::blocking::write(text) {
-            eprintln!("clipboard write error: {e}");
-        }
+        clipboard_writes().enqueue(ClipboardWrite::System(text.to_string()));
     }));
     repose_core::clipboard::set_primary_fn(Box::new(|text| {
-        let mut opts = clipawl::ClipboardOptions::default();
-        opts.linux.selection = clipawl::LinuxSelection::Primary;
-        match clipawl::Clipboard::new_with_options(opts) {
-            Ok(cb) => {
-                if let Err(e) = pollster::block_on(cb.write(text)) {
-                    eprintln!("primary selection write error: {e}");
-                }
-            }
-            Err(e) => eprintln!("primary clipboard init error: {e}"),
-        }
+        clipboard_writes().enqueue(ClipboardWrite::Primary(text.to_string()));
     }));
     cb
 }
@@ -114,7 +279,7 @@ pub fn needs_compose(
 }
 
 #[allow(dead_code)]
-pub(crate) fn is_textfield_in_frame(frame_cache: &Option<Frame>, id: u64) -> bool {
+pub(crate) fn is_textfield_in_frame(frame_cache: &Option<std::rc::Rc<Frame>>, id: u64) -> bool {
     repose_app::is_textfield_in_frame_cache(frame_cache, id)
 }
 

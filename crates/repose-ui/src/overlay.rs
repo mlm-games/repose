@@ -153,9 +153,9 @@ impl OverlayHandle {
     }
 
     pub fn handle_back(&self) -> bool {
-        let handler = {
+        let handlers = {
             let inner = self.inner.borrow();
-            inner
+            let mut handlers = inner
                 .entries
                 .iter()
                 .enumerate()
@@ -163,17 +163,22 @@ impl OverlayHandle {
                     inner
                         .back_handlers
                         .get(&entry.id)
-                        .map(|handler| (order, entry.z_index, handler.clone()))
+                        .map(|handler| (order, entry.z_index, (*handler).clone()))
                 })
-                .max_by(|(left_order, left_z, _), (right_order, right_z, _)| {
-                    left_z
-                        .partial_cmp(right_z)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                        .then_with(|| left_order.cmp(right_order))
-                })
+                .collect::<Vec<_>>();
+            handlers.sort_by(|left, right| {
+                right
+                    .1
+                    .partial_cmp(&left.1)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| right.0.cmp(&left.0))
+            });
+            handlers
+                .into_iter()
                 .map(|(_, _, handler)| handler)
+                .collect::<Vec<_>>()
         };
-        handler.is_some_and(|handler| handler())
+        handlers.into_iter().any(|handler| handler())
     }
 
     pub fn dismiss(&self, id: u64) -> bool {

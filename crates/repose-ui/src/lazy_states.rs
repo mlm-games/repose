@@ -12,11 +12,7 @@ fn cache_revision_for(
     variation: u64,
 ) -> u64 {
     use std::hash::{Hash, Hasher};
-    let revision = callback
-        .borrow()
-        .as_ref()
-        .cloned()
-        .map(|revision| revision(key));
+    let revision = callback.borrow().as_ref().map(|revision| revision(key));
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     key.hash(&mut hasher);
     height.to_bits().hash(&mut hasher);
@@ -26,6 +22,156 @@ fn cache_revision_for(
         None => value_identity.hash(&mut hasher),
     }
     hasher.finish()
+}
+
+fn cache_revision_for_uniform(
+    callback: &RefCell<Option<CacheRevision>>,
+    key: u64,
+    value_identity: usize,
+    height: f32,
+    variation: u64,
+) -> u64 {
+    let identity = if callback.borrow().is_some() {
+        0
+    } else {
+        value_identity
+    };
+    cache_revision_for(callback, key, identity, height, variation)
+}
+
+pub(crate) struct LazyColumnGeometry {
+    keys: Vec<u64>,
+    heights: Vec<f32>,
+    fenwick: Vec<f32>,
+    total: f32,
+}
+
+impl LazyColumnGeometry {
+    fn new(keys: Vec<u64>, heights: Vec<f32>) -> Self {
+        let mut geometry = Self {
+            keys,
+            heights,
+            fenwick: Vec::new(),
+            total: 0.0,
+        };
+        geometry.rebuild();
+        geometry
+    }
+
+    fn rebuild(&mut self) {
+        self.fenwick.clear();
+        self.fenwick.resize(self.heights.len() + 1, 0.0);
+        for (index, height) in self.heights.iter().copied().enumerate() {
+            self.fenwick[index + 1] = height;
+        }
+        for index in 1..self.fenwick.len() {
+            let parent = index + (index & index.wrapping_neg());
+            if parent < self.fenwick.len() {
+                self.fenwick[parent] += self.fenwick[index];
+            }
+        }
+        self.total = self.prefix_sum(self.heights.len());
+    }
+
+    fn prefix_sum(&self, count: usize) -> f32 {
+        let mut index = count.min(self.heights.len());
+        let mut sum = 0.0;
+        while index > 0 {
+            sum += self.fenwick[index];
+            index &= index - 1;
+        }
+        sum
+    }
+
+    pub(crate) fn total(&self) -> f32 {
+        self.total
+    }
+
+    pub(crate) fn top(&self, index: usize) -> f32 {
+        self.prefix_sum(index)
+    }
+
+    pub(crate) fn height(&self, index: usize) -> f32 {
+        self.heights.get(index).copied().unwrap_or(0.0)
+    }
+
+    pub(crate) fn first_visible(&self, offset: f32) -> usize {
+        if offset <= 0.0 || self.heights.is_empty() {
+            return 0;
+        }
+        let mut index = 0;
+        let mut bit = 1usize;
+        while bit <= self.heights.len() {
+            bit <<= 1;
+        }
+        let mut sum = 0.0;
+        while bit != 0 {
+            let next = index + bit;
+            if next <= self.heights.len() && sum + self.fenwick[next] <= offset {
+                index = next;
+                sum += self.fenwick[next];
+            }
+            bit >>= 1;
+        }
+        index
+    }
+
+    pub(crate) fn end_visible(&self, offset: f32) -> usize {
+        if offset <= 0.0 {
+            return 0;
+        }
+        let mut index = 0;
+        let mut bit = 1usize;
+        while bit <= self.heights.len() {
+            bit <<= 1;
+        }
+        let mut sum = 0.0;
+        while bit != 0 {
+            let next = index + bit;
+            if next <= self.heights.len() && sum + self.fenwick[next] <= offset {
+                index = next;
+                sum += self.fenwick[next];
+            }
+            bit >>= 1;
+        }
+        if index < self.heights.len() {
+            index + 1
+        } else {
+            self.heights.len()
+        }
+    }
+}
+
+struct LazyColumnGeometryCache {
+    data: Option<Rc<LazyColumnGeometry>>,
+}
+
+impl LazyColumnGeometryCache {
+    fn new() -> Self {
+        Self { data: None }
+    }
+
+    fn update(&mut self, keys: &[u64], heights: &[f32]) -> Rc<LazyColumnGeometry> {
+        if let Some(data) = &self.data
+            && data.keys.len() == keys.len()
+            && data
+                .keys
+                .iter()
+                .zip(keys)
+                .all(|(left, right)| left == right)
+            && data.heights.len() == heights.len()
+            && data
+                .heights
+                .iter()
+                .zip(heights)
+                .all(|(left, right)| left.to_bits() == right.to_bits())
+        {
+            return data.clone();
+        }
+        let data = Rc::new(LazyColumnGeometry::new(keys.to_vec(), heights.to_vec()));
+        self.data = Some(data.clone());
+        data
+    }
 }
 
 /// Configuration for [`LazyColumn`].
@@ -120,11 +266,19 @@ impl Default for LazyVerticalStaggeredGridConfig {
 
 pub trait ItemHeight<T> {
     fn get(&self, item: &T) -> f32;
+
+    fn uniform_height(&self) -> Option<f32> {
+        None
+    }
 }
 
 impl<T> ItemHeight<T> for f32 {
     fn get(&self, _item: &T) -> f32 {
         *self
+    }
+
+    fn uniform_height(&self) -> Option<f32> {
+        Some(*self)
     }
 }
 
@@ -141,6 +295,7 @@ pub struct LazyColumnState {
     pub(crate) physics: RefCell<ScrollPhysics>,
     pub(crate) parent_connection: RefCell<Option<NestedScrollConnection>>,
     cache_revision: RefCell<Option<CacheRevision>>,
+    geometry: RefCell<LazyColumnGeometryCache>,
 }
 
 impl Default for LazyColumnState {
@@ -158,6 +313,7 @@ impl LazyColumnState {
             physics: RefCell::new(ScrollPhysics::new(0.90, 5.0, 10.0)),
             parent_connection: RefCell::new(None),
             cache_revision: RefCell::new(None),
+            geometry: RefCell::new(LazyColumnGeometryCache::new()),
         }
     }
 
@@ -189,6 +345,20 @@ impl LazyColumnState {
         variation: u64,
     ) -> u64 {
         cache_revision_for(&self.cache_revision, key, value_identity, height, variation)
+    }
+
+    pub(crate) fn cache_revision_for_uniform(
+        &self,
+        key: u64,
+        value_identity: usize,
+        height: f32,
+        variation: u64,
+    ) -> u64 {
+        cache_revision_for_uniform(&self.cache_revision, key, value_identity, height, variation)
+    }
+
+    pub(crate) fn geometry(&self, keys: &[u64], heights: &[f32]) -> Rc<LazyColumnGeometry> {
+        self.geometry.borrow_mut().update(keys, heights)
     }
 
     pub fn set_offset(&self, off: f32, content_height: f32) {
@@ -278,10 +448,6 @@ impl LazyGridState {
 
     pub fn clear_cache_revision(&self) {
         *self.cache_revision.borrow_mut() = None;
-    }
-
-    pub(crate) fn cache_revision_for(&self, key: u64, value_identity: usize, height: f32) -> u64 {
-        self.cache_revision_for_with(key, value_identity, height, 0)
     }
 
     pub(crate) fn cache_revision_for_with(
@@ -414,10 +580,6 @@ impl LazyRowState {
         *self.cache_revision.borrow_mut() = None;
     }
 
-    pub(crate) fn cache_revision_for(&self, key: u64, value_identity: usize, height: f32) -> u64 {
-        self.cache_revision_for_with(key, value_identity, height, 0)
-    }
-
     pub(crate) fn cache_revision_for_with(
         &self,
         key: u64,
@@ -506,10 +668,6 @@ impl LazyVerticalStaggeredGridState {
 
     pub fn clear_cache_revision(&self) {
         *self.cache_revision.borrow_mut() = None;
-    }
-
-    pub(crate) fn cache_revision_for(&self, key: u64, value_identity: usize, height: f32) -> u64 {
-        self.cache_revision_for_with(key, value_identity, height, 0)
     }
 
     pub(crate) fn cache_revision_for_with(

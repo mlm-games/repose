@@ -1,5 +1,6 @@
 #![allow(non_snake_case)]
 
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -29,6 +30,7 @@ pub struct SliderConfig {
     pub thumb_width: Dp,
     pub thumb_height: Dp,
     pub thumb_track_gap: Dp,
+    pub resize_thumb_on_drag: bool,
     pub active_track_visuals: ControlVisualSet,
     pub inactive_track_visuals: ControlVisualSet,
     pub thumb_visuals: ControlVisualSet,
@@ -68,6 +70,7 @@ impl std::fmt::Debug for SliderConfig {
             .field("thumb_width", &self.thumb_width)
             .field("thumb_height", &self.thumb_height)
             .field("thumb_track_gap", &self.thumb_track_gap)
+            .field("resize_thumb_on_drag", &self.resize_thumb_on_drag)
             .field("active_track_visuals", &self.active_track_visuals)
             .field("inactive_track_visuals", &self.inactive_track_visuals)
             .field("thumb_visuals", &self.thumb_visuals)
@@ -103,6 +106,7 @@ impl Default for SliderConfig {
             thumb_width: SliderDefaults::THUMB_WIDTH,
             thumb_height: SliderDefaults::THUMB_HEIGHT,
             thumb_track_gap: ProgressIndicatorDefaults::SLIDER_THUMB_TRACK_GAP,
+            resize_thumb_on_drag: true,
             active_track_visuals: ControlVisualSet::default(),
             inactive_track_visuals: ControlVisualSet::default(),
             thumb_visuals: ControlVisualSet::default(),
@@ -114,6 +118,49 @@ impl Default for SliderConfig {
 }
 
 static SLIDER_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+const MAX_SLIDER_TICKS: usize = 64;
+const MIN_TICK_GAP_FACTOR: f32 = 3.0;
+type SliderTickSignature = (u32, u32, Option<u32>);
+
+fn slider_tick_signature(min: f32, max: f32, step: Option<f32>) -> SliderTickSignature {
+    (min.to_bits(), max.to_bits(), step.map(f32::to_bits))
+}
+
+fn slider_tick_fractions(min: f32, max: f32, step: Option<f32>) -> Vec<f32> {
+    let Some(step) = step.filter(|step| step.is_finite() && *step > 0.0) else {
+        return Vec::new();
+    };
+    let span = (max - min).max(0.0);
+    if !span.is_finite() || span <= f32::EPSILON {
+        return vec![0.0];
+    }
+    let intervals = ((span / step).round() as usize).min(10_000_000);
+    if intervals <= 1 {
+        return vec![0.0, 1.0];
+    }
+    let samples = intervals.min(MAX_SLIDER_TICKS.saturating_sub(1));
+    let mut fractions = Vec::with_capacity(samples + 1);
+    for sample in 0..=samples {
+        let interval = sample * intervals / samples;
+        fractions.push(interval as f32 / intervals as f32);
+    }
+    fractions
+}
+
+fn cached_slider_ticks(
+    cache: &Rc<RefCell<(Option<SliderTickSignature>, Rc<Vec<f32>>)>>,
+    min: f32,
+    max: f32,
+    step: Option<f32>,
+) -> Rc<Vec<f32>> {
+    let signature = Some(slider_tick_signature(min, max, step));
+    let mut cache = cache.borrow_mut();
+    if cache.0 != signature {
+        *cache = (signature, Rc::new(slider_tick_fractions(min, max, step)));
+    }
+    cache.1.clone()
+}
 
 fn snap_step(v: f32, min: f32, max: f32, step: Option<f32>) -> f32 {
     let v = v.clamp(min, max);
@@ -203,12 +250,10 @@ pub fn Slider(
         config.thumb_color
     };
 
-    let tick_frac: Vec<f32> = if let Some(s) = step {
-        let n = ((max - min) / s.max(1e-6)).round() as usize;
-        (0..=n).map(|i| i as f32 / n as f32).collect()
-    } else {
-        Vec::new()
-    };
+    let tick_cache = remember_with_key(format!("ms_ticks_{}", id), || {
+        RefCell::new((None, Rc::new(Vec::<f32>::new())))
+    });
+    let tick_frac = cached_slider_ticks(&tick_cache, min, max, step);
 
     let sl_source: Rc<MutableInteractionSource> = config
         .interaction_source
@@ -220,6 +265,7 @@ pub fn Slider(
     let thumb_width = config.thumb_width;
     let thumb_height = config.thumb_height;
     let thumb_track_gap = config.thumb_track_gap;
+    let resize_thumb_on_drag = config.resize_thumb_on_drag;
     let active_track_visuals = config.active_track_visuals.clone();
     let inactive_track_visuals = config.inactive_track_visuals.clone();
     let thumb_visuals = config.thumb_visuals.clone();
@@ -325,9 +371,14 @@ pub fn Slider(
             }
             let tick_start = track_x + corner;
             let tick_end = track_x + track_w - corner;
+            let min_tick_gap = dot_r * MIN_TICK_GAP_FACTOR;
+            let mut last_tick_x = f32::NEG_INFINITY;
             for (i, &tf) in tick_frac.iter().enumerate() {
                 let tx = tick_start + tf * (tick_end - tick_start);
                 if i == 0 || i == tick_frac.len() - 1 {
+                    continue;
+                }
+                if tx - last_tick_x < min_tick_gap {
                     continue;
                 }
                 if tx >= kx - gap && tx <= kx + gap {
@@ -343,8 +394,13 @@ pub fn Slider(
                     },
                     brush: Brush::Solid(mul_c(if on_active { act_tick } else { inact_tick })),
                 });
+                last_tick_x = tx;
             }
-            let tw = if da { thumb_w * 0.5 } else { thumb_w };
+            let tw = if da && resize_thumb_on_drag {
+                thumb_w * 0.5
+            } else {
+                thumb_w
+            };
             paint_slider_part(
                 scene,
                 Rect {
@@ -368,7 +424,7 @@ pub fn Slider(
                 if !en {
                     return;
                 }
-                drag_active.set(true);
+                drag_active.set_neq(true);
                 let r = *track_rect.borrow();
                 (oc)(value_from_x(pe.position_in_window().x, r, min, max, step));
                 pe.consume();
@@ -396,7 +452,7 @@ pub fn Slider(
             let on_finished = config.on_value_change_finished.clone();
             move |_pe: PointerEvent| {
                 let was = *drag_active.get();
-                drag_active.set(false);
+                drag_active.set_neq(false);
                 if was && let Some(ref cb) = on_finished {
                     (cb)();
                 }
@@ -407,7 +463,7 @@ pub fn Slider(
             let on_finished = config.on_value_change_finished.clone();
             move |_pe: PointerEvent| {
                 if *drag_active.get() {
-                    drag_active.set(false);
+                    drag_active.set_neq(false);
                     if let Some(ref cb) = on_finished {
                         (cb)();
                     }
@@ -525,12 +581,10 @@ pub fn RangeSlider(
         config.thumb_color
     };
 
-    let tick_frac: Vec<f32> = if let Some(s) = step {
-        let n = ((max - min) / s.max(1e-6)).round() as usize;
-        (0..=n).map(|i| i as f32 / n as f32).collect()
-    } else {
-        Vec::new()
-    };
+    let tick_cache = remember_with_key(format!("ms_ticks_{}", id), || {
+        RefCell::new((None, Rc::new(Vec::<f32>::new())))
+    });
+    let tick_frac = cached_slider_ticks(&tick_cache, min, max, step);
 
     let track_rect_p = track_rect.clone();
     let drag_active_p = drag_active.clone();
@@ -546,6 +600,7 @@ pub fn RangeSlider(
     let thumb_width = config.thumb_width;
     let thumb_height = config.thumb_height;
     let thumb_track_gap = config.thumb_track_gap;
+    let resize_thumb_on_drag = config.resize_thumb_on_drag;
     let active_track_visuals = config.active_track_visuals.clone();
     let inactive_track_visuals = config.inactive_track_visuals.clone();
     let thumb_visuals = config.thumb_visuals.clone();
@@ -683,10 +738,14 @@ pub fn RangeSlider(
             }
             let tick_start = track_x + corner;
             let tick_end = track_x + track_w - corner;
+            let min_tick_gap = dot_r * MIN_TICK_GAP_FACTOR;
+            let mut last_tick_x = f32::NEG_INFINITY;
             for (i, &tf) in tick_frac.iter().enumerate() {
                 let tx = tick_start + tf * (tick_end - tick_start);
-                // skip ticks that fall on the stop indicators (first and last)
                 if i == 0 || i == tick_frac.len() - 1 {
+                    continue;
+                }
+                if tx - last_tick_x < min_tick_gap {
                     continue;
                 }
                 let in_lgap = tx >= active_l - gap && tx <= active_l + gap;
@@ -704,12 +763,17 @@ pub fn RangeSlider(
                     },
                     brush: Brush::Solid(mul_c(if on_active { act_tick } else { inact_tick })),
                 });
+                last_tick_x = tx;
             }
             let at = *active_thumb_p.get();
             let thumbs = [k0, k1];
             for (idx, &kx) in thumbs.iter().enumerate() {
                 let is_active = da && (if idx == 0 { !at } else { at });
-                let tw = if is_active { thumb_w * 0.5 } else { thumb_w };
+                let tw = if is_active && resize_thumb_on_drag {
+                    thumb_w * 0.5
+                } else {
+                    thumb_w
+                };
                 let thumb_state = ControlVisualState {
                     pressed: is_active && visual_state.pressed,
                     dragged: is_active,
@@ -740,11 +804,11 @@ pub fn RangeSlider(
                 if !en {
                     return;
                 }
-                drag_active.set(true);
+                drag_active.set_neq(true);
                 let r = *track_rect.borrow();
                 let v = value_from_x(pe.position_in_window().x, r, min, max, step);
                 let use_end = (v - end).abs() < (v - start).abs();
-                active_thumb.set(use_end);
+                active_thumb.set_neq(use_end);
                 let (a, b) = if use_end {
                     (start, v.max(start))
                 } else {
@@ -785,8 +849,8 @@ pub fn RangeSlider(
             let on_finished = config.on_value_change_finished.clone();
             move |_pe: PointerEvent| {
                 let was = *drag_active.get();
-                drag_active.set(false);
-                active_thumb.set(false);
+                drag_active.set_neq(false);
+                active_thumb.set_neq(false);
                 if was && let Some(ref cb) = on_finished {
                     (cb)();
                 }
@@ -798,8 +862,8 @@ pub fn RangeSlider(
             let on_finished = config.on_value_change_finished.clone();
             move |_pe: PointerEvent| {
                 if *drag_active.get() {
-                    drag_active.set(false);
-                    active_thumb.set(false);
+                    drag_active.set_neq(false);
+                    active_thumb.set_neq(false);
                     if let Some(ref cb) = on_finished {
                         (cb)();
                     }

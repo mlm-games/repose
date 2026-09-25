@@ -19,10 +19,43 @@ pub(crate) struct HitClip {
 }
 
 #[derive(Clone)]
+struct HitClipLink {
+    clip: HitClip,
+    parent: Option<Arc<HitClipLink>>,
+}
+
+#[derive(Clone, Default)]
+struct HitClipChain {
+    head: Option<Arc<HitClipLink>>,
+}
+
+impl HitClipChain {
+    fn iter(&self) -> HitClipIter<'_> {
+        HitClipIter {
+            next: self.head.as_deref(),
+        }
+    }
+}
+
+struct HitClipIter<'a> {
+    next: Option<&'a HitClipLink>,
+}
+
+impl<'a> Iterator for HitClipIter<'a> {
+    type Item = &'a HitClip;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let link = self.next?;
+        self.next = link.parent.as_deref();
+        Some(&link.clip)
+    }
+}
+
+#[derive(Clone)]
 pub(crate) struct HitContext {
     local_to_world: [f64; 9],
     world_to_local: [f64; 9],
-    clips: Arc<Vec<HitClip>>,
+    clips: HitClipChain,
     layer_depth: u32,
     valid: bool,
     cull_safe: bool,
@@ -40,7 +73,7 @@ impl HitContext {
         Self {
             local_to_world: identity_matrix(),
             world_to_local: identity_matrix(),
-            clips: Arc::new(Vec::new()),
+            clips: HitClipChain::default(),
             layer_depth: 0,
             valid: true,
             cull_safe: true,
@@ -92,16 +125,18 @@ impl HitContext {
     }
 
     pub(crate) fn with_clip(&self, rect: Rect, op: ClipOp) -> Self {
-        let mut clips = self.clips.as_ref().clone();
-        clips.push(HitClip {
-            world_to_local: self.world_to_local,
-            rect,
-            op,
+        let link = Arc::new(HitClipLink {
+            clip: HitClip {
+                world_to_local: self.world_to_local,
+                rect,
+                op,
+            },
+            parent: self.clips.head.clone(),
         });
         Self {
             local_to_world: self.local_to_world,
             world_to_local: self.world_to_local,
-            clips: Arc::new(clips),
+            clips: HitClipChain { head: Some(link) },
             layer_depth: self.layer_depth,
             valid: self.valid,
             cull_safe: self.cull_safe,
@@ -143,8 +178,9 @@ impl HitContext {
         for value in self.world_to_local {
             value.to_bits().hash(&mut hasher);
         }
-        self.clips.len().hash(&mut hasher);
+        let mut clip_count = 0usize;
         for clip in self.clips.iter() {
+            clip_count += 1;
             for value in clip.world_to_local {
                 value.to_bits().hash(&mut hasher);
             }
@@ -157,6 +193,7 @@ impl HitContext {
                 ClipOp::Difference => 1u8.hash(&mut hasher),
             }
         }
+        clip_count.hash(&mut hasher);
         self.layer_depth.hash(&mut hasher);
         self.valid.hash(&mut hasher);
         self.cull_safe.hash(&mut hasher);
@@ -168,9 +205,10 @@ impl HitContext {
 #[derive(Clone)]
 pub(crate) struct HitRegionMetadata {
     local_rect: Rect,
+    world_rect: Rect,
     local_to_world: [f64; 9],
     world_to_local: [f64; 9],
-    clips: Arc<Vec<HitClip>>,
+    clips: HitClipChain,
     textfield_metrics: Option<TextFieldMetrics>,
     keyboard_actions: Option<KeyboardActions>,
     textfield_transform_id: Option<u64>,
@@ -179,7 +217,7 @@ pub(crate) struct HitRegionMetadata {
 #[derive(Clone)]
 pub struct HitRegionSnapshot {
     hit: HitRegion,
-    metadata: Option<HitRegionMetadata>,
+    metadata: Option<Arc<HitRegionMetadata>>,
 }
 
 impl HitRegionSnapshot {
@@ -199,20 +237,20 @@ impl HitRegionSnapshot {
     }
 
     pub fn contains(&self, position: Vec2) -> bool {
-        contains(&self.hit, self.metadata.as_ref(), position)
+        contains(&self.hit, self.metadata.as_deref(), position)
     }
 
     pub fn to_local(&self, position: Vec2) -> Vec2 {
-        to_local(&self.hit, self.metadata.as_ref(), position)
+        to_local(&self.hit, self.metadata.as_deref(), position)
     }
 
     pub fn pointer_coordinates(&self, position: Vec2) -> (Vec2, Vec2) {
-        pointer_coordinates(&self.hit, self.metadata.as_ref(), position)
+        pointer_coordinates(&self.hit, self.metadata.as_deref(), position)
     }
 }
 
 thread_local! {
-    static HIT_METADATA: RefCell<HashMap<u64, (HitRegionMetadata, u64)>> =
+    static HIT_METADATA: RefCell<HashMap<u64, (Arc<HitRegionMetadata>, u64)>> =
         RefCell::new(HashMap::new());
     static HIT_METADATA_GENERATION: Cell<u64> = const { Cell::new(0) };
 }
@@ -238,8 +276,9 @@ pub(crate) fn register_hit(
     text_input: Option<&TextInputConfig>,
 ) {
     let local_rect = hit.rect;
-    let metadata = HitRegionMetadata {
+    let mut metadata = HitRegionMetadata {
         local_rect,
+        world_rect: Rect::default(),
         local_to_world: context.local_to_world,
         world_to_local: context.world_to_local,
         clips: context.clips.clone(),
@@ -249,23 +288,32 @@ pub(crate) fn register_hit(
             .and_then(|input| input.visual_transformation.as_ref())
             .and_then(crate::textfield::textfield_transform_id),
     };
-    hit.rect = metadata.world_rect();
+    metadata.world_rect = metadata.compute_world_rect();
+    hit.rect = metadata.world_rect;
     let generation = HIT_METADATA_GENERATION.with(Cell::get);
     HIT_METADATA.with(|all| {
-        all.borrow_mut().insert(hit.id, (metadata, generation));
+        all.borrow_mut()
+            .insert(hit.id, (Arc::new(metadata), generation));
     });
 }
 
-pub(crate) fn metadata_for(hit: &HitRegion) -> Option<HitRegionMetadata> {
+fn with_metadata<R>(hit: &HitRegion, f: impl FnOnce(&HitRegionMetadata) -> R) -> Option<R> {
     HIT_METADATA.with(|all| {
-        all.borrow()
-            .get(&hit.id)
-            .map(|(metadata, _)| metadata.clone())
-            .filter(|metadata| metadata.world_rect() == hit.rect)
+        let all = all.borrow();
+        let (metadata, _) = all.get(&hit.id)?;
+        (metadata.world_rect == hit.rect).then(|| f(metadata))
     })
 }
 
-pub(crate) fn restore_metadata(id: u64, metadata: HitRegionMetadata) {
+pub(crate) fn metadata_for(hit: &HitRegion) -> Option<Arc<HitRegionMetadata>> {
+    HIT_METADATA.with(|all| {
+        let all = all.borrow();
+        let (metadata, _) = all.get(&hit.id)?;
+        (metadata.world_rect == hit.rect).then(|| Arc::clone(metadata))
+    })
+}
+
+pub(crate) fn restore_metadata(id: u64, metadata: Arc<HitRegionMetadata>) {
     let generation = HIT_METADATA_GENERATION.with(Cell::get);
     HIT_METADATA.with(|all| {
         all.borrow_mut().insert(id, (metadata, generation));
@@ -273,10 +321,10 @@ pub(crate) fn restore_metadata(id: u64, metadata: HitRegionMetadata) {
 }
 
 pub fn hit_test_frame(frame: &Frame, position: Vec2) -> Option<&HitRegion> {
-    hit_test_frame_path_all(frame, position)
+    frame_hit_order(frame, position, true)
         .first()
         .copied()
-        .and_then(|id| frame.hit_regions.iter().find(|hit| hit.id == id))
+        .and_then(|index| frame.hit_regions.get(index))
 }
 
 pub fn hit_test_enabled_frame(frame: &Frame, position: Vec2) -> Option<&HitRegion> {
@@ -298,56 +346,69 @@ pub fn hit_test_frame_regions(frame: &Frame, position: Vec2) -> Vec<u64> {
 }
 
 pub fn hit_region_contains(hit: &HitRegion, position: Vec2) -> bool {
-    contains(hit, metadata_for(hit).as_ref(), position)
+    with_metadata(hit, |metadata| contains(hit, Some(metadata), position))
+        .unwrap_or_else(|| hit.rect.contains(position))
 }
 
 pub fn hit_region_to_local(hit: &HitRegion, position: Vec2) -> Vec2 {
-    to_local(hit, metadata_for(hit).as_ref(), position)
+    with_metadata(hit, |metadata| to_local(hit, Some(metadata), position)).unwrap_or(position)
 }
 
 pub fn hit_region_pointer_coordinates(hit: &HitRegion, position: Vec2) -> (Vec2, Vec2) {
-    pointer_coordinates(hit, metadata_for(hit).as_ref(), position)
+    with_metadata(hit, |metadata| {
+        pointer_coordinates(hit, Some(metadata), position)
+    })
+    .unwrap_or_else(|| {
+        let origin = Vec2 {
+            x: hit.rect.x,
+            y: hit.rect.y,
+        };
+        (origin, position - origin)
+    })
 }
 
 pub fn hit_region_local_rect(hit: &HitRegion) -> Rect {
-    metadata_for(hit).map_or(hit.rect, |metadata| metadata.local_rect)
+    with_metadata(hit, |metadata| metadata.local_rect).unwrap_or(hit.rect)
 }
 
 pub fn hit_region_transformed_origin(hit: &HitRegion) -> Vec2 {
-    metadata_for(hit).map_or(
-        Vec2 {
-            x: hit.rect.x,
-            y: hit.rect.y,
-        },
-        |metadata| {
-            apply_matrix(
-                metadata.local_to_world,
-                Vec2 {
-                    x: metadata.local_rect.x,
-                    y: metadata.local_rect.y,
-                },
-            )
-        },
-    )
+    with_metadata(hit, |metadata| {
+        apply_matrix(
+            metadata.local_to_world,
+            Vec2 {
+                x: metadata.local_rect.x,
+                y: metadata.local_rect.y,
+            },
+        )
+    })
+    .unwrap_or(Vec2 {
+        x: hit.rect.x,
+        y: hit.rect.y,
+    })
 }
 
 pub fn hit_region_world_rect(hit: &HitRegion) -> Rect {
-    metadata_for(hit).map_or(hit.rect, |metadata| metadata.world_rect())
+    with_metadata(hit, |metadata| metadata.world_rect).unwrap_or(hit.rect)
 }
 
 pub fn dispatch_keyboard_action(hit: &HitRegion, action: ImeAction, default: &dyn Fn()) -> bool {
-    let Some(actions) = metadata_for(hit).and_then(|metadata| metadata.keyboard_actions) else {
+    let callback = with_metadata(hit, |metadata| {
+        metadata.keyboard_actions.as_ref().and_then(|actions| {
+            let callback = match action {
+                ImeAction::Done => &actions.on_done,
+                ImeAction::Go => &actions.on_go,
+                ImeAction::Next => &actions.on_next,
+                ImeAction::Previous => &actions.on_previous,
+                ImeAction::Search => &actions.on_search,
+                ImeAction::Send => &actions.on_send,
+                ImeAction::Unspecified | ImeAction::None | ImeAction::Default => return None,
+            };
+            callback.clone()
+        })
+    });
+    let Some(callback) = callback else {
         default();
         return true;
-    };
-    let callback = match action {
-        ImeAction::Done => actions.on_done,
-        ImeAction::Go => actions.on_go,
-        ImeAction::Next => actions.on_next,
-        ImeAction::Previous => actions.on_previous,
-        ImeAction::Search => actions.on_search,
-        ImeAction::Send => actions.on_send,
-        ImeAction::Unspecified | ImeAction::None | ImeAction::Default => None,
     };
     if let Some(callback) = callback {
         let scope = DefaultKeyboardActionScope { action, default };
@@ -359,8 +420,8 @@ pub fn dispatch_keyboard_action(hit: &HitRegion, action: ImeAction, default: &dy
 }
 
 pub(crate) fn textfield_metrics(hit: &HitRegion) -> TextFieldMetrics {
-    metadata_for(hit)
-        .and_then(|metadata| metadata.textfield_metrics)
+    with_metadata(hit, |metadata| metadata.textfield_metrics.clone())
+        .flatten()
         .unwrap_or_else(|| {
             let mut metrics = TextFieldMetrics::default();
             if hit.tf_font_size != Sp::ZERO {
@@ -372,7 +433,7 @@ pub(crate) fn textfield_metrics(hit: &HitRegion) -> TextFieldMetrics {
 }
 
 pub(crate) fn textfield_transform_id(hit: &HitRegion) -> Option<u64> {
-    metadata_for(hit).and_then(|metadata| metadata.textfield_transform_id)
+    with_metadata(hit, |metadata| metadata.textfield_transform_id).flatten()
 }
 
 fn contains(hit: &HitRegion, metadata: Option<&HitRegionMetadata>, position: Vec2) -> bool {
@@ -415,10 +476,6 @@ fn pointer_coordinates(
     (origin, local_position)
 }
 
-fn hit_test_frame_path_all(frame: &Frame, position: Vec2) -> Vec<u64> {
-    hit_test_path(frame, position, true)
-}
-
 fn hit_test_path(frame: &Frame, position: Vec2, include_disabled: bool) -> Vec<u64> {
     let order = frame_hit_order(frame, position, include_disabled);
     let Some(&top) = order.first() else {
@@ -428,6 +485,8 @@ fn hit_test_path(frame: &Frame, position: Vec2, include_disabled: bool) -> Vec<u
         .iter()
         .map(|index| frame.hit_regions[*index].id)
         .collect();
+    let by_id: HashMap<u64, &HitRegion> =
+        frame.hit_regions.iter().map(|hit| (hit.id, hit)).collect();
     let mut path = Vec::new();
     let mut current = Some(frame.hit_regions[top].id);
     let mut seen = HashSet::new();
@@ -435,8 +494,7 @@ fn hit_test_path(frame: &Frame, position: Vec2, include_disabled: bool) -> Vec<u
         if !seen.insert(id) {
             break;
         }
-        let hit = frame.hit_regions.iter().find(|hit| hit.id == id);
-        let Some(hit) = hit else {
+        let Some(hit) = by_id.get(&id) else {
             break;
         };
         if exact.contains(&id) {
@@ -448,47 +506,32 @@ fn hit_test_path(frame: &Frame, position: Vec2, include_disabled: bool) -> Vec<u
 }
 
 fn frame_hit_order(frame: &Frame, position: Vec2, include_disabled: bool) -> Vec<usize> {
-    let mut order: Vec<usize> = frame
-        .hit_regions
-        .iter()
-        .enumerate()
-        .filter(|(_, hit)| include_disabled || !hit.disabled)
-        .filter(|(_, hit)| hit_region_contains(hit, position))
-        .map(|(index, _)| index)
-        .collect();
-    order.sort_by(|left, right| {
+    let mut order = HIT_METADATA.with(|all| {
+        let all = all.borrow();
+        frame
+            .hit_regions
+            .iter()
+            .enumerate()
+            .filter(|(_, hit)| include_disabled || !hit.disabled)
+            .filter(|(_, hit)| {
+                all.get(&hit.id)
+                    .filter(|(metadata, _)| metadata.world_rect == hit.rect)
+                    .map(|(metadata, _)| contains(hit, Some(metadata), position))
+                    .unwrap_or_else(|| hit.rect.contains(position))
+            })
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>()
+    });
+    order.sort_unstable_by(|left, right| {
         let left_hit = &frame.hit_regions[*left];
         let right_hit = &frame.hit_regions[*right];
         right_hit
             .z_index
             .partial_cmp(&left_hit.z_index)
             .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| {
-                frame_hit_depth(frame, right_hit.id).cmp(&frame_hit_depth(frame, left_hit.id))
-            })
             .then_with(|| right.cmp(left))
     });
     order
-}
-
-fn frame_hit_depth(frame: &Frame, id: u64) -> usize {
-    let mut current = Some(id);
-    let mut depth = 0;
-    let mut seen = HashSet::new();
-    while let Some(node) = current {
-        if !seen.insert(node) {
-            break;
-        }
-        current = frame
-            .hit_regions
-            .iter()
-            .find(|hit| hit.id == node)
-            .and_then(|hit| hit.parent);
-        if current.is_some() {
-            depth += 1;
-        }
-    }
-    depth
 }
 
 struct DefaultKeyboardActionScope<'a> {
@@ -505,7 +548,7 @@ impl repose_core::KeyboardActionScope for DefaultKeyboardActionScope<'_> {
 }
 
 impl HitRegionMetadata {
-    fn world_rect(&self) -> Rect {
+    fn compute_world_rect(&self) -> Rect {
         let mut world = project_rect(self.local_to_world, self.local_rect);
         for clip in self
             .clips

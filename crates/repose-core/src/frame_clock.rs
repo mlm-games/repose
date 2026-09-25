@@ -36,6 +36,11 @@ pub fn take_present_request() -> bool {
     NEEDS_PRESENT.replace(false)
 }
 
+#[inline]
+pub fn peek_present_request() -> bool {
+    NEEDS_PRESENT.get()
+}
+
 /// Non-consuming check (rarely needed).
 #[inline]
 pub fn peek_frame_request() -> bool {

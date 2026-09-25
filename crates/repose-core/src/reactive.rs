@@ -57,10 +57,6 @@ impl DepGraph {
         let callback = self.observers.remove(&observer);
         self.remove_all_edges_for(observer);
         self.running.remove(&observer);
-        for observers in self.edges.values_mut() {
-            observers.remove(&observer);
-        }
-        self.edges.retain(|_, observers| !observers.is_empty());
         callback
     }
 

@@ -137,16 +137,15 @@ pub(crate) fn prune_textfield_registries() {
             .borrow_mut()
             .retain(|_, state| state.strong_count() != 0);
     });
-    let live: std::collections::HashSet<u64> = TEXTFIELD_TRANSFORMS.with(|transforms| {
-        transforms
-            .borrow()
-            .iter()
-            .filter(|(_, entry)| entry.marker.strong_count() != 0)
-            .map(|(id, _)| *id)
-            .collect()
-    });
+    let mut live = std::collections::HashSet::new();
     TEXTFIELD_TRANSFORMS.with(|transforms| {
-        transforms.borrow_mut().retain(|id, _| live.contains(id));
+        transforms.borrow_mut().retain(|id, entry| {
+            let keep = entry.marker.strong_count() != 0;
+            if keep {
+                live.insert(*id);
+            }
+            keep
+        });
     });
     TEXTFIELD_TRANSFORM_MARKERS.with(|markers| {
         markers.borrow_mut().retain(|_, id| live.contains(id));
@@ -1062,13 +1061,16 @@ pub fn index_for_x_bytes(
         },
     );
 
+    if m.positions.is_empty() {
+        return 0;
+    }
     let mut best_i = 0usize;
     let mut best_d = f32::INFINITY;
-    for i in 0..m.positions.len() {
-        let d = (m.positions[i] - x_px).abs();
-        if d < best_d {
-            best_d = d;
-            best_i = i;
+    for (index, position) in m.positions.iter().enumerate() {
+        let distance = (position - x_px).abs();
+        if distance < best_d {
+            best_d = distance;
+            best_i = index;
         }
     }
     m.byte_offsets[best_i]
@@ -2281,32 +2283,17 @@ fn locate_byte_in_ranges(ranges: &[(usize, usize)], b: usize) -> (usize, usize, 
     if ranges.is_empty() {
         return (0, 0, b);
     }
-    for (i, (s, e)) in ranges.iter().enumerate() {
-        if b < *s {
-            if i == 0 {
-                return (0, 0, b);
-            }
-            let (ps, pe) = ranges[i - 1];
-            let local = pe.saturating_sub(ps);
-            return (i - 1, local, ps + local);
-        }
-        if b < *e {
-            let local = b.saturating_sub(*s).min(e.saturating_sub(*s));
-            return (i, local, *s + local);
-        }
-        if b == *e {
-            if let Some((ns, _)) = ranges.get(i + 1)
-                && *ns == b
-            {
-                return (i + 1, 0, b);
-            }
-            let local = e.saturating_sub(*s);
-            return (i, local, *s + local);
-        }
+    let next = ranges.partition_point(|(_, start)| *start <= b);
+    if next < ranges.len() && ranges[next].0 == b {
+        return (next, 0, b);
     }
-    let (ls, le) = ranges[ranges.len() - 1];
-    let local = le.saturating_sub(ls);
-    (ranges.len() - 1, local, ls + local)
+    if next == 0 {
+        return (0, 0, b);
+    }
+    let index = next - 1;
+    let (start, end) = ranges[index];
+    let local = b.saturating_sub(start).min(end.saturating_sub(start));
+    (index, local, start + local)
 }
 
 pub fn caret_xy_for_byte(
@@ -2351,7 +2338,10 @@ pub fn index_for_x_bytes_with_config(
     config: TextMeasureConfig,
 ) -> usize {
     let measured = measure_text(text, font_px, config);
-    let mut best_i = 0;
+    if measured.positions.is_empty() {
+        return 0;
+    }
+    let mut best_i = 0usize;
     let mut best_d = f32::INFINITY;
     for (index, position) in measured.positions.iter().enumerate() {
         let distance = (position - x_px).abs();
@@ -2741,6 +2731,17 @@ pub(crate) fn paint_text_field(
             let layout = layout_text_area_with_metrics(&render_text, rect.w.max(1.0), &metrics);
             let lh = layout.line_h_px;
             let max_line_count = text_input.max_lines.unwrap_or(usize::MAX);
+            let visible_line_count = layout.ranges.len().min(max_line_count);
+            let line_step = if lh.is_finite() && lh > 0.0 { lh } else { 1.0 };
+            let first_visible_line = ((((st.scroll_offset_y - 1.0) / line_step).floor().max(0.0)
+                as usize)
+                .saturating_sub(1))
+            .min(visible_line_count);
+            let last_visible_line = (((st.scroll_offset_y + rect.h + 1.0) / line_step)
+                .ceil()
+                .max(0.0) as usize)
+                .min(visible_line_count)
+                .max(first_visible_line);
 
             // Hint text (empty field)
             if st.text.is_empty() {
@@ -2769,10 +2770,8 @@ pub(crate) fn paint_text_field(
                     font_variation_settings: metrics.font_variation_settings.clone().map(Arc::from),
                 });
             } else {
-                for (i, (s, e)) in layout.ranges.iter().copied().enumerate() {
-                    if i >= max_line_count {
-                        break;
-                    }
+                for i in first_visible_line..last_visible_line {
+                    let (s, e) = layout.ranges[i];
                     let ln = render_text[s..e].to_string();
                     let draw_y = rect.y + (i as f32) * lh - st.scroll_offset_y;
                     if draw_y + lh < rect.y - 1.0 || draw_y > rect.y + rect.h + 1.0 {
@@ -2834,10 +2833,8 @@ pub(crate) fn paint_text_field(
                     sel_b_orig
                 };
                 let selection = th.focus.with_alpha_f32(85.0 / 255.0);
-                for (i, (s, e)) in layout.ranges.iter().copied().enumerate() {
-                    if i >= max_line_count {
-                        break;
-                    }
+                for i in first_visible_line..last_visible_line {
+                    let (s, e) = layout.ranges[i];
                     let os = sel_a.max(s);
                     let oe = sel_b.min(e);
                     if os >= oe {
@@ -2901,10 +2898,8 @@ pub(crate) fn paint_text_field(
                 } else {
                     comp.end
                 };
-                for (i, (s, e)) in layout.ranges.iter().copied().enumerate() {
-                    if i >= max_line_count {
-                        break;
-                    }
+                for i in first_visible_line..last_visible_line {
+                    let (s, e) = layout.ranges[i];
                     let os = comp_a.max(s);
                     let oe = comp_b.min(e);
                     if os >= oe {
@@ -3016,7 +3011,13 @@ pub(crate) fn paint_text_field(
             };
             let layout = layout_text_area_with_metrics(&render_text, rect.w.max(1.0), &metrics);
             let lh = layout.line_h_px;
-            for (i, (s, e)) in layout.ranges.iter().copied().enumerate() {
+            let line_step = if lh.is_finite() && lh > 0.0 { lh } else { 1.0 };
+            let first_visible_line =
+                ((-1.0 / line_step).floor().max(0.0) as usize).min(layout.ranges.len());
+            let last_visible_line =
+                ((rect.h + 1.0) / line_step).ceil().max(0.0) as usize + first_visible_line;
+            for i in first_visible_line..last_visible_line.min(layout.ranges.len()) {
+                let (s, e) = layout.ranges[i];
                 let ln = render_text[s..e].to_string();
                 let draw_y = rect.y + (i as f32) * lh;
                 if draw_y + lh < rect.y - 1.0 || draw_y > rect.y + rect.h + 1.0 {

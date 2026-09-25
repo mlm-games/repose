@@ -1,5 +1,6 @@
 #![allow(non_snake_case)]
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use repose_core::*;
@@ -11,35 +12,43 @@ struct DateParts {
     year: Signal<i32>,
     month: Signal<u32>,
     day: Signal<u32>,
+    year_normalizer: RefCell<Option<SubGuard<i32>>>,
+    month_normalizer: RefCell<Option<SubGuard<u32>>>,
 }
 
 fn install_date_normalizers(parts: &Rc<DateParts>) {
     let weak = Rc::downgrade(parts);
-    parts.year.subscribe(move |year| {
+    let year_normalizer = parts.year.subscribe_guard(move |year| {
         let Some(parts) = weak.upgrade() else { return };
-        let month = parts.month.get().clamp(1, 12);
-        let day = parts.day.get().clamp(1, days_in_month(*year, month));
-        if parts.month.get() != month {
+        let current_month = parts.month.get();
+        let month = current_month.clamp(1, 12);
+        let current_day = parts.day.get();
+        let day = current_day.clamp(1, days_in_month(*year, month));
+        if current_month != month {
             parts.month.set_neq(month);
         }
-        if parts.day.get() != day {
+        if current_day != day {
             parts.day.set_neq(day);
         }
     });
+    *parts.year_normalizer.borrow_mut() = Some(year_normalizer);
 
     let weak = Rc::downgrade(parts);
-    parts.month.subscribe(move |_| {
+    let month_normalizer = parts.month.subscribe_guard(move |_| {
         let Some(parts) = weak.upgrade() else { return };
         let year = parts.year.get();
-        let month = parts.month.get().clamp(1, 12);
-        let day = parts.day.get().clamp(1, days_in_month(year, month));
-        if parts.month.get() != month {
+        let current_month = parts.month.get();
+        let month = current_month.clamp(1, 12);
+        let current_day = parts.day.get();
+        let day = current_day.clamp(1, days_in_month(year, month));
+        if current_month != month {
             parts.month.set_neq(month);
         }
-        if parts.day.get() != day {
+        if current_day != day {
             parts.day.set_neq(day);
         }
     });
+    *parts.month_normalizer.borrow_mut() = Some(month_normalizer);
 }
 
 /// State for `DatePicker` - manages selected date.
@@ -63,6 +72,8 @@ impl DatePickerState {
             year: year.clone(),
             month: month.clone(),
             day: day.clone(),
+            year_normalizer: RefCell::new(None),
+            month_normalizer: RefCell::new(None),
         });
         install_date_normalizers(&parts);
         Self {

@@ -24,6 +24,7 @@ struct Inner<T> {
     value: T,
     subs: Vec<Option<SubCallback<T>>>,
     free_list: Vec<SubId>,
+    subscriber_count: usize,
 }
 
 impl<T> Signal<T> {
@@ -34,6 +35,7 @@ impl<T> Signal<T> {
             value,
             subs: Vec::new(),
             free_list: Vec::new(),
+            subscriber_count: 0,
         })))
     }
 
@@ -110,24 +112,32 @@ impl<T> Signal<T> {
     where
         T: Clone,
     {
-        let (cbs, snapshot): (Vec<SubCallback<T>>, T) = {
+        let subscriber_data = {
             let inner = match self.0.try_borrow() {
-                Ok(b) => b,
+                Ok(b) => Some(b),
                 Err(_) => {
                     log::warn!("Signal notify: inner already borrowed, skipping notify");
-                    reactive::signal_changed(id);
-                    crate::signal_fired();
-                    crate::request_frame();
-                    return;
+                    None
                 }
             };
-            let cbs = inner
-                .subs
-                .iter()
-                .filter_map(|s| s.clone())
-                .collect::<Vec<_>>();
-            let snapshot = inner.value.clone();
-            (cbs, snapshot)
+            inner.map(|inner| {
+                if inner.subscriber_count == 0 {
+                    None
+                } else {
+                    let cbs = inner
+                        .subs
+                        .iter()
+                        .filter_map(|s| s.clone())
+                        .collect::<Vec<_>>();
+                    Some((cbs, inner.value.clone()))
+                }
+            })
+        };
+        let Some((cbs, snapshot)) = subscriber_data.flatten() else {
+            reactive::signal_changed(id);
+            crate::signal_fired();
+            crate::request_frame();
+            return;
         };
         reactive::without_observer(|| {
             for cb in cbs {
@@ -151,6 +161,7 @@ impl<T> Signal<T> {
     pub fn subscribe(&self, f: impl Fn(&T) + 'static) -> SubId {
         let (id, old) = {
             let mut inner = self.0.borrow_mut();
+            inner.subscriber_count += 1;
             if let Some(free_id) = inner.free_list.pop() {
                 let old = inner.subs[free_id].replace(Rc::new(f));
                 (free_id, old)
@@ -169,6 +180,7 @@ impl<T> Signal<T> {
             let mut inner = self.0.borrow_mut();
             if id < inner.subs.len() && inner.subs[id].is_some() {
                 let old = inner.subs[id].take();
+                inner.subscriber_count = inner.subscriber_count.saturating_sub(1);
                 inner.free_list.push(id);
                 while inner.subs.last().is_some_and(|s| s.is_none()) {
                     let popped = inner.subs.len() - 1;

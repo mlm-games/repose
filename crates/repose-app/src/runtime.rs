@@ -106,6 +106,10 @@ impl FrameOutput {
             focus_chain: self.focus_chain,
         }
     }
+
+    pub fn into_shared_frame(self) -> Rc<Frame> {
+        Rc::new(self.into_frame())
+    }
 }
 
 /// Result of a pointer-move event processed by the runtime.
@@ -232,7 +236,7 @@ pub struct ReposeRuntime {
     suppress_next_click: bool,
     pending_click: Option<(u64, web_time::Instant, Rc<dyn Fn()>)>,
 
-    pub frame_cache: Option<Frame>,
+    pub frame_cache: Option<Rc<Frame>>,
 
     cursor: Option<CursorIcon>,
 
@@ -442,12 +446,15 @@ impl ReposeRuntime {
                 Ok(frame) => frame,
                 Err(_) => {
                     log::error!("compose panicked; presenting last good frame");
-                    this.frame_cache.clone().unwrap_or_else(|| Frame {
-                        scene: Default::default(),
-                        hit_regions: Vec::new(),
-                        semantics_nodes: Vec::new(),
-                        focus_chain: Vec::new(),
-                    })
+                    this.frame_cache
+                        .as_deref()
+                        .cloned()
+                        .unwrap_or_else(|| Frame {
+                            scene: Default::default(),
+                            hit_regions: Vec::new(),
+                            semantics_nodes: Vec::new(),
+                            focus_chain: Vec::new(),
+                        })
                 }
             }
         };
@@ -485,16 +492,9 @@ impl ReposeRuntime {
         mut root_fn: impl FnMut(&mut Scheduler, &RenderContext) -> View,
         render_ctx: &RenderContext,
     ) -> FrameOutput {
-        let captured = Rc::new(RefCell::new(None::<String>));
-        let hook = captured.clone();
-        repose_core::clipboard::set_clipboard_observer(Box::new(move |text| {
-            *hook.borrow_mut() = Some(text.to_string());
-        }));
-
-        let f = self.compose(&mut root_fn, render_ctx);
-
-        repose_core::clipboard::clear_clipboard_observer();
-        let clipboard_text = captured.borrow_mut().take();
+        let (f, clipboard_text) = repose_core::clipboard::with_captured_clipboard(|| {
+            self.compose(&mut root_fn, render_ctx)
+        });
 
         let wants_pointer = self.hover_id.is_some() || self.capture_id.is_some();
 
@@ -577,7 +577,8 @@ impl ReposeRuntime {
     }
 
     /// Store the composed frame for event hit testing.
-    pub fn cache_frame(&mut self, frame: Frame) {
+    pub fn cache_frame(&mut self, frame: impl Into<Rc<Frame>>) {
+        let frame = frame.into();
         let _dnd_guard = self.dnd_context.enter();
         if self.key_pressed_active.is_some_and(|id| {
             self.sched.focused != Some(id)
@@ -604,12 +605,16 @@ impl ReposeRuntime {
     /// hover against the new hit list, and publishes the frame to the DnD
     /// registry. Replaces platform-local copies of this logic.
     pub fn after_compose(&mut self, frame: &Frame, scale: f32) {
+        self.after_compose_shared(Rc::new(frame.clone()), scale);
+    }
+
+    pub fn after_compose_shared(&mut self, frame: Rc<Frame>, scale: f32) {
         let _dnd_guard = self.dnd_context.enter();
-        ensure_all_tf_states_from_frame(&mut self.textfield_states, frame);
-        self.prune_textfield_states(frame);
-        self.ensure_focused_state_in_frame(frame);
-        self.reconcile_hover_from_mouse_pos(frame);
-        repose_core::dnd::set_dnd_frame(Some(frame.clone()));
+        ensure_all_tf_states_from_frame(&mut self.textfield_states, &frame);
+        self.prune_textfield_states(&frame);
+        self.ensure_focused_state_in_frame(&frame);
+        self.reconcile_hover_from_mouse_pos(&frame);
+        repose_core::dnd::set_shared_dnd_frame(Some(frame));
         repose_core::dnd::set_dnd_scale(scale);
     }
 
@@ -669,14 +674,14 @@ impl ReposeRuntime {
     /// hover-leave map, reconciles hover, lazy-initializes focused textfield
     /// state, and publishes the DnD frame/scale to the input registry.
     pub fn cache_from_output(&mut self, out: &FrameOutput) {
-        let frame = Frame {
+        let frame = Rc::new(Frame {
             scene: out.scene.clone(),
             hit_regions: out.hit_regions.clone(),
             semantics_nodes: out.semantics_nodes.clone(),
             focus_chain: out.focus_chain.clone(),
-        };
+        });
         self.cache_frame(frame.clone());
-        self.after_compose(&frame, self.scale);
+        self.after_compose_shared(frame, self.scale);
     }
 
     /// One-shot host tick: advance animations, compose a frame, and publish
@@ -1761,7 +1766,7 @@ impl ReposeRuntime {
             y: self.mouse_pos_px.1,
         };
         dispatch_hover_change_bubbled(
-            self.frame_cache.as_ref(),
+            self.frame_cache.as_deref(),
             &self.hover_leave,
             &mut self.hover_id,
             &mut self.hover_ancestors,
@@ -1788,7 +1793,7 @@ impl ReposeRuntime {
             y: self.mouse_pos_px.1,
         };
         dispatch_hover_change_bubbled(
-            self.frame_cache.as_ref(),
+            self.frame_cache.as_deref(),
             &self.hover_leave,
             &mut self.hover_id,
             &mut self.hover_ancestors,
@@ -1899,21 +1904,19 @@ impl ReposeRuntime {
             request_frame();
         } else {
             self.pending_click = Some((id, t0, cb));
-            request_frame();
         }
     }
 
     fn poll_long_press(&mut self) {
-        let Some(f) = self.frame_cache.clone() else {
-            return;
-        };
         let Some((lid, t0, _, _)) = self.long_press else {
             return;
         };
         if t0.elapsed().as_millis() < LONG_PRESS_MS {
-            request_frame();
             return;
         }
+        let Some(f) = self.frame_cache.clone() else {
+            return;
+        };
         // Still captured and within the element bounds? (Compose cancels the
         // long press when the pointer leaves the element.)
         let captured = self
@@ -1951,16 +1954,15 @@ impl ReposeRuntime {
 
     /// Holding Space/Enter past LONG_PRESS_MS fires long-click. The following KeyUp must not fire onClick.
     fn poll_key_long_press(&mut self) {
-        let Some(f) = self.frame_cache.clone() else {
-            return;
-        };
         let Some((kid, t0, fired)) = self.key_long_press else {
             return;
         };
         if t0.elapsed().as_millis() < LONG_PRESS_MS {
-            request_frame();
             return;
         }
+        let Some(f) = self.frame_cache.clone() else {
+            return;
+        };
         if !fired {
             if let Some(hit) = f.hit_regions.iter().find(|h| h.id == kid && !h.disabled)
                 && let Some(cb) = &hit.on_long_click
@@ -3119,11 +3121,30 @@ impl ReposeRuntime {
             .next_blink_deadline()
     }
 
+    fn next_gesture_deadline(&self) -> Option<web_time::Instant> {
+        [
+            self.pending_click
+                .as_ref()
+                .map(|(_, at, _)| *at + web_time::Duration::from_millis(DOUBLE_CLICK_MS as u64)),
+            self.long_press
+                .as_ref()
+                .map(|(_, at, _, _)| *at + web_time::Duration::from_millis(LONG_PRESS_MS as u64)),
+            self.key_long_press
+                .as_ref()
+                .filter(|(_, _, fired)| !*fired)
+                .map(|(_, at, _)| *at + web_time::Duration::from_millis(LONG_PRESS_MS as u64)),
+        ]
+        .into_iter()
+        .flatten()
+        .min()
+    }
+
     /// Centralized wakeup helper for platform runners (caret, snackbar, timers, etc.).
     /// Debounced entries live on the shared timer queue, so `timer` covers them.
     pub fn next_wakeup_deadline(&self) -> Option<web_time::Instant> {
         [
             self.next_caret_blink_deadline(),
+            self.next_gesture_deadline(),
             repose_ui::overlay::SnackbarController::next_deadline(),
             repose_core::timer::next_deadline(),
         ]
@@ -3404,7 +3425,7 @@ pub fn is_textfield_in_frame(f: &Frame, id: u64) -> bool {
         .any(|n| n.id == id && n.role == repose_core::semantics::Role::TextField)
 }
 
-pub fn is_textfield_in_frame_cache(frame_cache: &Option<Frame>, id: u64) -> bool {
+pub fn is_textfield_in_frame_cache(frame_cache: &Option<Rc<Frame>>, id: u64) -> bool {
     if let Some(f) = frame_cache {
         is_textfield_in_frame(f, id)
     } else {

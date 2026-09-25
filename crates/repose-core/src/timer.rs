@@ -28,8 +28,9 @@
 //! signal shaping through `debounced_signal`.
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
 use std::rc::Rc;
+
+use rustc_hash::FxHashMap;
 
 use web_time::{Duration, Instant};
 
@@ -40,9 +41,9 @@ use crate::{request_frame, unique_component_id};
 const MIN_PERIOD: Duration = Duration::from_millis(1);
 
 thread_local! {
-    static REGISTRY: RefCell<HashMap<u64, Entry>> = RefCell::new(HashMap::new());
+    static REGISTRY: RefCell<FxHashMap<u64, Entry>> = RefCell::new(FxHashMap::default());
     /// Redraw counter, advanced by [`poll`]. Basis for [`delay_frames`].
-    static FRAME: RefCell<u64> = const { RefCell::new(0) };
+    static FRAME: Cell<u64> = const { Cell::new(0) };
     /// Reentrancy flag: [`poll`] ignores reentrant calls (e.g. from inside
     /// a timer callback), where a nested pass would fire due timers twice.
     static IN_POLL: Cell<bool> = const { Cell::new(false) };
@@ -166,7 +167,7 @@ pub fn timeout(duration: Duration, cb: impl FnOnce() + 'static) -> TimerHandle {
 /// are pending [`poll`] keeps requesting frames. A `0` count fires on the
 /// next poll.
 pub fn delay_frames(frames: u32, cb: impl FnOnce() + 'static) -> TimerHandle {
-    let at = FRAME.with(|f| f.borrow().wrapping_add(frames as u64));
+    let at = FRAME.with(|f| f.get().wrapping_add(frames as u64));
     insert(Due::Frame(at), Repeat::Once, wrap_once(cb))
 }
 
@@ -201,7 +202,7 @@ pub fn interval_n(period: Duration, times: u32, cb: impl FnMut() + 'static) -> T
 
 /// Current redraw count (advanced by [`poll`]). Basis for [`delay_frames`].
 pub fn frame_count() -> u64 {
-    FRAME.with(|f| *f.borrow())
+    FRAME.with(Cell::get)
 }
 
 /// Earliest wall-clock deadline, if any. Fed into
@@ -241,9 +242,9 @@ pub fn poll() {
     }
     let _guard = Guard;
     let frame = FRAME.with(|f| {
-        let mut f = f.borrow_mut();
-        *f = f.wrapping_add(1);
-        *f
+        let frame = f.get().wrapping_add(1);
+        f.set(frame);
+        frame
     });
     let now = Instant::now();
     // Ids are never reused, so rechecking membership before firing lets a

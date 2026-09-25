@@ -1,7 +1,7 @@
 //! The main ViewTree structure.
 
 use crate::{
-    hash::{hash_subtree, hash_view_content},
+    hash::{SubtreeHashBuilder, SubtreeHashes, ViewHashes, hash_view_facets},
     node::{LayoutCache, LayoutConstraints, NodeId, TreeNode, TreeStats},
     reconcile::ReconcileContext,
 };
@@ -23,8 +23,10 @@ pub struct ViewTree {
 
     /// Nodes that need re-layout.
     dirty: FxHashSet<NodeId>,
+    dirty_propagated: FxHashSet<NodeId>,
 
     paint_dirty: FxHashSet<NodeId>,
+    paint_dirty_propagated: FxHashSet<NodeId>,
 
     /// Current generation (frame counter).
     generation: u64,
@@ -32,11 +34,16 @@ pub struct ViewTree {
     /// Map from user-facing ViewId to internal NodeId.
     view_id_map: FxHashMap<ViewId, NodeId>,
 
+    duplicate_view_ids: FxHashSet<ViewId>,
+
     /// Statistics from the last reconcile operation.
     pub stats: TreeStats,
 
     /// Nodes removed during the last update (needed to sync external systems like Taffy).
     pub removed_ids: Vec<NodeId>,
+
+    pending_removals: Vec<NodeId>,
+    removal_seen: FxHashSet<NodeId>,
 
     /// Root constraints to use when calling a `SubcomposeLayout`'s content
     /// closure during this frame. Set via [`ViewTree::set_subcompose_scope`]
@@ -47,10 +54,12 @@ pub struct ViewTree {
     /// The closure is re-invoked only when the ancestor-derived scope
     /// changes or the node's content changes. Each cached slot view has its
     /// `Modifier::key` overwritten with its slot id.
-    subcompose_cache: FxHashMap<NodeId, (SubcomposeScope, Vec<(u64, View)>)>,
+    subcompose_cache: FxHashMap<NodeId, (SubcomposeScope, Arc<Vec<View>>)>,
     /// Per-frame re-invocation counts for oscillation damping
     /// (node -> (generation, count)).
     subcompose_runs: FxHashMap<NodeId, (u64, u8, SubcomposeScope)>,
+
+    scope_invalidation_seen: FxHashSet<NodeId>,
 }
 
 impl Default for ViewTree {
@@ -306,6 +315,141 @@ fn view_identity_change(node: &TreeNode, view: &View) -> IdentityChange {
     change
 }
 
+fn semantics_equal(
+    old: Option<&repose_core::Semantics>,
+    new: Option<&repose_core::Semantics>,
+) -> bool {
+    match (old, new) {
+        (Some(old), Some(new)) => {
+            old.role == new.role
+                && old.label == new.label
+                && old.focused == new.focused
+                && old.enabled == new.enabled
+                && old.selectable_group == new.selectable_group
+                && old.checked == new.checked
+                && old.selected == new.selected
+                && old.value == new.value
+        }
+        (None, None) => true,
+        _ => false,
+    }
+}
+
+fn view_kind_equal(old: &ViewKind, new: &ViewKind) -> bool {
+    match (old, new) {
+        (
+            ViewKind::SubcomposeLayout { content: old },
+            ViewKind::SubcomposeLayout { content: new },
+        ) => Arc::ptr_eq(old, new),
+        (
+            ViewKind::Text {
+                text: old_text,
+                color: old_color,
+                font_size: old_font_size,
+                soft_wrap: old_soft_wrap,
+                max_lines: old_max_lines,
+                overflow: old_overflow,
+                font_family: old_font_family,
+                annotations: old_annotations,
+                text_align: old_text_align,
+                font_weight: old_font_weight,
+                font_style: old_font_style,
+                text_decoration: old_text_decoration,
+                letter_spacing: old_letter_spacing,
+                line_height: old_line_height,
+                url: old_url,
+                font_variation_settings: old_font_variation_settings,
+                draw_style: old_draw_style,
+            },
+            ViewKind::Text {
+                text: new_text,
+                color: new_color,
+                font_size: new_font_size,
+                soft_wrap: new_soft_wrap,
+                max_lines: new_max_lines,
+                overflow: new_overflow,
+                font_family: new_font_family,
+                annotations: new_annotations,
+                text_align: new_text_align,
+                font_weight: new_font_weight,
+                font_style: new_font_style,
+                text_decoration: new_text_decoration,
+                letter_spacing: new_letter_spacing,
+                line_height: new_line_height,
+                url: new_url,
+                font_variation_settings: new_font_variation_settings,
+                draw_style: new_draw_style,
+            },
+        ) => {
+            old_text == new_text
+                && old_color == new_color
+                && old_font_size == new_font_size
+                && old_soft_wrap == new_soft_wrap
+                && old_max_lines == new_max_lines
+                && old_overflow == new_overflow
+                && old_font_family == new_font_family
+                && old_annotations == new_annotations
+                && old_text_align == new_text_align
+                && old_font_weight == new_font_weight
+                && old_font_style == new_font_style
+                && old_text_decoration == new_text_decoration
+                && old_letter_spacing == new_letter_spacing
+                && old_line_height == new_line_height
+                && old_url == new_url
+                && old_font_variation_settings == new_font_variation_settings
+                && old_draw_style == new_draw_style
+        }
+        (
+            ViewKind::Image {
+                handle: old_handle,
+                tint: old_tint,
+                fit: old_fit,
+                filter: old_filter,
+                source_rect: old_source_rect,
+            },
+            ViewKind::Image {
+                handle: new_handle,
+                tint: new_tint,
+                fit: new_fit,
+                filter: new_filter,
+                source_rect: new_source_rect,
+            },
+        ) => {
+            old_handle == new_handle
+                && old_tint == new_tint
+                && old_fit == new_fit
+                && old_filter == new_filter
+                && old_source_rect == new_source_rect
+        }
+        _ => std::mem::discriminant(old) == std::mem::discriminant(new),
+    }
+}
+
+fn next_dedup_key(
+    original: u64,
+    index: usize,
+    parent_id: NodeId,
+    new_seen_keys: &mut FxHashSet<u64>,
+    keyed_children: &FxHashMap<u64, NodeId>,
+) -> u64 {
+    let mut candidate = (original.wrapping_mul(0x9E3779B97F4A7C15)
+        ^ (index as u64).wrapping_add(0xBF58476D1CE4E5B9))
+    .wrapping_add(parent_id.data().as_ffi());
+    loop {
+        if candidate != original
+            && !new_seen_keys.contains(&candidate)
+            && !keyed_children.contains_key(&candidate)
+        {
+            new_seen_keys.insert(candidate);
+            return candidate;
+        }
+        candidate = candidate.wrapping_add(1);
+        if candidate == 0 {
+            candidate = 1;
+        }
+    }
+}
+
 impl ViewTree {
     /// Create a new empty tree.
     pub fn new() -> Self {
@@ -313,14 +457,20 @@ impl ViewTree {
             nodes: SlotMap::with_key(),
             root: None,
             dirty: FxHashSet::default(),
+            dirty_propagated: FxHashSet::default(),
             paint_dirty: FxHashSet::default(),
+            paint_dirty_propagated: FxHashSet::default(),
             generation: 0,
             view_id_map: FxHashMap::default(),
+            duplicate_view_ids: FxHashSet::default(),
             stats: TreeStats::default(),
             removed_ids: Vec::new(),
+            pending_removals: Vec::new(),
+            removal_seen: FxHashSet::default(),
             subcompose_scope: SubcomposeScope::UNBOUNDED,
             subcompose_cache: FxHashMap::default(),
             subcompose_runs: FxHashMap::default(),
+            scope_invalidation_seen: FxHashSet::default(),
         }
     }
 
@@ -343,8 +493,8 @@ impl ViewTree {
         self.subcompose_scope
     }
 
-    /// Run a `SubcomposeLayout`'s content closure, returning the cached list
-    /// of `(slot_id, view)` pairs when the scope is unchanged for this node.
+    /// Run a `SubcomposeLayout`'s content closure, returning the cached views
+    /// when the scope is unchanged for this node.
     /// The caller is responsible for ensuring the cache is invalidated (e.g.
     /// on content change) via [`ViewTree::invalidate_subcompose_cache`].
     ///
@@ -356,7 +506,7 @@ impl ViewTree {
         &mut self,
         node_id: NodeId,
         content: &Arc<dyn Fn(&SubcomposeScope) -> Vec<(u64, View)>>,
-    ) -> Vec<(u64, View)> {
+    ) -> Arc<Vec<View>> {
         let raw_scope = self.compute_scope_for_node(node_id);
         let scope = SubcomposeScope::new(
             raw_scope.min_width,
@@ -367,7 +517,7 @@ impl ViewTree {
         let cached = self
             .subcompose_cache
             .get(&node_id)
-            .map(|(cached_scope, cached_slots)| (*cached_scope, cached_slots.clone()));
+            .map(|(cached_scope, cached_slots)| (*cached_scope, Arc::clone(cached_slots)));
         if let Some((cached_scope, cached_slots)) = cached {
             let previous_scope = self
                 .subcompose_runs
@@ -404,18 +554,21 @@ impl ViewTree {
         } else {
             self.subcompose_runs.remove(&node_id);
         }
-        let mut slots = content(&scope);
+        let slots = content(&scope);
         let scope_key = format!("subcompose_{:?}", node_id);
-        for (slot_id, view) in slots.iter_mut() {
-            view.modifier.key = Some(*slot_id);
+        let mut views = Vec::with_capacity(slots.len());
+        for (slot_id, mut view) in slots {
+            view.modifier.key = Some(slot_id);
             view.scope_key = Some(scope_key.clone());
             view.modifier.repaint_boundary = true;
+            views.push(view);
         }
+        let views = Arc::new(views);
         let old_cache = self
             .subcompose_cache
-            .insert(node_id, (scope, slots.clone()));
+            .insert(node_id, (scope, Arc::clone(&views)));
         drop(old_cache);
-        slots
+        views
     }
 
     /// Compute the `SubcomposeScope` visible to a `SubcomposeLayout` at
@@ -427,7 +580,7 @@ impl ViewTree {
     /// parent-dependent sizes are reflected in the scope after the first frame.
     fn compute_scope_for_node(&self, node_id: NodeId) -> SubcomposeScope {
         let mut scope = self.subcompose_scope;
-        let mut chain: Vec<NodeId> = Vec::new();
+        let mut chain: SmallVec<[NodeId; 16]> = SmallVec::new();
         let mut current = Some(node_id);
         while let Some(id) = current {
             chain.push(id);
@@ -462,22 +615,6 @@ impl ViewTree {
         let removed = self.subcompose_cache.remove(&node_id);
         drop(removed);
         self.subcompose_runs.remove(&node_id);
-    }
-
-    /// Recursively drop cached subcomposed views for a subtree rooted at
-    /// `node_id`. Called when the node is being removed.
-    fn collect_subcompose_cache(&mut self, node_id: &NodeId) {
-        let removed = self.subcompose_cache.remove(node_id);
-        drop(removed);
-        self.subcompose_runs.remove(node_id);
-        let children: Vec<NodeId> = self
-            .nodes
-            .get(*node_id)
-            .map(|n| n.children.iter().copied().collect())
-            .unwrap_or_default();
-        for child in children {
-            self.collect_subcompose_cache(&child);
-        }
     }
 
     /// Get the current generation.
@@ -530,6 +667,7 @@ impl ViewTree {
     /// Clear the dirty set (after layout).
     pub fn clear_dirty(&mut self) {
         self.dirty.clear();
+        self.dirty_propagated.clear();
     }
 
     pub fn paint_dirty_nodes(&self) -> &FxHashSet<NodeId> {
@@ -538,56 +676,61 @@ impl ViewTree {
 
     pub fn clear_paint_dirty(&mut self) {
         self.paint_dirty.clear();
+        self.paint_dirty_propagated.clear();
     }
 
     fn mark_paint_dirty(&mut self, node_id: NodeId) {
         let mut current = Some(node_id);
         while let Some(id) = current {
+            if !self.paint_dirty_propagated.insert(id) {
+                break;
+            }
             self.paint_dirty.insert(id);
             current = self.nodes.get(id).and_then(|node| node.parent);
         }
     }
 
-    /// Mark a node as needing re-layout.
-    pub fn mark_dirty(&mut self, id: NodeId) {
-        self.dirty.insert(id);
-
-        let mut current = id;
-        while let Some(node) = self.nodes.get(current) {
-            if let Some(parent) = node.parent {
-                self.dirty.insert(parent);
-                current = parent;
-            } else {
-                break;
+    fn mark_scope_descendants_dirty(&mut self, id: NodeId) {
+        if !self.scope_invalidation_seen.insert(id) {
+            return;
+        }
+        let mut stack: SmallVec<[NodeId; 16]> = SmallVec::new();
+        stack.push(id);
+        while let Some(current) = stack.pop() {
+            let Some(node) = self.nodes.get(current) else {
+                continue;
+            };
+            for &child in &node.children {
+                if self
+                    .nodes
+                    .get(child)
+                    .is_some_and(|child| child.scope_key.is_some())
+                {
+                    self.dirty.insert(child);
+                }
+                stack.push(child);
             }
         }
+    }
 
-        let needs_scope_invalidate = self
-            .nodes
-            .get(id)
-            .map(|n| {
-                n.modifier.transform.is_some()
-                    || n.modifier.alpha.is_some()
-                    || n.modifier.graphics_layer.is_some()
-            })
-            .unwrap_or(false);
-        if needs_scope_invalidate {
-            // Walk subtree to find descendant scope roots and mark them dirty.
-            let mut stack = vec![id];
-            while let Some(cur) = stack.pop() {
-                if let Some(node) = self.nodes.get(cur) {
-                    for &child in &node.children {
-                        if let Some(child_node) = self.nodes.get(child) {
-                            if child_node.scope_key.is_some() {
-                                self.dirty.insert(child);
-                                // Also dirty its ancestors already handled, but ensure
-                                // scope's own dirty for `sync_scope_trees` and `paint` cache.
-                            }
-                            stack.push(child);
-                        }
-                    }
-                }
+    /// Mark a node as needing re-layout.
+    pub fn mark_dirty(&mut self, id: NodeId) {
+        let mut current = Some(id);
+        while let Some(current_id) = current {
+            if !self.dirty_propagated.insert(current_id) {
+                break;
             }
+            self.dirty.insert(current_id);
+            current = self.nodes.get(current_id).and_then(|node| node.parent);
+        }
+
+        let needs_scope_invalidate = self.nodes.get(id).is_some_and(|node| {
+            node.modifier.transform.is_some()
+                || node.modifier.alpha.is_some()
+                || node.modifier.graphics_layer.is_some()
+        });
+        if needs_scope_invalidate {
+            self.mark_scope_descendants_dirty(id);
         }
     }
 
@@ -595,7 +738,12 @@ impl ViewTree {
     /// Returns the root NodeId.
     pub fn update(&mut self, new_root: &View) -> NodeId {
         self.removed_ids.clear();
+        self.pending_removals.clear();
+        self.removal_seen.clear();
         self.paint_dirty.clear();
+        self.paint_dirty_propagated.clear();
+        self.dirty_propagated.clear();
+        self.scope_invalidation_seen.clear();
 
         self.generation += 1;
         self.stats = TreeStats::default();
@@ -609,8 +757,7 @@ impl ViewTree {
         };
 
         self.root = Some(root_id);
-
-        self.collect_garbage();
+        self.collect_explicit_removals(&mut ctx);
 
         self.stats.total_nodes = self.nodes.len();
         self.stats.dirty_nodes = self.dirty.len();
@@ -632,33 +779,70 @@ impl ViewTree {
         index_in_parent: u32,
         ctx: &mut ReconcileContext,
     ) -> NodeId {
-        let content_hash = hash_view_content(view);
-
-        let (old_hash, identity) = match self.nodes.get(node_id) {
-            Some(n) => (n.content_hash, view_identity_change(n, view)),
-            None => {
-                log::error!(
-                    "reconcile_node: node {:?} not found (GC race) - creating fresh",
-                    node_id
-                );
-                return self.create_node(view, parent, depth, index_in_parent, ctx);
-            }
+        let hashes = hash_view_facets(view);
+        let Some(node) = self.nodes.get(node_id) else {
+            log::error!(
+                "reconcile_node: node {:?} not found - creating fresh",
+                node_id
+            );
+            return self.create_node(view, parent, depth, index_in_parent, ctx);
         };
-        let content_changed = old_hash != content_hash;
-        let layout_changed = content_changed || identity.layout;
 
-        if identity.subcompose
-            || (content_changed && matches!(view.kind, ViewKind::SubcomposeLayout { .. }))
-        {
+        let old_hashes = ViewHashes {
+            layout: node.layout_hash,
+            measurement: node.measurement_hash,
+            paint: node.paint_hash,
+            semantics: node.semantics_hash,
+        };
+        let identity = view_identity_change(node, view);
+        let old_subtree = SubtreeHashes {
+            layout: node.layout_subtree_hash,
+            measurement: node.measurement_subtree_hash,
+            paint: node.paint_subtree_hash,
+            semantics: node.semantics_subtree_hash,
+        };
+        let old_subtree_hash = node.subtree_hash;
+        let old_scope_key = node.scope_key.clone();
+        let old_view_id = node.view_id;
+        let old_is_subcompose = matches!(&node.kind, ViewKind::SubcomposeLayout { .. });
+        let new_is_subcompose = matches!(&view.kind, ViewKind::SubcomposeLayout { .. });
+        let hashes_equal = old_hashes == hashes;
+        let content_hash = hashes.combined();
+        let content_changed = !hashes_equal;
+        let view_semantics_changed =
+            !hashes_equal && !semantics_equal(node.semantics.as_ref(), view.semantics.as_ref());
+        let modifier_semantics_changed = !hashes_equal
+            && !semantics_equal(
+                node.modifier.semantics.as_ref(),
+                view.modifier.semantics.as_ref(),
+            );
+        let scope_effect_changed = node.modifier.transform != view.modifier.transform
+            || node.modifier.alpha != view.modifier.alpha
+            || node.modifier.graphics_layer != view.modifier.graphics_layer;
+        let kind_changed = !view_kind_equal(&node.kind, &view.kind);
+        let modifier_changed = old_hashes.layout != hashes.layout
+            || old_hashes.measurement != hashes.measurement
+            || old_hashes.paint != hashes.paint
+            || modifier_semantics_changed
+            || identity.paint
+            || identity.layout;
+        let scope_changed = old_scope_key.as_deref() != view.scope_key.as_deref();
+        let node_layout_changed = old_hashes.layout != hashes.layout
+            || old_hashes.measurement != hashes.measurement
+            || identity.layout
+            || identity.subcompose
+            || old_is_subcompose != new_is_subcompose;
+        let subcompose_changed = identity.subcompose
+            || (new_is_subcompose
+                && (old_hashes.layout != hashes.layout
+                    || old_hashes.measurement != hashes.measurement
+                    || identity.layout))
+            || old_is_subcompose != new_is_subcompose;
+        if subcompose_changed {
             self.invalidate_subcompose_cache(node_id);
         }
 
         let view_id = self.compute_view_id(view, node_id, parent, index_in_parent);
-        let old_view_id: u64 = self
-            .nodes
-            .get(node_id)
-            .map(|n| n.view_id)
-            .unwrap_or(view_id);
         self.assign_view_id(
             node_id,
             old_view_id,
@@ -667,63 +851,98 @@ impl ViewTree {
             "reconcile_node",
         );
 
-        let new_children_hashes = if let ViewKind::SubcomposeLayout { content } = &view.kind {
-            let subcomposed = self.run_subcompose(node_id, content);
-            let slot_views: Vec<View> = subcomposed.into_iter().map(|(_, v)| v).collect();
-            self.reconcile_children(node_id, &slot_views, depth, ctx)
-        } else {
-            self.reconcile_children(node_id, &view.children, depth, ctx)
-        };
-
-        let new_subtree_hash = hash_subtree(content_hash, &new_children_hashes);
-
-        let subtree_changed;
-        let replaced_values;
         {
             let Some(node) = self.nodes.get_mut(node_id) else {
                 log::error!("reconcile_node: node {:?} vanished mid-reconcile", node_id);
                 return node_id;
             };
-
             node.parent = parent;
             node.depth = depth;
             node.generation = self.generation;
-
-            let old_kind = std::mem::replace(&mut node.kind, view.kind.clone());
-            let old_modifier = std::mem::replace(&mut node.modifier, view.modifier.clone());
-            node.semantics = view.semantics.clone();
-            let old_scope_key = std::mem::replace(&mut node.scope_key, view.scope_key.clone());
-            let old_layout = if layout_changed {
-                node.layout_cache.take()
-            } else {
-                None
-            };
-            replaced_values = (old_kind, old_modifier, old_scope_key, old_layout);
-            node.content_hash = content_hash;
+            if kind_changed {
+                node.kind = view.kind.clone();
+            }
+            if modifier_changed {
+                node.modifier = view.modifier.clone();
+            }
+            if view_semantics_changed {
+                node.semantics = view.semantics.clone();
+            }
+            if scope_changed {
+                node.scope_key = view.scope_key.clone();
+            }
             node.user_key = view.modifier.key;
+            if node_layout_changed {
+                node.layout_cache = None;
+            }
+        }
+
+        let new_children_hashes = if let ViewKind::SubcomposeLayout { content } = &view.kind {
+            let subcomposed = self.run_subcompose(node_id, content);
+            self.reconcile_children(node_id, subcomposed.as_slice(), depth, ctx)
+        } else {
+            self.reconcile_children(node_id, &view.children, depth, ctx)
+        };
+        let new_subtree = new_children_hashes.finish(hashes);
+        let new_subtree_hash = new_subtree.combined();
+        let layout_subtree_changed = old_subtree.layout != new_subtree.layout
+            || old_subtree.measurement != new_subtree.measurement
+            || identity.layout
+            || identity.subcompose;
+        let paint_subtree_changed =
+            old_subtree.paint != new_subtree.paint || identity.paint || identity.subcompose;
+        let semantics_subtree_changed = old_subtree.semantics != new_subtree.semantics;
+        let subtree_changed = old_subtree_hash != new_subtree_hash || identity.subcompose;
+
+        {
+            let Some(node) = self.nodes.get_mut(node_id) else {
+                log::error!("reconcile_node: node {:?} vanished mid-reconcile", node_id);
+                return node_id;
+            };
+            if layout_subtree_changed {
+                node.layout_cache = None;
+            }
+            node.content_hash = content_hash;
+            node.layout_hash = hashes.layout;
+            node.measurement_hash = hashes.measurement;
+            node.paint_hash = hashes.paint;
+            node.semantics_hash = hashes.semantics;
+            node.subtree_hash = new_subtree_hash;
+            node.layout_subtree_hash = new_subtree.layout;
+            node.measurement_subtree_hash = new_subtree.measurement;
+            node.paint_subtree_hash = new_subtree.paint;
+            node.semantics_subtree_hash = new_subtree.semantics;
 
             if content_changed || identity.paint || identity.layout || identity.subcompose {
                 ctx.reconciled += 1;
-            }
-
-            subtree_changed = node.subtree_hash != new_subtree_hash || identity.subcompose;
-            if subtree_changed {
-                node.subtree_hash = new_subtree_hash;
-            } else if !content_changed && !identity.paint && !identity.layout {
+            } else if !subtree_changed {
                 ctx.skipped += 1;
             }
         }
-        drop(replaced_values);
 
-        if identity.paint {
+        if paint_subtree_changed || semantics_subtree_changed {
             self.mark_paint_dirty(node_id);
         }
-        if subtree_changed || identity.layout {
+        if layout_subtree_changed {
             self.mark_dirty(node_id);
+        }
+        if scope_effect_changed {
+            self.mark_scope_descendants_dirty(node_id);
         }
 
         node_id
     }
+    fn node_subtree_hashes(&self, node_id: NodeId) -> SubtreeHashes {
+        self.nodes
+            .get(node_id)
+            .map_or_default(|node| SubtreeHashes {
+                layout: node.layout_subtree_hash,
+                measurement: node.measurement_subtree_hash,
+                paint: node.paint_subtree_hash,
+                semantics: node.semantics_subtree_hash,
+            })
+    }
+
     /// Reconcile children of a node.
     /// Returns the subtree hashes of all children (for computing parent's subtree hash).
     fn reconcile_children(
@@ -732,197 +951,117 @@ impl ViewTree {
         new_children: &[View],
         parent_depth: u32,
         ctx: &mut ReconcileContext,
-    ) -> Vec<u64> {
+    ) -> SubtreeHashBuilder {
         let child_depth = parent_depth + 1;
-
         let old_children: SmallVec<[NodeId; 4]> = self
             .nodes
-            .get(parent_id)
-            .map(|n| n.children.clone())
+            .get_mut(parent_id)
+            .map(|node| std::mem::take(&mut node.children))
             .unwrap_or_default();
 
         let mut keyed_children: FxHashMap<u64, NodeId> = FxHashMap::default();
-        let mut unkeyed_children: Vec<NodeId> = Vec::new();
-
+        let mut unkeyed_children: SmallVec<[NodeId; 4]> = SmallVec::new();
         for &child_id in &old_children {
             if let Some(node) = self.nodes.get(child_id) {
-                if let Some(key) = node.user_key {
-                    keyed_children.insert(key, child_id);
-                } else {
-                    unkeyed_children.push(child_id);
+                match node.user_key {
+                    Some(key) => {
+                        keyed_children.entry(key).or_insert(child_id);
+                    }
+                    None => unkeyed_children.push(child_id),
                 }
             }
         }
 
         let mut new_child_ids: SmallVec<[NodeId; 4]> = SmallVec::new();
-        let mut new_subtree_hashes: Vec<u64> = Vec::with_capacity(new_children.len());
+        let mut child_hashes = SubtreeHashBuilder::new(new_children.len());
         let mut unkeyed_index = 0;
         let mut used_nodes: FxHashSet<NodeId> = FxHashSet::default();
         let mut new_seen_keys: FxHashSet<u64> = FxHashSet::default();
 
         for (i, new_child) in new_children.iter().enumerate() {
-            let is_subcompose = matches!(new_child.kind, ViewKind::SubcomposeLayout { .. });
-            if is_subcompose {
-                let mut deduped: Option<View> = None;
-                if let Some(key) = new_child.modifier.key
-                    && !new_seen_keys.insert(key)
-                {
+            let mut owned_child: Option<View>;
+            let child_ref = if let Some(key) = new_child.modifier.key {
+                if new_seen_keys.insert(key) {
+                    new_child
+                } else {
                     log::error!(
-                        "reconcile_children: duplicate modifier.key={} in children of node {:?} - deduplicating (suffixing).",
+                        "reconcile_children: duplicate modifier.key={} in children of node {:?} - deduplicating (suffixing). Ensure get_key returns unique keys.",
                         key,
                         parent_id
                     );
-                    let mut d = new_child.clone();
-                    let salt = (key.wrapping_mul(0x9E3779B97F4A7C15)
-                        ^ (i as u64).wrapping_add(0xBF58476D1CE4E5B9))
-                    .wrapping_add(parent_id.data().as_ffi());
-                    d.modifier.key = Some(salt);
-                    new_seen_keys.insert(salt);
-                    deduped = Some(d);
+                    let salt =
+                        next_dedup_key(key, i, parent_id, &mut new_seen_keys, &keyed_children);
+                    owned_child = Some(new_child.clone());
+                    let child = owned_child.as_mut().expect("owned child inserted");
+                    child.modifier.key = Some(salt);
+                    child
                 }
-                let child_ref = deduped.as_ref().unwrap_or(new_child);
-                if let Some(key) = child_ref.modifier.key {
-                    if let Some(&existing_id) = keyed_children.get(&key) {
-                        if used_nodes.contains(&existing_id) {
-                            log::error!(
-                                "reconcile_children: modifier.key={} already claimed in children of node {:?} - deduplicating (suffixing).",
-                                key,
-                                parent_id
-                            );
-                            let mut fresh = child_ref.clone();
-                            let salt = (key.wrapping_mul(0x9E3779B97F4A7C15)
-                                ^ (i as u64).wrapping_add(0xBF58476D1CE4E5B9))
-                            .wrapping_add(parent_id.data().as_ffi());
-                            fresh.modifier.key = Some(salt);
-                            let idx = i as u32;
-                            let child_id =
-                                self.create_node(&fresh, Some(parent_id), child_depth, idx, ctx);
-                            new_child_ids.push(child_id);
-                            if let Some(node) = self.nodes.get(child_id) {
-                                new_subtree_hashes.push(node.subtree_hash);
-                            }
-                            continue;
-                        }
-                        used_nodes.insert(existing_id);
-                        let idx = i as u32;
-                        let child_id = self.reconcile_node(
+            } else {
+                new_child
+            };
+
+            let is_subcompose = matches!(&child_ref.kind, ViewKind::SubcomposeLayout { .. });
+            let child_id = if let Some(key) = child_ref.modifier.key {
+                if let Some(&existing_id) = keyed_children.get(&key) {
+                    if used_nodes.insert(existing_id) {
+                        self.reconcile_node(
                             existing_id,
                             child_ref,
                             Some(parent_id),
                             child_depth,
-                            idx,
+                            i as u32,
                             ctx,
-                        );
-                        new_child_ids.push(child_id);
-                        if let Some(node) = self.nodes.get(child_id) {
-                            new_subtree_hashes.push(node.subtree_hash);
-                        }
-                        continue;
+                        )
+                    } else {
+                        let salt =
+                            next_dedup_key(key, i, parent_id, &mut new_seen_keys, &keyed_children);
+                        let mut fresh = child_ref.clone();
+                        fresh.modifier.key = Some(salt);
+                        self.create_node(&fresh, Some(parent_id), child_depth, i as u32, ctx)
                     }
-                }
-                let idx = i as u32;
-                let child_id = if unkeyed_index < unkeyed_children.len() {
+                } else if is_subcompose && unkeyed_index < unkeyed_children.len() {
                     let existing_id = unkeyed_children[unkeyed_index];
                     unkeyed_index += 1;
-                    used_nodes.insert(existing_id);
+                    if used_nodes.insert(existing_id) {
+                        self.reconcile_node(
+                            existing_id,
+                            child_ref,
+                            Some(parent_id),
+                            child_depth,
+                            i as u32,
+                            ctx,
+                        )
+                    } else {
+                        self.create_node(child_ref, Some(parent_id), child_depth, i as u32, ctx)
+                    }
+                } else {
+                    self.create_node(child_ref, Some(parent_id), child_depth, i as u32, ctx)
+                }
+            } else if let Some(&existing_id) = unkeyed_children.get(unkeyed_index) {
+                unkeyed_index += 1;
+                if used_nodes.insert(existing_id) {
                     self.reconcile_node(
                         existing_id,
                         child_ref,
                         Some(parent_id),
                         child_depth,
-                        idx,
+                        i as u32,
                         ctx,
                     )
                 } else {
-                    self.create_node(child_ref, Some(parent_id), child_depth, idx, ctx)
-                };
-                new_child_ids.push(child_id);
-                if let Some(node) = self.nodes.get(child_id) {
-                    new_subtree_hashes.push(node.subtree_hash);
-                }
-                continue;
-            }
-            if let Some(key) = new_child.modifier.key
-                && !new_seen_keys.insert(key)
-            {
-                log::error!(
-                    "reconcile_children: duplicate modifier.key={} in children of node {:?} - deduplicating (suffixing). Ensure get_key returns unique keys.",
-                    key,
-                    parent_id
-                );
-                let mut deduped = new_child.clone();
-                let salt = (key.wrapping_mul(0x9E3779B97F4A7C15)
-                    ^ (i as u64).wrapping_add(0xBF58476D1CE4E5B9))
-                .wrapping_add(parent_id.data().as_ffi());
-                deduped.modifier.key = Some(salt);
-                let deduped_ref = deduped;
-                let idx = i as u32;
-                let child_id = if let Some(k) = deduped_ref.modifier.key {
-                    if let Some(&existing_id) = keyed_children.get(&k) {
-                        used_nodes.insert(existing_id);
-                        self.reconcile_node(
-                            existing_id,
-                            &deduped_ref,
-                            Some(parent_id),
-                            child_depth,
-                            idx,
-                            ctx,
-                        )
-                    } else {
-                        self.create_node(&deduped_ref, Some(parent_id), child_depth, idx, ctx)
-                    }
-                } else {
-                    self.create_node(&deduped_ref, Some(parent_id), child_depth, idx, ctx)
-                };
-                new_child_ids.push(child_id);
-                if let Some(node) = self.nodes.get(child_id) {
-                    new_subtree_hashes.push(node.subtree_hash);
-                }
-                continue;
-            }
-            let idx = i as u32;
-            let child_id = if let Some(key) = new_child.modifier.key {
-                if let Some(&existing_id) = keyed_children.get(&key) {
-                    used_nodes.insert(existing_id);
-                    self.reconcile_node(
-                        existing_id,
-                        new_child,
-                        Some(parent_id),
-                        child_depth,
-                        idx,
-                        ctx,
-                    )
-                } else {
-                    self.create_node(new_child, Some(parent_id), child_depth, idx, ctx)
+                    self.create_node(child_ref, Some(parent_id), child_depth, i as u32, ctx)
                 }
             } else {
-                if unkeyed_index < unkeyed_children.len() {
-                    let existing_id = unkeyed_children[unkeyed_index];
-                    unkeyed_index += 1;
-                    used_nodes.insert(existing_id);
-                    self.reconcile_node(
-                        existing_id,
-                        new_child,
-                        Some(parent_id),
-                        child_depth,
-                        idx,
-                        ctx,
-                    )
-                } else {
-                    self.create_node(new_child, Some(parent_id), child_depth, idx, ctx)
-                }
+                self.create_node(child_ref, Some(parent_id), child_depth, i as u32, ctx)
             };
 
             new_child_ids.push(child_id);
-
-            if let Some(node) = self.nodes.get(child_id) {
-                new_subtree_hashes.push(node.subtree_hash);
-            }
+            child_hashes.push(self.node_subtree_hashes(child_id));
         }
 
         for &old_child in &old_children {
             if !used_nodes.contains(&old_child) {
-                self.mark_for_removal(old_child, ctx);
+                self.mark_for_removal(old_child);
             }
         }
 
@@ -930,7 +1069,7 @@ impl ViewTree {
             parent.children = new_child_ids;
         }
 
-        new_subtree_hashes
+        child_hashes
     }
 
     /// Create a new node from a View.
@@ -942,7 +1081,8 @@ impl ViewTree {
         index_in_parent: u32,
         ctx: &mut ReconcileContext,
     ) -> NodeId {
-        let content_hash = hash_view_content(view);
+        let hashes = hash_view_facets(view);
+        let content_hash = hashes.combined();
 
         let node_id = self.nodes.insert_with_key(|id| {
             TreeNode::new(
@@ -964,6 +1104,10 @@ impl ViewTree {
             node.depth = depth;
             node.semantics = view.semantics.clone();
             node.content_hash = content_hash;
+            node.layout_hash = hashes.layout;
+            node.measurement_hash = hashes.measurement;
+            node.paint_hash = hashes.paint;
+            node.semantics_hash = hashes.semantics;
             node.user_key = view.modifier.key;
             node.scope_key = view.scope_key.clone();
         }
@@ -973,28 +1117,23 @@ impl ViewTree {
 
         let child_depth = depth + 1;
         let mut child_ids: SmallVec<[NodeId; 4]> = SmallVec::new();
-        let mut child_hashes: Vec<u64> = Vec::with_capacity(view.children.len());
-        let children_to_create: Vec<View> =
-            if let ViewKind::SubcomposeLayout { content } = &view.kind {
-                self.run_subcompose(node_id, content)
-                    .into_iter()
-                    .map(|(_, v)| v)
-                    .collect()
-            } else {
-                view.children.clone()
-            };
+        let subcomposed = if let ViewKind::SubcomposeLayout { content } = &view.kind {
+            Some(self.run_subcompose(node_id, content))
+        } else {
+            None
+        };
+        let children_to_create = subcomposed
+            .as_ref()
+            .map_or(view.children.as_slice(), |views| views.as_slice());
+        let mut child_hashes = SubtreeHashBuilder::new(children_to_create.len());
         for (i, child_view) in children_to_create.iter().enumerate() {
             let child_id = self.create_node(child_view, Some(node_id), child_depth, i as u32, ctx);
             child_ids.push(child_id);
-            child_hashes.push(
-                self.nodes
-                    .get(child_id)
-                    .expect("create_node: child just created")
-                    .subtree_hash,
-            );
+            child_hashes.push(self.node_subtree_hashes(child_id));
         }
 
-        let subtree_hash = hash_subtree(content_hash, &child_hashes);
+        let subtree = child_hashes.finish(hashes);
+        let subtree_hash = subtree.combined();
 
         let node = self
             .nodes
@@ -1002,6 +1141,10 @@ impl ViewTree {
             .expect("create_node: node just inserted");
         node.children = child_ids;
         node.subtree_hash = subtree_hash;
+        node.layout_subtree_hash = subtree.layout;
+        node.measurement_subtree_hash = subtree.measurement;
+        node.paint_subtree_hash = subtree.paint;
+        node.semantics_subtree_hash = subtree.semantics;
         self.dirty.insert(node_id);
 
         node_id
@@ -1039,6 +1182,65 @@ impl ViewTree {
         id
     }
 
+    fn repair_view_id(&mut self, view_id: ViewId) {
+        let previous = self.view_id_map.get(&view_id).copied();
+        let mut owner = None;
+        let mut count = 0usize;
+        for (node_id, node) in self.nodes.iter() {
+            if node.generation != 0 && node.view_id == view_id {
+                count += 1;
+                if owner.is_none() {
+                    owner = Some(node_id);
+                }
+            }
+        }
+        let owner = previous
+            .filter(|node_id| {
+                self.nodes
+                    .get(*node_id)
+                    .is_some_and(|node| node.generation != 0 && node.view_id == view_id)
+            })
+            .or(owner);
+        if let Some(owner) = owner {
+            self.view_id_map.insert(view_id, owner);
+        } else {
+            self.view_id_map.remove(&view_id);
+        }
+        if count > 1 {
+            self.duplicate_view_ids.insert(view_id);
+        } else {
+            self.duplicate_view_ids.remove(&view_id);
+        }
+    }
+
+    fn rebuild_view_id_map(&mut self) {
+        let previous = std::mem::take(&mut self.view_id_map);
+        self.duplicate_view_ids.clear();
+        let mut counts: FxHashMap<ViewId, (NodeId, usize)> = FxHashMap::default();
+        for (node_id, node) in self.nodes.iter() {
+            if node.generation == 0 {
+                continue;
+            }
+            let entry = counts.entry(node.view_id).or_insert((node_id, 0));
+            entry.1 += 1;
+        }
+        for (view_id, (first_node, count)) in counts {
+            let owner = previous
+                .get(&view_id)
+                .copied()
+                .filter(|node_id| {
+                    self.nodes
+                        .get(*node_id)
+                        .is_some_and(|node| node.generation != 0 && node.view_id == view_id)
+                })
+                .unwrap_or(first_node);
+            self.view_id_map.insert(view_id, owner);
+            if count > 1 {
+                self.duplicate_view_ids.insert(view_id);
+            }
+        }
+    }
+
     fn assign_view_id(
         &mut self,
         node_id: NodeId,
@@ -1053,13 +1255,16 @@ impl ViewTree {
             requested_view_id
         };
 
-        if old_view_id != view_id && self.view_id_map.get(&old_view_id).copied() == Some(node_id) {
+        let old_owner =
+            old_view_id != 0 && self.view_id_map.get(&old_view_id).copied() == Some(node_id);
+        if old_owner {
             self.view_id_map.remove(&old_view_id);
         }
 
         if let Some(existing) = self.view_id_map.get(&view_id).copied()
             && existing != node_id
         {
+            self.duplicate_view_ids.insert(view_id);
             log::error!(
                 "{}: duplicate View.id {}; keeping the first node {:?}",
                 phase,
@@ -1072,6 +1277,9 @@ impl ViewTree {
 
         if let Some(node) = self.nodes.get_mut(node_id) {
             node.view_id = view_id;
+        }
+        if old_owner {
+            self.repair_view_id(old_view_id);
         }
     }
 
@@ -1101,74 +1309,46 @@ impl ViewTree {
     }
 
     /// Mark a node and its descendants for removal.
-    fn mark_for_removal(&mut self, node_id: NodeId, ctx: &mut ReconcileContext) {
-        // before we mutate other state.
-        let (view_id, children) = {
-            let node = self.nodes.get(node_id);
-            match node {
-                Some(n) => (n.view_id, n.children.clone()),
-                None => return,
-            }
+    fn mark_for_removal(&mut self, node_id: NodeId) {
+        if !self.removal_seen.insert(node_id) {
+            return;
+        }
+        let Some((view_id, children)) = self.nodes.get_mut(node_id).map(|node| {
+            node.generation = 0;
+            let children = std::mem::take(&mut node.children);
+            (node.view_id, children)
+        }) else {
+            return;
         };
+        self.pending_removals.push(node_id);
         if self.view_id_map.get(&view_id).copied() == Some(node_id) {
             self.view_id_map.remove(&view_id);
+            self.repair_view_id(view_id);
         }
+        self.dirty.remove(&node_id);
+        self.dirty_propagated.remove(&node_id);
+        self.paint_dirty.remove(&node_id);
+        self.paint_dirty_propagated.remove(&node_id);
+        self.scope_invalidation_seen.remove(&node_id);
         let removed_cache = self.subcompose_cache.remove(&node_id);
         drop(removed_cache);
         self.subcompose_runs.remove(&node_id);
-        for child_id in children.iter() {
-            self.collect_subcompose_cache(child_id);
-        }
         for child_id in children {
-            self.mark_for_removal(child_id, ctx);
-        }
-        ctx.removed += 1;
-
-        if let Some(node) = self.nodes.get_mut(node_id) {
-            node.generation = 0; // Will be collected
+            self.mark_for_removal(child_id);
         }
     }
 
-    /// Remove nodes that weren't updated this generation.
-    fn rebuild_view_id_map(&mut self) {
-        self.view_id_map.clear();
-        for (node_id, node) in self.nodes.iter() {
-            self.view_id_map.entry(node.view_id).or_insert(node_id);
-        }
-    }
-
-    fn collect_garbage(&mut self) {
-        let current_gen = self.generation;
-
-        let to_remove: Vec<NodeId> = self
-            .nodes
-            .iter()
-            .filter(|(_, node)| node.generation != current_gen)
-            .map(|(id, _)| id)
-            .collect();
-        let removed_any = !to_remove.is_empty();
-
-        for id in to_remove {
-            if let Some(node) = self.nodes.remove(id) {
-                if self.view_id_map.get(&node.view_id).copied() == Some(id) {
-                    self.view_id_map.remove(&node.view_id);
-                }
-                self.dirty.remove(&id);
-                let removed_cache = self.subcompose_cache.remove(&id);
-                drop(removed_cache);
-                self.subcompose_runs.remove(&id);
-
-                self.removed_ids.push(id);
+    fn collect_explicit_removals(&mut self, ctx: &mut ReconcileContext) {
+        let pending = std::mem::take(&mut self.pending_removals);
+        for node_id in pending {
+            if self.nodes.remove(node_id).is_none() {
+                continue;
             }
+            ctx.removed += 1;
+            self.removed_ids.push(node_id);
         }
-        if removed_any {
-            self.subcompose_runs
-                .retain(|id, _| self.nodes.contains_key(*id));
-            self.subcompose_cache
-                .retain(|id, _| self.nodes.contains_key(*id));
-            self.dirty.retain(|id| self.nodes.contains_key(*id));
-            self.rebuild_view_id_map();
-        }
+        self.removal_seen.clear();
+        self.rebuild_view_id_map();
     }
 
     /// Set cached layout for a node.

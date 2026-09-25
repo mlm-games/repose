@@ -97,7 +97,7 @@ impl WebOptions {
         Self {
             canvas_id,
             fullscreen: true,
-            continuous_redraw: true,
+            continuous_redraw: false,
             prevent_default: false,
             common: ReposeOptions::default(),
         }
@@ -186,12 +186,16 @@ pub fn run_web_app(
     if let Some(w) = web_sys::window() {
         let location = w.location();
         let pending = app.pending_deeplinks.clone();
+        let window = app.deeplink_window.clone();
         let cb = Closure::wrap(Box::new(move || {
             if let Ok(hash) = location.hash() {
                 let hash = hash.trim_start_matches('#');
                 if !hash.is_empty() {
                     pending.borrow_mut().push(hash.as_bytes().to_vec());
                     repose_core::request_frame();
+                    if let Some(window) = window.borrow().as_ref() {
+                        window.request_redraw();
+                    }
                 }
             }
         }) as Box<dyn FnMut()>);
@@ -255,9 +259,9 @@ struct App {
     deeplink_listener: Option<WebDeeplinkListener>,
     pending_deeplinks: Rc<RefCell<Vec<Vec<u8>>>>,
 
-    last_redraw: web_time::Instant,
-
-    compose_requested: Rc<Cell<bool>>,
+    frame_pacer: rc::FramePacer,
+    redraw_deferred: bool,
+    deeplink_window: Rc<RefCell<Option<Arc<Window>>>>,
 }
 
 impl App {
@@ -322,6 +326,7 @@ impl App {
         root: Box<dyn FnMut(&mut Scheduler, &RenderContext) -> View>,
         options: WebOptions,
     ) -> Self {
+        let frame_pacer = rc::FramePacer::new(options.common.max_fps);
         Self {
             root,
             options,
@@ -356,22 +361,14 @@ impl App {
             deeplink_listener: None,
             pending_deeplinks: Rc::new(RefCell::new(Vec::new())),
 
-            last_redraw: web_time::Instant::now(),
-
-            compose_requested: Rc::new(Cell::new(false)),
+            frame_pacer,
+            redraw_deferred: false,
+            deeplink_window: Rc::new(RefCell::new(None)),
         }
     }
 
     fn request_redraw(&self) {
-        self.compose_requested.set(true);
         repose_core::request_frame();
-        rc::request_redraw(&self.window);
-    }
-
-    fn request_present_only(&self) {
-        if let Some(w) = &self.window {
-            w.request_redraw();
-        }
     }
 
     fn scale(&self, window: &Window) -> f32 {
@@ -648,6 +645,7 @@ impl App {
             {
                 request.state = state;
             }
+            repose_core::request_frame();
             if let Some(w) = win.as_ref() {
                 w.request_redraw();
             }
@@ -841,9 +839,7 @@ impl App {
                 self.surface_retry_at = None;
                 self.present_retry_pending = false;
                 self.present_retry_at = None;
-                self.compose_requested.set(true);
                 repose_core::request_frame();
-                self.request_redraw();
             }
             return true;
         }
@@ -852,9 +848,7 @@ impl App {
             self.surface_retry_at = None;
             self.present_retry_pending = false;
             self.present_retry_at = None;
-            self.compose_requested.set(true);
             repose_core::request_frame();
-            self.request_redraw();
             true
         } else {
             self.defer_surface_retry();
@@ -863,21 +857,29 @@ impl App {
     }
 
     fn defer_surface_retry(&mut self) {
-        take_frame_request();
+        let now = web_time::Instant::now();
+        let retry_at = now + web_time::Duration::from_millis(100);
         self.surface_retry_pending = true;
-        self.surface_retry_at =
-            Some(web_time::Instant::now() + web_time::Duration::from_millis(100));
+        self.surface_retry_at = self
+            .frame_pacer
+            .deadline(now)
+            .into_iter()
+            .chain(Some(retry_at))
+            .max();
         self.present_retry_pending = false;
         self.present_retry_at = None;
-        self.compose_requested.set(false);
     }
 
     fn defer_present_retry(&mut self) {
-        take_frame_request();
+        let now = web_time::Instant::now();
+        let retry_at = now + web_time::Duration::from_millis(100);
         self.present_retry_pending = true;
-        self.present_retry_at =
-            Some(web_time::Instant::now() + web_time::Duration::from_millis(100));
-        self.compose_requested.set(false);
+        self.present_retry_at = self
+            .frame_pacer
+            .deadline(now)
+            .into_iter()
+            .chain(Some(retry_at))
+            .max();
     }
 
     fn handle_frame_result(&mut self, presented: bool) {
@@ -911,13 +913,12 @@ impl App {
         self.backend_state.set(BackendState::Pending);
         self.backend_retry_at.set(None);
         *self.backend.borrow_mut() = None;
-        self.compose_requested.set(true);
+        repose_core::request_frame();
         window.request_redraw();
         let backend_cell = self.backend.clone();
         let backend_state = self.backend_state.clone();
         let backend_generation = self.backend_generation.clone();
         let backend_retry_at = self.backend_retry_at.clone();
-        let compose_requested = self.compose_requested.clone();
         let msaa_samples = self.options.common.msaa_samples;
         let present_mode = self.options.common.present_mode;
         spawn_local(async move {
@@ -943,7 +944,6 @@ impl App {
                     *backend_cell.borrow_mut() = Some(b);
                     backend_state.set(BackendState::Ready);
                     backend_retry_at.set(None);
-                    compose_requested.set(true);
                     repose_core::request_frame();
                     window.request_redraw();
                     log::info!("WGPU backend initialized");
@@ -954,7 +954,6 @@ impl App {
                     backend_retry_at.set(Some(
                         web_time::Instant::now() + web_time::Duration::from_millis(250),
                     ));
-                    compose_requested.set(false);
                     log::error!("WGPU init failed: {e:?}");
                     window.request_redraw();
                 }
@@ -1010,6 +1009,7 @@ impl App {
                 .borrow_mut()
                 .push(ExternalDropAction::DroppedFiles { names, pos_px });
 
+            repose_core::request_frame();
             if let Some(w) = win2.as_ref() {
                 w.request_redraw();
             }
@@ -1049,6 +1049,7 @@ impl App {
         self.ensure_fullscreen_size(&window);
         self.sync_size_from_window(&window);
         self.window = Some(window.clone());
+        *self.deeplink_window.borrow_mut() = Some(window.clone());
         self.install_dom_listeners(&window);
         self.start_backend(window);
         Self::setup_web_clipboard();
@@ -1379,14 +1380,7 @@ impl ApplicationHandler<()> for App {
                 crate::run_pre_redraw(&self.render);
 
                 match self.backend_state.get() {
-                    BackendState::Pending => {
-                        self.compose_requested.set(true);
-                        return;
-                    }
-                    BackendState::Failed => {
-                        self.compose_requested.set(false);
-                        return;
-                    }
+                    BackendState::Pending | BackendState::Failed => return,
                     BackendState::Ready => {}
                 }
 
@@ -1400,7 +1394,22 @@ impl ApplicationHandler<()> for App {
                     return;
                 }
 
-                let compose_needed = self.compose_requested.replace(false);
+                let now = web_time::Instant::now();
+                let compose_requested = repose_core::frame_clock::peek_frame_request();
+                let should_compose = compose_requested || self.options.continuous_redraw;
+                let has_frame = self.rt.frame_cache.is_some();
+                if (should_compose || has_frame || repose_core::frame_clock::peek_present_request())
+                    && !self.frame_pacer.due(now)
+                {
+                    self.redraw_deferred = true;
+                    if let Some(deadline) = self.frame_pacer.deadline(now) {
+                        el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(deadline));
+                    }
+                    return;
+                }
+                self.redraw_deferred = false;
+                let compose_needed = take_frame_request();
+
                 if !self.options.continuous_redraw && !compose_needed {
                     self.drain_render_commands();
                     let presented = if let (Some(backend), Some(frame)) = (
@@ -1408,18 +1417,27 @@ impl ApplicationHandler<()> for App {
                         self.rt.frame_cache.as_ref(),
                     ) {
                         let scale = self.scale(&window);
-                        let mut scene = frame.scene.clone();
-                        if let Some(inspector) = &mut self.inspector {
-                            inspector.frame(&mut scene);
-                        }
+                        let inspector_active = self
+                            .inspector
+                            .as_ref()
+                            .is_some_and(|inspector| inspector.hud.inspector_enabled);
                         let _dnd_guard = self.rt.dnd_context.enter();
-                        repose_core::dnd::overlay_drag_indicator(
-                            &mut scene,
-                            self.rt.mouse_pos_px,
-                            false,
-                        );
+                        let drag_active = repose_core::dnd::is_dragging();
+                        let mut overlay =
+                            (inspector_active || drag_active).then(|| frame.scene.clone());
+                        if let Some(scene) = &mut overlay {
+                            if let Some(inspector) = &mut self.inspector {
+                                inspector.frame(scene);
+                            }
+                            repose_core::dnd::overlay_drag_indicator(
+                                scene,
+                                self.rt.mouse_pos_px,
+                                false,
+                            );
+                        }
+                        let _ = take_present_request();
                         Some(backend.frame(
-                            &scene,
+                            overlay.as_ref().unwrap_or(&frame.scene),
                             GlyphRasterConfig {
                                 px: Px(18.0 * scale),
                             },
@@ -1428,22 +1446,18 @@ impl ApplicationHandler<()> for App {
                         None
                     };
                     if let Some(presented) = presented {
-                        self.handle_frame_result(presented);
-                        if !presented {
-                            return;
+                        if presented {
+                            self.frame_pacer.rendered(web_time::Instant::now());
                         }
+                        self.handle_frame_result(presented);
                     }
-                    self.last_redraw = web_time::Instant::now();
                     return;
                 }
 
                 self.rt.tick_overlays();
-
                 repose_core::animation_driver::tick();
-
                 self.ensure_fullscreen_size(&window);
                 self.sync_size_from_window(&window);
-
                 self.drain_render_commands();
 
                 if self.backend.borrow().is_none() {
@@ -1451,27 +1465,29 @@ impl ApplicationHandler<()> for App {
                 }
 
                 let scale = self.scale(&window);
-
                 let output = self.rt.frame(&mut self.root, &self.render);
                 self.drain_render_commands();
-
                 self.apply_frame_cursor(&window, &output.platform.cursor);
 
-                let frame = output.into_frame();
-
-                let presented = if let Some(backend) = self.backend.borrow_mut().as_mut() {
-                    let mut scene = frame.scene.clone();
+                let frame = output.into_shared_frame();
+                self.rt.after_compose_shared(frame.clone(), scale);
+                let inspector_active = self
+                    .inspector
+                    .as_ref()
+                    .is_some_and(|inspector| inspector.hud.inspector_enabled);
+                let _dnd_guard = self.rt.dnd_context.enter();
+                let drag_active = repose_core::dnd::is_dragging();
+                let mut overlay = (inspector_active || drag_active).then(|| frame.scene.clone());
+                if let Some(scene) = &mut overlay {
                     if let Some(inspector) = &mut self.inspector {
-                        inspector.frame(&mut scene);
+                        inspector.frame(scene);
                     }
-                    let _dnd_guard = self.rt.dnd_context.enter();
-                    repose_core::dnd::overlay_drag_indicator(
-                        &mut scene,
-                        self.rt.mouse_pos_px,
-                        false,
-                    );
+                    repose_core::dnd::overlay_drag_indicator(scene, self.rt.mouse_pos_px, false);
+                }
+                let _ = take_present_request();
+                let presented = if let Some(backend) = self.backend.borrow_mut().as_mut() {
                     backend.frame(
-                        &scene,
+                        overlay.as_ref().unwrap_or(&frame.scene),
                         GlyphRasterConfig {
                             px: Px(18.0 * scale),
                         },
@@ -1480,18 +1496,12 @@ impl ApplicationHandler<()> for App {
                     false
                 };
 
-                self.rt.after_compose(&frame, scale);
                 self.rt.cache_frame(frame);
+                if presented {
+                    self.frame_pacer.rendered(web_time::Instant::now());
+                }
                 self.handle_frame_result(presented);
-                if !presented {
-                    return;
-                }
                 self.sync_focus_generation();
-                self.last_redraw = web_time::Instant::now();
-
-                if self.options.continuous_redraw {
-                    window.request_redraw();
-                }
             }
 
             _ => {}
@@ -1514,10 +1524,10 @@ impl ApplicationHandler<()> for App {
         if repose_text::take_fallback_dirty() {
             self.request_redraw();
         }
+        let redraw_deferred = self.redraw_deferred;
 
         match self.backend_state.get() {
             BackendState::Pending => {
-                self.compose_requested.set(true);
                 el.set_control_flow(winit::event_loop::ControlFlow::Wait);
                 return;
             }
@@ -1530,8 +1540,6 @@ impl ApplicationHandler<()> for App {
                     self.start_backend(window);
                 } else if let Some(retry_at) = self.backend_retry_at.get() {
                     el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(retry_at));
-                } else {
-                    self.compose_requested.set(false);
                 }
                 if self.window.is_none() {
                     self.backend_retry_at.set(None);
@@ -1554,13 +1562,12 @@ impl ApplicationHandler<()> for App {
                 self.surface_retry_at = None;
                 return;
             }
-            if self.recover_missing_surface() {
+            if !self.recover_missing_surface() {
+                if let Some(retry_at) = self.surface_retry_at {
+                    el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(retry_at));
+                }
                 return;
             }
-            if let Some(retry_at) = self.surface_retry_at {
-                el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(retry_at));
-            }
-            return;
         }
 
         if self.present_retry_pending {
@@ -1573,30 +1580,78 @@ impl ApplicationHandler<()> for App {
             }
             self.present_retry_pending = false;
             self.present_retry_at = None;
-            self.compose_requested.set(true);
-            repose_core::request_frame();
-            self.request_redraw();
+            request_frame();
+            if self.frame_pacer.due(now) {
+                rc::request_redraw(&self.window);
+            } else if let Some(deadline) = self.frame_pacer.deadline(now) {
+                el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(deadline));
+                return;
+            }
+        }
+        if redraw_deferred {
+            let now = web_time::Instant::now();
+            if self.frame_pacer.due(now) {
+                self.redraw_deferred = false;
+                rc::request_redraw(&self.window);
+            } else if let Some(deadline) = self.frame_pacer.deadline(now) {
+                el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(deadline));
+            } else {
+                self.redraw_deferred = false;
+                rc::request_redraw(&self.window);
+            }
             return;
         }
 
-        if !self.options.continuous_redraw {
-            let frame_requested = take_frame_request();
-            let present_requested = take_present_request();
-            if frame_requested {
-                self.request_redraw();
-            } else if present_requested && self.rt.frame_cache.is_some() {
-                self.request_present_only();
-            } else if let Some(deadline) = self.rt.next_wakeup_deadline() {
-                let now = web_time::Instant::now();
-                if self.rt.is_wakeup_due(now) {
-                    self.request_redraw();
-                } else {
-                    el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(deadline));
-                    return;
-                }
-            } else if repose_core::animation_driver::is_active() {
-                self.request_redraw();
+        let now = web_time::Instant::now();
+        let wakeup_due = self.rt.is_wakeup_due(now);
+        if wakeup_due {
+            request_frame();
+            rc::request_redraw(&self.window);
+            return;
+        }
+        let compose_requested = repose_core::frame_clock::peek_frame_request();
+        let should_compose = compose_requested
+            || self.options.continuous_redraw
+            || repose_core::animation_driver::is_active();
+        let wakeup_deadline = self
+            .rt
+            .next_wakeup_deadline()
+            .filter(|deadline| *deadline > now);
+        if should_compose {
+            if self.frame_pacer.due(now) {
+                rc::request_redraw(&self.window);
+            } else if let Some(deadline) = self
+                .frame_pacer
+                .deadline(now)
+                .into_iter()
+                .chain(wakeup_deadline)
+                .min()
+            {
+                el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(deadline));
             }
+            return;
+        }
+
+        if repose_core::frame_clock::peek_present_request() && self.rt.frame_cache.is_some() {
+            if self.frame_pacer.due(now) {
+                rc::request_redraw(&self.window);
+            } else if let Some(deadline) = self
+                .frame_pacer
+                .deadline(now)
+                .into_iter()
+                .chain(wakeup_deadline)
+                .min()
+            {
+                el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(deadline));
+            }
+            return;
+        }
+
+        match wakeup_deadline {
+            Some(deadline) => {
+                el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(deadline));
+            }
+            None => el.set_control_flow(winit::event_loop::ControlFlow::Wait),
         }
     }
 }

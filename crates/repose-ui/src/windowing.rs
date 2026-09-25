@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use repose_core::{
@@ -111,6 +112,7 @@ pub struct WindowManagerState {
     pub windows: Vec<FloatingWindow>,
     next_id: u64,
     pub active: Option<u64>,
+    window_index: HashMap<u64, usize>,
 }
 
 impl WindowManagerState {
@@ -119,6 +121,7 @@ impl WindowManagerState {
             windows: Vec::new(),
             next_id: 1,
             active: None,
+            window_index: HashMap::new(),
         }
     }
 
@@ -128,55 +131,78 @@ impl WindowManagerState {
         id
     }
 
+    fn reindex_windows(&mut self) {
+        self.window_index.clear();
+        self.window_index.extend(
+            self.windows
+                .iter()
+                .enumerate()
+                .map(|(index, window)| (window.id, index)),
+        );
+    }
+
+    fn window_index(&mut self, id: u64) -> Option<usize> {
+        if let Some(&index) = self.window_index.get(&id)
+            && self
+                .windows
+                .get(index)
+                .is_some_and(|window| window.id == id)
+        {
+            return Some(index);
+        }
+        let index = self.windows.iter().position(|window| window.id == id)?;
+        self.reindex_windows();
+        Some(index)
+    }
+
     pub fn open(&mut self, window: FloatingWindow) {
         let window_id = window.id;
-        if let Some(pos) = self.windows.iter().position(|w| w.id == window_id) {
+        if let Some(pos) = self.window_index(window_id) {
             self.windows[pos] = window;
         } else {
             self.windows.push(window);
+            self.reindex_windows();
         }
         self.bring_to_front(window_id);
     }
 
     pub fn close(&mut self, id: u64) -> bool {
-        if let Some(idx) = self.windows.iter().position(|w| w.id == id) {
-            self.windows.remove(idx);
-            if self.active == Some(id) {
-                self.active = self.windows.last().map(|w| w.id);
-            }
-            true
-        } else {
-            false
+        let Some(idx) = self.window_index(id) else {
+            return false;
+        };
+        self.windows.remove(idx);
+        self.reindex_windows();
+        if self.active == Some(id) {
+            self.active = self.windows.last().map(|w| w.id);
         }
+        true
     }
 
     pub fn bring_to_front(&mut self, id: u64) -> bool {
-        if let Some(idx) = self.windows.iter().position(|w| w.id == id) {
-            let window = self.windows.remove(idx);
-            self.windows.push(window);
-            self.active = Some(id);
-            true
-        } else {
-            false
-        }
+        let Some(idx) = self.window_index(id) else {
+            return false;
+        };
+        let window = self.windows.remove(idx);
+        self.windows.push(window);
+        self.active = Some(id);
+        self.reindex_windows();
+        true
     }
 
     pub fn set_position(&mut self, id: u64, position: DpOffset) -> bool {
-        if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
-            w.position = position;
-            true
-        } else {
-            false
-        }
+        let Some(index) = self.window_index(id) else {
+            return false;
+        };
+        self.windows[index].position = position;
+        true
     }
 
     pub fn set_size(&mut self, id: u64, size: DpSize) -> bool {
-        if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
-            w.size = size;
-            true
-        } else {
-            false
-        }
+        let Some(index) = self.window_index(id) else {
+            return false;
+        };
+        self.windows[index].size = size;
+        true
     }
 }
 

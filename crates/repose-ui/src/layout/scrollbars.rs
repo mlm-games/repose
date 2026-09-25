@@ -117,20 +117,42 @@ pub(crate) fn push_scrollbar(
     if let Some(visual) = style.track_visuals.resolve(track_state) {
         visual.paint(scene, track_rect, track_state);
     } else {
-        let radius = style.radius.unwrap_or(Dp(thick * 0.5)).to_px().0;
+        let radius = style
+            .radius
+            .map(|radius| radius.to_px().0)
+            .unwrap_or(thick * 0.5);
         scene.nodes.push(SceneNode::Rect {
             rect: track_rect,
-            brush: Brush::Solid(locals::theme().scrollbar_track),
+            brush: Brush::Solid({
+                let color = locals::theme().scrollbar_track;
+                Color(
+                    color.0,
+                    color.1,
+                    color.2,
+                    (color.3 as f32 * alpha.clamp(0.0, 1.0)) as u8,
+                )
+            }),
             radius: [Px(radius); 4],
         });
     }
     if let Some(visual) = style.thumb_visuals.resolve(visual_state) {
         visual.paint(scene, thumb_rect, visual_state);
     } else {
-        let radius = style.radius.unwrap_or(Dp(thick * 0.5)).to_px().0;
+        let radius = style
+            .radius
+            .map(|radius| radius.to_px().0)
+            .unwrap_or(thick * 0.5);
         scene.nodes.push(SceneNode::Rect {
             rect: thumb_rect,
-            brush: Brush::Solid(locals::theme().scrollbar_thumb),
+            brush: Brush::Solid({
+                let color = locals::theme().scrollbar_thumb;
+                Color(
+                    color.0,
+                    color.1,
+                    color.2,
+                    (color.3 as f32 * alpha.clamp(0.0, 1.0)) as u8,
+                )
+            }),
             radius: [Px(radius); 4],
         });
     }

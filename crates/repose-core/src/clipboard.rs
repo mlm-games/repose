@@ -1,10 +1,12 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 thread_local! {
     static CLIPBOARD: RefCell<Option<Box<dyn Fn(&str)>>> = RefCell::new(None);
     static CLIPBOARD_OBSERVER: RefCell<Option<Box<dyn Fn(&str)>>> = RefCell::new(None);
     static PRIMARY: RefCell<Option<Box<dyn Fn(&str)>>> = RefCell::new(None);
     static CLIPBOARD_READ: RefCell<Option<Box<dyn Fn() -> Option<String>>>> = RefCell::new(None);
+    static CAPTURE_DEPTH: Cell<usize> = const { Cell::new(0) };
+    static PENDING_TEXT: RefCell<Option<String>> = RefCell::new(None);
 }
 
 /// Register a global clipboard write function (Ctrl+C / system clipboard).
@@ -12,9 +14,6 @@ pub fn set_clipboard_fn(f: Box<dyn Fn(&str)>) {
     CLIPBOARD.with(|slot| *slot.borrow_mut() = Some(f));
 }
 
-/// Register a transient clipboard observer that fires alongside the primary
-/// callback.  Used by embeddable runtimes to capture clipboard text produced
-/// during frame composition into `PlatformOutput`.
 pub fn set_clipboard_observer(f: Box<dyn Fn(&str)>) {
     CLIPBOARD_OBSERVER.with(|slot| *slot.borrow_mut() = Some(f));
 }
@@ -26,6 +25,14 @@ pub fn clear_clipboard_observer() {
 
 /// Copy text to the system clipboard via the registered setter.
 pub fn copy_to_clipboard(text: &str) {
+    if CAPTURE_DEPTH
+        .try_with(|slot| slot.get() > 0)
+        .unwrap_or(false)
+    {
+        let _ = PENDING_TEXT.try_with(|slot| {
+            *slot.borrow_mut() = Some(text.to_string());
+        });
+    }
     let _ = CLIPBOARD.try_with(|slot| {
         if let Some(f) = slot.borrow().as_ref() {
             f(text);
@@ -36,6 +43,33 @@ pub fn copy_to_clipboard(text: &str) {
             f(text);
         }
     });
+}
+
+pub fn with_captured_clipboard<T>(f: impl FnOnce() -> T) -> (T, Option<String>) {
+    struct CaptureReset(usize);
+
+    impl Drop for CaptureReset {
+        fn drop(&mut self) {
+            CAPTURE_DEPTH.set(self.0);
+        }
+    }
+
+    let previous = CAPTURE_DEPTH.get();
+    if previous == 0 {
+        let _ = PENDING_TEXT.try_with(|slot| slot.borrow_mut().take());
+    }
+    CAPTURE_DEPTH.set(previous + 1);
+    let _reset = CaptureReset(previous);
+    let output = f();
+    CAPTURE_DEPTH.set(previous);
+    if previous > 0 {
+        return (output, None);
+    }
+    let text = PENDING_TEXT
+        .try_with(|slot| slot.borrow_mut().take())
+        .ok()
+        .flatten();
+    (output, text)
 }
 
 /// Register a global clipboard read function (Ctrl+V / system clipboard paste).

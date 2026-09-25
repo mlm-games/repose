@@ -1652,4 +1652,30 @@ fn test_scrollbar_image_visuals_preserve_thumb_geometry() {
     assert_eq!(images[1].1, Some(ImageSourceRect::new(4, 0, 8, 16)));
     assert_eq!(images[1].0.h, 16.0);
     assert!(hits.iter().any(|hit| hit.rect.h == 16.0));
+
+    let default_scroll = crate::scroll::ScrollArea(
+        Modifier::new().size(Dp(100.0), Dp(200.0)),
+        std::rc::Rc::new(ScrollState::new()),
+        RBox(Modifier::new().size(Dp(100.0), Dp(400.0))),
+    );
+    let mut engine = LayoutEngine::new();
+    let (scene, _, _) = locals::with_density(locals::Density { scale: 2.0 }, || {
+        engine.layout_frame(
+            &default_scroll,
+            (200, 400),
+            &HashMap::new(),
+            &Interactions::default(),
+            None,
+        )
+    });
+    let radii: Vec<_> = scene
+        .nodes
+        .iter()
+        .filter_map(|node| match node {
+            SceneNode::Rect { radius, .. } => Some(*radius),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(radii.len(), 2);
+    assert!(radii.iter().all(|radius| *radius == [Px(4.0); 4]));
 }

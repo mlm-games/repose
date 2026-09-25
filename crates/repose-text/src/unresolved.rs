@@ -49,36 +49,24 @@ impl UnresolvedSymbolsRegistry {
     }
 
     pub fn add_unresolved_codepoints(&self, codepoints: &[u32]) {
-        let mut to_add = Vec::new();
-        {
-            let inner = self.inner.lock().unwrap();
-            for &cp in codepoints {
-                if !inner.unresolved.contains(&cp) {
-                    to_add.push(cp);
-                }
-            }
-            if to_add.is_empty() {
-                return;
-            }
-        }
         let (snapshot, listeners): (HashSet<u32>, Vec<Arc<dyn UnresolvedListener>>) = {
             let mut inner = self.inner.lock().unwrap();
-            let mut actually_new = Vec::new();
-            for cp in to_add {
-                if inner.unresolved.insert(cp) {
-                    actually_new.push(cp);
-                }
+            let mut inserted = false;
+            for &cp in codepoints {
+                inserted |= inner.unresolved.insert(cp);
             }
-            if actually_new.is_empty() {
+            if !inserted {
                 return;
             }
             inner.listeners.retain(|w| w.upgrade().is_some());
             let live: Vec<_> = inner.listeners.iter().filter_map(|w| w.upgrade()).collect();
-            let snap = inner.unresolved.clone();
-            (snap, live)
+            if live.is_empty() {
+                return;
+            }
+            (inner.unresolved.clone(), live)
         };
-        for l in listeners {
-            l.on_unresolved_codepoints(&snapshot);
+        for listener in listeners {
+            listener.on_unresolved_codepoints(&snapshot);
         }
     }
 

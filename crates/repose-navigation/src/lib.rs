@@ -565,9 +565,17 @@ pub fn NavDisplay<K: NavKey>(
 ) -> View {
     let _version = stack.version.get();
     let transition_id = stack.transition_id();
-    let (id, key, saved, entry_scope) = match stack.current() {
-        Some(t) => t,
-        None => return VBox(Modifier::new()),
+    let (id, key, saved, entry_scope) = {
+        let state = stack.inner.borrow();
+        let Some(entry) = state.entries.last() else {
+            return VBox(Modifier::new());
+        };
+        (
+            entry.id,
+            entry.key.clone(),
+            entry.saved.clone(),
+            entry.scope.clone(),
+        )
     };
     let scope = EntryScope {
         id,

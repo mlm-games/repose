@@ -51,22 +51,33 @@ fn current_scope_stack() -> Vec<String> {
     }
 }
 
-pub fn record_scope_signal_dep(signal: usize) {
-    let stack = current_scope_stack();
-    if stack.is_empty() {
-        return;
+fn for_each_current_scope(mut f: impl FnMut(&str)) {
+    let has_stack = CURRENT_SCOPE_STACK.with(|stack| !stack.borrow().is_empty());
+    if has_stack {
+        CURRENT_SCOPE_STACK.with(|stack| {
+            for key in stack.borrow().iter() {
+                f(key);
+            }
+        });
+    } else if let Some(key) = CURRENT_SCOPE_KEY.with(|key| key.borrow().clone()) {
+        f(&key);
     }
-    SCOPE_SIGNAL_DEPS.with(|deps| {
-        let mut deps = deps.borrow_mut();
-        for key in &stack {
-            deps.entry(signal).or_default().insert(key.clone());
-        }
-    });
-    SCOPE_TO_SIGNALS.with(|map| {
-        let mut map = map.borrow_mut();
-        for key in &stack {
-            map.entry(key.clone()).or_default().insert(signal);
-        }
+}
+
+pub fn record_scope_signal_dep(signal: usize) {
+    for_each_current_scope(|key| {
+        SCOPE_SIGNAL_DEPS.with(|deps| {
+            deps.borrow_mut()
+                .entry(signal)
+                .or_default()
+                .insert(key.to_string());
+        });
+        SCOPE_TO_SIGNALS.with(|map| {
+            map.borrow_mut()
+                .entry(key.to_string())
+                .or_default()
+                .insert(signal);
+        });
     });
 }
 
@@ -90,7 +101,7 @@ fn mark_dirty(key: &str) {
         })
         .unwrap_or(false);
     if !marked {
-        let queued = SCOPE_PENDING_DIRTY.try_with(|pending| {
+        let _ = SCOPE_PENDING_DIRTY.try_with(|pending| {
             if let Ok(mut pending) = pending.try_borrow_mut() {
                 pending.insert(key.to_string());
                 true
@@ -98,27 +109,25 @@ fn mark_dirty(key: &str) {
                 false
             }
         });
-        if !matches!(queued, Ok(true)) {
-            crate::request_frame();
-        }
         crate::request_frame();
     }
 }
 
 pub fn mark_current_scope_dirty() {
-    for key in current_scope_stack() {
-        mark_dirty(&key);
-    }
+    for_each_current_scope(mark_dirty);
 }
 
 pub fn mark_current_scope_dirty_for_signal(signal: usize) {
-    let current = current_scope_stack();
-    let dependent = SCOPE_SIGNAL_DEPS.with(|deps| deps.borrow().get(&signal).cloned());
-    for key in current {
-        if !dependent.as_ref().is_some_and(|keys| keys.contains(&key)) {
-            mark_dirty(&key);
+    for_each_current_scope(|key| {
+        let dependent = SCOPE_SIGNAL_DEPS.with(|deps| {
+            deps.borrow()
+                .get(&signal)
+                .is_some_and(|keys| keys.contains(key))
+        });
+        if !dependent {
+            mark_dirty(key);
         }
-    }
+    });
 }
 
 pub fn mark_scope_dirty(key: &str) {
@@ -126,12 +135,14 @@ pub fn mark_scope_dirty(key: &str) {
 }
 
 pub fn mark_scope_deps_dirty(signal: usize) {
-    let keys = SCOPE_SIGNAL_DEPS.with(|deps| deps.borrow().get(&signal).cloned());
-    if let Some(keys) = keys {
-        for key in keys {
-            mark_dirty(&key);
+    SCOPE_SIGNAL_DEPS.with(|deps| {
+        let deps = deps.borrow();
+        if let Some(keys) = deps.get(&signal) {
+            for key in keys {
+                mark_dirty(key);
+            }
         }
-    }
+    });
 }
 
 pub fn with_scope_key<R>(key: &str, function: impl FnOnce() -> R) -> R {
@@ -273,6 +284,41 @@ fn collect_view_scope_keys(view: &View, keys: &mut FxHashSet<String>) {
     }
 }
 
+fn view_has_nested_scope(view: &View, parent_key: &str) -> bool {
+    if view
+        .scope_key
+        .as_deref()
+        .is_some_and(|scope_key| scope_key != parent_key)
+    {
+        return true;
+    }
+    view.children
+        .iter()
+        .any(|child| view_has_nested_scope(child, parent_key))
+}
+
+fn has_cached_scope_children(key: &str) -> bool {
+    let cached = SCOPE_CACHE_CHILDREN.with(|map| {
+        map.borrow()
+            .get(key)
+            .is_some_and(|children| !children.is_empty())
+    });
+    if cached {
+        return true;
+    }
+    crate::runtime::COMPOSER
+        .try_with(|composer| {
+            composer.try_borrow().ok().is_some_and(|composer| {
+                composer
+                    .scope_caches
+                    .get(key)
+                    .is_some_and(|cache| view_has_nested_scope(&cache.view, key))
+            })
+        })
+        .ok()
+        .unwrap_or(false)
+}
+
 fn cached_scope_children(key: &str) -> FxHashSet<String> {
     let mut children =
         SCOPE_CACHE_CHILDREN.with(|map| map.borrow().get(key).cloned().unwrap_or_default());
@@ -292,11 +338,12 @@ fn cached_scope_children(key: &str) -> FxHashSet<String> {
 }
 
 fn cached_locals_changed(key: &str) -> bool {
-    let values = SCOPE_CACHE_LOCALS.with(|map| map.borrow().get(key).cloned());
-    values.is_some_and(|values| {
-        values
-            .iter()
-            .any(|(local, value)| crate::locals::local_fingerprint(*local) != *value)
+    SCOPE_CACHE_LOCALS.with(|map| {
+        map.borrow().get(key).is_some_and(|values| {
+            values
+                .iter()
+                .any(|(local, value)| crate::locals::local_fingerprint(*local) != *value)
+        })
     })
 }
 
@@ -304,7 +351,7 @@ pub fn should_run(key: &str, input_hash: u64) -> bool {
     if SCOPE_PENDING_DIRTY.with(|pending| pending.borrow().contains(key)) {
         return true;
     }
-    if !cached_scope_children(key).is_empty() {
+    if has_cached_scope_children(key) {
         return true;
     }
     let locals_changed = cached_locals_changed(key);
@@ -469,13 +516,28 @@ fn set_cache_inner(key: &str, input_hash: u64, view: View, slot_delta: usize, cl
     });
     drop(old_cache);
     SCOPE_CACHE_CHILDREN.with(|map| {
-        map.borrow_mut().insert(key.to_string(), children);
+        let mut map = map.borrow_mut();
+        if children.is_empty() {
+            map.remove(key);
+        } else {
+            map.insert(key.to_string(), children);
+        }
     });
     SCOPE_CACHE_LOCALS.with(|map| {
-        map.borrow_mut().insert(key.to_string(), locals);
+        let mut map = map.borrow_mut();
+        if locals.is_empty() {
+            map.remove(key);
+        } else {
+            map.insert(key.to_string(), locals);
+        }
     });
     SCOPE_CACHE_ANIMATIONS.with(|map| {
-        map.borrow_mut().insert(key.to_string(), animations);
+        let mut map = map.borrow_mut();
+        if animations.is_empty() {
+            map.remove(key);
+        } else {
+            map.insert(key.to_string(), animations);
+        }
     });
     SCOPE_RUN_EPOCHS.with(|epochs| {
         epochs.borrow_mut().remove(key);
@@ -540,6 +602,9 @@ pub fn gc_dead_scopes() {
         });
         SCOPE_LAST_ANIMATIONS.with(|map| {
             map.borrow_mut().remove(&key);
+        });
+        SCOPE_RUN_EPOCHS.with(|epochs| {
+            epochs.borrow_mut().remove(&key);
         });
         crate::animation_driver::release_scope(&key);
     }

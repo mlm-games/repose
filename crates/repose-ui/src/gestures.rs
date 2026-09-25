@@ -68,18 +68,19 @@ impl GestureDetector {
     }
 
     pub fn handle_pointer(&mut self, event: &PointerEvent) {
-        self.poll_long_press();
+        let now = Instant::now();
+        self.poll_long_press_at(now);
         match event.event {
             PointerEventKind::Down(_) => {
-                self.press_start = Some((Instant::now(), event.position));
+                self.press_start = Some((now, event.position));
                 self.drag_start = Some(event.position);
                 self.last_position = Some(event.position);
-                self.last_move_time = Some(Instant::now());
+                self.last_move_time = Some(now);
                 self.drag_past_slop = false;
                 self.long_press_fired = false;
 
                 if let Some((last, last_pos)) = self.last_tap {
-                    let dt = Instant::now() - last;
+                    let dt = now - last;
                     let dist = ((event.position.x - last_pos.x).powi(2)
                         + (event.position.y - last_pos.y).powi(2))
                     .sqrt();
@@ -93,7 +94,7 @@ impl GestureDetector {
             }
             PointerEventKind::Up(_) => {
                 if let Some((start_time, start_pos)) = self.press_start {
-                    let elapsed = Instant::now() - start_time;
+                    let elapsed = now - start_time;
                     let distance = ((event.position.x - start_pos.x).powi(2)
                         + (event.position.y - start_pos.y).powi(2))
                     .sqrt();
@@ -106,7 +107,7 @@ impl GestureDetector {
                         if let Some(cb) = &self.on_tap {
                             cb(event.position);
                         }
-                        self.last_tap = Some((Instant::now(), event.position));
+                        self.last_tap = Some((now, event.position));
                     } else if !self.long_press_fired && distance > SWIPE_MIN_PX {
                         let dx = event.position.x - start_pos.x;
                         let dy = event.position.y - start_pos.y;
@@ -159,9 +160,7 @@ impl GestureDetector {
                         Vec2::default()
                     };
 
-                    let velocity = if let (Some(prev_time), Some(now)) =
-                        (self.last_move_time, Some(Instant::now()))
-                    {
+                    let velocity = if let Some(prev_time) = self.last_move_time {
                         let dt = (now - prev_time).as_secs_f32().max(1.0 / 240.0);
                         Vec2 {
                             x: delta.x / dt,
@@ -180,9 +179,9 @@ impl GestureDetector {
                 }
 
                 self.last_position = Some(event.position);
-                self.last_move_time = Some(Instant::now());
+                self.last_move_time = Some(now);
 
-                self.poll_long_press();
+                self.poll_long_press_at(now);
             }
             PointerEventKind::Cancel => {
                 self.last_tap = None;
@@ -201,11 +200,15 @@ impl GestureDetector {
     /// past slop. Called on every pointer event and available for per-frame
     /// polling so a stationary hold (no Moves) still fires.
     pub fn poll_long_press(&mut self) {
+        self.poll_long_press_at(Instant::now());
+    }
+
+    fn poll_long_press_at(&mut self, now: Instant) {
         if self.long_press_fired {
             return;
         }
         if let Some((start_time, pos)) = self.press_start
-            && (Instant::now() - start_time) > Duration::from_millis(LONG_PRESS_MS)
+            && (now - start_time) > Duration::from_millis(LONG_PRESS_MS)
             && !self.drag_past_slop
         {
             let cur = self.last_position.unwrap_or(pos);

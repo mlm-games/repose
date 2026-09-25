@@ -17,7 +17,6 @@ use crate::common as rc;
 use crate::render::RenderContext;
 use crate::*;
 
-use std::cell::Cell;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -42,6 +41,10 @@ static CONTINUOUS_REDRAW: AtomicBool = AtomicBool::new(false);
 #[cfg(target_os = "android")]
 pub fn set_continuous_redraw(enabled: bool) {
     CONTINUOUS_REDRAW.store(enabled, Ordering::Relaxed);
+    if enabled {
+        repose_core::request_frame();
+        crate::wake_event_loop();
+    }
 }
 
 /// Run an Android app with default [`AndroidOptions`].
@@ -90,8 +93,6 @@ pub fn run_android_app_with_options(
         /// Focused id the keyboard was last shown for.
         ime_shown_for: Option<u64>,
 
-        dirty: bool,
-
         /// Buttons arrive as native keycodes, axes have no source yet.
         #[cfg(feature = "gamepad")]
         gamepad: crate::gamepad::AndroidBackend,
@@ -106,13 +107,8 @@ pub fn run_android_app_with_options(
         render_retry_pending: bool,
         render_retry_at: Option<web_time::Instant>,
 
-        // clipboard
-        clipboard: Option<clipawl::Clipboard>,
-
-        last_redraw: web_time::Instant,
-
-        /// Tracks whether a redraw was requested by app code that needs compose.
-        compose_requested: Cell<bool>,
+        frame_pacer: rc::FramePacer,
+        redraw_deferred: bool,
     }
 
     impl AppState {
@@ -132,7 +128,6 @@ pub fn run_android_app_with_options(
 
                 ime_visible: false,
                 ime_shown_for: None,
-                dirty: true,
                 #[cfg(feature = "gamepad")]
                 gamepad: crate::gamepad::create_android_backend().expect("android gamepad backend"),
                 surface_active: false,
@@ -145,25 +140,13 @@ pub fn run_android_app_with_options(
                 render_retry_pending: false,
                 render_retry_at: None,
 
-                clipboard: None,
-
-                last_redraw: web_time::Instant::now(),
-
-                compose_requested: Cell::new(false),
+                frame_pacer: rc::FramePacer::new(options.common.max_fps),
+                redraw_deferred: false,
             }
         }
 
         fn request_redraw(&self) {
-            self.compose_requested.set(true);
             repose_core::request_frame();
-            rc::request_redraw(&self.window);
-        }
-
-        fn request_present_only(&self) {
-            // Do NOT set compose_requested  - present-only
-            if let Some(w) = &self.window {
-                w.request_redraw();
-            }
         }
 
         /// Whether frames should be forced continuously (static option or a
@@ -286,18 +269,21 @@ pub fn run_android_app_with_options(
         }
 
         fn defer_render_retry(&mut self) {
-            take_frame_request();
+            let now = web_time::Instant::now();
+            let retry_at = now + web_time::Duration::from_millis(100);
             self.render_retry_pending = true;
-            self.render_retry_at =
-                Some(web_time::Instant::now() + web_time::Duration::from_millis(100));
-            self.dirty = false;
+            self.render_retry_at = self
+                .frame_pacer
+                .deadline(now)
+                .into_iter()
+                .chain(Some(retry_at))
+                .max();
         }
 
         fn handle_frame_result(&mut self, presented: bool) {
             if presented {
                 self.render_retry_pending = false;
                 self.render_retry_at = None;
-                self.dirty = false;
             } else if self
                 .backend
                 .as_ref()
@@ -310,14 +296,18 @@ pub fn run_android_app_with_options(
         }
 
         fn defer_surface_retry(&mut self) {
-            take_frame_request();
+            let now = web_time::Instant::now();
+            let retry_at = now + web_time::Duration::from_millis(100);
             self.surface_retry_pending = true;
             self.render_retry_pending = false;
             self.render_retry_at = None;
-            self.surface_retry_at =
-                Some(web_time::Instant::now() + web_time::Duration::from_millis(100));
+            self.surface_retry_at = self
+                .frame_pacer
+                .deadline(now)
+                .into_iter()
+                .chain(Some(retry_at))
+                .max();
             self.surface_active = false;
-            self.dirty = true;
         }
 
         fn activate_surface(&mut self) {
@@ -326,7 +316,6 @@ pub fn run_android_app_with_options(
             self.render_retry_pending = false;
             self.render_retry_at = None;
             self.surface_active = true;
-            self.dirty = true;
             self.request_redraw();
         }
 
@@ -400,20 +389,6 @@ pub fn run_android_app_with_options(
             self.update_ime_inset();
         }
 
-        fn copy_to_clipboard(&self, text: &str) {
-            if let Some(cb) = &self.clipboard {
-                let _ = pollster::block_on(cb.write(text));
-            }
-        }
-
-        fn paste_from_clipboard(&self) -> Option<String> {
-            if let Some(cb) = &self.clipboard {
-                pollster::block_on(cb.read()).ok()
-            } else {
-                None
-            }
-        }
-
         fn process_render_commands(&mut self) {
             let Some(backend) = &mut self.backend else {
                 return;
@@ -461,6 +436,7 @@ pub fn run_android_app_with_options(
             self.os_focused = false;
             self.surface_retry_pending = false;
             self.surface_retry_at = None;
+            rc::flush_clipboard_writes();
             self.render_retry_pending = false;
             self.render_retry_at = None;
             if let Some(backend) = self.backend.as_mut() {
@@ -507,7 +483,7 @@ pub fn run_android_app_with_options(
                             );
                             self.backend = Some(b);
                             self.window = Some(w);
-                            self.clipboard = rc::setup_clipboard();
+                            let _ = rc::setup_clipboard();
                         }
                         Err(e) => {
                             log::error!("WGPU backend init failed: {e:?}");
@@ -540,7 +516,7 @@ pub fn run_android_app_with_options(
 
                 WindowEvent::Resized(size) => {
                     self.sync_window_size(size, self.scale());
-                    self.dirty = true;
+
                     if size.width == 0 || size.height == 0 {
                         if self.backend.is_some() {
                             if let Some(backend) = self.backend.as_mut() {
@@ -560,7 +536,7 @@ pub fn run_android_app_with_options(
                         .map(|w| w.inner_size())
                         .unwrap_or_default();
                     self.sync_window_size(size, scale_factor as f32);
-                    self.dirty = true;
+
                     if size.width == 0 || size.height == 0 {
                         if self.backend.is_some() {
                             if let Some(backend) = self.backend.as_mut() {
@@ -583,7 +559,7 @@ pub fn run_android_app_with_options(
                         let ime_allowed = self.current_ime_allowed();
                         self.update_ime_state(true, ime_allowed);
                     }
-                    self.dirty = true;
+
                     self.request_redraw();
                 }
 
@@ -599,7 +575,7 @@ pub fn run_android_app_with_options(
                             self.update_ime_state(true, ime_allowed);
                         }
                     }
-                    self.dirty = true;
+
                     self.request_redraw();
                 }
 
@@ -618,7 +594,7 @@ pub fn run_android_app_with_options(
                         crate::runner_common::sync_touch_points(&mut self.rt, &self.touch_gestures);
                         let ime_allowed = self.current_ime_allowed();
                         self.update_ime_state(true, ime_allowed);
-                        self.dirty = true;
+
                         self.request_redraw();
                     } else {
                         let scale = self.scale();
@@ -671,7 +647,6 @@ pub fn run_android_app_with_options(
                             }
                         }
                         if dirty {
-                            self.dirty = true;
                             self.request_redraw();
                         }
                     }
@@ -693,7 +668,7 @@ pub fn run_android_app_with_options(
                             for ev in events {
                                 self.rt.handle_gamepad(&ev);
                             }
-                            self.dirty = true;
+
                             self.request_redraw();
                             return;
                         }
@@ -704,7 +679,6 @@ pub fn run_android_app_with_options(
                         &key_event,
                         &mut no_inspector,
                     ) {
-                        self.dirty = true;
                         self.request_redraw();
                         return;
                     }
@@ -713,13 +687,11 @@ pub fn run_android_app_with_options(
                         && (rc::is_back_key(&key_event) || rc::is_escape_key(&key_event))
                     {
                         if self.rt.overlay.handle_back() {
-                            self.dirty = true;
                             self.request_redraw();
                             return;
                         }
                         use repose_navigation::back;
                         if back::handle() {
-                            self.dirty = true;
                             self.request_redraw();
                             return;
                         }
@@ -732,7 +704,7 @@ pub fn run_android_app_with_options(
 
                 WindowEvent::Ime(ime) => {
                     crate::runner_common::on_ime(&mut self.rt, &ime);
-                    self.dirty = true;
+
                     self.request_redraw();
                 }
 
@@ -754,32 +726,45 @@ pub fn run_android_app_with_options(
 
                     crate::run_pre_redraw(&self.render);
 
-                    let do_compose = self.compose_requested.replace(false)
-                        || self.dirty
-                        || self.continuous_redraw();
+                    let now = web_time::Instant::now();
+                    let compose_requested = repose_core::frame_clock::peek_frame_request();
+                    let should_compose = compose_requested || self.continuous_redraw();
+                    let has_frame = self.rt.frame_cache.is_some();
+                    if (should_compose
+                        || has_frame
+                        || repose_core::frame_clock::peek_present_request())
+                        && !self.frame_pacer.due(now)
+                    {
+                        self.redraw_deferred = true;
+                        if let Some(deadline) = self.frame_pacer.deadline(now) {
+                            el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
+                                deadline,
+                            ));
+                        }
+                        return;
+                    }
+                    self.redraw_deferred = false;
+                    let compose_requested = take_frame_request();
+                    let do_compose = compose_requested || self.continuous_redraw();
 
                     if !do_compose {
-                        // Present-only: no compose, just present cached scene with updated textures
                         self.process_render_commands();
                         let scale = self.scale();
                         let dragging = repose_core::dnd::is_dragging();
                         let (presented, has_frame) = match (&mut self.backend, &self.rt.frame_cache)
                         {
                             (Some(backend), Some(frame)) => {
-                                let mut overlay;
-                                let scene = if dragging {
-                                    overlay = frame.scene.clone();
+                                let mut overlay = dragging.then(|| frame.scene.clone());
+                                if let Some(overlay) = &mut overlay {
                                     Self::overlay_drag_indicator_static(
-                                        &mut overlay,
+                                        overlay,
                                         self.rt.mouse_pos_px,
                                     );
-                                    &overlay
-                                } else {
-                                    &frame.scene
-                                };
+                                }
+                                let _ = take_present_request();
                                 (
                                     backend.frame(
-                                        scene,
+                                        overlay.as_ref().unwrap_or(&frame.scene),
                                         GlyphRasterConfig {
                                             px: Px(18.0 * scale),
                                         },
@@ -787,35 +772,25 @@ pub fn run_android_app_with_options(
                                     true,
                                 )
                             }
-                            _ => (false, self.rt.frame_cache.is_some()),
+                            _ => (false, has_frame),
                         };
+                        if presented {
+                            self.frame_pacer.rendered(web_time::Instant::now());
+                        }
                         if has_frame {
                             self.handle_frame_result(presented);
-                            if !presented {
-                                return;
-                            }
                         }
-                        self.last_redraw = web_time::Instant::now();
                         return;
                     }
 
                     self.rt.tick_overlays();
-
-                    let animating = repose_core::animation_driver::tick();
-
+                    repose_core::animation_driver::tick();
                     self.process_render_commands();
 
-                    let scale = {
-                        let Some(win) = self.window.as_ref() else {
-                            return;
-                        };
-                        win.scale_factor() as f32
-                    };
+                    let scale = self.scale();
                     self.rt.scale = scale;
 
                     let output = self.rt.frame(&mut self.root, &self.render);
-
-                    // Drain upload commands queued during compose before presenting
                     self.process_render_commands();
 
                     self.ime_output_allowed = output.platform.ime_allowed;
@@ -829,37 +804,30 @@ pub fn run_android_app_with_options(
                             )
                             .is_some()
                         });
-                    self.update_ime_state(false, ime_allowed);
+                    let frame = output.into_shared_frame();
+                    self.rt.after_compose_shared(frame.clone(), scale);
 
-                    let frame = output.into_frame();
+                    let mut overlay = repose_core::dnd::is_dragging().then(|| frame.scene.clone());
+                    if let Some(overlay) = &mut overlay {
+                        self.overlay_drag_indicator(overlay);
+                    }
 
-                    let scale = self.scale();
-                    self.rt.after_compose(&frame, scale);
-
-                    let mut scene = frame.scene.clone();
-                    self.overlay_drag_indicator(&mut scene);
-
-                    let Some(backend) = self.backend.as_mut() else {
-                        return;
-                    };
-                    let presented = backend.frame(
-                        &scene,
-                        GlyphRasterConfig {
-                            px: Px(18.0 * scale),
-                        },
-                    );
+                    let _ = take_present_request();
+                    let presented = self.backend.as_mut().is_some_and(|backend| {
+                        backend.frame(
+                            overlay.as_ref().unwrap_or(&frame.scene),
+                            GlyphRasterConfig {
+                                px: Px(18.0 * scale),
+                            },
+                        )
+                    });
 
                     self.rt.cache_frame(frame);
                     self.update_ime_state(false, ime_allowed);
-                    self.last_redraw = web_time::Instant::now();
-
-                    self.handle_frame_result(presented);
-
-                    if presented && (self.continuous_redraw() || animating) {
-                        if let Some(win) = self.window.as_ref() {
-                            win.request_redraw();
-                        }
+                    if presented {
+                        self.frame_pacer.rendered(web_time::Instant::now());
                     }
+                    self.handle_frame_result(presented);
                 }
                 _ => {}
             }
@@ -871,6 +839,7 @@ pub fn run_android_app_with_options(
             let _dnd_guard = self.rt.dnd_context.enter();
             self.rt.process_deeplinks();
             self.rt.process_lifecycle();
+            let redraw_deferred = self.redraw_deferred;
 
             #[cfg(feature = "gamepad")]
             {
@@ -924,48 +893,86 @@ pub fn run_android_app_with_options(
                 }
                 self.render_retry_pending = false;
                 self.render_retry_at = None;
-                self.dirty = true;
-                self.request_redraw();
+                if self.frame_pacer.due(now) {
+                    rc::request_redraw(&self.window);
+                } else if let Some(deadline) = self.frame_pacer.deadline(now) {
+                    el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(deadline));
+                }
                 return;
             }
 
             if !self.surface_active {
                 return;
             }
-
-            let frame_requested = take_frame_request();
-            let present_requested = take_present_request();
-
-            // Compose needed ? Unified via ReposeRuntime wakeup helpers.
-            let needs_compose = if !self.in_foreground {
-                self.dirty || frame_requested
-            } else {
-                self.continuous_redraw()
-                    || self.dirty
-                    || frame_requested
-                    || self.rt.is_wakeup_due(web_time::Instant::now())
-                    || repose_core::animation_driver::is_active()
-            };
-
-            if needs_compose {
-                self.request_redraw();
+            if redraw_deferred {
+                let now = web_time::Instant::now();
+                if self.frame_pacer.due(now) {
+                    self.redraw_deferred = false;
+                    rc::request_redraw(&self.window);
+                } else if let Some(deadline) = self.frame_pacer.deadline(now) {
+                    el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(deadline));
+                } else {
+                    self.redraw_deferred = false;
+                    rc::request_redraw(&self.window);
+                }
                 return;
             }
 
-            // Present-only: texture was updated, redraw cached scene without compose.
-            let needs_present = if !self.in_foreground {
-                present_requested && self.rt.frame_cache.is_some()
-            } else {
-                present_requested && self.rt.frame_cache.is_some()
-            };
-            if needs_present {
-                self.request_present_only();
+            let now = web_time::Instant::now();
+            let wakeup_due = self.in_foreground && self.rt.is_wakeup_due(now);
+            if wakeup_due {
+                request_frame();
+                rc::request_redraw(&self.window);
+                return;
+            }
+            let compose_requested = repose_core::frame_clock::peek_frame_request();
+            let should_compose = compose_requested
+                || (self.in_foreground
+                    && (self.continuous_redraw() || repose_core::animation_driver::is_active()));
+            let wakeup_deadline = self
+                .rt
+                .next_wakeup_deadline()
+                .filter(|deadline| *deadline > now);
+            if should_compose {
+                if self.frame_pacer.due(now) {
+                    rc::request_redraw(&self.window);
+                } else if let Some(deadline) = self
+                    .frame_pacer
+                    .deadline(now)
+                    .into_iter()
+                    .chain(wakeup_deadline)
+                    .min()
+                {
+                    el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(deadline));
+                }
                 return;
             }
 
-            if let Some(deadline) = self.rt.next_wakeup_deadline() {
-                el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(deadline));
+            if repose_core::frame_clock::peek_present_request() && self.rt.frame_cache.is_some() {
+                if self.frame_pacer.due(now) {
+                    rc::request_redraw(&self.window);
+                } else if let Some(deadline) = self
+                    .frame_pacer
+                    .deadline(now)
+                    .into_iter()
+                    .chain(wakeup_deadline)
+                    .min()
+                {
+                    el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(deadline));
+                }
+                return;
             }
+
+            match wakeup_deadline {
+                Some(deadline) => {
+                    el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(deadline));
+                }
+                None => el.set_control_flow(winit::event_loop::ControlFlow::Wait),
+            }
+        }
+
+        fn user_event(&mut self, _: &winit::event_loop::ActiveEventLoop, _: ()) {
+            request_frame();
         }
     }
 

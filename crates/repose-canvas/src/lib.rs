@@ -1,4 +1,5 @@
 #![allow(non_snake_case)]
+use std::cell::RefCell;
 use std::sync::Arc;
 
 use repose_core::*;
@@ -7,6 +8,213 @@ use repose_ui::*;
 pub struct DrawScope {
     pub commands: Vec<DrawCommand>,
     pub size: Size,
+}
+
+const MAX_TESSELLATION_CACHE_ENTRIES: usize = 128;
+const MAX_MESH_MAP_CACHE_ENTRIES: usize = 64;
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+enum PathCacheKey {
+    Corner(u32),
+    Dash(Vec<u32>, u32),
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct TessellationCacheKey {
+    kind: u8,
+    rect: [u32; 8],
+    params: [u32; 8],
+    path: Option<PathCacheKey>,
+    points: Vec<[u32; 2]>,
+}
+
+thread_local! {
+    static TESSELLATION_CACHE: RefCell<Vec<(TessellationCacheKey, Arc<VectorMeshData>)>> =
+        const { RefCell::new(Vec::new()) };
+    static MESH_MAP_CACHE:
+        RefCell<Vec<((usize, u32, u32, u32), Arc<VectorMeshData>, Arc<VectorMeshData>)>> =
+        const { RefCell::new(Vec::new()) };
+    static OVERLAY_MAP_CACHE:
+        RefCell<Vec<((usize, u32, u32, u32), Arc<[VectorMeshData]>, Arc<[VectorMeshData]>)>> =
+        const { RefCell::new(Vec::new()) };
+}
+
+fn path_cache_key(effect: Option<&PathEffect>) -> Option<PathCacheKey> {
+    match effect {
+        Some(PathEffect::Corner { radius }) => Some(PathCacheKey::Corner(radius.to_bits())),
+        Some(PathEffect::Dash { intervals, phase }) => Some(PathCacheKey::Dash(
+            intervals.iter().map(|value| value.to_bits()).collect(),
+            phase.to_bits(),
+        )),
+        None => None,
+    }
+}
+
+fn rect_cache_bits(rect: Rect) -> [u32; 4] {
+    [
+        rect.x.to_bits(),
+        rect.y.to_bits(),
+        rect.w.to_bits(),
+        rect.h.to_bits(),
+    ]
+}
+
+fn rect_pair_cache_bits(first: Rect, second: Rect) -> [u32; 8] {
+    let mut bits = [0; 8];
+    bits[..4].copy_from_slice(&rect_cache_bits(first));
+    bits[4..].copy_from_slice(&rect_cache_bits(second));
+    bits
+}
+
+fn stroke_cache_key(
+    kind: u8,
+    local_rect: Rect,
+    canvas_rect: Rect,
+    width: Px,
+    radius: f32,
+    cap: StrokeCap,
+    join: StrokeJoin,
+    miter: f32,
+    path: Option<&PathEffect>,
+) -> TessellationCacheKey {
+    TessellationCacheKey {
+        kind,
+        rect: rect_pair_cache_bits(local_rect, canvas_rect),
+        params: [
+            width.0.to_bits(),
+            cap as u32,
+            join as u32,
+            miter.to_bits(),
+            radius.to_bits(),
+            0,
+            0,
+            0,
+        ],
+        path: path_cache_key(path),
+        points: Vec::new(),
+    }
+}
+
+fn polyline_cache_key(
+    points: &[Vec2],
+    canvas_rect: Rect,
+    width: Px,
+    cap: StrokeCap,
+    join: StrokeJoin,
+    miter: f32,
+    path: Option<&PathEffect>,
+) -> TessellationCacheKey {
+    TessellationCacheKey {
+        kind: 2,
+        rect: rect_pair_cache_bits(Rect::default(), canvas_rect),
+        params: [
+            width.0.to_bits(),
+            cap as u32,
+            join as u32,
+            miter.to_bits(),
+            0,
+            0,
+            0,
+            0,
+        ],
+        path: path_cache_key(path),
+        points: points
+            .iter()
+            .map(|point| [point.x.to_bits(), point.y.to_bits()])
+            .collect(),
+    }
+}
+
+fn arc_cache_key(rect: Rect, canvas_rect: Rect, start: f32, sweep: f32) -> TessellationCacheKey {
+    TessellationCacheKey {
+        kind: 3,
+        rect: rect_pair_cache_bits(rect, canvas_rect),
+        params: [start.to_bits(), sweep.to_bits(), 0, 0, 0, 0, 0, 0],
+        path: None,
+        points: Vec::new(),
+    }
+}
+
+fn cached_tessellation(
+    key: TessellationCacheKey,
+    build: impl FnOnce() -> Option<VectorMeshData>,
+) -> Option<Arc<VectorMeshData>> {
+    TESSELLATION_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if let Some((_, mesh)) = cache.iter().find(|(cached, _)| cached == &key) {
+            return Some(mesh.clone());
+        }
+        let mesh = Arc::new(build()?);
+        if cache.len() >= MAX_TESSELLATION_CACHE_ENTRIES {
+            cache.remove(0);
+        }
+        cache.push((key, mesh.clone()));
+        Some(mesh)
+    })
+}
+
+fn map_mesh_cached(
+    mesh: &Arc<VectorMeshData>,
+    dx: f32,
+    dy: f32,
+    alpha: f32,
+) -> Arc<VectorMeshData> {
+    let alpha = alpha.clamp(0.0, 1.0);
+    if alpha == 1.0 && dx == 0.0 && dy == 0.0 {
+        return mesh.clone();
+    }
+    let key = (
+        Arc::as_ptr(mesh) as usize,
+        dx.to_bits(),
+        dy.to_bits(),
+        alpha.to_bits(),
+    );
+    MESH_MAP_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if let Some((_, _, mapped)) = cache.iter().find(|(cached, _, _)| *cached == key) {
+            return mapped.clone();
+        }
+        let mapped = Arc::new(map_mesh_data(mesh, dx, dy, alpha));
+        if cache.len() >= MAX_MESH_MAP_CACHE_ENTRIES {
+            cache.remove(0);
+        }
+        cache.push((key, mesh.clone(), mapped.clone()));
+        mapped
+    })
+}
+
+fn map_overlay_cached(
+    meshes: &Arc<[VectorMeshData]>,
+    dx: f32,
+    dy: f32,
+    alpha: f32,
+) -> Arc<[VectorMeshData]> {
+    let alpha = alpha.clamp(0.0, 1.0);
+    if alpha == 1.0 && dx == 0.0 && dy == 0.0 {
+        return meshes.clone();
+    }
+    let key = (
+        Arc::as_ptr(meshes) as *const () as usize,
+        dx.to_bits(),
+        dy.to_bits(),
+        alpha.to_bits(),
+    );
+    OVERLAY_MAP_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if let Some((_, _, mapped)) = cache.iter().find(|(cached, _, _)| *cached == key) {
+            return mapped.clone();
+        }
+        let mapped: Arc<[VectorMeshData]> = meshes
+            .iter()
+            .map(|mesh| map_mesh_data(mesh, dx, dy, alpha))
+            .collect::<Vec<_>>()
+            .into();
+        if cache.len() >= MAX_MESH_MAP_CACHE_ENTRIES {
+            cache.remove(0);
+        }
+        cache.push((key, meshes.clone(), mapped.clone()));
+        mapped
+    })
 }
 
 /// Fill-or-stroke style for canvas shapes, mirroring Compose's `DrawStyle`.
@@ -607,10 +815,7 @@ fn map_mesh_data(m: &VectorMeshData, dx: f32, dy: f32, alpha: f32) -> VectorMesh
 }
 
 fn mapped_mesh(m: &Arc<VectorMeshData>, dx: f32, dy: f32, alpha: f32) -> Arc<VectorMeshData> {
-    if alpha == 1.0 && dx == 0.0 && dy == 0.0 {
-        return m.clone();
-    }
-    Arc::new(map_mesh_data(m, dx, dy, alpha))
+    map_mesh_cached(m, dx, dy, alpha)
 }
 
 fn offset_brush(brush: Brush, origin: Vec2) -> Brush {
@@ -741,19 +946,21 @@ fn brush_to_paint(brush: &Brush, origin: Vec2, size: Vec2) -> PaintDesc {
     }
 }
 
-fn generated_vertex_color(brush: &Brush, alpha: f32) -> [f32; 4] {
-    match brush {
-        Brush::Solid(color) => {
-            let color = alpha_color(*color, alpha).to_linear();
-            [
-                color[0] * color[3],
-                color[1] * color[3],
-                color[2] * color[3],
-                color[3],
-            ]
-        }
-        _ => [0.0; 4],
+fn brush_to_mesh_paint(brush: &Brush, origin: Vec2, size: Vec2, alpha: f32) -> PaintDesc {
+    if let Brush::Solid(color) = brush {
+        let color = alpha_color(*color, alpha);
+        return PaintDesc::Linear {
+            start: Vec2::ZERO,
+            end: Vec2::ZERO,
+            start_color: color,
+            end_color: color,
+        };
     }
+    brush_to_paint(&alpha_brush(*brush, alpha), origin, size)
+}
+
+fn generated_vertex_color() -> [f32; 4] {
+    [1.0; 4]
 }
 
 fn mesh_from_buffers(
@@ -764,18 +971,15 @@ fn mesh_from_buffers(
         return None;
     }
     let vertices: Arc<[VectorVertex]> = buffers
-        .indices
+        .vertices
         .iter()
-        .map(|&i| {
-            let v = &buffers.vertices[i as usize];
-            VectorVertex {
-                pos: [v.x, v.y],
-                color: vertex_color,
-                uv: [0.0, 0.0],
-            }
+        .map(|vertex| VectorVertex {
+            pos: [vertex.x, vertex.y],
+            color: vertex_color,
+            uv: [0.0, 0.0],
         })
         .collect();
-    let indices: Arc<[u32]> = (0..vertices.len() as u32).collect();
+    let indices: Arc<[u32]> = buffers.indices.iter().map(|&index| index as u32).collect();
     Some(VectorMeshData { vertices, indices })
 }
 
@@ -787,8 +991,6 @@ fn tessellate_polyline(
     join: StrokeJoin,
     miter: f32,
     path_effect: Option<&PathEffect>,
-    brush: &Brush,
-    alpha: f32,
 ) -> Option<VectorMeshData> {
     use lyon_path::Path;
     use lyon_path::math::Point;
@@ -836,7 +1038,7 @@ fn tessellate_polyline(
         &mut simple_builder(&mut buffers),
     )
     .ok()?;
-    mesh_from_buffers(buffers, generated_vertex_color(brush, alpha))
+    mesh_from_buffers(buffers, generated_vertex_color())
 }
 
 fn apply_canvas_corner_effect(path: &lyon_path::Path, radius: f32) -> lyon_path::Path {
@@ -1094,8 +1296,6 @@ fn tessellate_rounded_rect_stroke(
     join: StrokeJoin,
     miter: f32,
     path_effect: Option<&PathEffect>,
-    brush: &Brush,
-    alpha: f32,
 ) -> Option<VectorMeshData> {
     let needs_mesh = !matches!(join, StrokeJoin::Miter) || miter != 4.0 || path_effect.is_some();
     if !needs_mesh {
@@ -1148,7 +1348,7 @@ fn tessellate_rounded_rect_stroke(
         &mut simple_builder(&mut buffers),
     )
     .ok()?;
-    mesh_from_buffers(buffers, generated_vertex_color(brush, alpha))
+    mesh_from_buffers(buffers, generated_vertex_color())
 }
 
 /// Stroked ellipse ring for styles `EllipseBorder` cannot express (same
@@ -1161,8 +1361,6 @@ fn tessellate_ellipse_stroke(
     join: StrokeJoin,
     miter: f32,
     path_effect: Option<&PathEffect>,
-    brush: &Brush,
-    alpha: f32,
 ) -> Option<VectorMeshData> {
     let needs_mesh = !matches!(join, StrokeJoin::Miter) || miter != 4.0 || path_effect.is_some();
     if !needs_mesh {
@@ -1209,7 +1407,7 @@ fn tessellate_ellipse_stroke(
         &mut simple_builder(&mut buffers),
     )
     .ok()?;
-    mesh_from_buffers(buffers, generated_vertex_color(brush, alpha))
+    mesh_from_buffers(buffers, generated_vertex_color())
 }
 
 fn tessellate_arc_wedge(
@@ -1217,8 +1415,6 @@ fn tessellate_arc_wedge(
     canvas_rect: Rect,
     start: f32,
     sweep: f32,
-    brush: &Brush,
-    alpha: f32,
 ) -> Option<VectorMeshData> {
     use lyon_path::math::Point;
     use lyon_tessellation::{
@@ -1248,13 +1444,13 @@ fn tessellate_arc_wedge(
         &mut simple_builder(&mut buffers),
     )
     .ok()?;
-    mesh_from_buffers(buffers, generated_vertex_color(brush, alpha))
+    mesh_from_buffers(buffers, generated_vertex_color())
 }
 
 pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) -> View {
     let painter = move |scene: &mut Scene, rect: Rect, alpha: f32| {
         let mut scope = DrawScope {
-            commands: Vec::new(),
+            commands: Vec::with_capacity(16),
             size: Size {
                 width: rect.w.max(0.0),
                 height: rect.h.max(0.0),
@@ -1299,23 +1495,34 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                             miter,
                             path_effect,
                         } => {
-                            if let Some(mesh) = tessellate_rounded_rect_stroke(
+                            let cache_key = stroke_cache_key(
+                                0,
                                 local_r,
-                                *radius,
                                 rect,
                                 *width,
+                                radius.0,
                                 *cap,
                                 *join,
                                 *miter,
                                 path_effect.as_ref(),
-                                &raw_fill,
-                                alpha,
-                            ) {
+                            );
+                            if let Some(mesh) = cached_tessellation(cache_key, || {
+                                tessellate_rounded_rect_stroke(
+                                    local_r,
+                                    *radius,
+                                    rect,
+                                    *width,
+                                    *cap,
+                                    *join,
+                                    *miter,
+                                    path_effect.as_ref(),
+                                )
+                            }) {
                                 scene.nodes.push(SceneNode::VectorMesh {
-                                    mesh: Arc::new(mesh),
+                                    mesh,
                                     transform: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
-                                    paint: brush_to_paint(
-                                        &fill,
+                                    paint: brush_to_mesh_paint(
+                                        &raw_fill,
                                         Vec2 {
                                             x: rect.x + local_r.x,
                                             y: rect.y + local_r.y,
@@ -1324,6 +1531,7 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                                             x: local_r.w,
                                             y: local_r.h,
                                         },
+                                        alpha,
                                     ),
                                     clip: None,
                                     blend: BlendMode::Alpha,
@@ -1369,22 +1577,33 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                             miter,
                             path_effect,
                         } => {
-                            if let Some(mesh) = tessellate_ellipse_stroke(
+                            let cache_key = stroke_cache_key(
+                                1,
                                 local_r,
                                 rect,
                                 *width,
+                                0.0,
                                 *cap,
                                 *join,
                                 *miter,
                                 path_effect.as_ref(),
-                                &raw_fill,
-                                alpha,
-                            ) {
+                            );
+                            if let Some(mesh) = cached_tessellation(cache_key, || {
+                                tessellate_ellipse_stroke(
+                                    local_r,
+                                    rect,
+                                    *width,
+                                    *cap,
+                                    *join,
+                                    *miter,
+                                    path_effect.as_ref(),
+                                )
+                            }) {
                                 scene.nodes.push(SceneNode::VectorMesh {
-                                    mesh: Arc::new(mesh),
+                                    mesh,
                                     transform: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
-                                    paint: brush_to_paint(
-                                        &fill,
+                                    paint: brush_to_mesh_paint(
+                                        &raw_fill,
                                         Vec2 {
                                             x: rect.x + local_r.x,
                                             y: rect.y + local_r.y,
@@ -1393,6 +1612,7 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                                             x: local_r.w,
                                             y: local_r.h,
                                         },
+                                        alpha,
                                     ),
                                     clip: None,
                                     blend: BlendMode::Alpha,
@@ -1420,8 +1640,7 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                         continue;
                     }
                     let raw_brush = *brush;
-                    let fill = alpha_brush(raw_brush, alpha);
-                    let mesh = tessellate_polyline(
+                    let cache_key = polyline_cache_key(
                         points,
                         rect,
                         *width,
@@ -1429,20 +1648,30 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                         *join,
                         *miter,
                         path_effect.as_ref(),
-                        &raw_brush,
-                        alpha,
                     );
+                    let mesh = cached_tessellation(cache_key, || {
+                        tessellate_polyline(
+                            points,
+                            rect,
+                            *width,
+                            *cap,
+                            *join,
+                            *miter,
+                            path_effect.as_ref(),
+                        )
+                    });
                     let Some(mesh) = mesh else { continue };
                     scene.nodes.push(SceneNode::VectorMesh {
-                        mesh: Arc::new(mesh),
+                        mesh,
                         transform: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
-                        paint: brush_to_paint(
-                            &fill,
+                        paint: brush_to_mesh_paint(
+                            &raw_brush,
                             Vec2 {
                                 x: rect.x,
                                 y: rect.y,
                             },
                             brush_size,
+                            alpha,
                         ),
                         clip: None,
                         blend: BlendMode::Alpha,
@@ -1461,20 +1690,16 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                     let raw_brush = *brush;
                     let fill = alpha_brush(raw_brush, alpha);
                     if *use_center {
-                        let mesh = tessellate_arc_wedge(
-                            local_r,
-                            rect,
-                            *start_angle,
-                            *sweep_angle,
-                            &raw_brush,
-                            alpha,
-                        );
+                        let cache_key = arc_cache_key(local_r, rect, *start_angle, *sweep_angle);
+                        let mesh = cached_tessellation(cache_key, || {
+                            tessellate_arc_wedge(local_r, rect, *start_angle, *sweep_angle)
+                        });
                         let Some(mesh) = mesh else { continue };
                         scene.nodes.push(SceneNode::VectorMesh {
-                            mesh: Arc::new(mesh),
+                            mesh,
                             transform: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
-                            paint: brush_to_paint(
-                                &fill,
+                            paint: brush_to_mesh_paint(
+                                &raw_brush,
                                 Vec2 {
                                     x: rect.x + local_r.x,
                                     y: rect.y + local_r.y,
@@ -1483,6 +1708,7 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                                     x: local_r.w,
                                     y: local_r.h,
                                 },
+                                alpha,
                             ),
                             clip: None,
                             blend: BlendMode::Alpha,
@@ -1550,16 +1776,7 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                     });
                 }
                 DrawCommand::VectorOverlay { meshes } => {
-                    let mapped: Arc<[VectorMeshData]> =
-                        if alpha == 1.0 && rect.x == 0.0 && rect.y == 0.0 {
-                            meshes.clone()
-                        } else {
-                            meshes
-                                .iter()
-                                .map(|m| map_mesh_data(m, rect.x, rect.y, alpha))
-                                .collect::<Vec<_>>()
-                                .into()
-                        };
+                    let mapped = map_overlay_cached(meshes, rect.x, rect.y, alpha);
                     scene
                         .nodes
                         .push(SceneNode::VectorOverlay { meshes: mapped });
