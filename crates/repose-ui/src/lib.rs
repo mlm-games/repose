@@ -476,6 +476,8 @@ pub fn Image(modifier: Modifier, handle: ImageHandle) -> View {
             handle,
             tint: Color::WHITE,
             fit: ImageFit::Contain,
+            filter: ImageFilter::Linear,
+            source_rect: None,
         },
     )
     .modifier(modifier)
@@ -499,6 +501,8 @@ pub fn Embedded(modifier: Modifier, payload: PaintCallbackPayload) -> View {
 pub trait ImageExt {
     fn image_tint(self, c: Color) -> View;
     fn image_fit(self, fit: ImageFit) -> View;
+    fn image_filter(self, filter: ImageFilter) -> View;
+    fn image_source_rect(self, source_rect: ImageSourceRect) -> View;
 }
 impl ImageExt for View {
     fn image_tint(mut self, c: Color) -> View {
@@ -510,6 +514,18 @@ impl ImageExt for View {
     fn image_fit(mut self, fit: ImageFit) -> View {
         if let ViewKind::Image { fit: f, .. } = &mut self.kind {
             *f = fit;
+        }
+        self
+    }
+    fn image_filter(mut self, filter: ImageFilter) -> View {
+        if let ViewKind::Image { filter: f, .. } = &mut self.kind {
+            *f = filter;
+        }
+        self
+    }
+    fn image_source_rect(mut self, source: ImageSourceRect) -> View {
+        if let ViewKind::Image { source_rect, .. } = &mut self.kind {
+            *source_rect = Some(source);
         }
         self
     }

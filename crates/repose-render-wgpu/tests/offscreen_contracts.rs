@@ -5,7 +5,9 @@
 //! zero sizes clamp to 1, and output is premultiplied sRGB.
 //! Skips (does not fail) without a WGPU adapter.
 
-use repose_core::{Brush, Color, Px, Rect, Scene, SceneNode};
+use repose_core::{
+    Brush, Color, ImageFilter, ImageFit, ImageSourceRect, Px, Rect, Scene, SceneNode,
+};
 use repose_render_wgpu::offscreen::OffscreenRenderer;
 
 fn try_offscreen(w: u32, h: u32) -> Option<OffscreenRenderer> {
@@ -486,4 +488,37 @@ fn radial_ellipse_fill_center_matches_start_color() {
         "center should be red-dominant, got {:?}",
         &px[i..i + 4]
     );
+}
+
+#[test]
+fn image_source_rect_and_filter_select_exact_atlas_frame() {
+    let Some(mut off) = try_offscreen(8, 8) else {
+        return;
+    };
+    let handle =
+        off.renderer_mut()
+            .register_image_rgba8(2, 1, &[255, 0, 0, 255, 0, 255, 0, 255], true);
+    let mut render = |source_rect, filter| {
+        let scene = Scene {
+            clear_color: Color::from_rgba(0, 0, 0, 0),
+            nodes: vec![SceneNode::Image {
+                rect: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 8.0,
+                    h: 8.0,
+                },
+                handle,
+                tint: Color::WHITE,
+                fit: ImageFit::FillBounds,
+                filter,
+                source_rect: Some(source_rect),
+            }],
+        };
+        off.render_rgba(&scene, None).expect("render")
+    };
+    let left = render(ImageSourceRect::new(0, 0, 1, 1), ImageFilter::Linear);
+    assert!(left[0] > 200 && left[1] < 20, "got {:?}", &left[..4]);
+    let right = render(ImageSourceRect::new(1, 0, 1, 1), ImageFilter::Nearest);
+    assert!(right[1] > 200 && right[0] < 20, "got {:?}", &right[..4]);
 }

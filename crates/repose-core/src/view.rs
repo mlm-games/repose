@@ -92,6 +92,36 @@ impl BoxWithConstraintsScope {
 pub type ViewId = u64;
 
 pub type ImageHandle = u64;
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum ImageFilter {
+    #[default]
+    Linear,
+    Nearest,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct ImageSourceRect {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+impl ImageSourceRect {
+    pub const fn new(x: u32, y: u32, width: u32, height: u32) -> Self {
+        Self {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.width == 0 || self.height == 0
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ImageFit {
@@ -150,8 +180,10 @@ pub enum ViewKind {
 
     Image {
         handle: ImageHandle,
-        tint: Color, // multiplicative (WHITE = no tint)
+        tint: Color,
         fit: ImageFit,
+        filter: ImageFilter,
+        source_rect: Option<ImageSourceRect>,
     },
     /// A layout whose children are produced by calling `content` with the
     /// current `SubcomposeScope`. The closure is invoked during reconciliation
@@ -176,7 +208,20 @@ impl std::fmt::Debug for ViewKind {
             Self::ZStack => f.write_str("ZStack"),
             Self::OverlayHost => f.write_str("OverlayHost"),
 
-            Self::Image { .. } => f.write_str("Image"),
+            Self::Image {
+                handle,
+                tint,
+                fit,
+                filter,
+                source_rect,
+            } => f
+                .debug_struct("Image")
+                .field("handle", handle)
+                .field("tint", tint)
+                .field("fit", fit)
+                .field("filter", filter)
+                .field("source_rect", source_rect)
+                .finish(),
             Self::SubcomposeLayout { .. } => f.write_str("SubcomposeLayout"),
             Self::Text { text, .. } => write!(f, "Text({:?})", text),
         }
@@ -331,6 +376,8 @@ pub enum SceneNode {
         handle: ImageHandle,
         tint: Color,
         fit: ImageFit,
+        filter: ImageFilter,
+        source_rect: Option<ImageSourceRect>,
     },
     /// Tinted A8 coverage mask: samples `handle` (registered with
     /// `register_coverage_a8`) as coverage and composites `color` with

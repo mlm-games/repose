@@ -25,6 +25,13 @@ pub struct SliderConfig {
     pub disabled_inactive_track_color: Color,
     pub disabled_active_tick_color: Color,
     pub disabled_inactive_tick_color: Color,
+    pub track_height: Dp,
+    pub thumb_width: Dp,
+    pub thumb_height: Dp,
+    pub thumb_track_gap: Dp,
+    pub active_track_visuals: ControlVisualSet,
+    pub inactive_track_visuals: ControlVisualSet,
+    pub thumb_visuals: ControlVisualSet,
     pub state_colors: StateColors,
     pub on_value_change_finished: Option<Rc<dyn Fn()>>,
     pub interaction_source: Option<MutableInteractionSource>,
@@ -57,6 +64,13 @@ impl std::fmt::Debug for SliderConfig {
                 "disabled_inactive_tick_color",
                 &self.disabled_inactive_tick_color,
             )
+            .field("track_height", &self.track_height)
+            .field("thumb_width", &self.thumb_width)
+            .field("thumb_height", &self.thumb_height)
+            .field("thumb_track_gap", &self.thumb_track_gap)
+            .field("active_track_visuals", &self.active_track_visuals)
+            .field("inactive_track_visuals", &self.inactive_track_visuals)
+            .field("thumb_visuals", &self.thumb_visuals)
             .field("state_colors", &self.state_colors)
             .field(
                 "on_value_change_finished",
@@ -85,6 +99,13 @@ impl Default for SliderConfig {
             disabled_inactive_track_color: SliderDefaults::disabled_inactive_track_color(),
             disabled_active_tick_color: SliderDefaults::disabled_active_tick_color(),
             disabled_inactive_tick_color: SliderDefaults::disabled_inactive_tick_color(),
+            track_height: SliderDefaults::TRACK_HEIGHT,
+            thumb_width: SliderDefaults::THUMB_WIDTH,
+            thumb_height: SliderDefaults::THUMB_HEIGHT,
+            thumb_track_gap: ProgressIndicatorDefaults::SLIDER_THUMB_TRACK_GAP,
+            active_track_visuals: ControlVisualSet::default(),
+            inactive_track_visuals: ControlVisualSet::default(),
+            thumb_visuals: ControlVisualSet::default(),
             state_colors: SliderDefaults::state_colors_default(),
             on_value_change_finished: None,
             interaction_source: None,
@@ -109,6 +130,25 @@ fn value_from_x(x: f32, rect: Rect, min: f32, max: f32, step: Option<f32>) -> f3
     let t = ((x - rect.x) / w).clamp(0.0, 1.0);
     let v = min + t * (max - min);
     snap_step(v, min, max, step)
+}
+
+fn paint_slider_part(
+    scene: &mut Scene,
+    rect: Rect,
+    visuals: &ControlVisualSet,
+    state: ControlVisualState,
+    fallback: Color,
+    radius: [Px; 4],
+) {
+    if let Some(visual) = visuals.resolve(state) {
+        visual.paint(scene, rect, state);
+    } else {
+        scene.nodes.push(SceneNode::Rect {
+            rect,
+            brush: Brush::Solid(fallback),
+            radius,
+        });
+    }
 }
 
 pub fn Slider(
@@ -175,6 +215,14 @@ pub fn Slider(
         .clone()
         .map(Rc::new)
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
+    let visual_source = sl_source.source();
+    let track_height = config.track_height;
+    let thumb_width = config.thumb_width;
+    let thumb_height = config.thumb_height;
+    let thumb_track_gap = config.thumb_track_gap;
+    let active_track_visuals = config.active_track_visuals.clone();
+    let inactive_track_visuals = config.inactive_track_visuals.clone();
+    let thumb_visuals = config.thumb_visuals.clone();
     let mut host = Modifier::new()
         .min_width(Dp(200.0))
         .height(Dp(44.0))
@@ -193,12 +241,21 @@ pub fn Slider(
                     ((c.3 as f32) * alpha).clamp(0.0, 255.0) as u8,
                 )
             };
-            let track_h = SliderDefaults::TRACK_HEIGHT.to_px().0;
-            let thumb_w = SliderDefaults::THUMB_WIDTH.to_px().0;
-            let thumb_h = SliderDefaults::THUMB_HEIGHT.to_px().0;
+            let da = *drag_active_p.get();
+            let visual_state = ControlVisualState {
+                alpha,
+                enabled: is_enabled,
+                hovered: visual_source.collect_is_hovered(),
+                pressed: visual_source.collect_is_pressed(),
+                dragged: da,
+                focused: visual_source.collect_is_focused(),
+            };
+            let track_h = track_height.to_px().0.max(0.0);
+            let thumb_w = thumb_width.to_px().0.max(0.5);
+            let thumb_h = thumb_height.to_px().0.max(0.0);
             let dot_r = Dp(2.0).to_px().0;
             let corner = track_h * 0.5;
-            let gap = thumb_w * 0.5 + ProgressIndicatorDefaults::SLIDER_THUMB_TRACK_GAP.to_px().0;
+            let gap = thumb_w * 0.5 + thumb_track_gap.to_px().0.max(0.0);
             let pad = thumb_w * 0.5;
             let track_x = rect.x + pad;
             let track_w = (rect.w - thumb_w).max(0.0);
@@ -226,16 +283,19 @@ pub fn Slider(
             let inactive_x = track_x.max(kx + gap);
             let inactive_w = (track_x + track_w - inactive_x).max(0.0);
             if inactive_w > 0.0 {
-                scene.nodes.push(SceneNode::Rect {
-                    rect: Rect {
+                paint_slider_part(
+                    scene,
+                    Rect {
                         x: inactive_x,
                         y: cy - track_h * 0.5,
                         w: inactive_w,
                         h: track_h,
                     },
-                    brush: Brush::Solid(mul_c(inact_trk)),
-                    radius: [Px::ZERO, Px(corner), Px(corner), Px::ZERO],
-                });
+                    &inactive_track_visuals,
+                    visual_state,
+                    mul_c(inact_trk),
+                    [Px::ZERO, Px(corner), Px(corner), Px::ZERO],
+                );
                 let sx = track_x + track_w - corner;
                 scene.nodes.push(SceneNode::Ellipse {
                     rect: Rect {
@@ -249,16 +309,19 @@ pub fn Slider(
             }
             let fill_w = (kx - gap - track_x).max(0.0);
             if fill_w > 0.0 {
-                scene.nodes.push(SceneNode::Rect {
-                    rect: Rect {
+                paint_slider_part(
+                    scene,
+                    Rect {
                         x: track_x,
                         y: cy - track_h * 0.5,
                         w: fill_w,
                         h: track_h,
                     },
-                    brush: Brush::Solid(mul_c(act_trk)),
-                    radius: [Px(corner), Px::ZERO, Px::ZERO, Px(corner)],
-                });
+                    &active_track_visuals,
+                    visual_state,
+                    mul_c(act_trk),
+                    [Px(corner), Px::ZERO, Px::ZERO, Px(corner)],
+                );
             }
             let tick_start = track_x + corner;
             let tick_end = track_x + track_w - corner;
@@ -281,18 +344,20 @@ pub fn Slider(
                     brush: Brush::Solid(mul_c(if on_active { act_tick } else { inact_tick })),
                 });
             }
-            let da = *drag_active_p.get();
             let tw = if da { thumb_w * 0.5 } else { thumb_w };
-            scene.nodes.push(SceneNode::Rect {
-                rect: Rect {
+            paint_slider_part(
+                scene,
+                Rect {
                     x: kx - tw * 0.5,
                     y: cy - thumb_h * 0.5,
                     w: tw,
                     h: thumb_h,
                 },
-                brush: Brush::Solid(mul_c(thumb_col)),
-                radius: [Px(tw * 0.5); 4],
-            });
+                &thumb_visuals,
+                visual_state,
+                mul_c(thumb_col),
+                [Px(tw * 0.5); 4],
+            );
         })
         .on_pointer_down({
             let oc = oc.clone();
@@ -476,6 +541,14 @@ pub fn RangeSlider(
         .clone()
         .map(Rc::new)
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
+    let visual_source = sl_source.source();
+    let track_height = config.track_height;
+    let thumb_width = config.thumb_width;
+    let thumb_height = config.thumb_height;
+    let thumb_track_gap = config.thumb_track_gap;
+    let active_track_visuals = config.active_track_visuals.clone();
+    let inactive_track_visuals = config.inactive_track_visuals.clone();
+    let thumb_visuals = config.thumb_visuals.clone();
     let mut host = Modifier::new()
         .min_width(Dp(200.0))
         .height(Dp(44.0))
@@ -494,12 +567,21 @@ pub fn RangeSlider(
                     ((c.3 as f32) * alpha).clamp(0.0, 255.0) as u8,
                 )
             };
-            let track_h = SliderDefaults::TRACK_HEIGHT.to_px().0;
-            let thumb_w = SliderDefaults::THUMB_WIDTH.to_px().0;
-            let thumb_h = SliderDefaults::THUMB_HEIGHT.to_px().0;
+            let da = *drag_active_p.get();
+            let visual_state = ControlVisualState {
+                alpha,
+                enabled: is_enabled,
+                hovered: visual_source.collect_is_hovered(),
+                pressed: visual_source.collect_is_pressed(),
+                dragged: da,
+                focused: visual_source.collect_is_focused(),
+            };
+            let track_h = track_height.to_px().0.max(0.0);
+            let thumb_w = thumb_width.to_px().0.max(0.5);
+            let thumb_h = thumb_height.to_px().0.max(0.0);
             let dot_r = Dp(2.0).to_px().0;
             let corner = track_h * 0.5;
-            let gap = thumb_w * 0.5 + ProgressIndicatorDefaults::SLIDER_THUMB_TRACK_GAP.to_px().0;
+            let gap = thumb_w * 0.5 + thumb_track_gap.to_px().0.max(0.0);
             let pad = thumb_w * 0.5;
             let track_x = rect.x + pad;
             let track_w = (rect.w - thumb_w).max(0.0);
@@ -532,16 +614,19 @@ pub fn RangeSlider(
 
             let linactive_w = (active_l - gap - track_x).max(0.0);
             if linactive_w > 0.0 {
-                scene.nodes.push(SceneNode::Rect {
-                    rect: Rect {
+                paint_slider_part(
+                    scene,
+                    Rect {
                         x: track_x,
                         y: cy - track_h * 0.5,
                         w: linactive_w,
                         h: track_h,
                     },
-                    brush: Brush::Solid(mul_c(inact_trk)),
-                    radius: [Px(corner), Px::ZERO, Px::ZERO, Px(corner)],
-                });
+                    &inactive_track_visuals,
+                    visual_state,
+                    mul_c(inact_trk),
+                    [Px(corner), Px::ZERO, Px::ZERO, Px(corner)],
+                );
                 let sx0 = track_x + corner;
                 scene.nodes.push(SceneNode::Ellipse {
                     rect: Rect {
@@ -556,16 +641,19 @@ pub fn RangeSlider(
             let rinactive_x = (active_r + gap).min(track_x + track_w);
             let rinactive_w = (track_x + track_w - rinactive_x).max(0.0);
             if rinactive_w > 0.0 {
-                scene.nodes.push(SceneNode::Rect {
-                    rect: Rect {
+                paint_slider_part(
+                    scene,
+                    Rect {
                         x: rinactive_x,
                         y: cy - track_h * 0.5,
                         w: rinactive_w,
                         h: track_h,
                     },
-                    brush: Brush::Solid(mul_c(inact_trk)),
-                    radius: [Px::ZERO, Px(corner), Px(corner), Px::ZERO],
-                });
+                    &inactive_track_visuals,
+                    visual_state,
+                    mul_c(inact_trk),
+                    [Px::ZERO, Px(corner), Px(corner), Px::ZERO],
+                );
                 let sx = track_x + track_w - corner;
                 scene.nodes.push(SceneNode::Ellipse {
                     rect: Rect {
@@ -579,16 +667,19 @@ pub fn RangeSlider(
             }
             let active_w = (active_r - gap - (active_l + gap)).max(0.0);
             if active_w > 0.0 {
-                scene.nodes.push(SceneNode::Rect {
-                    rect: Rect {
+                paint_slider_part(
+                    scene,
+                    Rect {
                         x: active_l + gap,
                         y: cy - track_h * 0.5,
                         w: active_w,
                         h: track_h,
                     },
-                    brush: Brush::Solid(mul_c(act_trk)),
-                    radius: [Px::ZERO; 4],
-                });
+                    &active_track_visuals,
+                    visual_state,
+                    mul_c(act_trk),
+                    [Px::ZERO; 4],
+                );
             }
             let tick_start = track_x + corner;
             let tick_end = track_x + track_w - corner;
@@ -614,22 +705,29 @@ pub fn RangeSlider(
                     brush: Brush::Solid(mul_c(if on_active { act_tick } else { inact_tick })),
                 });
             }
-            let da = *drag_active_p.get();
             let at = *active_thumb_p.get();
             let thumbs = [k0, k1];
             for (idx, &kx) in thumbs.iter().enumerate() {
                 let is_active = da && (if idx == 0 { !at } else { at });
                 let tw = if is_active { thumb_w * 0.5 } else { thumb_w };
-                scene.nodes.push(SceneNode::Rect {
-                    rect: Rect {
+                let thumb_state = ControlVisualState {
+                    pressed: is_active && visual_state.pressed,
+                    dragged: is_active,
+                    ..visual_state
+                };
+                paint_slider_part(
+                    scene,
+                    Rect {
                         x: kx - tw * 0.5,
                         y: cy - thumb_h * 0.5,
                         w: tw,
                         h: thumb_h,
                     },
-                    brush: Brush::Solid(mul_c(thumb_col)),
-                    radius: [Px(tw * 0.5); 4],
-                });
+                    &thumb_visuals,
+                    thumb_state,
+                    mul_c(thumb_col),
+                    [Px(tw * 0.5); 4],
+                );
             }
         })
         .on_pointer_down({

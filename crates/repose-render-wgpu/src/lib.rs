@@ -8,7 +8,10 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{Arc, Weak};
 
 use repose_core::color::{ChromaSiting, ColorInfo, PixelFormat};
-use repose_core::{Brush, FontStyle, Scene, SceneNode, StrokeCap, Transform, Vec2};
+use repose_core::{
+    Brush, FontStyle, ImageFilter, ImageFit, ImageSourceRect, Scene, SceneNode, StrokeCap,
+    Transform, Vec2,
+};
 #[cfg(feature = "winit-surface")]
 use repose_core::{GlyphRasterConfig, PresentModePref, RenderBackend, request_frame};
 #[cfg(feature = "winit-surface")]
@@ -221,6 +224,7 @@ pub struct WgpuSceneRenderer {
     image_bind_layout_rgba: wgpu::BindGroupLayout,
     image_bind_layout_nv12: wgpu::BindGroupLayout,
     image_sampler: wgpu::Sampler,
+    image_sampler_nearest: wgpu::Sampler,
     layer_sampler: wgpu::Sampler,
     layer_sampler_linear: wgpu::Sampler,
 
@@ -1805,6 +1809,7 @@ enum Cmd {
         off: u64,
         cnt: u32,
         handle: u64,
+        filter: ImageFilter,
     },
     /// Composite a tinted A8 coverage tile (`SceneNode::Coverage`). The
     /// instance lives in `self.glyph_color.ring` (a `GlyphInstance`); the
@@ -1932,10 +1937,24 @@ struct CoverageTex {
     bytes: u64,
 }
 
+struct ImageBinds {
+    linear: wgpu::BindGroup,
+    nearest: wgpu::BindGroup,
+}
+
+impl ImageBinds {
+    fn get(&self, filter: ImageFilter) -> &wgpu::BindGroup {
+        match filter {
+            ImageFilter::Linear => &self.linear,
+            ImageFilter::Nearest => &self.nearest,
+        }
+    }
+}
+
 enum ImageTex {
     Rgba {
         tex: wgpu::Texture,
-        bind: wgpu::BindGroup,
+        binds: ImageBinds,
         w: u32,
         h: u32,
         format: wgpu::TextureFormat,
@@ -1944,7 +1963,7 @@ enum ImageTex {
     },
     /// For a user-provided texture view.
     User {
-        bind: wgpu::BindGroup,
+        binds: ImageBinds,
         w: u32,
         h: u32,
         last_used_frame: u64,
@@ -1983,6 +2002,151 @@ struct RetainedImage {
     format: wgpu::TextureFormat,
     rgba: Vec<u8>,
     last_used_frame: u64,
+}
+
+struct ResolvedImageSource {
+    width: f32,
+    height: f32,
+    uv_min: [f32; 2],
+    uv_max: [f32; 2],
+}
+
+fn resolve_image_source(
+    source_rect: Option<ImageSourceRect>,
+    image_width: u32,
+    image_height: u32,
+) -> Option<ResolvedImageSource> {
+    if image_width == 0 || image_height == 0 {
+        return None;
+    }
+    let Some(source) = source_rect else {
+        return Some(ResolvedImageSource {
+            width: image_width as f32,
+            height: image_height as f32,
+            uv_min: [0.0, 0.0],
+            uv_max: [1.0, 1.0],
+        });
+    };
+    if source.is_empty() {
+        return None;
+    }
+    let right = source.x.checked_add(source.width)?;
+    let bottom = source.y.checked_add(source.height)?;
+    if right > image_width || bottom > image_height {
+        return None;
+    }
+    Some(ResolvedImageSource {
+        width: source.width as f32,
+        height: source.height as f32,
+        uv_min: [
+            source.x as f32 / image_width as f32,
+            source.y as f32 / image_height as f32,
+        ],
+        uv_max: [
+            right as f32 / image_width as f32,
+            bottom as f32 / image_height as f32,
+        ],
+    })
+}
+
+fn image_fit_geometry(
+    rect: repose_core::Rect,
+    fit: ImageFit,
+    source: &ResolvedImageSource,
+) -> Option<(repose_core::Rect, [f32; 4])> {
+    let src_w = source.width;
+    let src_h = source.height;
+    let dst_w = rect.w.max(0.0);
+    let dst_h = rect.h.max(0.0);
+    if src_w <= 0.0 || src_h <= 0.0 || dst_w <= 0.0 || dst_h <= 0.0 {
+        return None;
+    }
+    let (draw_rect, local_uv) = match fit {
+        ImageFit::Contain => {
+            let scale = (dst_w / src_w).min(dst_h / src_h);
+            let w = src_w * scale;
+            let h = src_h * scale;
+            (
+                repose_core::Rect {
+                    x: rect.x + (dst_w - w) * 0.5,
+                    y: rect.y + (dst_h - h) * 0.5,
+                    w,
+                    h,
+                },
+                [0.0, 0.0, 1.0, 1.0],
+            )
+        }
+        ImageFit::Cover => {
+            let scale = (dst_w / src_w).max(dst_h / src_h);
+            let content_w = src_w * scale;
+            let content_h = src_h * scale;
+            let overflow_x = (content_w - dst_w) * 0.5;
+            let overflow_y = (content_h - dst_h) * 0.5;
+            let u0 = (overflow_x / content_w).clamp(0.0, 1.0);
+            let v0 = (overflow_y / content_h).clamp(0.0, 1.0);
+            let u1 = ((overflow_x + dst_w) / content_w).clamp(0.0, 1.0);
+            let v1 = ((overflow_y + dst_h) / content_h).clamp(0.0, 1.0);
+            (rect, [u0, v0, u1, v1])
+        }
+        ImageFit::FitWidth => {
+            let scale = dst_w / src_w;
+            (
+                repose_core::Rect {
+                    x: rect.x,
+                    y: rect.y + (dst_h - src_h * scale) * 0.5,
+                    w: dst_w,
+                    h: src_h * scale,
+                },
+                [0.0, 0.0, 1.0, 1.0],
+            )
+        }
+        ImageFit::FitHeight => {
+            let scale = dst_h / src_h;
+            (
+                repose_core::Rect {
+                    x: rect.x + (dst_w - src_w * scale) * 0.5,
+                    y: rect.y,
+                    w: src_w * scale,
+                    h: dst_h,
+                },
+                [0.0, 0.0, 1.0, 1.0],
+            )
+        }
+        ImageFit::FillBounds => (rect, [0.0, 0.0, 1.0, 1.0]),
+        ImageFit::Inside => {
+            let scale = (dst_w / src_w).min(dst_h / src_h).min(1.0);
+            let w = src_w * scale;
+            let h = src_h * scale;
+            (
+                repose_core::Rect {
+                    x: rect.x + (dst_w - w) * 0.5,
+                    y: rect.y + (dst_h - h) * 0.5,
+                    w,
+                    h,
+                },
+                [0.0, 0.0, 1.0, 1.0],
+            )
+        }
+        ImageFit::None => (
+            repose_core::Rect {
+                x: rect.x,
+                y: rect.y,
+                w: src_w.min(dst_w),
+                h: src_h.min(dst_h),
+            },
+            [0.0, 0.0, (dst_w / src_w).min(1.0), (dst_h / src_h).min(1.0)],
+        ),
+        _ => return None,
+    };
+    let uv_min = source.uv_min;
+    let uv_max = source.uv_max;
+    let uv = [
+        uv_min[0] + (uv_max[0] - uv_min[0]) * local_uv[0],
+        uv_max[1] - (uv_max[1] - uv_min[1]) * local_uv[1],
+        uv_min[0] + (uv_max[0] - uv_min[0]) * local_uv[2],
+        uv_max[1] - (uv_max[1] - uv_min[1]) * local_uv[3],
+    ];
+    Some((draw_rect, uv))
 }
 
 struct AtlasA8 {
@@ -2552,6 +2716,15 @@ impl WgpuSceneRenderer {
             mipmap_filter: wgpu::MipmapFilterMode::Linear,
             ..Default::default()
         });
+        let image_sampler_nearest = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("image nearest sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+            ..Default::default()
+        });
 
         // linear filtering only blurs them; nearest keeps the blit crisp.
         let layer_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -2941,6 +3114,7 @@ impl WgpuSceneRenderer {
             image_bind_layout_rgba,
             image_bind_layout_nv12,
             image_sampler,
+            image_sampler_nearest,
             layer_sampler,
             layer_sampler_linear,
 
@@ -3387,7 +3561,7 @@ impl WgpuSceneRenderer {
         if needs_recreate {
             self.remove_image(handle);
 
-            let (tex, bind) = self.create_rgba_tex(w, h, format);
+            let (tex, binds) = self.create_rgba_tex(w, h, format);
             let bytes = checked_image_bytes(w, h, 4)?;
             self.image_bytes_total = self.image_bytes_total.saturating_add(bytes);
 
@@ -3395,7 +3569,7 @@ impl WgpuSceneRenderer {
                 handle,
                 ImageTex::Rgba {
                     tex,
-                    bind,
+                    binds,
                     w,
                     h,
                     format,
@@ -3456,12 +3630,49 @@ impl WgpuSceneRenderer {
 
     /// Create (but do not populate) the GPU texture, view and bind group for an
     /// RGBA image. Pixels are written separately via `write_texture`.
+    fn create_image_binds(
+        &self,
+        view: &wgpu::TextureView,
+        label: &str,
+        sampler: Option<&wgpu::Sampler>,
+    ) -> ImageBinds {
+        let make = |name: &str, sampler: &wgpu::Sampler| {
+            self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some(name),
+                layout: &self.image_bind_layout_rgba,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(sampler),
+                    },
+                ],
+            })
+        };
+        match sampler {
+            Some(sampler) => {
+                let bind = make(label, sampler);
+                ImageBinds {
+                    linear: make(label, sampler),
+                    nearest: bind,
+                }
+            }
+            None => ImageBinds {
+                linear: make(label, &self.image_sampler),
+                nearest: make(label, &self.image_sampler_nearest),
+            },
+        }
+    }
+
     fn create_rgba_tex(
         &self,
         w: u32,
         h: u32,
         format: wgpu::TextureFormat,
-    ) -> (wgpu::Texture, wgpu::BindGroup) {
+    ) -> (wgpu::Texture, ImageBinds) {
         let tex = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("user image rgba"),
             size: wgpu::Extent3d {
@@ -3477,23 +3688,8 @@ impl WgpuSceneRenderer {
             view_formats: &[],
         });
         let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
-
-        let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("image bind rgba"),
-            layout: &self.image_bind_layout_rgba,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&self.image_sampler),
-                },
-            ],
-        });
-
-        (tex, bind)
+        let binds = self.create_image_binds(&view, "image bind rgba", None);
+        (tex, binds)
     }
 
     /// Register an externally-created `wgpu::TextureView` as an image (zero-copy).
@@ -3553,24 +3749,11 @@ impl WgpuSceneRenderer {
         }
         let handle = self.next_image_handle;
         self.next_image_handle += 1;
-        let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("user native image"),
-            layout: &self.image_bind_layout_rgba,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&self.image_sampler),
-                },
-            ],
-        });
+        let binds = self.create_image_binds(view, "user native image", None);
         self.images.insert(
             handle,
             ImageTex::User {
-                bind,
+                binds,
                 w: width,
                 h: height,
                 last_used_frame: self.frame_index,
@@ -3599,24 +3782,11 @@ impl WgpuSceneRenderer {
         let handle = self.next_image_handle;
         self.next_image_handle += 1;
         let sampler = self.device.create_sampler(&sampler_desc);
-        let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("user native image sampleropts"),
-            layout: &self.image_bind_layout_rgba,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
-                },
-            ],
-        });
+        let binds = self.create_image_binds(view, "user native image sampleropts", Some(&sampler));
         self.images.insert(
             handle,
             ImageTex::User {
-                bind,
+                binds,
                 w: width,
                 h: height,
                 last_used_frame: self.frame_index,
@@ -3643,23 +3813,10 @@ impl WgpuSceneRenderer {
             log::warn!("update_native_texture: {error:#}");
             return;
         }
-        let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("user native image update"),
-            layout: &self.image_bind_layout_rgba,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&self.image_sampler),
-                },
-            ],
-        });
+        let binds = self.create_image_binds(view, "user native image update", None);
         if let Some(entry) = self.images.get_mut(&handle) {
             *entry = ImageTex::User {
-                bind,
+                binds,
                 w,
                 h,
                 last_used_frame: self.frame_index,
@@ -4471,7 +4628,7 @@ impl WgpuSceneRenderer {
         };
         r.last_used_frame = self.frame_index;
         let r = r.clone();
-        let (tex, bind) = self.create_rgba_tex(r.w, r.h, r.format);
+        let (tex, binds) = self.create_rgba_tex(r.w, r.h, r.format);
 
         self.queue.write_texture(
             wgpu::TexelCopyTextureInfo {
@@ -4499,7 +4656,7 @@ impl WgpuSceneRenderer {
             handle,
             ImageTex::Rgba {
                 tex,
-                bind,
+                binds,
                 w: r.w,
                 h: r.h,
                 format: r.format,
@@ -7886,11 +8043,10 @@ impl WgpuSceneRenderer {
                     handle,
                     tint,
                     fit,
+                    filter,
+                    source_rect,
                 } => {
                     flush_batch!();
-
-                    // Update usage timestamp for eviction, lazily re-uploading
-                    // evicted RGBA images from their retained source.
                     let (img_w, img_h, is_nv12) = match self.resolve_image_for_draw(*handle) {
                         Some(wh) => wh,
                         None => {
@@ -7898,109 +8054,24 @@ impl WgpuSceneRenderer {
                             continue;
                         }
                     };
-
-                    let src_w = img_w as f32;
-                    let src_h = img_h as f32;
-
-                    let dst_w = rect.w.max(0.0);
-                    let dst_h = rect.h.max(0.0);
-                    if dst_w <= 0.0 || dst_h <= 0.0 {
+                    let Some(source) = resolve_image_source(*source_rect, img_w, img_h) else {
+                        log::warn!(
+                            "Image handle {} has invalid source rect {:?}",
+                            handle,
+                            source_rect
+                        );
                         continue;
-                    }
-
-                    let (draw_rect, uv_rect) = match fit {
-                        repose_core::view::ImageFit::Contain => {
-                            let scale = (dst_w / src_w).min(dst_h / src_h);
-                            let w = src_w * scale;
-                            let h = src_h * scale;
-                            (
-                                repose_core::Rect {
-                                    x: rect.x + (dst_w - w) * 0.5,
-                                    y: rect.y + (dst_h - h) * 0.5,
-                                    w,
-                                    h,
-                                },
-                                [0.0, 1.0, 1.0, 0.0],
-                            )
-                        }
-                        repose_core::view::ImageFit::Cover => {
-                            let scale = (dst_w / src_w).max(dst_h / src_h);
-                            let content_w = src_w * scale;
-                            let content_h = src_h * scale;
-                            let overflow_x = (content_w - dst_w) * 0.5;
-                            let overflow_y = (content_h - dst_h) * 0.5;
-                            let u0 = (overflow_x / content_w).clamp(0.0, 1.0);
-                            let v0 = (overflow_y / content_h).clamp(0.0, 1.0);
-                            let u1 = ((overflow_x + dst_w) / content_w).clamp(0.0, 1.0);
-                            let v1 = ((overflow_y + dst_h) / content_h).clamp(0.0, 1.0);
-                            (*rect, [u0, 1.0 - v0, u1, 1.0 - v1])
-                        }
-                        repose_core::view::ImageFit::FitWidth => {
-                            let scale = dst_w / src_w;
-                            (
-                                repose_core::Rect {
-                                    x: rect.x,
-                                    y: rect.y + (dst_h - src_h * scale) * 0.5,
-                                    w: dst_w,
-                                    h: src_h * scale,
-                                },
-                                [0.0, 1.0, 1.0, 0.0],
-                            )
-                        }
-                        repose_core::view::ImageFit::FitHeight => {
-                            let scale = dst_h / src_h;
-                            (
-                                repose_core::Rect {
-                                    x: rect.x + (dst_w - src_w * scale) * 0.5,
-                                    y: rect.y,
-                                    w: src_w * scale,
-                                    h: dst_h,
-                                },
-                                [0.0, 1.0, 1.0, 0.0],
-                            )
-                        }
-                        repose_core::view::ImageFit::FillBounds => (*rect, [0.0, 1.0, 1.0, 0.0]),
-                        repose_core::view::ImageFit::Inside => {
-                            let scale = (dst_w / src_w).min(dst_h / src_h).min(1.0);
-                            let w = src_w * scale;
-                            let h = src_h * scale;
-                            (
-                                repose_core::Rect {
-                                    x: rect.x + (dst_w - w) * 0.5,
-                                    y: rect.y + (dst_h - h) * 0.5,
-                                    w,
-                                    h,
-                                },
-                                [0.0, 1.0, 1.0, 0.0],
-                            )
-                        }
-                        repose_core::view::ImageFit::None => {
-                            (
-                                repose_core::Rect {
-                                    x: rect.x,
-                                    y: rect.y,
-                                    w: src_w.min(dst_w),
-                                    h: src_h.min(dst_h),
-                                },
-                                // If larger than dst, crop top-left of source:
-                                [
-                                    0.0,
-                                    1.0,
-                                    (dst_w / src_w).min(1.0),
-                                    1.0 - (dst_h / src_h).min(1.0),
-                                ],
-                            )
-                        }
-                        _ => continue,
                     };
-
+                    let Some((draw_rect, uv_rect)) = image_fit_geometry(*rect, *fit, &source)
+                    else {
+                        continue;
+                    };
                     let (ndc_center, fwd_mat) = rect_to_instance_ndc(
                         draw_rect,
                         current_transform,
                         current_target_size.0,
                         current_target_size.1,
                     );
-
                     if is_nv12 {
                         let (uv_x_offset, uv_y_offset) =
                             if let Some(ImageTex::Nv12 {
@@ -8017,7 +8088,6 @@ impl WgpuSceneRenderer {
                             } else {
                                 (0.0, 0.0)
                             };
-
                         let inst = Nv12Instance {
                             xywh: ndc_center,
                             uv: uv_rect,
@@ -8037,7 +8107,6 @@ impl WgpuSceneRenderer {
                             });
                         }
                     } else {
-                        // RGBA uses GlyphInstance struct (reused pipeline)
                         let inst = GlyphInstance {
                             xywh: ndc_center,
                             uv: uv_rect,
@@ -8052,6 +8121,7 @@ impl WgpuSceneRenderer {
                                 off,
                                 cnt: 1,
                                 handle: *handle,
+                                filter: *filter,
                             });
                         }
                     }
@@ -9413,10 +9483,11 @@ impl WgpuSceneRenderer {
                         off,
                         cnt: n,
                         handle,
+                        filter,
                     } => {
                         let bind_opt = match self.images.get(&handle) {
-                            Some(ImageTex::Rgba { bind, .. }) => Some(bind),
-                            Some(ImageTex::User { bind, .. }) => Some(bind),
+                            Some(ImageTex::Rgba { binds, .. }) => Some(binds.get(filter)),
+                            Some(ImageTex::User { binds, .. }) => Some(binds.get(filter)),
                             _ => None,
                         };
                         if let Some(bind) = bind_opt {
@@ -10085,6 +10156,34 @@ fn intersect(a: repose_core::Rect, b: repose_core::Rect) -> repose_core::Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn image_source_rect_uses_texel_edges() {
+        let source = resolve_image_source(Some(ImageSourceRect::new(2, 1, 3, 2)), 10, 8)
+            .expect("source should be valid");
+        assert_eq!(source.uv_min, [0.2, 0.125]);
+        assert_eq!(source.uv_max, [0.5, 0.375]);
+        assert_eq!(source.width, 3.0);
+        assert_eq!(source.height, 2.0);
+        assert!(resolve_image_source(Some(ImageSourceRect::new(8, 0, 3, 1)), 10, 8).is_none());
+        assert!(resolve_image_source(Some(ImageSourceRect::new(0, 0, 0, 1)), 10, 8).is_none());
+    }
+
+    #[test]
+    fn image_fit_stays_inside_selected_source() {
+        let source = resolve_image_source(Some(ImageSourceRect::new(2, 1, 4, 2)), 10, 8)
+            .expect("source should be valid");
+        let rect = repose_core::Rect {
+            x: 20.0,
+            y: 30.0,
+            w: 8.0,
+            h: 8.0,
+        };
+        let (_, uv) = image_fit_geometry(rect, ImageFit::Cover, &source)
+            .expect("cover geometry should be valid");
+        assert!(uv[0] >= source.uv_min[0] && uv[2] <= source.uv_max[0]);
+        assert!(uv[1] >= source.uv_min[1] && uv[3] <= source.uv_max[1]);
+    }
 
     #[test]
     fn ring_alignment_rejects_bad_input() {

@@ -1773,12 +1773,20 @@ impl LayoutEngine {
                 });
                 next_sem_parent = Some(view_id);
             }
-            ViewKind::Image { handle, tint, fit } => {
+            ViewKind::Image {
+                handle,
+                tint,
+                fit,
+                filter,
+                source_rect,
+            } => {
                 scene.nodes.push(SceneNode::Image {
                     rect,
                     handle: *handle,
                     tint: mul_alpha_color(*tint, alpha_accum),
                     fit: *fit,
+                    filter: *filter,
+                    source_rect: *source_rect,
                 });
             }
             ViewKind::Box if modifier.text_input.is_some() => {
@@ -2291,6 +2299,8 @@ impl LayoutEngine {
                             off,
                             modifier.z_index,
                             ScrollbarAxis::V,
+                            &modifier.scrollbar_style,
+                            alpha_accum,
                             b.set_offset_main.clone(),
                             &scroll_hit_context,
                         );
@@ -2397,6 +2407,8 @@ impl LayoutEngine {
                             off,
                             modifier.z_index,
                             ScrollbarAxis::H,
+                            &modifier.scrollbar_style,
+                            alpha_accum,
                             b.set_offset_main.clone(),
                             &scroll_hit_context,
                         );
@@ -2552,6 +2564,8 @@ impl LayoutEngine {
                             oy,
                             modifier.z_index,
                             ScrollbarAxis::V,
+                            &modifier.scrollbar_style,
+                            alpha_accum,
                             set_y,
                             &scroll_hit_context,
                         );
@@ -2565,6 +2579,8 @@ impl LayoutEngine {
                             ox,
                             modifier.z_index,
                             ScrollbarAxis::H,
+                            &modifier.scrollbar_style,
+                            alpha_accum,
                             set_x,
                             &scroll_hit_context,
                         );

@@ -114,10 +114,53 @@ pub enum DrawCommand {
         handle: ImageHandle,
         tint: Color,
         fit: ImageFit,
+        filter: ImageFilter,
+        source_rect: Option<ImageSourceRect>,
     },
 }
 
 impl DrawScope {
+    pub fn draw_image(&mut self, rect: Rect, handle: ImageHandle, tint: Color, fit: ImageFit) {
+        self.draw_image_filtered(rect, handle, None, tint, fit, ImageFilter::Linear);
+    }
+
+    pub fn draw_image_subrect(
+        &mut self,
+        rect: Rect,
+        handle: ImageHandle,
+        source_rect: ImageSourceRect,
+        tint: Color,
+        fit: ImageFit,
+    ) {
+        self.draw_image_filtered(
+            rect,
+            handle,
+            Some(source_rect),
+            tint,
+            fit,
+            ImageFilter::Linear,
+        );
+    }
+
+    pub fn draw_image_filtered(
+        &mut self,
+        rect: Rect,
+        handle: ImageHandle,
+        source_rect: Option<ImageSourceRect>,
+        tint: Color,
+        fit: ImageFit,
+        filter: ImageFilter,
+    ) {
+        self.commands.push(DrawCommand::Image {
+            rect,
+            handle,
+            tint,
+            fit,
+            filter,
+            source_rect,
+        });
+    }
+
     pub fn draw_rect(&mut self, rect: Rect, color: Color, radius: Px) {
         self.commands.push(DrawCommand::Rect {
             rect,
@@ -1556,6 +1599,8 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                     handle,
                     tint,
                     fit,
+                    filter,
+                    source_rect,
                 } => {
                     scene.nodes.push(SceneNode::Image {
                         rect: repose_core::Rect {
@@ -1567,6 +1612,8 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                         handle: *handle,
                         tint: alpha_color(*tint, alpha),
                         fit: *fit,
+                        filter: *filter,
+                        source_rect: *source_rect,
                     });
                 }
             }

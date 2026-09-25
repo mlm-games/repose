@@ -1608,3 +1608,48 @@ fn test_debug_taffy_subtree_and_grid_summary() {
     let some_id = *ids.first().expect("mapped nodes");
     assert!(!eng.debug_taffy_subtree(some_id).is_empty());
 }
+
+#[test]
+fn test_scrollbar_image_visuals_preserve_thumb_geometry() {
+    let track = ControlVisual::image(7, Some(ImageSourceRect::new(0, 0, 4, 16)), Color::WHITE)
+        .image_filter(ImageFilter::Nearest);
+    let thumb = ControlVisual::image(7, Some(ImageSourceRect::new(4, 0, 8, 16)), Color::WHITE)
+        .image_filter(ImageFilter::Nearest);
+    let style = ScrollbarStyle::default()
+        .with_thickness(Dp(16.0))
+        .with_track_inset(Dp(0.0))
+        .with_fixed_thumb_length(Some(Dp(16.0)))
+        .with_track_visuals(ControlVisualSet::default().with_normal(track))
+        .with_thumb_visuals(ControlVisualSet::default().with_normal(thumb));
+    let scroll = crate::scroll::ScrollArea(
+        Modifier::new()
+            .size(Dp(100.0), Dp(200.0))
+            .scrollbar_style(style),
+        std::rc::Rc::new(ScrollState::new()),
+        RBox(Modifier::new().size(Dp(100.0), Dp(400.0))),
+    );
+    let root = scroll;
+    let mut engine = LayoutEngine::new();
+    let (scene, hits, _) = engine.layout_frame(
+        &root,
+        (100, 200),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
+    let images: Vec<_> = scene
+        .nodes
+        .iter()
+        .filter_map(|node| match node {
+            SceneNode::Image {
+                rect, source_rect, ..
+            } => Some((*rect, *source_rect)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(images.len(), 2);
+    assert_eq!(images[0].1, Some(ImageSourceRect::new(0, 0, 4, 16)));
+    assert_eq!(images[1].1, Some(ImageSourceRect::new(4, 0, 8, 16)));
+    assert_eq!(images[1].0.h, 16.0);
+    assert!(hits.iter().any(|hit| hit.rect.h == 16.0));
+}

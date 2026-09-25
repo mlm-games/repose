@@ -287,10 +287,18 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
                 None => 0u8.hash(hasher),
             }
         }
-        ViewKind::Image { handle, tint, fit } => {
+        ViewKind::Image {
+            handle,
+            tint,
+            fit,
+            filter,
+            source_rect,
+        } => {
             handle.hash(hasher);
             hash_color(tint, hasher);
             std::mem::discriminant(fit).hash(hasher);
+            std::mem::discriminant(filter).hash(hasher);
+            source_rect.hash(hasher);
         }
         ViewKind::OverlayHost
         | ViewKind::Box
@@ -318,6 +326,67 @@ fn hash_f32(v: f32, hasher: &mut impl Hasher) {
 
 fn hash_rc_identity<T: ?Sized>(value: &Option<std::rc::Rc<T>>, hasher: &mut impl Hasher) {
     value.is_some().hash(hasher);
+}
+
+fn hash_control_visual(visual: &repose_core::ControlVisual, hasher: &mut impl Hasher) {
+    std::mem::discriminant(visual).hash(hasher);
+    match visual {
+        repose_core::ControlVisual::Rect { brush, radius } => {
+            hash_brush(brush, hasher);
+            for value in radius {
+                value.0.to_bits().hash(hasher);
+            }
+        }
+        repose_core::ControlVisual::Image {
+            handle,
+            source_rect,
+            tint,
+            fit,
+            filter,
+        } => {
+            handle.hash(hasher);
+            source_rect.hash(hasher);
+            hash_color(tint, hasher);
+            std::mem::discriminant(fit).hash(hasher);
+            std::mem::discriminant(filter).hash(hasher);
+        }
+        repose_core::ControlVisual::Custom(_) => {
+            visual.custom_identity().unwrap_or_default().hash(hasher)
+        }
+        _ => {}
+    }
+}
+
+fn hash_control_visual_set(set: &repose_core::ControlVisualSet, hasher: &mut impl Hasher) {
+    for visual in [
+        &set.normal,
+        &set.hovered,
+        &set.pressed,
+        &set.dragged,
+        &set.focused,
+        &set.disabled,
+    ] {
+        match visual {
+            Some(visual) => {
+                true.hash(hasher);
+                hash_control_visual(visual, hasher);
+            }
+            None => false.hash(hasher),
+        }
+    }
+}
+
+fn hash_scrollbar_style(style: &repose_core::ScrollbarStyle, hasher: &mut impl Hasher) {
+    style.thickness.0.to_bits().hash(hasher);
+    style.track_inset.0.to_bits().hash(hasher);
+    style.min_thumb_length.0.to_bits().hash(hasher);
+    style
+        .fixed_thumb_length
+        .map(|value| value.0.to_bits())
+        .hash(hasher);
+    style.radius.map(|value| value.0.to_bits()).hash(hasher);
+    hash_control_visual_set(&style.track_visuals, hasher);
+    hash_control_visual_set(&style.thumb_visuals, hasher);
 }
 
 fn hash_scroll_axis_binding(
@@ -575,6 +644,7 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
         Some(binding) => hash_scroll_binding(binding, hasher),
         None => 0u8.hash(hasher),
     }
+    hash_scrollbar_style(&m.scrollbar_style, hasher);
     m.overflow
         .map(|value| std::mem::discriminant(&value))
         .hash(hasher);
@@ -808,8 +878,8 @@ fn hash_text_overflow(o: &TextOverflow, hasher: &mut impl Hasher) {
 mod tests {
     use super::*;
     use repose_core::{
-        DrawStyle, FontStyle, FontWeight, Modifier, TextAlign, TextDecoration, UnitExt, View,
-        ViewKind,
+        DrawStyle, FontStyle, FontWeight, ImageFilter, ImageFit, ImageSourceRect, Modifier,
+        TextAlign, TextDecoration, UnitExt, View, ViewKind,
     };
 
     #[test]
@@ -818,6 +888,27 @@ mod tests {
         let v2 = View::new(0, ViewKind::Box).modifier(Modifier::new().width(100.0.dp()));
 
         assert_eq!(hash_view_content(&v1), hash_view_content(&v2));
+    }
+
+    #[test]
+    fn image_source_rect_changes_hash() {
+        let image = |source_rect| {
+            View::new(
+                0,
+                ViewKind::Image {
+                    handle: 1,
+                    tint: Color::WHITE,
+                    fit: ImageFit::FillBounds,
+                    filter: ImageFilter::Nearest,
+                    source_rect,
+                },
+            )
+        };
+        let full = image(None);
+        let first = image(Some(ImageSourceRect::new(0, 0, 8, 8)));
+        let second = image(Some(ImageSourceRect::new(8, 0, 8, 8)));
+        assert_ne!(hash_view_content(&full), hash_view_content(&first));
+        assert_ne!(hash_view_content(&first), hash_view_content(&second));
     }
 
     #[test]

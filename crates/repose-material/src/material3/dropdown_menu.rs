@@ -1,7 +1,8 @@
 #![allow(non_snake_case)]
 
 use std::cell::RefCell;
-use std::rc::Rc;
+use std::collections::HashMap;
+use std::rc::{Rc, Weak};
 
 use repose_core::*;
 use repose_ui::{
@@ -11,6 +12,7 @@ use repose_ui::{
 
 use super::util::apply_tonal_elevation;
 use super::*;
+use crate::{Icon, Symbol};
 
 /// Configuration for [`DropdownMenu`].
 #[derive(Clone, Debug)]
@@ -141,6 +143,7 @@ const DDM_VERTICAL_PADDING: Dp = Dp(8.0);
 const DDM_ITEM_H_PAD: Dp = Dp(12.0);
 const DDM_ITEM_MIN_HEIGHT: Dp = Dp(48.0);
 const DDM_MIN_OPEN_HEIGHT: Dp = Dp(48.0);
+const DDM_SUBMENU_ARROW: Symbol = Symbol::new("arrow_forward", '\u{E5C5}');
 
 /// Either a menu item, a divider, or a nested submenu.
 #[allow(clippy::large_enum_variant)]
@@ -198,6 +201,18 @@ pub fn DropdownMenu(
     let trigger_rect = remember_state_with_key(format!("ddm_tr_{ddm_id}"), Rect::default);
     let scroll_state: Rc<ScrollState> =
         remember_with_key(format!("ddm_scroll_{ddm_id}"), ScrollState::new);
+    let submenu_open = remember_state_with_key(format!("ddm_subopen_{ddm_id}"), || None::<String>);
+    let submenu_anchor_rects = remember_state_with_key(
+        format!("ddm_subanchor_{ddm_id}"),
+        HashMap::<String, Rect>::new,
+    );
+    let submenu_popup_size = remember_state_with_key(format!("ddm_subpopup_{ddm_id}"), || {
+        repose_core::Vec2 { x: 0.0, y: 0.0 }
+    });
+    let submenu_guards = remember_state_with_key(
+        format!("ddm_subguards_{ddm_id}"),
+        HashMap::<String, OverlayGuard>::new,
+    );
 
     let current_items = remember_state_with_key(format!("ddm_items_{ddm_id}"), Vec::new);
     *current_items.borrow_mut() = items;
@@ -233,6 +248,12 @@ pub fn DropdownMenu(
 
     let progress = *anim.borrow().get();
     let menu_visible = state.is_open() || progress > 0.01;
+    if !state.is_open() {
+        submenu_open.borrow_mut().take();
+        submenu_anchor_rects.borrow_mut().clear();
+        *submenu_popup_size.borrow_mut() = repose_core::Vec2 { x: 0.0, y: 0.0 };
+        submenu_guards.borrow_mut().clear();
+    }
 
     // Explicit cursor anchor (window-space Dp via `open_at`) wins over the
     // trigger rect. Read here so the composition subscribes to it — the
@@ -251,8 +272,13 @@ pub fn DropdownMenu(
             let current_config = current_config.clone();
             let trigger_rect = trigger_rect.clone();
             let scroll_state = scroll_state.clone();
+            let submenu_open = submenu_open.clone();
+            let submenu_anchor_rects = submenu_anchor_rects.clone();
+            let submenu_popup_size = submenu_popup_size.clone();
+            let submenu_guards = submenu_guards.clone();
+            let back_state = state.clone();
 
-            *overlay_guard.borrow_mut() = Some(overlay.show_guard(
+            *overlay_guard.borrow_mut() = Some(overlay.show_guard_with_back(
                 Rc::new(move || {
                     let items = current_items.borrow().clone();
                     let config = current_config.borrow().clone();
@@ -303,6 +329,10 @@ pub fn DropdownMenu(
                         state.clone(),
                         &adjusted_config,
                         scroll_state.clone(),
+                        submenu_open.clone(),
+                        submenu_anchor_rects.clone(),
+                        submenu_popup_size.clone(),
+                        submenu_guards.clone(),
                         available_height,
                         *ddm_id,
                     );
@@ -344,6 +374,10 @@ pub fn DropdownMenu(
                 }),
                 901.0,
                 false,
+                Rc::new(move || {
+                    back_state.dismiss();
+                    true
+                }),
             ));
         }
     } else {
@@ -439,8 +473,9 @@ fn render_dropdown_item(
 struct DropdownSubmenuHost {
     parent_state: Rc<MenuState>,
     open_child: Rc<RefCell<Option<String>>>,
-    anchor_rects: Rc<RefCell<std::collections::HashMap<String, Rect>>>,
+    anchor_rects: Rc<RefCell<HashMap<String, Rect>>>,
     popup_size: Rc<RefCell<repose_core::Vec2>>,
+    guards: Weak<RefCell<HashMap<String, OverlayGuard>>>,
 }
 
 fn render_dropdown_submenu(
@@ -503,16 +538,16 @@ fn render_dropdown_submenu(
                 .single_line(),
         ),
         Box(Modifier::new().width(DDM_ITEM_H_PAD)),
-        Text("›")
-            .color(header_color)
-            .size(th.typography.label_large),
+        Icon(DDM_SUBMENU_ARROW).color(header_color).size(Sp(20.0)),
     ));
 
     let anchor_rect = parent.anchor_rects.borrow().get(&sub.text).cloned();
     let guard_key = format!("ddm_sub_{ddm_id}_{}", sub.text);
-    let guard = remember_with_key(guard_key, || RefCell::new(None::<OverlayGuard>));
+    let Some(guards) = parent.guards.upgrade() else {
+        return header;
+    };
     if !open {
-        guard.borrow_mut().take();
+        guards.borrow_mut().remove(&guard_key);
         parent.anchor_rects.borrow_mut().remove(&sub.text);
         return header;
     }
@@ -529,16 +564,18 @@ fn render_dropdown_submenu(
     };
 
     let overlay = ambient_overlay();
-    if guard.borrow().is_none()
+    if !guards.borrow().contains_key(&guard_key)
         && let Some(overlay) = overlay
     {
         let parent_state = parent.parent_state.clone();
+        let back_parent = parent.clone();
+        let back_text = sub.text.clone();
         let parent = parent.clone();
         let text = sub.text.clone();
         let children = sub.children.clone();
         let config = config.clone();
         let th = *th;
-        guard.borrow_mut().replace(overlay.show_guard(
+        let guard = overlay.show_guard_with_back(
             Rc::new(move || {
                 let win_w = get_window_container_width();
                 let win_h = get_window_container_height();
@@ -605,7 +642,18 @@ fn render_dropdown_submenu(
             }),
             902.0,
             false,
-        ));
+            Rc::new(move || {
+                let mut slot = back_parent.open_child.borrow_mut();
+                if slot.as_ref() == Some(&back_text) {
+                    *slot = None;
+                    request_frame();
+                    true
+                } else {
+                    false
+                }
+            }),
+        );
+        guards.borrow_mut().insert(guard_key, guard);
     }
     Box(Modifier::new().on_globally_positioned({
         let parent = parent.clone();
@@ -632,19 +680,19 @@ fn render_dropdown_menu_content(
     state: Rc<MenuState>,
     config: &DropdownMenuConfig,
     scroll_state: Rc<ScrollState>,
+    submenu_open: Rc<RefCell<Option<String>>>,
+    submenu_anchor_rects: Rc<RefCell<HashMap<String, Rect>>>,
+    submenu_popup_size: Rc<RefCell<repose_core::Vec2>>,
+    submenu_guards: Rc<RefCell<HashMap<String, OverlayGuard>>>,
     max_height: f32,
     ddm_id: u64,
 ) -> View {
     let host = DropdownSubmenuHost {
         parent_state: state,
-        open_child: remember_state_with_key(format!("ddm_subopen_{ddm_id}"), || None::<String>),
-        anchor_rects: remember_state_with_key(
-            format!("ddm_subanchor_{ddm_id}"),
-            std::collections::HashMap::<String, Rect>::new,
-        ),
-        popup_size: remember_state_with_key(format!("ddm_subpopup_{ddm_id}"), || {
-            repose_core::Vec2 { x: 0.0, y: 0.0 }
-        }),
+        open_child: submenu_open,
+        anchor_rects: submenu_anchor_rects,
+        popup_size: submenu_popup_size,
+        guards: Rc::downgrade(&submenu_guards),
     };
     let children: Vec<View> = items
         .iter()

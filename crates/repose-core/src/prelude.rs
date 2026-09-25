@@ -37,7 +37,7 @@ pub use crate::runtime::{
 pub use crate::scope::{Scope, current_scope, scope_memo, scoped_effect, scoped_effect_once};
 pub use crate::scroll::{
     HorizontalScrollState, ScrollAxis, ScrollAxisBinding, ScrollBinding, ScrollBothBinding,
-    ScrollPhysics, ScrollState, ScrollStateXY, run_post_scroll, run_pre_scroll,
+    ScrollPhysics, ScrollState, ScrollStateXY, ScrollbarStyle, run_post_scroll, run_pre_scroll,
 };
 pub use crate::semantics::{Role, Semantics};
 pub use crate::shortcuts;
@@ -52,10 +52,11 @@ pub use crate::text::{
 };
 pub use crate::units::{lerp_dp, lerp_px, lerp_sp, max_dp, min_dp, size_px_to_dp};
 pub use crate::view::{
-    BlendMode, BoxWithConstraintsScope, ImageFit, ImageHandle, PaintDesc, Scene, SceneNode,
-    SubcomposeScope, TextExtraStyle, TextOverflow, VectorMeshData, VectorVertex, View, ViewId,
-    ViewKind,
+    BlendMode, BoxWithConstraintsScope, ImageFilter, ImageFit, ImageHandle, ImageSourceRect,
+    PaintDesc, Scene, SceneNode, SubcomposeScope, TextExtraStyle, TextOverflow, VectorMeshData,
+    VectorVertex, View, ViewId, ViewKind,
 };
+pub use crate::visual::{ControlPainter, ControlVisual, ControlVisualSet, ControlVisualState};
 pub use taffy::{
     AlignContent, AlignItems, AlignSelf, Contain, FlexDirection, FlexWrap, JustifyContent,
     JustifyItems, JustifySelf,

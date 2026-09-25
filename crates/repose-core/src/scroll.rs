@@ -4,7 +4,7 @@ use std::rc::Rc;
 use web_time::Instant;
 
 use crate::nested_scroll::{NestedScrollConnection, NestedScrollSource};
-use crate::{Signal, Vec2, request_frame, signal};
+use crate::{ControlVisualSet, Dp, Signal, Vec2, request_frame, signal};
 
 /// Axis (or axes) a scroll modifier operates on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -16,6 +16,68 @@ pub enum ScrollAxis {
 
 // Holds all callbacks that the layout engine needs from a scroll state.
 // Stored in `Modifier.scroll`.
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ScrollbarStyle {
+    pub thickness: Dp,
+    pub track_inset: Dp,
+    pub min_thumb_length: Dp,
+    pub fixed_thumb_length: Option<Dp>,
+    pub radius: Option<Dp>,
+    pub track_visuals: ControlVisualSet,
+    pub thumb_visuals: ControlVisualSet,
+}
+
+impl Default for ScrollbarStyle {
+    fn default() -> Self {
+        Self {
+            thickness: Dp(4.0),
+            track_inset: Dp(2.0),
+            min_thumb_length: Dp(24.0),
+            fixed_thumb_length: None,
+            radius: None,
+            track_visuals: ControlVisualSet::default(),
+            thumb_visuals: ControlVisualSet::default(),
+        }
+    }
+}
+
+impl ScrollbarStyle {
+    pub fn with_thickness(mut self, thickness: Dp) -> Self {
+        self.thickness = thickness;
+        self
+    }
+
+    pub fn with_track_inset(mut self, track_inset: Dp) -> Self {
+        self.track_inset = track_inset;
+        self
+    }
+
+    pub fn with_min_thumb_length(mut self, min_thumb_length: Dp) -> Self {
+        self.min_thumb_length = min_thumb_length;
+        self
+    }
+
+    pub fn with_fixed_thumb_length(mut self, length: Option<Dp>) -> Self {
+        self.fixed_thumb_length = length;
+        self
+    }
+
+    pub fn with_radius(mut self, radius: Option<Dp>) -> Self {
+        self.radius = radius;
+        self
+    }
+
+    pub fn with_track_visuals(mut self, visuals: ControlVisualSet) -> Self {
+        self.track_visuals = visuals;
+        self
+    }
+
+    pub fn with_thumb_visuals(mut self, visuals: ControlVisualSet) -> Self {
+        self.thumb_visuals = visuals;
+        self
+    }
+}
 
 /// Callbacks for a single-axis (vertical or horizontal) scroll container.
 #[derive(Clone, Default)]

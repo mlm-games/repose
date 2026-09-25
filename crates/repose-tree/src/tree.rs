@@ -284,6 +284,7 @@ fn modifier_identity_change(old: &Modifier, new: &Modifier) -> IdentityChange {
     }
     if scroll_identity_changed(&old.scroll, &new.scroll)
         || cursor_identity_changed(&old.cursor, &new.cursor)
+        || old.scrollbar_style != new.scrollbar_style
     {
         change.paint = true;
     }

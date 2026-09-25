@@ -743,6 +743,7 @@ pub struct Modifier {
     /// Use `Modifier::vertical_scroll()`, `Modifier::horizontal_scroll()`, or
     /// `Modifier::scrollable()` to set this.
     pub scroll: Option<crate::scroll::ScrollBinding>,
+    pub scrollbar_style: crate::scroll::ScrollbarStyle,
     /// Nested scroll connection for coordinated scrolling between this element
     /// and its scrollable descendants.
     ///
@@ -883,6 +884,7 @@ impl std::fmt::Debug for Modifier {
         if self.indication.is_some() {
             s.field("indication", &"…");
         }
+        s.field("scrollbar_style", &self.scrollbar_style);
 
         opt_val!(
             key,
@@ -1509,6 +1511,10 @@ impl Modifier {
     /// Attach a 2D scroll binding to this modifier.
     pub fn scrollable(mut self, binding: crate::scroll::ScrollBothBinding) -> Self {
         self.scroll = Some(crate::scroll::ScrollBinding::Both(binding));
+        self
+    }
+    pub fn scrollbar_style(mut self, style: crate::scroll::ScrollbarStyle) -> Self {
+        self.scrollbar_style = style;
         self
     }
     /// Attach a nested scroll connection that descendant scrollable containers

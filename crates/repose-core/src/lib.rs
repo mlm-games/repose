@@ -143,6 +143,7 @@ pub mod timer;
 #[cfg(feature = "accesskit")]
 pub mod a11y;
 pub mod view;
+pub mod visual;
 
 pub use color::*;
 pub use cursor::*;
@@ -170,6 +171,7 @@ pub use state::*;
 pub use text::*;
 pub use units::*;
 pub use view::*;
+pub use visual::*;
 
 pub use repose_macros::View;
 

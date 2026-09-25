@@ -23,6 +23,8 @@ pub(crate) fn push_scrollbar(
     offset: f32,
     z: f32,
     axis: ScrollbarAxis,
+    style: &ScrollbarStyle,
+    alpha: f32,
     set_offset: Option<Rc<dyn Fn(f32)>>,
     hit_context: &HitContext,
 ) {
@@ -34,8 +36,8 @@ pub(crate) fn push_scrollbar(
         return;
     }
 
-    let thick = Dp(4.0).to_px().0;
-    let main_inset = Dp(2.0).to_px().0;
+    let thick = style.thickness.to_px().0.max(0.5);
+    let main_inset = style.track_inset.to_px().0.max(0.0);
 
     let (track_x, track_y, track_main, track_cross) = match axis {
         ScrollbarAxis::V => (
@@ -56,7 +58,11 @@ pub(crate) fn push_scrollbar(
     }
 
     let ratio = (vp_len / content_len).clamp(0.0, 1.0);
-    let thumb_len = (track_main * ratio).max(Dp(24.0).to_px().0).min(track_main);
+    let thumb_len = style
+        .fixed_thumb_length
+        .map(|length| length.to_px().0)
+        .unwrap_or_else(|| (track_main * ratio).max(style.min_thumb_length.to_px().0))
+        .clamp(0.5, track_main);
     let tpos = (offset / (content_len - vp_len).max(1.0)).clamp(0.0, 1.0);
     let thumb_offset = tpos * (track_main - thumb_len);
 
@@ -91,22 +97,45 @@ pub(crate) fn push_scrollbar(
         ),
     };
 
-    scene.nodes.push(SceneNode::Rect {
-        rect: track_rect,
-        brush: Brush::Solid(locals::theme().scrollbar_track),
-        radius: [Px(thick * 0.5); 4],
-    });
-    scene.nodes.push(SceneNode::Rect {
-        rect: thumb_rect,
-        brush: Brush::Solid(locals::theme().scrollbar_thumb),
-        radius: [Px(thick * 0.5); 4],
-    });
+    let tid = match axis {
+        ScrollbarAxis::V => vid ^ 0x8000_0001,
+        ScrollbarAxis::H => vid ^ 0x8000_0002,
+    };
+    let visual_state = ControlVisualState {
+        alpha,
+        enabled: true,
+        hovered: interactions.hover == Some(tid),
+        pressed: interactions.pressed.contains(&tid),
+        dragged: false,
+        focused: false,
+    };
+    let track_state = ControlVisualState {
+        pressed: false,
+        dragged: false,
+        ..visual_state
+    };
+    if let Some(visual) = style.track_visuals.resolve(track_state) {
+        visual.paint(scene, track_rect, track_state);
+    } else {
+        let radius = style.radius.unwrap_or(Dp(thick * 0.5)).to_px().0;
+        scene.nodes.push(SceneNode::Rect {
+            rect: track_rect,
+            brush: Brush::Solid(locals::theme().scrollbar_track),
+            radius: [Px(radius); 4],
+        });
+    }
+    if let Some(visual) = style.thumb_visuals.resolve(visual_state) {
+        visual.paint(scene, thumb_rect, visual_state);
+    } else {
+        let radius = style.radius.unwrap_or(Dp(thick * 0.5)).to_px().0;
+        scene.nodes.push(SceneNode::Rect {
+            rect: thumb_rect,
+            brush: Brush::Solid(locals::theme().scrollbar_thumb),
+            radius: [Px(radius); 4],
+        });
+    }
 
     if let Some(s) = set_offset {
-        let tid = match axis {
-            ScrollbarAxis::V => vid ^ 0x8000_0001,
-            ScrollbarAxis::H => vid ^ 0x8000_0002,
-        };
         let track_start = match axis {
             ScrollbarAxis::V => track_y,
             ScrollbarAxis::H => track_x,
