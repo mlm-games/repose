@@ -56,7 +56,7 @@ fn vs_main(
 
 fn eval_paint(in: VSOut) -> vec4f {
     if (in.paint_type == 0u) {
-        return in.color;
+        return vec4f(in.color.rgb * in.color.a, in.color.a);
     }
     if (in.paint_kind == 1u) {
         let d = distance(in.local, in.grad.xy);
