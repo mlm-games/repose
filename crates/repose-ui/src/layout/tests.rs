@@ -803,6 +803,40 @@ mod layer_tests {
     }
 
     #[test]
+    fn test_transformed_graphics_layer_preserves_hit_rect() {
+        let view = crate::Box(
+            Modifier::new()
+                .size(Dp(200.0), Dp(160.0))
+                .translate(100.0, 50.0)
+                .scale(0.8)
+                .transform_origin(0.0, 0.0),
+        )
+        .child(crate::Box(
+            Modifier::new()
+                .size(Dp(100.0), Dp(80.0))
+                .graphics_layer(1.0)
+                .input_blocker(),
+        ));
+        let mut engine = LayoutEngine::new();
+        let state: HashMap<u64, Rc<RefCell<crate::TextFieldState>>> = HashMap::new();
+        let (_, hits, _) = engine.layout_frame(
+            &view,
+            (800, 600),
+            &state,
+            &crate::Interactions::default(),
+            None,
+        );
+        let hit = hits
+            .iter()
+            .find(|hit| hit.rect.w > 0.0 && hit.rect.h > 0.0)
+            .expect("graphics layer hit");
+        assert!((hit.rect.x - 100.0).abs() < 0.01);
+        assert!((hit.rect.y - 50.0).abs() < 0.01);
+        assert!((hit.rect.w - 80.0).abs() < 0.01);
+        assert!((hit.rect.h - 64.0).abs() < 0.01);
+    }
+
+    #[test]
     fn test_graphics_layer_alpha_is_clamped() {
         let m = Modifier::new().graphics_layer(2.0);
         assert_eq!(

@@ -145,7 +145,12 @@ const DDM_VERTICAL_PADDING: Dp = Dp(8.0);
 const DDM_ITEM_H_PAD: Dp = Dp(12.0);
 const DDM_ITEM_MIN_HEIGHT: Dp = Dp(48.0);
 const DDM_MIN_OPEN_HEIGHT: Dp = Dp(48.0);
-const DDM_SUBMENU_ARROW: Symbol = Symbol::new("arrow_forward", '\u{E5C5}');
+const DDM_ROOT_SCRIM_Z: f32 = 1000.0;
+const DDM_CARD_Z: f32 = 1001.0;
+const DDM_SUBMENU_SCRIM_Z: f32 = 1003.0;
+const DDM_SUBMENU_CARD_Z: f32 = 1004.0;
+const DDM_ITEM_Z: f32 = 1005.0;
+const DDM_SUBMENU_ARROW: Symbol = Symbol::new("chevron_right", '\u{E5CC}');
 
 /// Either a menu item, a divider, or a nested submenu.
 #[allow(clippy::large_enum_variant)]
@@ -401,6 +406,7 @@ pub fn DropdownMenu(
 
                     let mut menu_modifier = offset_modifier
                         .absolute()
+                        .z_index(DDM_CARD_Z)
                         .scale(scale)
                         .alpha(alpha)
                         .transform_origin(0.0, transform_origin_y);
@@ -414,6 +420,7 @@ pub fn DropdownMenu(
                     let menu = Box(menu_modifier).child(content);
 
                     let scrim = Box(Modifier::new()
+                        .z_index(DDM_ROOT_SCRIM_Z)
                         .fill_max_size()
                         .focusable(false)
                         .input_blocker()
@@ -486,6 +493,7 @@ fn render_dropdown_item(
     let item_source: Rc<MutableInteractionSource> = remember(MutableInteractionSource::new);
 
     let mut modifier = Modifier::new()
+        .z_index(DDM_ITEM_Z)
         .fill_max_width()
         .min_height(config.item_height.max(DDM_ITEM_MIN_HEIGHT))
         .padding_values(PaddingValues {
@@ -608,6 +616,7 @@ fn render_dropdown_submenu(
     }
     let header_source: Rc<MutableInteractionSource> = remember(MutableInteractionSource::new);
     let mut header_modifier = Modifier::new()
+        .z_index(DDM_ITEM_Z)
         .fill_max_width()
         .min_height(config.item_height.max(DDM_ITEM_MIN_HEIGHT))
         .padding_values(PaddingValues {
@@ -709,8 +718,17 @@ fn render_dropdown_submenu(
     };
     if !visible {
         guards.borrow_mut().remove(&guard_key);
-        parent.anchor_rects.borrow_mut().remove(&sub.text);
-        return header;
+        return Box(Modifier::new().on_globally_positioned({
+            let parent = parent.clone();
+            let text = sub.text.clone();
+            move |rect| {
+                if parent.anchor_rects.borrow().get(&text) != Some(&rect) {
+                    parent.anchor_rects.borrow_mut().insert(text.clone(), rect);
+                    request_frame();
+                }
+            }
+        }))
+        .child(header);
     }
     let Some(initial_anchor) = anchor_rect else {
         return Box(Modifier::new().on_globally_positioned({
@@ -837,6 +855,7 @@ fn render_dropdown_submenu(
                 let popup_sizes = parent.popup_sizes.clone();
                 let popup_size_text = text.clone();
                 let card_modifier = render_dropdown_card_modifier(&th, &config)
+                    .z_index(DDM_SUBMENU_CARD_Z)
                     .on_pointer_enter(move |event| {
                         if event.kind == PointerKind::Touch {
                             return;
@@ -867,13 +886,36 @@ fn render_dropdown_submenu(
                         }
                     });
                 let card = Box(card_modifier).child(items_column);
-                Box(Modifier::new()
+                let popup = Box(Modifier::new()
                     .absolute()
+                    .z_index(DDM_SUBMENU_CARD_Z)
                     .offset(Some(Dp(x)), Some(Dp(y)), None, None)
                     .scale(scale)
                     .alpha(alpha)
                     .transform_origin(0.0, 0.0))
-                .child(card)
+                .child(card);
+                let scrim = Box(Modifier::new()
+                    .z_index(DDM_SUBMENU_SCRIM_Z)
+                    .fill_max_size()
+                    .on_click({
+                        let open_child = parent.open_child.clone();
+                        let text = text.clone();
+                        let hovered_child = parent.hovered_child.clone();
+                        let latched_child = parent.latched_child.clone();
+                        let hover_timer = parent.hover_timer.clone();
+                        let popup_hovered = parent.popup_hovered.clone();
+                        move || {
+                            if open_child.borrow().as_deref() == Some(text.as_str()) {
+                                open_child.borrow_mut().take();
+                                hovered_child.borrow_mut().take();
+                                latched_child.borrow_mut().take();
+                                popup_hovered.set(false);
+                                hover_timer.borrow_mut().take();
+                                request_frame();
+                            }
+                        }
+                    }));
+                ZStack(Modifier::new().fill_max_size().absolute()).child((scrim, popup))
             }),
             902.0,
             true,
@@ -981,6 +1023,7 @@ fn render_dropdown_card_modifier(th: &Theme, config: &DropdownMenuConfig) -> Mod
 
     let mut card_modifier = Modifier::new()
         .graphics_layer(1.0)
+        .z_index(DDM_CARD_Z)
         .focus_group()
         .input_blocker()
         .on_scroll(|_| Vec2::ZERO)

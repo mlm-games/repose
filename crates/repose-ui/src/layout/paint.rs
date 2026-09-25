@@ -936,16 +936,7 @@ impl LayoutEngine {
                 transform: layer_transform,
             });
             node_hit_context = node_hit_context
-                .with_transform(layer_transform)
-                .with_clip(
-                    repose_core::Rect {
-                        x: 0.0,
-                        y: 0.0,
-                        w: layer_rect.w,
-                        h: layer_rect.h,
-                    },
-                    ClipOp::Intersect,
-                )
+                .with_clip(layer_rect, ClipOp::Intersect)
                 .with_layer();
             Some(id)
         } else {
@@ -2569,14 +2560,6 @@ impl LayoutEngine {
             if let Some(id) = layer_id {
                 scene.nodes.push(SceneNode::PopTransform);
                 scene.nodes.push(SceneNode::EndLayer { layer_id: id });
-                if let Some(shadow) = &modifier.shadow {
-                    scene.nodes.push(SceneNode::CompositeShadow {
-                        layer_id: id,
-                        blur_px: shadow.blur_radius.to_px(),
-                        offset_px: (Px::ZERO, shadow.offset_y.to_px()),
-                        color: shadow.color,
-                    });
-                }
             }
             // Pop clips and transforms pushed before the scroll branch
             if push_bounds_clip {
@@ -2587,6 +2570,16 @@ impl LayoutEngine {
             }
             if push_round_clip && overflow_clip {
                 scene.nodes.push(SceneNode::PopClip);
+            }
+            if let Some(id) = layer_id {
+                if let Some(shadow) = &modifier.shadow {
+                    scene.nodes.push(SceneNode::CompositeShadow {
+                        layer_id: id,
+                        blur_px: shadow.blur_radius.to_px(),
+                        offset_px: (Px::ZERO, shadow.offset_y.to_px()),
+                        color: shadow.color,
+                    });
+                }
             }
             if modifier.transform.is_some() {
                 scene.nodes.push(SceneNode::PopTransform);
@@ -2657,14 +2650,6 @@ impl LayoutEngine {
         if let Some(id) = layer_id {
             scene.nodes.push(SceneNode::PopTransform);
             scene.nodes.push(SceneNode::EndLayer { layer_id: id });
-            if let Some(shadow) = &modifier.shadow {
-                scene.nodes.push(SceneNode::CompositeShadow {
-                    layer_id: id,
-                    blur_px: shadow.blur_radius.to_px(),
-                    offset_px: (Px::ZERO, shadow.offset_y.to_px()),
-                    color: shadow.color,
-                });
-            }
         }
 
         if push_bounds_clip {
@@ -2675,6 +2660,16 @@ impl LayoutEngine {
         }
         if push_round_clip && overflow_clip {
             scene.nodes.push(SceneNode::PopClip);
+        }
+        if let Some(id) = layer_id {
+            if let Some(shadow) = &modifier.shadow {
+                scene.nodes.push(SceneNode::CompositeShadow {
+                    layer_id: id,
+                    blur_px: shadow.blur_radius.to_px(),
+                    offset_px: (Px::ZERO, shadow.offset_y.to_px()),
+                    color: shadow.color,
+                });
+            }
         }
         if modifier.transform.is_some() {
             scene.nodes.push(SceneNode::PopTransform);

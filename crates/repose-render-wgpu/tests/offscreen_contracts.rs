@@ -6,7 +6,8 @@
 //! Skips (does not fail) without a WGPU adapter.
 
 use repose_core::{
-    Brush, Color, ImageFilter, ImageFit, ImageSourceRect, Px, Rect, Scene, SceneNode,
+    Brush, ClipOp, Color, ImageFilter, ImageFit, ImageSourceRect, Px, Rect, Scene, SceneNode,
+    Transform,
 };
 use repose_render_wgpu::offscreen::OffscreenRenderer;
 
@@ -99,6 +100,155 @@ fn opaque_content_reads_back_exact() {
     };
     let px = off.render_rgba(&scene, None).expect("render");
     assert_eq!(&px[0..4], &[255, 0, 0, 255]);
+}
+
+#[test]
+fn transformed_graphics_layer_replays_clips_in_layer_coordinates() {
+    fn red_bounds(px: &[u8], width: usize, height: usize) -> Option<(usize, usize, usize, usize)> {
+        let mut bounds = (width, height, 0, 0);
+        let mut found = false;
+        for y in 0..height {
+            for x in 0..width {
+                let i = (y * width + x) * 4;
+                if px[i] > 180 && px[i] > px[i + 1] * 2 && px[i] > px[i + 2] * 2 {
+                    found = true;
+                    bounds.0 = bounds.0.min(x);
+                    bounds.1 = bounds.1.min(y);
+                    bounds.2 = bounds.2.max(x);
+                    bounds.3 = bounds.3.max(y);
+                }
+            }
+        }
+        found.then_some(bounds)
+    }
+
+    let parent_transform = Transform {
+        translate_x: 60.0,
+        translate_y: 40.0,
+        scale_x: 0.8,
+        scale_y: 0.8,
+        rotate: 0.0,
+        shear_x: 0.0,
+        shear_y: 0.0,
+        origin_x: 0.0,
+        origin_y: 0.0,
+        perspective: [0.0, 0.0, 1.0],
+    };
+    let rect = Rect {
+        x: 300.0,
+        y: 200.0,
+        w: 200.0,
+        h: 120.0,
+    };
+    let brush = Brush::Solid(Color::from_rgb(255, 0, 0));
+    let base_nodes = vec![
+        SceneNode::PushTransform {
+            transform: parent_transform,
+        },
+        SceneNode::PushClip {
+            rect,
+            radius: [Px(8.0); 4],
+            op: ClipOp::Intersect,
+        },
+        SceneNode::Rect {
+            rect,
+            brush,
+            radius: [Px(8.0); 4],
+        },
+        SceneNode::PopClip,
+        SceneNode::PopTransform,
+    ];
+    let mut layer_nodes = base_nodes.clone();
+    layer_nodes.insert(
+        2,
+        SceneNode::BeginLayer {
+            rect,
+            layer_id: 0,
+            alpha: 1.0,
+            blur_radius_x: Px::ZERO,
+            blur_radius_y: Px::ZERO,
+            rectangle_edge: true,
+        },
+    );
+    layer_nodes.insert(
+        3,
+        SceneNode::PushTransform {
+            transform: Transform::translate(-rect.x, -rect.y),
+        },
+    );
+    layer_nodes.insert(5, SceneNode::PopTransform);
+    layer_nodes.insert(6, SceneNode::EndLayer { layer_id: 0 });
+    let base = Scene {
+        clear_color: Color::from_rgba(0, 0, 0, 0),
+        nodes: base_nodes,
+    };
+    let layered = Scene {
+        clear_color: Color::from_rgba(0, 0, 0, 0),
+        nodes: layer_nodes,
+    };
+    let Some(mut off) = try_offscreen(800, 600) else {
+        return;
+    };
+    let base_px = off.render_rgba(&base, None).expect("render base");
+    let layered_px = off.render_rgba(&layered, None).expect("render layer");
+    assert_eq!(
+        red_bounds(&layered_px, 800, 600),
+        red_bounds(&base_px, 800, 600)
+    );
+}
+
+#[test]
+fn graphics_layer_shadow_draws_before_the_layer_composite() {
+    let rect = Rect {
+        x: 300.0,
+        y: 200.0,
+        w: 200.0,
+        h: 120.0,
+    };
+    let scene = Scene {
+        clear_color: Color::from_rgba(0, 0, 0, 0),
+        nodes: vec![
+            SceneNode::PushClip {
+                rect,
+                radius: [Px(8.0); 4],
+                op: ClipOp::Intersect,
+            },
+            SceneNode::BeginLayer {
+                rect,
+                layer_id: 0,
+                alpha: 1.0,
+                blur_radius_x: Px::ZERO,
+                blur_radius_y: Px::ZERO,
+                rectangle_edge: true,
+            },
+            SceneNode::PushTransform {
+                transform: Transform::translate(-rect.x, -rect.y),
+            },
+            SceneNode::Rect {
+                rect,
+                brush: Brush::Solid(Color::from_rgb(255, 0, 0)),
+                radius: [Px(8.0); 4],
+            },
+            SceneNode::PopTransform,
+            SceneNode::EndLayer { layer_id: 0 },
+            SceneNode::PopClip,
+            SceneNode::CompositeShadow {
+                layer_id: 0,
+                blur_px: Px(8.0),
+                offset_px: (Px::ZERO, Px(4.0)),
+                color: Color::from_rgba(0, 0, 0, 255),
+            },
+            SceneNode::PopTransform,
+        ],
+    };
+    let Some(mut off) = try_offscreen(800, 600) else {
+        return;
+    };
+    let pixels = off.render_rgba(&scene, None).expect("render");
+    let center = (260 * 800 + 400) * 4;
+    let outside = (260 * 800 + 295) * 4;
+    assert_eq!(&pixels[center..center + 4], &[255, 0, 0, 255]);
+    assert!(pixels[outside + 3] > 0);
 }
 
 #[test]

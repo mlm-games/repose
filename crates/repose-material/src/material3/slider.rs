@@ -142,8 +142,7 @@ fn slider_tick_fractions(min: f32, max: f32, step: Option<f32>) -> Vec<f32> {
     let samples = intervals.min(MAX_SLIDER_TICKS.saturating_sub(1));
     let mut fractions = Vec::with_capacity(samples + 1);
     for sample in 0..=samples {
-        let interval = sample * intervals / samples;
-        fractions.push(interval as f32 / intervals as f32);
+        fractions.push(sample as f32 / samples as f32);
     }
     fractions
 }

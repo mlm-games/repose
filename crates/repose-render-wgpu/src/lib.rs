@@ -6750,6 +6750,7 @@ impl WgpuSceneRenderer {
     fn replay_active_clips(
         &mut self,
         clips: &[ActiveClip],
+        parent_transform: &Transform,
         origin: (f32, f32),
         target_size: (f32, f32),
         pass: &mut Pass,
@@ -6781,7 +6782,15 @@ impl WgpuSceneRenderer {
                     radii,
                     ..
                 } => {
-                    let local_rect = translated_rect(*rect, origin.0, origin.1);
+                    let local_rect = parent_rect_to_layer_rect(*rect, parent_transform, origin)
+                        .unwrap_or(repose_core::Rect {
+                            x: 0.0,
+                            y: 0.0,
+                            w: 0.0,
+                            h: 0.0,
+                        });
+                    let local_radii =
+                        parent_radii_to_layer_radii(*radii, parent_transform).unwrap_or([0.0; 4]);
                     let next = if difference {
                         current
                     } else {
@@ -6804,7 +6813,7 @@ impl WgpuSceneRenderer {
                         let ndc = rect_to_ndc(local_rect, target_size.0, target_size.1);
                         let instance = ClipInstance {
                             xywh: [ndc[0] + ndc[2] * 0.5, ndc[1] + ndc[3] * 0.5, ndc[2], ndc[3]],
-                            radii: *radii,
+                            radii: local_radii,
                             fwd_mat: [1.0, 0.0, 0.0, 1.0],
                         };
                         let bytes = bytemuck::bytes_of(&instance);
@@ -6828,8 +6837,8 @@ impl WgpuSceneRenderer {
                             replayed.push(ActiveClip::Rect {
                                 off: new_off,
                                 cnt: 1,
-                                rect: *rect,
-                                radii: *radii,
+                                rect: local_rect,
+                                radii: local_radii,
                                 difference,
                                 applied: true,
                                 blocked: false,
@@ -6846,9 +6855,9 @@ impl WgpuSceneRenderer {
                     affine,
                     ..
                 } => {
-                    let mut local_affine = *affine;
-                    local_affine[2] -= origin.0;
-                    local_affine[5] -= origin.1;
+                    let local_affine =
+                        parent_affine_to_layer_affine(*affine, parent_transform, origin)
+                            .unwrap_or([0.0; 6]);
                     let aabb = mesh_aabb(source, local_affine);
                     let next = if difference {
                         current
@@ -6888,7 +6897,7 @@ impl WgpuSceneRenderer {
                             mesh: Some(mesh_gpu),
                             source: source.clone(),
                             uoff,
-                            affine: *affine,
+                            affine: local_affine,
                             difference,
                             applied: true,
                             blocked: false,
@@ -6933,7 +6942,8 @@ impl WgpuSceneRenderer {
                         mesh: mesh.clone(),
                         source: source.clone(),
                         uoff: 0,
-                        affine: *affine,
+                        affine: parent_affine_to_layer_affine(*affine, parent_transform, origin)
+                            .unwrap_or([0.0; 6]),
                         difference: *difference,
                         applied: false,
                         blocked,
@@ -7048,6 +7058,7 @@ impl WgpuSceneRenderer {
         };
         let layer_clips = self.replay_active_clips(
             &saved_clips,
+            &top,
             (layer_rect.x, layer_rect.y),
             (w, h),
             &mut layer_pass,
@@ -7503,6 +7514,7 @@ impl WgpuSceneRenderer {
         };
         self.replay_active_clips(
             active_clips,
+            current_transform,
             (local_rect.x, local_rect.y),
             (w, h),
             &mut layer_pass,
@@ -8233,6 +8245,22 @@ impl WgpuSceneRenderer {
                 flush_image_runs!();
                 flush_primitives!();
             }};
+        }
+        let mut pending_layer_composite: Option<Cmd> = None;
+        let shadow_layer_ids: HashSet<u32> = scene
+            .nodes
+            .iter()
+            .filter_map(|node| match node {
+                SceneNode::CompositeShadow { layer_id, .. } => Some(*layer_id),
+                _ => None,
+            })
+            .collect();
+        macro_rules! flush_pending_layer {
+            () => {
+                if let Some(command) = pending_layer_composite.take() {
+                    current_pass.cmds.push(command);
+                }
+            };
         }
         for node in &scene.nodes {
             let t_identity = Transform::identity();
@@ -9344,15 +9372,16 @@ impl WgpuSceneRenderer {
                         clear_color: Some([0.0, 0.0, 0.0, 0.0]),
                         cmds: Vec::new(),
                     };
+                    let parent_transform = *current_transform;
                     active_clips = self.replay_active_clips(
                         &parent_clips,
+                        &parent_transform,
                         (rect.x, rect.y),
                         (width as f32, height as f32),
                         &mut layer_pass,
                         encoder,
                     );
                     let saved = std::mem::replace(&mut current_pass, layer_pass);
-                    let parent_transform = *current_transform;
                     if let Some(top) = transform_stack.last_mut() {
                         *top = Transform::identity();
                     }
@@ -9425,6 +9454,7 @@ impl WgpuSceneRenderer {
                     } else {
                         local_layer_rect
                     };
+                    let shadow_follows = shadow_layer_ids.contains(layer_id);
                     if !visible(composite_rect, parent_clip) {
                         continue;
                     }
@@ -9463,11 +9493,16 @@ impl WgpuSceneRenderer {
                                 .blur_ring
                                 .alloc_write(&self.queue, bytemuck::bytes_of(&inst))
                         {
-                            current_pass.cmds.push(Cmd::CompositeBlur {
+                            let command = Cmd::CompositeBlur {
                                 off,
                                 cnt: 1,
                                 layer_id: *layer_id,
-                            });
+                            };
+                            if shadow_follows {
+                                pending_layer_composite = Some(command);
+                            } else {
+                                current_pass.cmds.push(command);
+                            }
                         }
                     } else {
                         let ndc = to_ndc(
@@ -9488,11 +9523,16 @@ impl WgpuSceneRenderer {
                             self.glyph_color
                                 .upload(&self.device, &self.queue, encoder, &[inst])
                         {
-                            current_pass.cmds.push(Cmd::CompositeLayer {
+                            let command = Cmd::CompositeLayer {
                                 off,
                                 cnt,
                                 layer_id: *layer_id,
-                            });
+                            };
+                            if shadow_follows {
+                                pending_layer_composite = Some(command);
+                            } else {
+                                current_pass.cmds.push(command);
+                            }
                         }
                     }
                 }
@@ -9527,6 +9567,7 @@ impl WgpuSceneRenderer {
                             },
                             clip,
                         ) {
+                            flush_pending_layer!();
                             continue;
                         }
                         flush_batch!();
@@ -9567,6 +9608,7 @@ impl WgpuSceneRenderer {
                             });
                         }
                     }
+                    flush_pending_layer!();
                 }
                 SceneNode::VectorMesh {
                     mesh,
@@ -9649,13 +9691,13 @@ impl WgpuSceneRenderer {
                     let clip = scissor_stack.last().copied().unwrap_or(root_clip_rect);
                     let has_visible = meshes
                         .iter()
-                        .any(|mesh| visible(mesh_aabb(mesh, [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]), clip));
+                        .any(|mesh| visible(mesh_aabb(mesh, [1.0, 0.0, 0.0, 0.0, 1.0, 0.0]), clip));
                     if !has_visible {
                         continue;
                     }
                     flush_batch!();
                     for (index, m) in meshes.iter().enumerate() {
-                        if !visible(mesh_aabb(m, [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]), clip) {
+                        if !visible(mesh_aabb(m, [1.0, 0.0, 0.0, 0.0, 1.0, 0.0]), clip) {
                             continue;
                         }
                         let Some(mesh_gpu) = self.upload_overlay_mesh(meshes, index) else {
@@ -9829,6 +9871,7 @@ impl WgpuSceneRenderer {
             }
         }
 
+        flush_pending_layer!();
         flush_batch!();
         passes.push(current_pass);
 
@@ -11042,13 +11085,68 @@ fn rect_to_ndc(r: repose_core::Rect, width: f32, height: f32) -> [f32; 4] {
     [x0.min(x1), y0.min(y1), (x1 - x0).abs(), (y1 - y0).abs()]
 }
 
-fn translated_rect(rect: repose_core::Rect, x: f32, y: f32) -> repose_core::Rect {
-    repose_core::Rect {
-        x: rect.x - x,
-        y: rect.y - y,
-        w: rect.w,
-        h: rect.h,
+fn parent_rect_to_layer_rect(
+    rect: repose_core::Rect,
+    parent_transform: &Transform,
+    origin: (f32, f32),
+) -> Option<repose_core::Rect> {
+    let inverse = parent_transform.inverse_linear()?;
+    let tx = parent_transform.translate_x;
+    let ty = parent_transform.translate_y;
+    let corners = [
+        (rect.x, rect.y),
+        (rect.x + rect.w, rect.y),
+        (rect.x, rect.y + rect.h),
+        (rect.x + rect.w, rect.y + rect.h),
+    ];
+    let mut min_x = f32::INFINITY;
+    let mut min_y = f32::INFINITY;
+    let mut max_x = f32::NEG_INFINITY;
+    let mut max_y = f32::NEG_INFINITY;
+    for (x, y) in corners {
+        let local_x = x - tx;
+        let local_y = y - ty;
+        let transformed_x = inverse[0] * local_x + inverse[1] * local_y;
+        let transformed_y = inverse[2] * local_x + inverse[3] * local_y;
+        min_x = min_x.min(transformed_x);
+        min_y = min_y.min(transformed_y);
+        max_x = max_x.max(transformed_x);
+        max_y = max_y.max(transformed_y);
     }
+    let result = repose_core::Rect {
+        x: min_x - origin.0,
+        y: min_y - origin.1,
+        w: (max_x - min_x).max(0.0),
+        h: (max_y - min_y).max(0.0),
+    };
+    (result.x.is_finite() && result.y.is_finite() && result.w.is_finite() && result.h.is_finite())
+        .then_some(result)
+}
+
+fn parent_radii_to_layer_radii(radii: [f32; 4], parent_transform: &Transform) -> Option<[f32; 4]> {
+    let m = parent_transform.linear();
+    let sx = (m[0] * m[0] + m[2] * m[2]).sqrt();
+    let sy = (m[1] * m[1] + m[3] * m[3]).sqrt();
+    (sx.is_finite() && sy.is_finite() && sx > 1e-6 && sy > 1e-6)
+        .then(|| [radii[0] / sx, radii[1] / sy, radii[2] / sx, radii[3] / sy])
+}
+
+fn parent_affine_to_layer_affine(
+    affine: [f32; 6],
+    parent_transform: &Transform,
+    origin: (f32, f32),
+) -> Option<[f32; 6]> {
+    let inverse = parent_transform.inverse_linear()?;
+    let tx = affine[4] - parent_transform.translate_x;
+    let ty = affine[5] - parent_transform.translate_y;
+    Some([
+        inverse[0] * affine[0] + inverse[1] * affine[2],
+        inverse[0] * affine[1] + inverse[1] * affine[3],
+        inverse[2] * affine[0] + inverse[3] * affine[2],
+        inverse[2] * affine[1] + inverse[3] * affine[3],
+        inverse[0] * tx + inverse[1] * ty - origin.0,
+        inverse[2] * tx + inverse[3] * ty - origin.1,
+    ])
 }
 
 fn checked_copy_region(
