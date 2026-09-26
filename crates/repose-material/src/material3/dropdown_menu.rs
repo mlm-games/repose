@@ -149,7 +149,10 @@ const DDM_ROOT_SCRIM_Z: f32 = 1000.0;
 const DDM_CARD_Z: f32 = 1001.0;
 const DDM_SUBMENU_SCRIM_Z: f32 = 1003.0;
 const DDM_SUBMENU_CARD_Z: f32 = 1004.0;
-const DDM_ITEM_Z: f32 = 1005.0;
+/// Hit layer for everything inside the card. Must stay above the card and the
+/// scrims, whose `on_scroll` barriers swallow the delta otherwise, so the
+/// items scroller stays the first scroll consumer under the pointer.
+const DDM_CONTENT_Z: f32 = 1005.0;
 const DDM_SUBMENU_ARROW: Symbol = Symbol::new("chevron_right", '\u{E5CC}');
 
 /// Either a menu item, a divider, or a nested submenu.
@@ -493,7 +496,7 @@ fn render_dropdown_item(
     let item_source: Rc<MutableInteractionSource> = remember(MutableInteractionSource::new);
 
     let mut modifier = Modifier::new()
-        .z_index(DDM_ITEM_Z)
+        .z_index(DDM_CONTENT_Z)
         .fill_max_width()
         .min_height(config.item_height.max(DDM_ITEM_MIN_HEIGHT))
         .padding_values(PaddingValues {
@@ -616,7 +619,7 @@ fn render_dropdown_submenu(
     }
     let header_source: Rc<MutableInteractionSource> = remember(MutableInteractionSource::new);
     let mut header_modifier = Modifier::new()
-        .z_index(DDM_ITEM_Z)
+        .z_index(DDM_CONTENT_Z)
         .fill_max_width()
         .min_height(config.item_height.max(DDM_ITEM_MIN_HEIGHT))
         .padding_values(PaddingValues {
@@ -850,6 +853,7 @@ fn render_dropdown_submenu(
                     .max_height(Dp(
                         (available_height - 2.0 * DDM_VERTICAL_PADDING.0).max(0.0)
                     ))
+                    .z_index(DDM_CONTENT_Z)
                     .vertical_scroll(axis_binding))
                 .child(Column(Modifier::new().fill_max_width()).with_children(items));
                 let popup_sizes = parent.popup_sizes.clone();
@@ -1012,6 +1016,7 @@ fn render_dropdown_menu_content(
     let items_column = Box(Modifier::new()
         .fill_max_width()
         .max_height(Dp((max_height - 2.0 * DDM_VERTICAL_PADDING.0).max(0.0)))
+        .z_index(DDM_CONTENT_Z)
         .vertical_scroll(axis_binding))
     .child(Column(Modifier::new().fill_max_width()).with_children(children));
 
