@@ -8321,10 +8321,14 @@ impl WgpuSceneRenderer {
             {
                 return (0, 0, 0, 0);
             }
-            let x0 = r.x.floor().max(0.0).min(fb_w as f32);
-            let y0 = r.y.floor().max(0.0).min(fb_h as f32);
-            let x1 = (r.x + r.w).ceil().max(x0).min(fb_w as f32);
-            let y1 = (r.y + r.h).ceil().max(y0).min(fb_h as f32);
+            // Inward: a clip must not admit any pixel outside the rect it
+            // came from. Rounding out let clipped content bleed a pixel past
+            // every clip edge, which shows up as a 1px line hugging the edge
+            // of a letterboxed or clipped view.
+            let x0 = r.x.ceil().max(0.0).min(fb_w as f32);
+            let y0 = r.y.ceil().max(0.0).min(fb_h as f32);
+            let x1 = (r.x + r.w).floor().max(x0).min(fb_w as f32);
+            let y1 = (r.y + r.h).floor().max(y0).min(fb_h as f32);
             if x1 <= x0 || y1 <= y0 {
                 return (0, 0, 0, 0);
             }
@@ -11049,10 +11053,15 @@ impl WgpuSceneRenderer {
                         payload,
                     } => {
                         if let Some(cb) = payload.downcast_ref::<Callback>() {
-                            let vp_x = rect.x.floor().max(0.0);
-                            let vp_y = rect.y.floor().max(0.0);
-                            let vp_w = rect.w.ceil().max(1.0);
-                            let vp_h = rect.h.ceil().max(1.0);
+                            // Round INWARD. A callback may only paint inside its
+                            // own rect, and a fullscreen pass draws a single
+                            // clip-space quad spanning twice the viewport, so an
+                            // outward-rounded viewport overshot the rect and the
+                            // outward-rounded scissor let that overshoot through.
+                            let vp_x = rect.x.ceil().max(0.0);
+                            let vp_y = rect.y.ceil().max(0.0);
+                            let vp_w = ((rect.x + rect.w).floor() - vp_x).max(1.0);
+                            let vp_h = ((rect.y + rect.h).floor() - vp_y).max(1.0);
                             if vp_w > 0.0 && vp_h > 0.0 && clip_rect.w > 0.0 && clip_rect.h > 0.0 {
                                 rpass.set_scissor_rect(scissor.0, scissor.1, scissor.2, scissor.3);
                                 rpass.set_viewport(vp_x, vp_y, vp_w, vp_h, 0.0, 1.0);
@@ -11383,10 +11392,12 @@ fn rect_to_scissor(r: repose_core::Rect, width: u32, height: u32) -> (u32, u32, 
     {
         return (0, 0, 0, 0);
     }
-    let x0 = r.x.floor().max(0.0).min(width as f32);
-    let y0 = r.y.floor().max(0.0).min(height as f32);
-    let x1 = (r.x + r.w).ceil().max(x0).min(width as f32);
-    let y1 = (r.y + r.h).ceil().max(y0).min(height as f32);
+    // Inward, for the same reason as `to_scissor`: a clip covers only whole
+    // pixels inside its rect.
+    let x0 = r.x.ceil().max(0.0).min(width as f32);
+    let y0 = r.y.ceil().max(0.0).min(height as f32);
+    let x1 = (r.x + r.w).floor().max(x0).min(width as f32);
+    let y1 = (r.y + r.h).floor().max(y0).min(height as f32);
     if x1 <= x0 || y1 <= y0 {
         return (0, 0, 0, 0);
     }
