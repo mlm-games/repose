@@ -117,6 +117,7 @@ mod imp {
             rgba: Vec<u8>,
             srgb: bool,
         ) {
+            crate::image_intrinsic::set_image_intrinsic_size(handle, w, h);
             let mut q = self.q.lock().unwrap();
             q.removals.remove(&handle);
             q.updates.insert(
@@ -153,6 +154,7 @@ mod imp {
             planes: Vec<Arc<[u8]>>,
             color_info: ColorInfo,
         ) {
+            crate::image_intrinsic::set_image_intrinsic_size(handle, w, h);
             let mut q = self.q.lock().unwrap();
             q.removals.remove(&handle);
             q.updates.insert(
@@ -170,6 +172,7 @@ mod imp {
         }
 
         pub fn remove_image(&self, handle: ImageHandle) {
+            crate::image_intrinsic::clear_image_intrinsic_size(handle);
             let mut q = self.q.lock().unwrap();
             q.removals.insert(handle);
             q.updates.remove(&handle);
@@ -189,6 +192,7 @@ mod imp {
             offsets: Vec<u64>,
             color_info: ColorInfo,
         ) {
+            crate::image_intrinsic::set_image_intrinsic_size(handle, w, h);
             let mut q = self.q.lock().unwrap();
             q.removals.remove(&handle);
             q.updates.insert(
@@ -302,6 +306,7 @@ mod imp {
             rgba: Vec<u8>,
             srgb: bool,
         ) {
+            crate::image_intrinsic::set_image_intrinsic_size(handle, w, h);
             let mut s = self.inner.borrow_mut();
             s.q.removals.remove(&handle);
             s.q.updates.insert(
@@ -338,6 +343,7 @@ mod imp {
             planes: Vec<Arc<[u8]>>,
             color_info: ColorInfo,
         ) {
+            crate::image_intrinsic::set_image_intrinsic_size(handle, w, h);
             let mut s = self.inner.borrow_mut();
             s.q.removals.remove(&handle);
             s.q.updates.insert(
@@ -355,6 +361,7 @@ mod imp {
         }
 
         pub fn remove_image(&self, handle: ImageHandle) {
+            crate::image_intrinsic::clear_image_intrinsic_size(handle);
             let mut s = self.inner.borrow_mut();
             s.q.updates.remove(&handle);
             s.q.removals.insert(handle);

@@ -435,7 +435,11 @@ impl LayoutEngine {
             }
         }
 
-        s.align_items = Some(AlignItems::STRETCH);
+        // Compose's Column/Row default to `Alignment.Start`, so children
+        // shrink-wrap on the cross axis; Godot makes the equivalent
+        // (`SIZE_FILL`) opt-in per child. Opt in explicitly via
+        // `Modifier::fill_max_*`, which sets a definite size.
+        s.align_items = Some(AlignItems::FLEX_START);
         // Needed for 2D scroll.
         let is_2d_scroll = matches!(m.scroll.as_ref().map(|s| s.axis()), Some(ScrollAxis::Both));
         if is_2d_scroll {
@@ -785,6 +789,14 @@ impl LayoutEngine {
             },
             ViewKind::OverlayHost => NodeContext::Container,
             ViewKind::SubcomposeLayout { .. } => NodeContext::Container,
+            ViewKind::Image { handle, fit, .. } => {
+                let (w, h) = image_intrinsic_size(*handle).unwrap_or((0, 0));
+                NodeContext::Image {
+                    w: w as f32,
+                    h: h as f32,
+                    fit: *fit,
+                }
+            }
             _ => NodeContext::Container,
         }
     }

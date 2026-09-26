@@ -1835,6 +1835,7 @@ impl LayoutEngine {
                 fit,
                 filter,
                 source_rect,
+                alignment,
             } => {
                 scene.nodes.push(SceneNode::Image {
                     rect,
@@ -1843,6 +1844,7 @@ impl LayoutEngine {
                     fit: *fit,
                     filter: *filter,
                     source_rect: *source_rect,
+                    alignment: *alignment,
                 });
             }
             ViewKind::Box if modifier.text_input.is_some() => {

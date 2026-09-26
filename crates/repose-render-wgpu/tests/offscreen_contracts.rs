@@ -6,8 +6,8 @@
 //! Skips (does not fail) without a WGPU adapter.
 
 use repose_core::{
-    Brush, ClipOp, Color, ImageFilter, ImageFit, ImageSourceRect, Px, Rect, Scene, SceneNode,
-    Transform,
+    Brush, ClipOp, Color, ImageAlignment, ImageFilter, ImageFit, ImageSourceRect, Px, Rect, Scene,
+    SceneNode, Transform,
 };
 use repose_render_wgpu::offscreen::OffscreenRenderer;
 
@@ -663,6 +663,7 @@ fn image_source_rect_and_filter_select_exact_atlas_frame() {
                 fit: ImageFit::FillBounds,
                 filter,
                 source_rect: Some(source_rect),
+                alignment: ImageAlignment::Center,
             }],
         };
         off.render_rgba(&scene, None).expect("render")

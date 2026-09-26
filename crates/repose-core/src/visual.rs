@@ -1,7 +1,8 @@
 use std::rc::Rc;
 
 use crate::{
-    Brush, Color, ImageFilter, ImageFit, ImageHandle, ImageSourceRect, Px, Rect, Scene, SceneNode,
+    Brush, Color, ImageAlignment, ImageFilter, ImageFit, ImageHandle, ImageSourceRect, Px, Rect,
+    Scene, SceneNode,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -42,6 +43,7 @@ pub enum ControlVisual {
         tint: Color,
         fit: ImageFit,
         filter: ImageFilter,
+        alignment: ImageAlignment,
     },
     Custom(ControlPainter),
 }
@@ -58,6 +60,7 @@ impl ControlVisual {
             tint,
             fit: ImageFit::FillBounds,
             filter: ImageFilter::Linear,
+            alignment: ImageAlignment::Center,
         }
     }
 
@@ -82,6 +85,16 @@ impl ControlVisual {
         self
     }
 
+    pub fn image_alignment(mut self, alignment: ImageAlignment) -> Self {
+        if let Self::Image {
+            alignment: current, ..
+        } = &mut self
+        {
+            *current = alignment;
+        }
+        self
+    }
+
     pub fn paint(&self, scene: &mut Scene, rect: Rect, state: ControlVisualState) {
         match self {
             Self::Rect { brush, radius } => scene.nodes.push(SceneNode::Rect {
@@ -95,6 +108,7 @@ impl ControlVisual {
                 tint,
                 fit,
                 filter,
+                alignment,
             } => scene.nodes.push(SceneNode::Image {
                 rect,
                 handle: *handle,
@@ -102,6 +116,7 @@ impl ControlVisual {
                 fit: *fit,
                 filter: *filter,
                 source_rect: *source_rect,
+                alignment: *alignment,
             }),
             Self::Custom(painter) => painter(scene, rect, state),
         }
@@ -129,6 +144,7 @@ impl std::fmt::Debug for ControlVisual {
                 tint,
                 fit,
                 filter,
+                alignment,
             } => f
                 .debug_struct("Image")
                 .field("handle", handle)
@@ -136,6 +152,7 @@ impl std::fmt::Debug for ControlVisual {
                 .field("tint", tint)
                 .field("fit", fit)
                 .field("filter", filter)
+                .field("alignment", alignment)
                 .finish(),
             Self::Custom(_) => f
                 .debug_struct("Custom")
@@ -165,6 +182,7 @@ impl PartialEq for ControlVisual {
                     tint: at,
                     fit: af,
                     filter: ax,
+                    alignment: aa,
                 },
                 Self::Image {
                     handle: bh,
@@ -172,8 +190,9 @@ impl PartialEq for ControlVisual {
                     tint: bt,
                     fit: bf,
                     filter: bx,
+                    alignment: ba,
                 },
-            ) => ah == bh && ar == br && at == bt && af == bf && ax == bx,
+            ) => ah == bh && ar == br && at == bt && af == bf && ax == bx && aa == ba,
             (Self::Custom(a), Self::Custom(b)) => Rc::ptr_eq(a, b),
             _ => false,
         }

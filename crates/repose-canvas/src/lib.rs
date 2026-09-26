@@ -1831,6 +1831,7 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                         fit: *fit,
                         filter: *filter,
                         source_rect: *source_rect,
+                        alignment: repose_core::ImageAlignment::Center,
                     });
                 }
             }

@@ -137,8 +137,53 @@ pub enum ImageFit {
     FillBounds,
     /// ContentScale.Inside - like Contain but never upscales
     Inside,
-    /// ContentScale.None - no scaling, top-left (alignment can offset later)
+    /// ContentScale.None - no scaling; placement comes from [`ImageAlignment`]
     None,
+    /// Repeat the source to fill the bounds (Godot `STRETCH_SCALE` + tile).
+    /// Unlike every other mode this ignores aspect ratio and may draw past a
+    /// `source_rect` edge, wrapping instead of clipping.
+    Tile,
+}
+
+/// Placement of scaled content inside the view bounds. Mirrors Godot's
+/// `AspectRatioContainer::AlignmentMode` and covers every fixed `Alignment` in
+/// Compose (`Begin`/`End` are physical left/right and top/bottom, not
+/// direction-aware).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum ImageAlignment {
+    /// Alignment.Center
+    #[default]
+    Center,
+    /// Alignment.TopLeft / BottomStart - left and top
+    Begin,
+    /// Alignment.TopRight / BottomEnd - right and bottom
+    End,
+}
+
+impl ImageFit {
+    /// Per-axis scale factors for drawing a `src`-sized source into `dst`.
+    /// Mirrors Compose's `ContentScale.computeScaleFactor`, which layout and
+    /// paint both need: layout sizes to it, paint draws with it.
+    pub fn scale_factor(self, src: (f32, f32), dst: (f32, f32)) -> (f32, f32) {
+        let fill_w = dst.0 / src.0;
+        let fill_h = dst.1 / src.1;
+        let uniform = |v: f32| (v, v);
+        match self {
+            Self::Contain => uniform(fill_w.min(fill_h)),
+            Self::Cover => uniform(fill_w.max(fill_h)),
+            Self::FitWidth => uniform(fill_w),
+            Self::FitHeight => uniform(fill_h),
+            Self::FillBounds => (fill_w, fill_h),
+            Self::Inside => {
+                if src.0 <= dst.0 && src.1 <= dst.1 {
+                    uniform(1.0)
+                } else {
+                    uniform(fill_w.min(fill_h))
+                }
+            }
+            Self::None | Self::Tile => uniform(1.0),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -184,6 +229,7 @@ pub enum ViewKind {
         fit: ImageFit,
         filter: ImageFilter,
         source_rect: Option<ImageSourceRect>,
+        alignment: ImageAlignment,
     },
     /// A layout whose children are produced by calling `content` with the
     /// current `SubcomposeScope`. The closure is invoked during reconciliation
@@ -214,6 +260,7 @@ impl std::fmt::Debug for ViewKind {
                 fit,
                 filter,
                 source_rect,
+                alignment,
             } => f
                 .debug_struct("Image")
                 .field("handle", handle)
@@ -221,6 +268,7 @@ impl std::fmt::Debug for ViewKind {
                 .field("fit", fit)
                 .field("filter", filter)
                 .field("source_rect", source_rect)
+                .field("alignment", alignment)
                 .finish(),
             Self::SubcomposeLayout { .. } => f.write_str("SubcomposeLayout"),
             Self::Text { text, .. } => write!(f, "Text({:?})", text),
@@ -378,6 +426,7 @@ pub enum SceneNode {
         fit: ImageFit,
         filter: ImageFilter,
         source_rect: Option<ImageSourceRect>,
+        alignment: ImageAlignment,
     },
     /// Tinted A8 coverage mask: samples `handle` (registered with
     /// `register_coverage_a8`) as coverage and composites `color` with

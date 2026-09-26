@@ -116,6 +116,7 @@ pub mod focus;
 pub mod frame_clock;
 pub mod geometry;
 pub mod gesture;
+pub mod image_intrinsic;
 pub mod indication;
 pub mod input;
 pub mod locals;
@@ -156,6 +157,7 @@ pub use frame_clock::{
 };
 pub use geometry::*;
 pub use gesture::*;
+pub use image_intrinsic::{clear_image_intrinsic_size, image_intrinsic_size, set_image_intrinsic_size};
 pub use locals::*;
 pub use modifier::*;
 pub use prelude::*;

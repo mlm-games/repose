@@ -406,6 +406,7 @@ fn view_kind_equal(old: &ViewKind, new: &ViewKind) -> bool {
                 fit: old_fit,
                 filter: old_filter,
                 source_rect: old_source_rect,
+                alignment: old_alignment,
             },
             ViewKind::Image {
                 handle: new_handle,
@@ -413,6 +414,7 @@ fn view_kind_equal(old: &ViewKind, new: &ViewKind) -> bool {
                 fit: new_fit,
                 filter: new_filter,
                 source_rect: new_source_rect,
+                alignment: new_alignment,
             },
         ) => {
             old_handle == new_handle
@@ -420,6 +422,7 @@ fn view_kind_equal(old: &ViewKind, new: &ViewKind) -> bool {
                 && old_fit == new_fit
                 && old_filter == new_filter
                 && old_source_rect == new_source_rect
+                && old_alignment == new_alignment
         }
         _ => std::mem::discriminant(old) == std::mem::discriminant(new),
     }

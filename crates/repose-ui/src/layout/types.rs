@@ -220,6 +220,15 @@ pub(crate) enum NodeContext {
     TextInput {
         multiline: bool,
     },
+    /// An image leaf, carrying its natural pixel size so an unsized view can
+    /// report an intrinsic size. `w`/`h` are `0.0` while the size is unknown
+    /// (encoded uploads are decoded by the renderer), which measures to zero
+    /// exactly like a Compose `Painter` with an unspecified `intrinsicSize`.
+    Image {
+        w: f32,
+        h: f32,
+        fit: ImageFit,
+    },
 }
 
 #[derive(Clone)]

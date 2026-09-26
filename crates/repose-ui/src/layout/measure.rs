@@ -1037,6 +1037,36 @@ impl LayoutEngine {
                 };
                 taffy::geometry::Size { width, height }
             }
+            Some(NodeContext::Image {
+                w: intrinsic_w,
+                h: intrinsic_h,
+                fit,
+            }) => {
+                // Mirrors Compose's `PainterNode.modifyConstraints`: an
+                // unspecified axis takes the image's natural size, the pair is
+                // scaled by `ImageFit`, and the result is left for Taffy to
+                // clamp against the incoming min/max and available space
+                // (Compose does the same with `constrainWidth`/`constrainHeight`).
+                //
+                // A definite `known` dimension comes from a size/fill
+                // modifier and wins outright, which is Compose's `hasFixed`
+                // short-circuit: e.g. `width(120.dp)` on a 100x50 source gives
+                // 120x50, not a scaled-up 120x72.
+                if *intrinsic_w <= 0.0 || *intrinsic_h <= 0.0 {
+                    return taffy::geometry::Size::ZERO;
+                }
+                let target_w = known.width.unwrap_or(*intrinsic_w);
+                let target_h = known.height.unwrap_or(*intrinsic_h);
+                if target_w <= 0.0 || target_h <= 0.0 {
+                    return taffy::geometry::Size::ZERO;
+                }
+                let (scale_x, scale_y) =
+                    fit.scale_factor((*intrinsic_w, *intrinsic_h), (target_w, target_h));
+                taffy::geometry::Size {
+                    width: intrinsic_w * scale_x,
+                    height: intrinsic_h * scale_y,
+                }
+            }
             _ => taffy::geometry::Size::ZERO,
         }
     }

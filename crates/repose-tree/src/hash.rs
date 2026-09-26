@@ -287,12 +287,22 @@ fn facet_hash_view_kind(kind: &ViewKind, hashers: &mut FacetHashers) {
             fit,
             filter,
             source_rect,
+            alignment,
         } => {
             hashers.hash(FACET_LAYOUT_MEASUREMENT_PAINT, |h| handle.hash(h));
+            // Natural size drives the view's intrinsic measurement, and it can
+            // arrive after the view was first composed (encoded uploads are
+            // decoded by the renderer), so it must invalidate measurement.
+            hashers.hash(FACET_MEASUREMENT, |h| {
+                repose_core::image_intrinsic_size(*handle).hash(h)
+            });
             hashers.hash(FACET_PAINT, |h| hash_color(tint, h));
             hashers.hash(FACET_PAINT, |h| std::mem::discriminant(fit).hash(h));
             hashers.hash(FACET_PAINT, |h| std::mem::discriminant(filter).hash(h));
             hashers.hash(FACET_PAINT, |h| source_rect.hash(h));
+            hashers.hash(FACET_PAINT, |h| {
+                std::mem::discriminant(alignment).hash(h)
+            });
         }
         ViewKind::Box
         | ViewKind::Row
@@ -911,6 +921,7 @@ fn facet_hash_control_visual(visual: &repose_core::ControlVisual, hashers: &mut 
             tint,
             fit,
             filter,
+            alignment,
         } => {
             hashers.hash(FACET_PAINT, |h| {
                 handle.hash(h);
@@ -918,6 +929,7 @@ fn facet_hash_control_visual(visual: &repose_core::ControlVisual, hashers: &mut 
                 hash_color(tint, h);
                 std::mem::discriminant(fit).hash(h);
                 std::mem::discriminant(filter).hash(h);
+                std::mem::discriminant(alignment).hash(h);
             });
         }
         repose_core::ControlVisual::Custom(_) => {
@@ -1255,12 +1267,15 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
             fit,
             filter,
             source_rect,
+            alignment,
         } => {
             handle.hash(hasher);
+            repose_core::image_intrinsic_size(*handle).hash(hasher);
             hash_color(tint, hasher);
             std::mem::discriminant(fit).hash(hasher);
             std::mem::discriminant(filter).hash(hasher);
             source_rect.hash(hasher);
+            std::mem::discriminant(alignment).hash(hasher);
         }
         ViewKind::OverlayHost
         | ViewKind::Box
@@ -1310,12 +1325,14 @@ fn hash_control_visual(visual: &repose_core::ControlVisual, hasher: &mut impl Ha
             tint,
             fit,
             filter,
+            alignment,
         } => {
             handle.hash(hasher);
             source_rect.hash(hasher);
             hash_color(tint, hasher);
             std::mem::discriminant(fit).hash(hasher);
             std::mem::discriminant(filter).hash(hasher);
+            std::mem::discriminant(alignment).hash(hasher);
         }
         repose_core::ControlVisual::Custom(_) => {
             visual.custom_identity().unwrap_or_default().hash(hasher)
@@ -1858,7 +1875,8 @@ fn hash_text_overflow(o: &TextOverflow, hasher: &mut impl Hasher) {
 mod tests {
     use super::*;
     use repose_core::{
-        DrawStyle, FontStyle, FontWeight, ImageFilter, ImageFit, ImageSourceRect, Modifier,
+        DrawStyle, FontStyle, FontWeight, ImageAlignment, ImageFilter, ImageFit, ImageSourceRect,
+    Modifier,
         TextAlign, TextDecoration, UnitExt, View, ViewKind,
     };
 
@@ -1881,6 +1899,7 @@ mod tests {
                     fit: ImageFit::FillBounds,
                     filter: ImageFilter::Nearest,
                     source_rect,
+                    alignment: ImageAlignment::Center,
                 },
             )
         };

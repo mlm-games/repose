@@ -478,6 +478,7 @@ pub fn Image(modifier: Modifier, handle: ImageHandle) -> View {
             fit: ImageFit::Contain,
             filter: ImageFilter::Linear,
             source_rect: None,
+            alignment: ImageAlignment::Center,
         },
     )
     .modifier(modifier)
@@ -503,6 +504,7 @@ pub trait ImageExt {
     fn image_fit(self, fit: ImageFit) -> View;
     fn image_filter(self, filter: ImageFilter) -> View;
     fn image_source_rect(self, source_rect: ImageSourceRect) -> View;
+    fn image_alignment(self, alignment: ImageAlignment) -> View;
 }
 impl ImageExt for View {
     fn image_tint(mut self, c: Color) -> View {
@@ -526,6 +528,15 @@ impl ImageExt for View {
     fn image_source_rect(mut self, source: ImageSourceRect) -> View {
         if let ViewKind::Image { source_rect, .. } = &mut self.kind {
             *source_rect = Some(source);
+        }
+        self
+    }
+    fn image_alignment(mut self, alignment: ImageAlignment) -> View {
+        if let ViewKind::Image {
+            alignment: current, ..
+        } = &mut self.kind
+        {
+            *current = alignment;
         }
         self
     }

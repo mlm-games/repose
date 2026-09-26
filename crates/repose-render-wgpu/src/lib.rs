@@ -9,8 +9,8 @@ use std::sync::{Arc, Weak};
 
 use repose_core::color::{ChromaSiting, ColorInfo, PixelFormat};
 use repose_core::{
-    Brush, FontStyle, ImageFilter, ImageFit, ImageSourceRect, Scene, SceneNode, StrokeCap,
-    Transform, Vec2,
+    Brush, FontStyle, ImageAlignment, ImageFilter, ImageFit, ImageSourceRect, Scene, SceneNode,
+    StrokeCap, Transform, Vec2,
 };
 #[cfg(feature = "winit-surface")]
 use repose_core::{GlyphRasterConfig, PresentModePref, RenderBackend, request_frame};
@@ -225,6 +225,8 @@ pub struct WgpuSceneRenderer {
     image_bind_layout_nv12: wgpu::BindGroupLayout,
     image_sampler: wgpu::Sampler,
     image_sampler_nearest: wgpu::Sampler,
+    image_sampler_repeat: wgpu::Sampler,
+    image_sampler_repeat_nearest: wgpu::Sampler,
     layer_sampler: wgpu::Sampler,
     layer_sampler_linear: wgpu::Sampler,
 
@@ -1838,6 +1840,8 @@ enum Cmd {
         cnt: u32,
         handle: u64,
         filter: ImageFilter,
+        /// Bind to the repeating samplers so `ImageFit::Tile` UVs wrap.
+        tile: bool,
     },
     /// Composite a tinted A8 coverage tile (`SceneNode::Coverage`). The
     /// instance lives in `self.glyph_color.ring` (a `GlyphInstance`); the
@@ -1957,13 +1961,18 @@ struct CoverageTex {
 struct ImageBinds {
     linear: wgpu::BindGroup,
     nearest: wgpu::BindGroup,
+    /// `ImageFit::Tile` variants, bound to repeating samplers.
+    tile_linear: wgpu::BindGroup,
+    tile_nearest: wgpu::BindGroup,
 }
 
 impl ImageBinds {
-    fn get(&self, filter: ImageFilter) -> &wgpu::BindGroup {
-        match filter {
-            ImageFilter::Linear => &self.linear,
-            ImageFilter::Nearest => &self.nearest,
+    fn get(&self, filter: ImageFilter, tile: bool) -> &wgpu::BindGroup {
+        match (filter, tile) {
+            (ImageFilter::Linear, false) => &self.linear,
+            (ImageFilter::Nearest, false) => &self.nearest,
+            (ImageFilter::Linear, true) => &self.tile_linear,
+            (ImageFilter::Nearest, true) => &self.tile_nearest,
         }
     }
 }
@@ -2066,9 +2075,18 @@ fn resolve_image_source(
     })
 }
 
+/// Draw rect and UV range for `fit` inside `rect`.
+///
+/// Mirrors Compose's `PainterNode.draw`: scale the source by
+/// `ContentScale.computeScaleFactor`, align the result within the bounds, then
+/// clip to those bounds. Clipping remaps the UVs rather than pushing a clip
+/// rect, matching what Compose's `clipToBounds` and Godot's `clip_contents`
+/// produce visually without the extra pass. Modes that scale past an edge
+/// (`Cover`, `FitWidth`, `FitHeight`, `None`) rely on it to stay in bounds.
 fn image_fit_geometry(
     rect: repose_core::Rect,
     fit: ImageFit,
+    alignment: ImageAlignment,
     source: &ResolvedImageSource,
 ) -> Option<(repose_core::Rect, [f32; 4])> {
     let src_w = source.width;
@@ -2078,92 +2096,63 @@ fn image_fit_geometry(
     if src_w <= 0.0 || src_h <= 0.0 || dst_w <= 0.0 || dst_h <= 0.0 {
         return None;
     }
-    let (draw_rect, local_uv) = match fit {
-        ImageFit::Contain => {
-            let scale = (dst_w / src_w).min(dst_h / src_h);
-            let w = src_w * scale;
-            let h = src_h * scale;
-            (
-                repose_core::Rect {
-                    x: rect.x + (dst_w - w) * 0.5,
-                    y: rect.y + (dst_h - h) * 0.5,
-                    w,
-                    h,
-                },
-                [0.0, 0.0, 1.0, 1.0],
-            )
-        }
-        ImageFit::Cover => {
-            let scale = (dst_w / src_w).max(dst_h / src_h);
-            let content_w = src_w * scale;
-            let content_h = src_h * scale;
-            let overflow_x = (content_w - dst_w) * 0.5;
-            let overflow_y = (content_h - dst_h) * 0.5;
-            let u0 = (overflow_x / content_w).clamp(0.0, 1.0);
-            let v0 = (overflow_y / content_h).clamp(0.0, 1.0);
-            let u1 = ((overflow_x + dst_w) / content_w).clamp(0.0, 1.0);
-            let v1 = ((overflow_y + dst_h) / content_h).clamp(0.0, 1.0);
-            (rect, [u0, v0, u1, v1])
-        }
-        ImageFit::FitWidth => {
-            let scale = dst_w / src_w;
-            (
-                repose_core::Rect {
-                    x: rect.x,
-                    y: rect.y + (dst_h - src_h * scale) * 0.5,
-                    w: dst_w,
-                    h: src_h * scale,
-                },
-                [0.0, 0.0, 1.0, 1.0],
-            )
-        }
-        ImageFit::FitHeight => {
-            let scale = dst_h / src_h;
-            (
-                repose_core::Rect {
-                    x: rect.x + (dst_w - src_w * scale) * 0.5,
-                    y: rect.y,
-                    w: src_w * scale,
-                    h: dst_h,
-                },
-                [0.0, 0.0, 1.0, 1.0],
-            )
-        }
-        ImageFit::FillBounds => (rect, [0.0, 0.0, 1.0, 1.0]),
-        ImageFit::Inside => {
-            let scale = (dst_w / src_w).min(dst_h / src_h).min(1.0);
-            let w = src_w * scale;
-            let h = src_h * scale;
-            (
-                repose_core::Rect {
-                    x: rect.x + (dst_w - w) * 0.5,
-                    y: rect.y + (dst_h - h) * 0.5,
-                    w,
-                    h,
-                },
-                [0.0, 0.0, 1.0, 1.0],
-            )
-        }
-        ImageFit::None => (
-            repose_core::Rect {
-                x: rect.x,
-                y: rect.y,
-                w: src_w.min(dst_w),
-                h: src_h.min(dst_h),
-            },
-            [0.0, 0.0, (dst_w / src_w).min(1.0), (dst_h / src_h).min(1.0)],
-        ),
-        _ => return None,
+
+    // Slack placement inside the destination rect: `alignment` picks which
+    // corner the fitted image hugs (CSS `object-position`).
+    let slack = |content: f32, extent: f32| match alignment {
+        ImageAlignment::Center => (extent - content) * 0.5,
+        ImageAlignment::Begin => 0.0,
+        ImageAlignment::End => extent - content,
     };
+
+    // A tiled draw covers the bounds at native resolution, so its UVs run past
+    // 1.0 and the sampler wraps (see address-mode selection at draw time).
+    let tiled = matches!(fit, ImageFit::Tile);
+    let (scale_x, scale_y) = fit.scale_factor((src_w, src_h), (dst_w, dst_h));
+    let drawn = if tiled {
+        repose_core::Rect {
+            x: rect.x,
+            y: rect.y,
+            w: dst_w,
+            h: dst_h,
+        }
+    } else {
+        let (w, h) = (src_w * scale_x, src_h * scale_y);
+        repose_core::Rect {
+            x: rect.x + slack(w, dst_w),
+            y: rect.y + slack(h, dst_h),
+            w,
+            h,
+        }
+    };
+
     let uv_min = source.uv_min;
     let uv_max = source.uv_max;
-    let uv = [
-        uv_min[0] + (uv_max[0] - uv_min[0]) * local_uv[0],
-        uv_max[1] - (uv_max[1] - uv_min[1]) * local_uv[1],
-        uv_min[0] + (uv_max[0] - uv_min[0]) * local_uv[2],
-        uv_max[1] - (uv_max[1] - uv_min[1]) * local_uv[3],
+    let repeats = if tiled {
+        [dst_w / src_w, dst_h / src_h]
+    } else {
+        [1.0, 1.0]
+    };
+    let mut uv = [
+        uv_min[0],
+        uv_max[1],
+        uv_min[0] + (uv_max[0] - uv_min[0]) * repeats[0],
+        uv_max[1] - (uv_max[1] - uv_min[1]) * repeats[1],
     ];
-    Some((draw_rect, uv))
+
+    let clipped = intersect(drawn, rect);
+    if clipped.w <= 0.0 || clipped.h <= 0.0 {
+        return None;
+    }
+    let du = uv[2] - uv[0];
+    let dv = uv[3] - uv[1];
+    uv = [
+        uv[0] + du * (clipped.x - drawn.x) / drawn.w,
+        uv[1] + dv * (clipped.y - drawn.y) / drawn.h,
+        uv[0] + du * (clipped.x + clipped.w - drawn.x) / drawn.w,
+        uv[1] + dv * (clipped.y + clipped.h - drawn.y) / drawn.h,
+    ];
+    Some((clipped, uv))
 }
 
 struct AtlasA8 {
@@ -2938,6 +2927,27 @@ impl WgpuSceneRenderer {
             ..Default::default()
         });
 
+        // `ImageFit::Tile` emits UVs past 1.0 and relies on wrapping, so it
+        // needs its own samplers rather than the clamped pair above.
+        let image_sampler_repeat = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("image repeat sampler"),
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::Repeat,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
+            ..Default::default()
+        });
+        let image_sampler_repeat_nearest = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("image repeat nearest sampler"),
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::Repeat,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+            ..Default::default()
+        });
+
         // linear filtering only blurs them; nearest keeps the blit crisp.
         let layer_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("layer nearest sampler"),
@@ -3348,6 +3358,8 @@ impl WgpuSceneRenderer {
             image_bind_layout_nv12,
             image_sampler,
             image_sampler_nearest,
+            image_sampler_repeat,
+            image_sampler_repeat_nearest,
             layer_sampler,
             layer_sampler_linear,
 
@@ -3772,6 +3784,9 @@ impl WgpuSceneRenderer {
         let img = image::load_from_memory(data)?;
         let rgba = img.to_rgba8();
         let (w, h) = rgba.dimensions();
+        // Encoded uploads have no size at the call site, so publish it here for
+        // layout once the decode lands.
+        repose_core::set_image_intrinsic_size(handle, w, h);
         self.set_image_rgba8(handle, w, h, &rgba, srgb)
     }
 
@@ -3909,12 +3924,16 @@ impl WgpuSceneRenderer {
                 let bind = make(label, sampler);
                 ImageBinds {
                     linear: make(label, sampler),
-                    nearest: bind,
+                    nearest: bind.clone(),
+                    tile_linear: bind.clone(),
+                    tile_nearest: bind,
                 }
             }
             None => ImageBinds {
                 linear: make(label, &self.image_sampler),
                 nearest: make(label, &self.image_sampler_nearest),
+                tile_linear: make(label, &self.image_sampler_repeat),
+                tile_nearest: make(label, &self.image_sampler_repeat_nearest),
             },
         }
     }
@@ -3957,6 +3976,8 @@ impl WgpuSceneRenderer {
         ImageBinds {
             linear: make(label, &self.image_sampler),
             nearest: make(label, &self.image_sampler_nearest),
+            tile_linear: make(label, &self.image_sampler_repeat),
+            tile_nearest: make(label, &self.image_sampler_repeat_nearest),
         }
     }
 
@@ -8426,7 +8447,7 @@ impl WgpuSceneRenderer {
         self.recycle_blend_snapshots();
         self.blend_copies.clear();
         let mut batch = Batch::new();
-        let mut image_run: Option<(u64, ImageFilter, Vec<GlyphInstance>)> = None;
+        let mut image_run: Option<(u64, ImageFilter, bool, Vec<GlyphInstance>)> = None;
         let mut nv12_run: Option<(u64, ImageFilter, Vec<Nv12Instance>)> = None;
         let mut slug_verts_local: Vec<slug::TessVertex> = Vec::new();
         let mut transform_stack: Vec<Transform> = vec![Transform::identity()];
@@ -8455,7 +8476,7 @@ impl WgpuSceneRenderer {
 
         macro_rules! flush_image_runs {
             () => {{
-                if let Some((handle, filter, instances)) = image_run.take()
+                if let Some((handle, filter, tile, instances)) = image_run.take()
                     && let Some((off, cnt)) =
                         self.glyph_color
                             .upload(&self.device, &self.queue, encoder, &instances)
@@ -8465,6 +8486,7 @@ impl WgpuSceneRenderer {
                         cnt,
                         handle,
                         filter,
+                        tile,
                     });
                 }
                 if let Some((handle, filter, instances)) = nv12_run.take()
@@ -9212,6 +9234,7 @@ impl WgpuSceneRenderer {
                     fit,
                     filter,
                     source_rect,
+                    alignment,
                 } => {
                     let clip = scissor_stack.last().copied().unwrap_or(root_clip_rect);
                     if !visible(affine_aabb(current_transform, rect), clip) {
@@ -9233,7 +9256,8 @@ impl WgpuSceneRenderer {
                         );
                         continue;
                     };
-                    let Some((draw_rect, uv_rect)) = image_fit_geometry(*rect, *fit, &source)
+                    let Some((draw_rect, uv_rect)) =
+                        image_fit_geometry(*rect, *fit, *alignment, &source)
                     else {
                         continue;
                     };
@@ -9290,6 +9314,7 @@ impl WgpuSceneRenderer {
                         if nv12_run.is_some() {
                             flush_image_runs!();
                         }
+                        let tile = matches!(fit, ImageFit::Tile);
                         let inst = GlyphInstance {
                             xywh: ndc_center,
                             uv: uv_rect,
@@ -9298,19 +9323,23 @@ impl WgpuSceneRenderer {
                         };
                         if image_run
                             .as_ref()
-                            .is_some_and(|(run_handle, run_filter, _)| {
-                                *run_handle != *handle || *run_filter != *filter
+                            .is_some_and(|(run_handle, run_filter, run_tile, _)| {
+                                *run_handle != *handle
+                                    || *run_filter != *filter
+                                    || *run_tile != tile
                             })
                         {
                             flush_image_runs!();
                         }
                         match &mut image_run {
-                            Some((run_handle, run_filter, instances))
-                                if *run_handle == *handle && *run_filter == *filter =>
+                            Some((run_handle, run_filter, run_tile, instances))
+                                if *run_handle == *handle
+                                    && *run_filter == *filter
+                                    && *run_tile == tile =>
                             {
                                 instances.push(inst)
                             }
-                            _ => image_run = Some((*handle, *filter, vec![inst])),
+                            _ => image_run = Some((*handle, *filter, tile, vec![inst])),
                         }
                     }
                 }
@@ -10730,10 +10759,11 @@ impl WgpuSceneRenderer {
                         cnt: n,
                         handle,
                         filter,
+                        tile,
                     } => {
                         let bind_opt = match self.images.get(&handle) {
-                            Some(ImageTex::Rgba { binds, .. }) => Some(binds.get(filter)),
-                            Some(ImageTex::User { binds, .. }) => Some(binds.get(filter)),
+                            Some(ImageTex::Rgba { binds, .. }) => Some(binds.get(filter, tile)),
+                            Some(ImageTex::User { binds, .. }) => Some(binds.get(filter, tile)),
                             _ => None,
                         };
                         if let Some(bind) = bind_opt {
@@ -10775,7 +10805,7 @@ impl WgpuSceneRenderer {
                                 &pipes.image_nv12,
                                 self.nv12.ring,
                                 Nv12Instance,
-                                binds.get(filter),
+                                binds.get(filter, false),
                                 off,
                                 n
                             );
@@ -11480,7 +11510,7 @@ mod tests {
             w: 8.0,
             h: 8.0,
         };
-        let (_, uv) = image_fit_geometry(rect, ImageFit::Cover, &source)
+        let (_, uv) = image_fit_geometry(rect, ImageFit::Cover, ImageAlignment::Center, &source)
             .expect("cover geometry should be valid");
         assert!(uv[0] >= source.uv_min[0] && uv[2] <= source.uv_max[0]);
         assert!(uv[1] >= source.uv_min[1] && uv[3] <= source.uv_max[1]);
