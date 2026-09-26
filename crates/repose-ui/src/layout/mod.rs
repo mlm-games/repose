@@ -16,6 +16,7 @@ mod types;
 #[cfg(test)]
 mod tests;
 
+pub use measure::TEXT_LINE_LEADING_PX;
 pub use types::LayoutEngine;
 pub use types::{IntrinsicSizeMode, LayoutStats};
 

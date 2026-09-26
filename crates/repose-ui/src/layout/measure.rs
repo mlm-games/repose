@@ -13,6 +13,11 @@ use crate::textfield::{TextMeasureConfig, measure_text};
 
 use super::*;
 
+/// Extra height added to every `Text` line box on top of the font size, in px.
+/// The glyphs sit centered inside the box, so components that place a `Text`
+/// by hand must offset by half of this to center the glyphs on a target y.
+pub const TEXT_LINE_LEADING_PX: f32 = 8.0;
+
 impl LayoutEngine {
     pub(crate) fn run_measure_pass(
         taffy: &mut TaffyTree<NodeContext>,
@@ -975,7 +980,7 @@ impl LayoutEngine {
                             .unwrap_or(0.0)
                         })
                         .collect();
-                    let regular_line_h = line_h_px_val + 8.0;
+                    let regular_line_h = line_h_px_val + TEXT_LINE_LEADING_PX;
                     let hs = vec![regular_line_h; lines.len()];
                     (ws, hs)
                 };
@@ -983,7 +988,7 @@ impl LayoutEngine {
                 let cache_line_h = if has_annotations {
                     line_heights.iter().copied().fold(0.0f32, f32::max)
                 } else {
-                    line_h_px_val + 8.0
+                    line_h_px_val + TEXT_LINE_LEADING_PX
                 };
                 let total_h: f32 = if has_annotations {
                     line_heights.iter().copied().sum()

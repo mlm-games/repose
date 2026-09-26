@@ -2509,7 +2509,6 @@ pub(crate) fn paint_text_field(
     text_input: &TextInputConfig,
     state: Option<&Rc<RefCell<TextFieldState>>>,
     is_focused: bool,
-    clip_rounded: Option<[Dp; 4]>,
     alpha_accum: f32,
 ) {
     let ts = text_input.text_style.clone().unwrap_or_default();
@@ -2522,10 +2521,12 @@ pub(crate) fn paint_text_field(
     };
     let text_off_y = (rect.h - line_h.max(font_val)) / 2.0;
 
-    let clip_radius = clip_rounded.unwrap_or([Dp::ZERO; 4]).map(|v| v.to_px());
+    // Square: the box's own clip_rounded clip already rounds the border box, and
+    // re-applying that radius here rounds the content box again, clipping the
+    // first line and caret in the corners.
     scene.nodes.push(SceneNode::PushClip {
         rect,
-        radius: clip_radius,
+        radius: [Px::ZERO; 4],
         op: repose_core::ClipOp::Intersect,
     });
 

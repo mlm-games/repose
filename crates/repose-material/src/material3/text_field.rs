@@ -9,6 +9,7 @@ use repose_ui::{
     BasicTextField, Box, Column, Row, Text, TextFieldConfig as BasicTextFieldConfig,
     TextFieldState, TextStyle, ViewExt, ZStack,
     anim::{animate_color, animate_f32},
+    layout::TEXT_LINE_LEADING_PX,
     textfield::{TextMeasureConfig, measure_text},
 };
 
@@ -17,6 +18,13 @@ use super::*;
 static OTF_COUNTER: AtomicU64 = AtomicU64::new(0);
 static OTFS_COUNTER: AtomicU64 = AtomicU64::new(0);
 static TF_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Y offset for a floating label `Text` whose glyphs should be centered on
+/// `ink_center_px`: a `Text` line box is the font size plus
+/// [`TEXT_LINE_LEADING_PX`] and the glyphs sit centered inside it.
+fn label_box_top(ink_center_px: f32, font_px: f32) -> Dp {
+    Px(ink_center_px - (font_px + TEXT_LINE_LEADING_PX) / 2.0).to_dp()
+}
 
 /// Tint a leading icon with the M3 icon color (12dp gap to the input, Compose style).
 fn tint_icon(color: Color, icon: Option<View>) -> View {
@@ -600,13 +608,19 @@ fn outlined_field_decoration(
     // Label font size: 16sp (expanded, inside) -> 12sp (minimized, at border)
     let label_size = Sp(16.0 - 4.0 * float_t);
 
-    // Minimized label half-height matches bodySmall line height (~16dp) / 2
-    let min_label_half_h: f32 = if has_label { 8.0 } else { 0.0 };
-
-    // Label Y: expanded centered within 56dp field -> minimized overlapping top border (-labelHeight/2)
-    let label_start_y = (56.0 - 16.0) / 2.0;
-    let label_end_y = -min_label_half_h;
-    let label_y = Dp(label_start_y - (label_start_y - label_end_y) * float_t);
+    // Label Y: expanded centered within the field -> minimized centered on the
+    // top border. Both are glyph centers, so the box top is half a line box
+    // above them.
+    let label_start_y = label_box_top(
+        OutlinedTextFieldDefaults::MIN_HEIGHT.to_px().0 / 2.0,
+        label_size.to_px().0,
+    );
+    let label_end_y = if has_label {
+        label_box_top(0.0, label_size.to_px().0)
+    } else {
+        Dp::ZERO
+    };
+    let label_y = Dp(label_start_y.0 + (label_end_y.0 - label_start_y.0) * float_t);
 
     // Label X: expanded at text-input start (~24dp) -> minimized at border-start (~20dp)
     let label_start_x = if has_label { 24.0 } else { 0.0 };
@@ -693,12 +707,15 @@ fn outlined_field_decoration(
         let text_width_px = m.positions.last().copied().unwrap_or(0.0);
         let text_width_dp = Px(text_width_px).to_dp();
         let pad = Dp(1.0);
-        let line_h = Dp(16.0);
+        // The notch follows the glyphs, not the line box, so a label resting
+        // inside the field does not nick the top border.
+        let ink_top = label_y + Px(TEXT_LINE_LEADING_PX / 2.0).to_dp();
+        let ink_h = Px(font_px).to_dp();
         (
             label_x - pad,
-            label_y - pad,
+            ink_top - pad,
             label_x + text_width_dp + pad,
-            label_y + line_h + pad,
+            ink_top + ink_h + pad,
         )
     });
 
@@ -913,9 +930,23 @@ pub fn TextField(
 
     let label_size = Sp(16.0 - 4.0 * float_t);
 
-    let label_start_y = (56.0 - 16.0) / 2.0;
-    let label_end_y = if has_label { 8.0 } else { 0.0 };
-    let label_y = Dp(label_start_y - (label_start_y - label_end_y) * float_t);
+    // Container padding matches reference: 8dp top/bottom with label, 16dp without
+    let (top_pad, bottom_pad) = if has_label {
+        (Dp(8.0), Dp(8.0))
+    } else {
+        (Dp(16.0), Dp(16.0))
+    };
+
+    // Expanded: glyphs centered in the field. Minimized: glyphs starting at the
+    // container's top padding, where the filled variant parks the label.
+    let label_font_px = label_size.to_px().0;
+    let label_start_y = label_box_top(TextFieldDefaults::MIN_HEIGHT.to_px().0 / 2.0, label_font_px);
+    let label_end_y = if has_label {
+        label_box_top(top_pad.to_px().0 + label_font_px / 2.0, label_font_px)
+    } else {
+        Dp::ZERO
+    };
+    let label_y = Dp(label_start_y.0 + (label_end_y.0 - label_start_y.0) * float_t);
 
     let label_start_x = if has_label { 24.0 } else { 0.0 };
     let label_end_x = if has_label { 20.0 } else { 0.0 };
@@ -938,12 +969,6 @@ pub fn TextField(
         indicator_target_w,
         th.motion.color,
     );
-
-    let (top_pad, bottom_pad) = if has_label {
-        (Dp(8.0), Dp(8.0))
-    } else {
-        (Dp(16.0), Dp(16.0))
-    };
 
     let (prefix_color, suffix_color) = if let Some(ref tc) = config.colors {
         (

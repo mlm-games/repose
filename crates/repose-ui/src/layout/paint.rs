@@ -1088,7 +1088,6 @@ impl LayoutEngine {
                 ti,
                 state.as_ref(),
                 is_focused,
-                modifier.clip_rounded,
                 alpha_accum,
             );
         }
