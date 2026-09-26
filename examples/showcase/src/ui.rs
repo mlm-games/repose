@@ -43,6 +43,13 @@ pub fn compact_layout() -> bool {
     !window_size_class().is_at_least_medium_width()
 }
 
+/// dp value to canvas pixels. `Canvas` draw closures work in physical pixels,
+/// so page geometry authored in dp needs converting or it shrinks on any
+/// device whose density is not 1.
+pub fn dp_px(value: f32) -> f32 {
+    value * repose_core::locals::effective_density_scale()
+}
+
 pub fn Hint(text: impl Into<String>) -> View {
     Text(text.into())
         .size(Sp(13.0))

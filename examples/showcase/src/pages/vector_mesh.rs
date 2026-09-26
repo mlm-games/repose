@@ -6,7 +6,7 @@ use repose_ui::anim::animate_f32_from;
 use repose_ui::*;
 use web_time::Duration;
 
-use crate::ui::{Hint, Page, Section, sp};
+use crate::ui::{Hint, Page, Section, dp_px, sp};
 
 fn rotate_around(pivot: Vec2, angle: f32) -> [f32; 6] {
     let (s, c) = angle.sin_cos();
@@ -24,7 +24,7 @@ fn polygon_mesh(pts: &[[f32; 2]], color: Color) -> Arc<VectorMeshData> {
     let vertices: Arc<[VectorVertex]> = pts
         .iter()
         .map(|p| VectorVertex {
-            pos: *p,
+            pos: [dp_px(p[0]), dp_px(p[1])],
             color: linear,
             uv: [0.0; 2],
         })
@@ -61,7 +61,7 @@ fn star_mesh(
     let linear = color.to_linear();
     let n = points * 2;
     let mut vertices = vec![VectorVertex {
-        pos: [cx, cy],
+        pos: [dp_px(cx), dp_px(cy)],
         color: linear,
         uv: [0.0; 2],
     }];
@@ -69,7 +69,7 @@ fn star_mesh(
         let r = if i % 2 == 0 { r_out } else { r_in };
         let a = i as f32 * std::f32::consts::PI / points as f32;
         vertices.push(VectorVertex {
-            pos: [cx + r * a.cos(), cy + r * a.sin()],
+            pos: [dp_px(cx + r * a.cos()), dp_px(cy + r * a.sin())],
             color: linear,
             uv: [0.0; 2],
         });
@@ -125,7 +125,13 @@ pub fn screen() -> View {
                         );
                         ds.draw_vector_mesh(
                             star_mesh(320.0, 90.0, 24.0, 52.0, 6, th.tertiary),
-                            rotate_around(Vec2 { x: 320.0, y: 90.0 }, spin),
+                            rotate_around(
+                                Vec2 {
+                                    x: dp_px(320.0),
+                                    y: dp_px(90.0),
+                                },
+                                spin,
+                            ),
                             PaintDesc::Solid,
                         );
                         ds.draw_vector_mesh(
@@ -143,9 +149,12 @@ pub fn screen() -> View {
                         );
                         ds.draw_text(
                             "static · static · spinning star · quad",
-                            Vec2 { x: 22.0, y: 178.0 },
+                            Vec2 {
+                                x: dp_px(22.0),
+                                y: dp_px(178.0),
+                            },
                             th.on_surface_variant,
-                            Px(12.0),
+                            Px(dp_px(12.0)),
                         );
                     },
                 ),
@@ -172,8 +181,14 @@ pub fn screen() -> View {
                             circle_mesh(110.0, 90.0, 70.0, 64, Color::WHITE),
                             [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
                             PaintDesc::Linear {
-                                start: Vec2 { x: 40.0, y: 20.0 },
-                                end: Vec2 { x: 180.0, y: 160.0 },
+                                start: Vec2 {
+                                    x: dp_px(40.0),
+                                    y: dp_px(20.0),
+                                },
+                                end: Vec2 {
+                                    x: dp_px(180.0),
+                                    y: dp_px(160.0),
+                                },
                                 start_color: th.primary,
                                 end_color: th.tertiary,
                             },
@@ -182,8 +197,14 @@ pub fn screen() -> View {
                             star_mesh(300.0, 90.0, 42.0, 74.0, 5, Color::WHITE),
                             [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
                             PaintDesc::Linear {
-                                start: Vec2 { x: 230.0, y: 20.0 },
-                                end: Vec2 { x: 370.0, y: 20.0 },
+                                start: Vec2 {
+                                    x: dp_px(230.0),
+                                    y: dp_px(20.0),
+                                },
+                                end: Vec2 {
+                                    x: dp_px(370.0),
+                                    y: dp_px(20.0),
+                                },
                                 start_color: th.secondary,
                                 end_color: th.error,
                             },
@@ -200,8 +221,14 @@ pub fn screen() -> View {
                             ),
                             [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
                             PaintDesc::Linear {
-                                start: Vec2 { x: 420.0, y: 105.0 },
-                                end: Vec2 { x: 520.0, y: 105.0 },
+                                start: Vec2 {
+                                    x: dp_px(420.0),
+                                    y: dp_px(105.0),
+                                },
+                                end: Vec2 {
+                                    x: dp_px(520.0),
+                                    y: dp_px(105.0),
+                                },
                                 start_color: th.error,
                                 end_color: th.secondary,
                             },
@@ -251,9 +278,12 @@ pub fn screen() -> View {
                         );
                         ds.draw_text(
                             "content inside a star clip; one circle sits outside",
-                            Vec2 { x: 280.0, y: 198.0 },
+                            Vec2 {
+                                x: dp_px(280.0),
+                                y: dp_px(198.0),
+                            },
                             th.on_surface_variant,
-                            Px(12.0),
+                            Px(dp_px(12.0)),
                         );
                     },
                 ),
