@@ -141,6 +141,20 @@ const LONG_PRESS_MS: u128 = 500;
 const DOUBLE_CLICK_MS: u128 = 300;
 const DOUBLE_TAP_MIN_MS: u128 = 40;
 const LONG_PRESS_SLOP_DP: f32 = 18.0;
+/// Pointer travel that cancels a pending tap, in dp. Compose's
+/// `detectTapGestures` treats a press that moves past the platform touch slop
+/// as a drag, so the tap never fires. This is the same value Compose's
+/// `ViewConfiguration.touchSlop` resolves to on Android.
+pub(crate) const TAP_SLOP_DP: f32 = 18.0;
+
+/// Did the pointer travel from `(x0, y0)` past `slop` dp? Compared squared to
+/// keep the per-move path allocation-free.
+fn moved_past_slop(x0: f32, y0: f32, pos: Vec2, slop_dp: f32, scale: f32) -> bool {
+    let slop = slop_dp * scale;
+    let dx = pos.x - x0;
+    let dy = pos.y - y0;
+    dx * dx + dy * dy > slop * slop
+}
 
 struct TouchPressState {
     capture_id: u64,
@@ -224,9 +238,14 @@ pub struct ReposeRuntime {
     /// tap of a double click (Compose: window + min time measured to the
     /// second DOWN, not its up).
     last_down: Option<(u64, web_time::Instant)>,
+    /// Origin of the press that produced the current capture, so release can
+    /// tell a tap from a drag (Compose `detectTapGestures` cancels the tap once
+    /// the pointer moves past touch slop).
+    press_origin: Option<(u64, f32, f32)>,
     /// Set when the second tap of a double-click qualifies (within
-    /// [DOUBLE_TAP_MIN_MS, DOUBLE_CLICK_MS] of the first tap's up). Its up
-    /// Confirms the double click. A canceled second tap falls back to the first tap's onClick.
+    /// [DOUBLE_TAP_MIN_MS, DOUBLE_CLICK_MS] of the first tap's up, and within
+    /// tap slop of it). Its up confirms the double click. A canceled second tap
+    /// falls back to the first tap's onClick.
     double_candidate: Option<u64>,
     long_press: Option<(u64, web_time::Instant, f32, f32)>,
     long_press_touch: Option<u64>,
@@ -311,6 +330,7 @@ impl ReposeRuntime {
             held_mouse: HashSet::new(),
             last_up: None,
             last_down: None,
+            press_origin: None,
             double_candidate: None,
             long_press: None,
             long_press_touch: None,
@@ -880,6 +900,7 @@ impl ReposeRuntime {
                     self.pending_click = None;
                     self.last_up = None;
                     self.last_down = None;
+                    self.press_origin = None;
                     self.suppress_next_click = false;
                     self.scroll_capture_id = None;
                     if let Some(source_id) = old_capture {
@@ -1200,12 +1221,15 @@ impl ReposeRuntime {
             // same element (Compose detectTapGestures).
             if primary_pointer {
                 self.last_down = Some((hit.id, web_time::Instant::now()));
+                self.press_origin = Some((hit.id, pos.x, pos.y));
                 // The second DOWN must land within
                 // [doubleTapMinTimeMillis, doubleTapTimeoutMillis] after the first
-                // tap's UP. No distance/slop requirement between the taps.
+                // tap's UP, and within tap slop of it. Compose requires both: two
+                // taps far apart are two taps, not a double tap.
                 self.double_candidate = if hit.on_double_click.is_some()
-                    && self.last_up.is_some_and(|(pid, t0, _, _)| {
+                    && self.last_up.is_some_and(|(pid, t0, ux, uy)| {
                         pid == hit.id
+                            && !moved_past_slop(ux, uy, pos, TAP_SLOP_DP, self.scale)
                             && self.last_down.is_some_and(|(did, dt)| {
                                 did == hit.id
                                     && dt.duration_since(t0).as_millis() >= DOUBLE_TAP_MIN_MS
@@ -1217,7 +1241,20 @@ impl ReposeRuntime {
                     None
                 };
                 if self.double_candidate.is_some() {
+                    // The pair is a double tap: drop the deferred first click.
                     self.pending_click = None;
+                } else if self
+                    .pending_click
+                    .as_ref()
+                    .is_some_and(|(pid, ..)| *pid == hit.id)
+                {
+                    // A new press on the same element that cannot be the second
+                    // half of a double tap settles the deferred click. It has to
+                    // fire now, or this press would overwrite it in the single
+                    // pending slot and the tap would be lost.
+                    if let Some((_, _, cb)) = self.pending_click.take() {
+                        cb();
+                    }
                 }
 
                 if let PointerButton::Primary = button {
@@ -1421,7 +1458,17 @@ impl ReposeRuntime {
             result.consumed = true;
         }
 
+        // A press that travelled past tap slop is a drag, not a tap, so nothing
+        // below may activate the element. Compose `detectTapGestures` drops the
+        // tap on the same condition; without this, releasing after a drag fires
+        // onClick anyway.
+        let dragged = self.drag_cancelled_tap(self.capture_id, pos);
+        if dragged {
+            self.pending_click = None;
+        }
+
         if self.double_candidate.is_none()
+            && !dragged
             && !self.suppress_next_click
             && let Some(cid) = self.capture_id
             && let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid && !h.disabled)
@@ -1451,12 +1498,16 @@ impl ReposeRuntime {
 
         // Double-click resolution. The second DOWN (handle_pointer_down)
         // qualifies the pair; the second UP confirms it. A canceled second tap
-        // (moved out of bounds) falls back to the first tap's onClick.
+        // (moved out of bounds, or dragged) falls back to the first tap's
+        // onClick, unless it dragged in which case nothing activates.
         if let Some(dc) = self.double_candidate.take() {
             self.pending_click = None;
             self.last_up = None;
             self.last_down = None;
-            if self.capture_id == Some(dc)
+            if dragged {
+                // The second press turned into a drag: the pair is not a double
+                // tap and the deferred first click is dropped with it.
+            } else if self.capture_id == Some(dc)
                 && let Some(hit) = f.hit_regions.iter().find(|h| h.id == dc && !h.disabled)
                 && repose_ui::hit_region_contains(hit, pos)
             {
@@ -1482,6 +1533,7 @@ impl ReposeRuntime {
         self.capture_id = None;
         self.hit_path = None;
         self.mouse_targets = None;
+        self.press_origin = None;
         request_frame();
         result
     }
@@ -1549,7 +1601,14 @@ impl ReposeRuntime {
                 result.consumed = true;
             }
 
+            // Same drag-cancels-tap rule as the mouse path.
+            let dragged = self.drag_cancelled_tap(capture_id, pos);
+            if dragged {
+                self.pending_click = None;
+            }
+
             if self.double_candidate.is_none()
+                && !dragged
                 && !self.suppress_next_click
                 && let Some(hit) = frame
                     .hit_regions
@@ -1585,6 +1644,7 @@ impl ReposeRuntime {
                     .hit_regions
                     .iter()
                     .find(|hit| hit.id == double_id && !hit.disabled)
+                    && !dragged
                 {
                     if repose_ui::hit_region_contains(hit, pos) {
                         if let Some(callback) = &hit.on_double_click {
@@ -1603,12 +1663,26 @@ impl ReposeRuntime {
             self.long_press = None;
             self.long_press_touch = None;
         }
+        if primary {
+            self.press_origin = None;
+        }
         self.rebuild_pressed_ids();
         if primary {
             self.touch_primary = None;
         }
         request_frame();
         result
+    }
+
+    /// Did the press behind `capture_id` travel past tap slop? When it did, the
+    /// release is a drag and must not activate the element (Compose
+    /// `detectTapGestures`).
+    fn drag_cancelled_tap(&self, capture_id: Option<u64>, pos: Vec2) -> bool {
+        capture_id.is_some_and(|cid| {
+            self.press_origin.is_some_and(|(oid, x0, y0)| {
+                oid == cid && moved_past_slop(x0, y0, pos, TAP_SLOP_DP, self.scale)
+            })
+        })
     }
 
     fn cancel_keyboard_press(&mut self) {
@@ -1651,6 +1725,29 @@ impl ReposeRuntime {
             self.pending_click = None;
             self.double_candidate = None;
         }
+    }
+
+    /// Does the touch captured by `tid` drive the gesture through pointer
+    /// moves, so an ancestor scroll container must not also scroll?
+    ///
+    /// True while a drag session is live (long-press drag and drop) or when
+    /// the pressed region handles `on_pointer_move` (splitters, sliders,
+    /// swipes, `draggable`). Compose's rule: a child that consumes the drag
+    /// wins over the parent `scrollable`.
+    pub fn touch_owns_drag(&self, tid: u64) -> bool {
+        if dnd::is_dragging() {
+            return true;
+        }
+        let Some(capture_id) = self.touch_presses.get(&tid).map(|state| state.capture_id) else {
+            return false;
+        };
+        self.frame_cache.as_ref().is_some_and(|frame| {
+            frame
+                .hit_regions
+                .iter()
+                .find(|hit| hit.id == capture_id)
+                .is_some_and(|hit| hit.on_pointer_move.is_some())
+        })
     }
 
     /// Cancel mouse pointer state (focus lost). Touch fingers never feed
@@ -1756,6 +1853,7 @@ impl ReposeRuntime {
         self.long_press_touch = None;
         self.last_up = None;
         self.last_down = None;
+        self.press_origin = None;
         self.double_candidate = None;
         self.suppress_next_click = false;
         if self.dnd_capture.is_some() {
@@ -1885,6 +1983,7 @@ impl ReposeRuntime {
         self.pressed_ids.clear();
         self.pending_click = None;
         self.last_down = None;
+        self.press_origin = None;
         self.double_candidate = None;
         self.key_pressed_active = None;
         self.key_pressed_key = None;
@@ -2724,6 +2823,7 @@ impl ReposeRuntime {
         self.pressed_ids.clear();
         self.pending_click = None;
         self.last_down = None;
+        self.press_origin = None;
         self.last_up = None;
         self.double_candidate = None;
         self.scroll_capture_id = None;

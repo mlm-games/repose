@@ -4,6 +4,7 @@ use repose_core::Vec2;
 use repose_core::input::PointerButton;
 
 use crate::runtime::ReposeRuntime;
+use crate::runtime::TAP_SLOP_DP;
 
 #[derive(Clone, Copy, Debug)]
 struct DynGestureState {
@@ -41,7 +42,7 @@ pub struct TouchGestureState {
     accum_zoom: f32,
     accum_rotation: f32,
     primary_press_focus: Option<Option<u64>>,
-    pending_primary: Option<(Vec2, web_time::Instant, u64)>,
+    pending_primary: Option<(Vec2, u64)>,
 }
 
 impl Default for TouchGestureState {
@@ -178,7 +179,7 @@ impl TouchGestureState {
             self.touch_scroll_accum_x_px = 0.0;
             self.touch_scroll_accum_y_px = 0.0;
             self.prev_touch_px = Some(pos_px);
-            self.pending_primary = Some((pos, web_time::Instant::now(), tid));
+            self.pending_primary = Some((pos, tid));
             self.primary_press_focus = Some(press.focused);
             if self.active_touches.len() >= 2 {
                 self.update_gesture(Some(pos), true);
@@ -276,26 +277,28 @@ impl TouchGestureState {
             return (dirty, None, None, None);
         }
 
-        if let Some((pending_pos, pending_instant, pending_tid)) = self.pending_primary {
-            let dt = (web_time::Instant::now() - pending_instant).as_secs_f32();
+        // Tap-slop grace period: while the finger stays within slop of the
+        // press point, swallow the move so a tap cannot jitter the page and
+        // the click survives the release. Only travel past slop turns the
+        // gesture into a drag/scroll, matching Compose `detectTapGestures`
+        // (a dwell time alone never cancels a tap).
+        if let Some((pending_pos, pending_tid)) = self.pending_primary {
+            let slop = TAP_SLOP_DP * scale;
             let dx = pos_px.0 - pending_pos.x;
             let dy = pos_px.1 - pending_pos.y;
-            let dist = (dx * dx + dy * dy).sqrt();
-            if dt > 0.03 || dist > 6.0 * scale {
-                let _ = pending_pos;
-                rt.suppress_touch_click(pending_tid);
-                self.pending_primary = None;
-            } else {
+            if dx * dx + dy * dy <= slop * slop {
                 self.prev_touch_px = Some(pos_px);
                 return (dirty, None, None, None);
             }
+            rt.suppress_touch_click(pending_tid);
+            self.pending_primary = None;
         }
 
         if let Some(prev) = self.prev_touch_px {
             let dx_px = pos_px.0 - prev.0;
             let dy_px = pos_px.1 - prev.1;
 
-            if dx_px.abs() > 0.0 || dy_px.abs() > 0.0 {
+            if (dx_px.abs() > 0.0 || dy_px.abs() > 0.0) && !rt.touch_owns_drag(tid) {
                 self.touch_scroll_accum_x_px += dx_px;
                 self.touch_scroll_accum_y_px += dy_px;
 

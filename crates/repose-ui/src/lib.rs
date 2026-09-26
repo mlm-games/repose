@@ -87,7 +87,6 @@ pub mod adaptive;
 pub mod anim;
 pub mod anim_ext;
 pub mod color_picker;
-pub mod gestures;
 pub(crate) mod hit_testing;
 pub use hit_testing::{
     HitRegionSnapshot, dispatch_keyboard_action, hit_region_contains, hit_region_local_rect,
