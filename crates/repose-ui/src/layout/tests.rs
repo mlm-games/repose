@@ -1725,8 +1725,16 @@ fn image_reports_compose_intrinsic_size() {
     const H: u64 = 0xFFFF_FFFF_FFFF;
     set_image_intrinsic_size(H, 100, 50);
 
+    // `FlexStart` keeps the Column from stretching the leaf across the cross
+    // axis, so these assert the image's own measured constraints rather than
+    // the container's fill behaviour.
     let sized = |m: Modifier| {
-        let root = Column(Modifier::new().size(Dp(400.0), Dp(400.0))).child(crate::Image(m, H));
+        let root = Column(
+            Modifier::new()
+                .size(Dp(400.0), Dp(400.0))
+                .align_items(AlignItems::FLEX_START),
+        )
+        .child(crate::Image(m, H));
         let mut eng = make_engine();
         let (scene, _, _) = eng.layout_frame(
             &root,
@@ -1771,8 +1779,14 @@ fn image_reports_compose_intrinsic_size() {
 
     // fill_max fills the parent; fill_max_width only pins the width.
     let fill = |m: Modifier| {
-        let root = Column(Modifier::new().size(Dp(400.0), Dp(400.0)))
-            .child(RBox(Modifier::new().size(Dp(300.0), Dp(150.0))).child(crate::Image(m, H)));
+        let root = Column(Modifier::new().size(Dp(400.0), Dp(400.0))).child(
+            RBox(
+                Modifier::new()
+                    .size(Dp(300.0), Dp(150.0))
+                    .align_items(AlignItems::FLEX_START),
+            )
+            .child(crate::Image(m, H)),
+        );
         let mut eng = make_engine();
         let (scene, _, _) = eng.layout_frame(
             &root,
@@ -1801,7 +1815,12 @@ fn image_reports_compose_intrinsic_size() {
     let r = sized(Modifier::new());
     assert!(r.is_some(), "node still exists");
     let unknown = crate::Image(Modifier::new(), H.wrapping_sub(1));
-    let root = Column(Modifier::new().size(Dp(400.0), Dp(400.0))).child(unknown);
+    let root = Column(
+        Modifier::new()
+            .size(Dp(400.0), Dp(400.0))
+            .align_items(AlignItems::FLEX_START),
+    )
+    .child(unknown);
     let mut eng = make_engine();
     let (scene, _, _) = eng.layout_frame(
         &root,
@@ -1821,10 +1840,12 @@ fn image_reports_compose_intrinsic_size() {
     );
 }
 
-/// Compose's `Column`/`Row` default to `Alignment.Start`, so a child
-/// shrink-wraps on the cross axis instead of being stretched to fill it.
+/// Children fill the cross axis by default: a child sized only on the main
+/// axis still spans the parent's cross-axis extent. Shrink-wrapping is opt-in
+/// via `align_items` / `align_self`, since `AlignItems::FLEX_START` collapses a
+/// child with no intrinsic cross-axis size to zero.
 #[test]
-fn children_do_not_stretch_on_the_cross_axis_by_default() {
+fn children_stretch_on_the_cross_axis_by_default() {
     let root = Column(Modifier::new().size(Dp(200.0), Dp(200.0))).child(RBox(
         Modifier::new()
             .height(Dp(20.0))
@@ -1844,7 +1865,37 @@ fn children_do_not_stretch_on_the_cross_axis_by_default() {
     });
     assert_eq!(
         rect.map(|r| r.w),
+        Some(200.0),
+        "a child must fill the parent's cross axis"
+    );
+
+    // Opting out shrink-wraps, and a child with no cross-axis size then
+    // collapses to zero rather than silently filling.
+    let shrink = Column(
+        Modifier::new()
+            .size(Dp(200.0), Dp(200.0))
+            .align_items(AlignItems::FLEX_START),
+    )
+    .child(RBox(
+        Modifier::new()
+            .height(Dp(20.0))
+            .background(Color::from_rgb(255, 0, 0)),
+    ));
+    let mut eng = make_engine();
+    let (scene, _, _) = eng.layout_frame(
+        &shrink,
+        (200, 200),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
+    let rect = scene.nodes.iter().find_map(|n| match n {
+        SceneNode::Rect { rect, .. } => Some(*rect),
+        _ => None,
+    });
+    assert_eq!(
+        rect.map(|r| r.w),
         Some(0.0),
-        "a child with no cross-axis size must not stretch to the parent"
+        "align_items(FLEX_START) must shrink-wrap"
     );
 }

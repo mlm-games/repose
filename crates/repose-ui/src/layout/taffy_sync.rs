@@ -435,15 +435,17 @@ impl LayoutEngine {
             }
         }
 
-        // Compose's Column/Row default to `Alignment.Start`, so children
-        // shrink-wrap on the cross axis; Godot makes the equivalent
-        // (`SIZE_FILL`) opt-in per child. Opt in explicitly via
-        // `Modifier::fill_max_*`, which sets a definite size.
-        s.align_items = Some(AlignItems::FLEX_START);
+        // MAIN DIFF: Children fill the cross axis by default. A child with no intrinsic
+        // cross-axis size (a bare `Box` sized only on the main axis) collapses
+        // to zero under `FLEX_START`, so shrink-wrapping stays opt-in via
+        // `Modifier::align_items` / `align_self` rather than the container
+        // default. `grow_rows_for_baseline_overflow` also relies on `Row`
+        // children stretching.
+        s.align_items = Some(AlignItems::STRETCH);
         // Needed for 2D scroll.
         let is_2d_scroll = matches!(m.scroll.as_ref().map(|s| s.axis()), Some(ScrollAxis::Both));
         if is_2d_scroll {
-            s.align_items = Some(AlignItems::FLEX_START);
+            s.align_items = Some(AlignItems::STRETCH);
         }
         if s.display != Display::Grid {
             s.justify_content = Some(JustifyContent::FLEX_START);
