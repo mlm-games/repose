@@ -10772,12 +10772,7 @@ impl WgpuSceneRenderer {
                             rpass.set_vertex_buffer(0, self.clip_ring.buf.slice(off..off + bytes));
                             rpass.draw(0..6, 0..n);
                             if scissor.2 > 0 && scissor.3 > 0 {
-                                rpass.set_scissor_rect(
-                                    scissor.0,
-                                    scissor.1,
-                                    scissor.2,
-                                    scissor.3,
-                                );
+                                rpass.set_scissor_rect(scissor.0, scissor.1, scissor.2, scissor.3);
                             }
                             if !difference {
                                 clip_depth = clip_depth.saturating_sub(1);
@@ -11090,12 +11085,7 @@ impl WgpuSceneRenderer {
                             };
                             draw_indexed_mesh!(pipe, uoff, mesh);
                             if scissor.2 > 0 && scissor.3 > 0 {
-                                rpass.set_scissor_rect(
-                                    scissor.0,
-                                    scissor.1,
-                                    scissor.2,
-                                    scissor.3,
-                                );
+                                rpass.set_scissor_rect(scissor.0, scissor.1, scissor.2, scissor.3);
                             }
                             if !difference {
                                 clip_depth = clip_depth.saturating_sub(1);
