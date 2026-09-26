@@ -95,10 +95,9 @@ impl LazyColumnGeometry {
         self.heights.get(index).copied().unwrap_or(0.0)
     }
 
-    pub(crate) fn first_visible(&self, offset: f32) -> usize {
-        if offset <= 0.0 || self.heights.is_empty() {
-            return 0;
-        }
+    /// Fenwick binary-lifting: largest item count whose cumulative height
+    /// still fits within `offset`.
+    fn prefix_within(&self, offset: f32) -> usize {
         let mut index = 0;
         let mut bit = 1usize;
         while bit <= self.heights.len() {
@@ -116,24 +115,18 @@ impl LazyColumnGeometry {
         index
     }
 
+    pub(crate) fn first_visible(&self, offset: f32) -> usize {
+        if offset <= 0.0 || self.heights.is_empty() {
+            return 0;
+        }
+        self.prefix_within(offset)
+    }
+
     pub(crate) fn end_visible(&self, offset: f32) -> usize {
         if offset <= 0.0 {
             return 0;
         }
-        let mut index = 0;
-        let mut bit = 1usize;
-        while bit <= self.heights.len() {
-            bit <<= 1;
-        }
-        let mut sum = 0.0;
-        while bit != 0 {
-            let next = index + bit;
-            if next <= self.heights.len() && sum + self.fenwick[next] <= offset {
-                index = next;
-                sum += self.fenwick[next];
-            }
-            bit >>= 1;
-        }
+        let index = self.prefix_within(offset);
         if index < self.heights.len() {
             index + 1
         } else {
@@ -288,52 +281,106 @@ impl<T, F: Fn(&T) -> f32> ItemHeight<T> for F {
     }
 }
 
-pub struct LazyColumnState {
-    pub(crate) scroll_offset: Signal<f32>,
-    pub(crate) viewport_height: Cell<f32>,
-    pub(crate) content_height: Signal<f32>,
-    pub(crate) physics: RefCell<ScrollPhysics>,
-    pub(crate) parent_connection: RefCell<Option<NestedScrollConnection>>,
-    cache_revision: RefCell<Option<CacheRevision>>,
-    geometry: RefCell<LazyColumnGeometryCache>,
+/// Scroll state for a single axis: current offset, viewport extent, content
+/// extent. Every lazy container scrolls on one or two of these.
+pub(crate) struct LazyAxis {
+    pub(crate) offset: Signal<f32>,
+    pub(crate) viewport: Cell<f32>,
+    pub(crate) content: Signal<f32>,
 }
 
-impl Default for LazyColumnState {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl LazyColumnState {
-    pub fn new() -> Self {
+impl LazyAxis {
+    fn new() -> Self {
         Self {
-            scroll_offset: signal(0.0),
-            viewport_height: Cell::new(0.0),
-            content_height: signal(0.0),
-            physics: RefCell::new(ScrollPhysics::new(0.90, 5.0, 10.0)),
-            parent_connection: RefCell::new(None),
-            cache_revision: RefCell::new(None),
-            geometry: RefCell::new(LazyColumnGeometryCache::new()),
+            offset: signal(0.0),
+            viewport: Cell::new(0.0),
+            content: signal(0.0),
         }
     }
 
-    pub fn set_vp_height(&self, h_px: f32) {
-        let height = h_px.max(0.0);
-        if (self.viewport_height.get() - height).abs() > 0.5 {
-            self.viewport_height.set(height);
+    /// Drops sub-pixel writes so layout jitter below half a pixel does not
+    /// invalidate dependents.
+    pub(crate) fn set_viewport(&self, px: f32) {
+        let px = px.max(0.0);
+        if (self.viewport.get() - px).abs() > 0.5 {
+            self.viewport.set(px);
             request_frame();
         }
     }
 
-    pub fn set_nested_scroll_parent(&self, conn: NestedScrollConnection) {
+    pub(crate) fn set_offset(&self, off: f32, content: f32) {
+        let max_off = (content - self.viewport.get()).max(0.0);
+        let off = if off.is_finite() { off } else { 0.0 };
+        let clamped = off.clamp(0.0, max_off);
+        if (self.offset.get() - clamped).abs() > 0.5 {
+            self.offset.set(clamped);
+        }
+    }
+
+    /// Applies `delta_px`, returning the part the axis could not consume.
+    pub(crate) fn scroll_immediate(
+        &self,
+        delta_px: f32,
+        content_px: f32,
+        physics: &RefCell<ScrollPhysics>,
+    ) -> f32 {
+        let before = self.offset.get();
+        let max_offset = (content_px - self.viewport.get()).max(0.0);
+        let delta_px = if delta_px.is_finite() { delta_px } else { 0.0 };
+        let new_offset = (before + delta_px).clamp(0.0, max_offset);
+        let new_offset = if new_offset.is_finite() {
+            new_offset
+        } else {
+            before
+        };
+        self.offset.set(new_offset);
+        let consumed = new_offset - before;
+        physics.borrow_mut().record_input(consumed);
+        delta_px - consumed
+    }
+
+    pub(crate) fn tick(&self, content_px: f32, physics: &RefCell<ScrollPhysics>) -> bool {
+        let max_offset = (content_px - self.viewport.get()).max(0.0);
+        let mut p = physics.borrow_mut();
+        if let Some(new_off) = p.tick_integrate(self.offset.get(), 0.0, max_offset) {
+            drop(p);
+            self.offset.set(new_off);
+            true
+        } else {
+            false
+        }
+    }
+}
+
+/// Axis-agnostic scroll plumbing shared by every lazy container state:
+/// the scrolling axis, its fling physics, nested-scroll wiring, and the
+/// cache-revision hook.
+pub(crate) struct LazyScrollCore {
+    pub(crate) axis: LazyAxis,
+    pub(crate) physics: RefCell<ScrollPhysics>,
+    pub(crate) parent_connection: RefCell<Option<NestedScrollConnection>>,
+    cache_revision: RefCell<Option<CacheRevision>>,
+}
+
+impl LazyScrollCore {
+    fn new() -> Self {
+        Self {
+            axis: LazyAxis::new(),
+            physics: RefCell::new(ScrollPhysics::new(0.90, 5.0, 10.0)),
+            parent_connection: RefCell::new(None),
+            cache_revision: RefCell::new(None),
+        }
+    }
+
+    pub(crate) fn set_nested_scroll_parent(&self, conn: NestedScrollConnection) {
         *self.parent_connection.borrow_mut() = Some(conn);
     }
 
-    pub fn set_cache_revision(&self, revision: impl Fn(u64) -> u64 + 'static) {
+    pub(crate) fn set_cache_revision(&self, revision: impl Fn(u64) -> u64 + 'static) {
         *self.cache_revision.borrow_mut() = Some(Rc::new(revision));
     }
 
-    pub fn clear_cache_revision(&self) {
+    pub(crate) fn clear_cache_revision(&self) {
         *self.cache_revision.borrow_mut() = None;
     }
 
@@ -357,65 +404,100 @@ impl LazyColumnState {
         cache_revision_for_uniform(&self.cache_revision, key, value_identity, height, variation)
     }
 
+    pub(crate) fn set_offset(&self, off: f32, content: f32) {
+        self.axis.set_offset(off, content);
+    }
+
+    pub(crate) fn scroll_immediate(&self, delta_px: f32, content_px: f32) -> f32 {
+        self.axis
+            .scroll_immediate(delta_px, content_px, &self.physics)
+    }
+
+    pub(crate) fn tick(&self, content_px: f32) -> bool {
+        self.axis.tick(content_px, &self.physics)
+    }
+}
+
+pub struct LazyColumnState {
+    pub(crate) core: LazyScrollCore,
+    geometry: RefCell<LazyColumnGeometryCache>,
+}
+
+impl Default for LazyColumnState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl LazyColumnState {
+    pub fn new() -> Self {
+        Self {
+            core: LazyScrollCore::new(),
+            geometry: RefCell::new(LazyColumnGeometryCache::new()),
+        }
+    }
+
+    pub fn set_vp_height(&self, h_px: f32) {
+        self.core.axis.set_viewport(h_px);
+    }
+
+    pub fn set_nested_scroll_parent(&self, conn: NestedScrollConnection) {
+        self.core.set_nested_scroll_parent(conn);
+    }
+
+    pub fn set_cache_revision(&self, revision: impl Fn(u64) -> u64 + 'static) {
+        self.core.set_cache_revision(revision);
+    }
+
+    pub fn clear_cache_revision(&self) {
+        self.core.clear_cache_revision();
+    }
+
+    pub(crate) fn cache_revision_for_with(
+        &self,
+        key: u64,
+        value_identity: usize,
+        height: f32,
+        variation: u64,
+    ) -> u64 {
+        self.core
+            .cache_revision_for_with(key, value_identity, height, variation)
+    }
+
+    pub(crate) fn cache_revision_for_uniform(
+        &self,
+        key: u64,
+        value_identity: usize,
+        height: f32,
+        variation: u64,
+    ) -> u64 {
+        self.core
+            .cache_revision_for_uniform(key, value_identity, height, variation)
+    }
+
     pub(crate) fn geometry(&self, keys: &[u64], heights: &[f32]) -> Rc<LazyColumnGeometry> {
         self.geometry.borrow_mut().update(keys, heights)
     }
 
     pub fn set_offset(&self, off: f32, content_height: f32) {
-        let vh = self.viewport_height.get();
-        let max_off = (content_height - vh).max(0.0);
-        let off = if off.is_finite() { off } else { 0.0 };
-        let clamped = off.clamp(0.0, max_off);
-        if (self.scroll_offset.get() - clamped).abs() > 0.5 {
-            self.scroll_offset.set(clamped);
-        }
+        self.core.set_offset(off, content_height);
     }
 
     pub fn scroll_immediate(&self, delta_px: f32, content_height_px: f32) -> f32 {
-        let before = self.scroll_offset.get();
-        let viewport = self.viewport_height.get();
-        let max_offset = (content_height_px - viewport).max(0.0);
-
-        let delta_px = if delta_px.is_finite() { delta_px } else { 0.0 };
-        let new_offset = (before + delta_px).clamp(0.0, max_offset);
-        let new_offset = if new_offset.is_finite() {
-            new_offset
-        } else {
-            before
-        };
-        self.scroll_offset.set(new_offset);
-
-        let consumed = new_offset - before;
-
-        self.physics.borrow_mut().record_input(consumed);
-
-        delta_px - consumed
+        self.core.scroll_immediate(delta_px, content_height_px)
     }
 
     pub fn tick(&self, content_height_px: f32) -> bool {
-        let viewport = self.viewport_height.get();
-        let max_offset = (content_height_px - viewport).max(0.0);
-
-        let mut p = self.physics.borrow_mut();
-        if let Some(new_off) = p.tick_integrate(self.scroll_offset.get(), 0.0, max_offset) {
-            drop(p);
-            self.scroll_offset.set(new_off);
-            true
-        } else {
-            false
-        }
+        self.core.tick(content_height_px)
     }
 }
 
+/// Two-axis state. `core.axis` is the vertical axis used by
+/// [`crate::lazy::LazyVerticalGrid`]; `x` is the horizontal axis used by
+/// [`crate::lazy::LazyHorizontalGrid`]. Both share one fling physics.
 pub struct LazyGridState {
-    pub(crate) scroll_offset: Signal<f32>,
-    pub(crate) viewport_height: Cell<f32>,
-    pub(crate) content_height: Signal<f32>,
-    pub(crate) viewport_width: Cell<f32>,
-    pub(crate) content_width: Signal<f32>,
-    pub(crate) physics: RefCell<ScrollPhysics>,
-    pub(crate) parent_connection: RefCell<Option<NestedScrollConnection>>,
-    cache_revision: RefCell<Option<CacheRevision>>,
+    pub(crate) core: LazyScrollCore,
+    pub(crate) x: LazyAxis,
 }
 
 impl Default for LazyGridState {
@@ -427,27 +509,21 @@ impl Default for LazyGridState {
 impl LazyGridState {
     pub fn new() -> Self {
         Self {
-            scroll_offset: signal(0.0),
-            viewport_height: Cell::new(0.0),
-            content_height: signal(0.0),
-            viewport_width: Cell::new(0.0),
-            content_width: signal(0.0),
-            physics: RefCell::new(ScrollPhysics::new(0.90, 5.0, 10.0)),
-            parent_connection: RefCell::new(None),
-            cache_revision: RefCell::new(None),
+            core: LazyScrollCore::new(),
+            x: LazyAxis::new(),
         }
     }
 
     pub fn set_nested_scroll_parent(&self, conn: NestedScrollConnection) {
-        *self.parent_connection.borrow_mut() = Some(conn);
+        self.core.set_nested_scroll_parent(conn);
     }
 
     pub fn set_cache_revision(&self, revision: impl Fn(u64) -> u64 + 'static) {
-        *self.cache_revision.borrow_mut() = Some(Rc::new(revision));
+        self.core.set_cache_revision(revision);
     }
 
     pub fn clear_cache_revision(&self) {
-        *self.cache_revision.borrow_mut() = None;
+        self.core.clear_cache_revision();
     }
 
     pub(crate) fn cache_revision_for_with(
@@ -457,97 +533,38 @@ impl LazyGridState {
         height: f32,
         variation: u64,
     ) -> u64 {
-        cache_revision_for(&self.cache_revision, key, value_identity, height, variation)
+        self.core
+            .cache_revision_for_with(key, value_identity, height, variation)
     }
 
     pub fn set_offset(&self, off: f32, content_height: f32) {
-        let vh = self.viewport_height.get();
-        let max_off = (content_height - vh).max(0.0);
-        let off = if off.is_finite() { off } else { 0.0 };
-        let clamped = off.clamp(0.0, max_off);
-        if (self.scroll_offset.get() - clamped).abs() > 0.5 {
-            self.scroll_offset.set(clamped);
-        }
+        self.core.set_offset(off, content_height);
     }
 
     pub fn scroll_immediate(&self, delta_px: f32, content_height_px: f32) -> f32 {
-        let before = self.scroll_offset.get();
-        let viewport = self.viewport_height.get();
-        let max_offset = (content_height_px - viewport).max(0.0);
-        let delta_px = if delta_px.is_finite() { delta_px } else { 0.0 };
-        let new_offset = (before + delta_px).clamp(0.0, max_offset);
-        let new_offset = if new_offset.is_finite() {
-            new_offset
-        } else {
-            before
-        };
-        self.scroll_offset.set(new_offset);
-        let consumed = new_offset - before;
-        self.physics.borrow_mut().record_input(consumed);
-        delta_px - consumed
+        self.core.scroll_immediate(delta_px, content_height_px)
     }
 
     pub fn tick(&self, content_height_px: f32) -> bool {
-        let viewport = self.viewport_height.get();
-        let max_offset = (content_height_px - viewport).max(0.0);
-        let mut p = self.physics.borrow_mut();
-        if let Some(new_off) = p.tick_integrate(self.scroll_offset.get(), 0.0, max_offset) {
-            drop(p);
-            self.scroll_offset.set(new_off);
-            true
-        } else {
-            false
-        }
+        self.core.tick(content_height_px)
     }
 
     pub fn set_offset_x(&self, off: f32, content_width: f32) {
-        let vw = self.viewport_width.get();
-        let max_off = (content_width - vw).max(0.0);
-        let off = if off.is_finite() { off } else { 0.0 };
-        let clamped = off.clamp(0.0, max_off);
-        if (self.scroll_offset.get() - clamped).abs() > 0.5 {
-            self.scroll_offset.set(clamped);
-        }
+        self.x.set_offset(off, content_width);
     }
 
     pub fn scroll_immediate_x(&self, delta_px: f32, content_width_px: f32) -> f32 {
-        let before = self.scroll_offset.get();
-        let viewport = self.viewport_width.get();
-        let max_offset = (content_width_px - viewport).max(0.0);
-        let delta_px = if delta_px.is_finite() { delta_px } else { 0.0 };
-        let new_offset = (before + delta_px).clamp(0.0, max_offset);
-        let new_offset = if new_offset.is_finite() {
-            new_offset
-        } else {
-            before
-        };
-        self.scroll_offset.set(new_offset);
-        let consumed = new_offset - before;
-        self.physics.borrow_mut().record_input(consumed);
-        delta_px - consumed
+        self.x
+            .scroll_immediate(delta_px, content_width_px, &self.core.physics)
     }
 
     pub fn tick_x(&self, content_width_px: f32) -> bool {
-        let viewport = self.viewport_width.get();
-        let max_offset = (content_width_px - viewport).max(0.0);
-        let mut p = self.physics.borrow_mut();
-        if let Some(new_off) = p.tick_integrate(self.scroll_offset.get(), 0.0, max_offset) {
-            drop(p);
-            self.scroll_offset.set(new_off);
-            true
-        } else {
-            false
-        }
+        self.x.tick(content_width_px, &self.core.physics)
     }
 }
 
 pub struct LazyRowState {
-    pub(crate) scroll_offset: Signal<f32>,
-    pub(crate) viewport_width: Cell<f32>,
-    pub(crate) content_width: Signal<f32>,
-    pub(crate) physics: RefCell<ScrollPhysics>,
-    pub(crate) parent_connection: RefCell<Option<NestedScrollConnection>>,
-    cache_revision: RefCell<Option<CacheRevision>>,
+    pub(crate) core: LazyScrollCore,
 }
 
 impl Default for LazyRowState {
@@ -559,25 +576,20 @@ impl Default for LazyRowState {
 impl LazyRowState {
     pub fn new() -> Self {
         Self {
-            scroll_offset: signal(0.0),
-            viewport_width: Cell::new(0.0),
-            content_width: signal(0.0),
-            physics: RefCell::new(ScrollPhysics::new(0.90, 5.0, 10.0)),
-            parent_connection: RefCell::new(None),
-            cache_revision: RefCell::new(None),
+            core: LazyScrollCore::new(),
         }
     }
 
     pub fn set_nested_scroll_parent(&self, conn: NestedScrollConnection) {
-        *self.parent_connection.borrow_mut() = Some(conn);
+        self.core.set_nested_scroll_parent(conn);
     }
 
     pub fn set_cache_revision(&self, revision: impl Fn(u64) -> u64 + 'static) {
-        *self.cache_revision.borrow_mut() = Some(Rc::new(revision));
+        self.core.set_cache_revision(revision);
     }
 
     pub fn clear_cache_revision(&self) {
-        *self.cache_revision.borrow_mut() = None;
+        self.core.clear_cache_revision();
     }
 
     pub(crate) fn cache_revision_for_with(
@@ -587,57 +599,25 @@ impl LazyRowState {
         height: f32,
         variation: u64,
     ) -> u64 {
-        cache_revision_for(&self.cache_revision, key, value_identity, height, variation)
+        self.core
+            .cache_revision_for_with(key, value_identity, height, variation)
     }
 
     pub fn set_offset(&self, off: f32, content_width: f32) {
-        let vw = self.viewport_width.get();
-        let max_off = (content_width - vw).max(0.0);
-        let off = if off.is_finite() { off } else { 0.0 };
-        let clamped = off.clamp(0.0, max_off);
-        if (self.scroll_offset.get() - clamped).abs() > 0.5 {
-            self.scroll_offset.set(clamped);
-        }
+        self.core.set_offset(off, content_width);
     }
 
     pub fn scroll_immediate(&self, delta_px: f32, content_width_px: f32) -> f32 {
-        let before = self.scroll_offset.get();
-        let viewport = self.viewport_width.get();
-        let max_offset = (content_width_px - viewport).max(0.0);
-        let delta_px = if delta_px.is_finite() { delta_px } else { 0.0 };
-        let new_offset = (before + delta_px).clamp(0.0, max_offset);
-        let new_offset = if new_offset.is_finite() {
-            new_offset
-        } else {
-            before
-        };
-        self.scroll_offset.set(new_offset);
-        let consumed = new_offset - before;
-        self.physics.borrow_mut().record_input(consumed);
-        delta_px - consumed
+        self.core.scroll_immediate(delta_px, content_width_px)
     }
 
     pub fn tick(&self, content_width_px: f32) -> bool {
-        let viewport = self.viewport_width.get();
-        let max_offset = (content_width_px - viewport).max(0.0);
-        let mut p = self.physics.borrow_mut();
-        if let Some(new_off) = p.tick_integrate(self.scroll_offset.get(), 0.0, max_offset) {
-            drop(p);
-            self.scroll_offset.set(new_off);
-            true
-        } else {
-            false
-        }
+        self.core.tick(content_width_px)
     }
 }
 
 pub struct LazyVerticalStaggeredGridState {
-    pub(crate) scroll_offset: Signal<f32>,
-    pub(crate) viewport_height: Cell<f32>,
-    pub(crate) content_height: Signal<f32>,
-    pub(crate) physics: RefCell<ScrollPhysics>,
-    pub(crate) parent_connection: RefCell<Option<NestedScrollConnection>>,
-    cache_revision: RefCell<Option<CacheRevision>>,
+    pub(crate) core: LazyScrollCore,
 }
 
 impl Default for LazyVerticalStaggeredGridState {
@@ -649,25 +629,20 @@ impl Default for LazyVerticalStaggeredGridState {
 impl LazyVerticalStaggeredGridState {
     pub fn new() -> Self {
         Self {
-            scroll_offset: signal(0.0),
-            viewport_height: Cell::new(0.0),
-            content_height: signal(0.0),
-            physics: RefCell::new(ScrollPhysics::new(0.90, 5.0, 10.0)),
-            parent_connection: RefCell::new(None),
-            cache_revision: RefCell::new(None),
+            core: LazyScrollCore::new(),
         }
     }
 
     pub fn set_nested_scroll_parent(&self, conn: NestedScrollConnection) {
-        *self.parent_connection.borrow_mut() = Some(conn);
+        self.core.set_nested_scroll_parent(conn);
     }
 
     pub fn set_cache_revision(&self, revision: impl Fn(u64) -> u64 + 'static) {
-        *self.cache_revision.borrow_mut() = Some(Rc::new(revision));
+        self.core.set_cache_revision(revision);
     }
 
     pub fn clear_cache_revision(&self) {
-        *self.cache_revision.borrow_mut() = None;
+        self.core.clear_cache_revision();
     }
 
     pub(crate) fn cache_revision_for_with(
@@ -677,46 +652,19 @@ impl LazyVerticalStaggeredGridState {
         height: f32,
         variation: u64,
     ) -> u64 {
-        cache_revision_for(&self.cache_revision, key, value_identity, height, variation)
+        self.core
+            .cache_revision_for_with(key, value_identity, height, variation)
     }
 
     pub fn set_offset(&self, off: f32, content_height: f32) {
-        let vh = self.viewport_height.get();
-        let max_off = (content_height - vh).max(0.0);
-        let off = if off.is_finite() { off } else { 0.0 };
-        let clamped = off.clamp(0.0, max_off);
-        if (self.scroll_offset.get() - clamped).abs() > 0.5 {
-            self.scroll_offset.set(clamped);
-        }
+        self.core.set_offset(off, content_height);
     }
 
     pub fn scroll_immediate(&self, delta_px: f32, content_height_px: f32) -> f32 {
-        let before = self.scroll_offset.get();
-        let viewport = self.viewport_height.get();
-        let max_offset = (content_height_px - viewport).max(0.0);
-        let delta_px = if delta_px.is_finite() { delta_px } else { 0.0 };
-        let new_offset = (before + delta_px).clamp(0.0, max_offset);
-        let new_offset = if new_offset.is_finite() {
-            new_offset
-        } else {
-            before
-        };
-        self.scroll_offset.set(new_offset);
-        let consumed = new_offset - before;
-        self.physics.borrow_mut().record_input(consumed);
-        delta_px - consumed
+        self.core.scroll_immediate(delta_px, content_height_px)
     }
 
     pub fn tick(&self, content_height_px: f32) -> bool {
-        let viewport = self.viewport_height.get();
-        let max_offset = (content_height_px - viewport).max(0.0);
-        let mut p = self.physics.borrow_mut();
-        if let Some(new_off) = p.tick_integrate(self.scroll_offset.get(), 0.0, max_offset) {
-            drop(p);
-            self.scroll_offset.set(new_off);
-            true
-        } else {
-            false
-        }
+        self.core.tick(content_height_px)
     }
 }

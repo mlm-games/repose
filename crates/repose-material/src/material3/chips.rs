@@ -153,26 +153,90 @@ impl Default for ChipConfig {
     }
 }
 
-/// M3 Assist Chip - a chip for triggering actions.
-pub fn AssistChip(
-    on_click: impl Fn() + 'static,
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ChipStyle {
+    /// Outlined variant: draws a border, no elevation.
+    Bordered,
+    /// Filled variant: draws elevation, no border.
+    Elevated,
+}
+
+/// Selectable chips tween their colors, keyed by a per-instance id drawn from
+/// [`FILTERCHIP_COUNTER`]. Non-selectable chips pass `None` and resolve colors
+/// directly. The `id` is allocated by each public wrapper (not here) so that
+/// chips of different kinds rendered in the same scope keep distinct slots.
+#[derive(Clone, Copy)]
+struct ChipAnim {
+    prefix: &'static str,
+    id: u64,
+}
+
+/// The label plus its optional leading/trailing adornments.
+struct ChipContent {
     label: View,
-    leading_icon: Option<View>,
-    trailing_icon: Option<View>,
+    leading: Option<View>,
+    trailing: Option<View>,
+}
+
+fn chip_icon_slot(view: View, color: Color, gap: Dp, leading: bool) -> View {
+    Box(Modifier::new().padding_values(PaddingValues {
+        left: if leading { Dp(0.0) } else { gap },
+        right: if leading { gap } else { Dp(0.0) },
+        top: Dp(0.0),
+        bottom: Dp(0.0),
+    }))
+    .child(with_content_color(color, move || view))
+}
+
+fn chip_impl(
+    style: ChipStyle,
+    selected: bool,
+    anim: Option<ChipAnim>,
+    on_click: impl Fn() + 'static,
+    content: ChipContent,
     config: ChipConfig,
 ) -> View {
+    let ChipContent {
+        label,
+        leading: leading_icon,
+        trailing: trailing_icon,
+    } = content;
     let th = theme();
+    let spec = th.motion.color;
     let is_enabled = config.enabled;
     let colors = &config.colors;
-    let bg = colors.container(is_enabled, false);
-    let label_color = colors.label(is_enabled, false);
-    let leading_color = colors.leading_icon(is_enabled, false);
-    let trailing_color = colors.trailing_icon(is_enabled, false);
-    let border = if is_enabled {
-        config.border_color
-    } else {
-        config.disabled_border_color
+
+    let (bg, label_color, leading_color, trailing_color) = match anim {
+        Some(ChipAnim { prefix, id }) => (
+            animate_color(
+                format!("{prefix}_bg_{id}"),
+                colors.container(is_enabled, selected),
+                spec,
+            ),
+            animate_color(
+                format!("{prefix}_lc_{id}"),
+                colors.label(is_enabled, selected),
+                spec,
+            ),
+            animate_color(
+                format!("{prefix}_lic_{id}"),
+                colors.leading_icon(is_enabled, selected),
+                spec,
+            ),
+            animate_color(
+                format!("{prefix}_tic_{id}"),
+                colors.trailing_icon(is_enabled, selected),
+                spec,
+            ),
+        ),
+        None => (
+            colors.container(is_enabled, selected),
+            colors.label(is_enabled, selected),
+            colors.leading_icon(is_enabled, selected),
+            colors.trailing_icon(is_enabled, selected),
+        ),
     };
+
     let shape = config.shape_radius;
     let ch_source: Rc<MutableInteractionSource> = config
         .interaction_source
@@ -191,7 +255,13 @@ pub fn AssistChip(
             pressed: Color::TRANSPARENT,
             dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
-        })
+        });
+
+    if style == ChipStyle::Elevated {
+        m = m.state_elevation(config.elevation.to_state_elevation());
+    }
+
+    m = m
         .padding_values(PaddingValues {
             left: config.horizontal_padding,
             right: config.horizontal_padding,
@@ -204,39 +274,54 @@ pub fn AssistChip(
         .justify_content(JustifyContent::CENTER)
         .then(config.modifier);
 
-    if config.border_width.0 > 0.0 && border != Color::TRANSPARENT {
-        m = m.border(config.border_width, border, shape);
+    if style == ChipStyle::Bordered {
+        let border = match (is_enabled, selected) {
+            (true, true) => config.selected_border_color,
+            (true, false) => config.border_color,
+            (false, true) => config.disabled_selected_border_color,
+            (false, false) => config.disabled_border_color,
+        };
+        if config.border_width.0 > 0.0 && border != Color::TRANSPARENT {
+            m = m.border(config.border_width, border, shape);
+        }
     }
 
     m = apply_m3_clickable(m, &ch_source, label_color, is_enabled, on_click);
     m = with_button_semantics(m, is_enabled);
 
-    Box(m).child(
-        Row(Modifier::new().align_items(AlignItems::CENTER)).child((
-            leading_icon
-                .map(|v| {
-                    Box(Modifier::new().padding_values(PaddingValues {
-                        left: Dp(0.0),
-                        right: Dp(8.0),
-                        top: Dp(0.0),
-                        bottom: Dp(0.0),
-                    }))
-                    .child(with_content_color(leading_color, move || v))
-                })
-                .unwrap_or(Box(Modifier::new())),
-            with_content_color(label_color, move || label),
-            trailing_icon
-                .map(|v| {
-                    Box(Modifier::new().padding_values(PaddingValues {
-                        left: Dp(8.0),
-                        right: Dp(0.0),
-                        top: Dp(0.0),
-                        bottom: Dp(0.0),
-                    }))
-                    .child(with_content_color(trailing_color, move || v))
-                })
-                .unwrap_or(Box(Modifier::new())),
-        )),
+    let lead = leading_icon
+        .map(|v| chip_icon_slot(v, leading_color, Dp(8.0), true))
+        .unwrap_or_else(|| Box(Modifier::new()));
+    let row = Row(Modifier::new().align_items(AlignItems::CENTER));
+
+    match trailing_icon {
+        Some(v) => {
+            let trail = chip_icon_slot(v, trailing_color, Dp(8.0), false);
+            Box(m).child(row.child((lead, with_content_color(label_color, move || label), trail)))
+        }
+        None => Box(m).child(row.child((lead, with_content_color(label_color, move || label)))),
+    }
+}
+
+/// M3 Assist Chip - a chip for triggering actions.
+pub fn AssistChip(
+    on_click: impl Fn() + 'static,
+    label: View,
+    leading_icon: Option<View>,
+    trailing_icon: Option<View>,
+    config: ChipConfig,
+) -> View {
+    chip_impl(
+        ChipStyle::Bordered,
+        false,
+        None,
+        on_click,
+        ChipContent {
+            label,
+            leading: leading_icon,
+            trailing: trailing_icon,
+        },
+        config,
     )
 }
 
@@ -248,74 +333,17 @@ pub fn ElevatedAssistChip(
     trailing_icon: Option<View>,
     config: ChipConfig,
 ) -> View {
-    let th = theme();
-    let is_enabled = config.enabled;
-    let colors = &config.colors;
-    let bg = colors.container(is_enabled, false);
-    let label_color = colors.label(is_enabled, false);
-    let leading_color = colors.leading_icon(is_enabled, false);
-    let trailing_color = colors.trailing_icon(is_enabled, false);
-    let shape = config.shape_radius;
-    let ch_source: Rc<MutableInteractionSource> = config
-        .interaction_source
-        .clone()
-        .map(Rc::new)
-        .unwrap_or_else(|| remember(MutableInteractionSource::new));
-
-    let mut m = Modifier::new()
-        .flex_shrink(0.0)
-        .min_height(ChipDefaults::HEIGHT)
-        .height(ChipDefaults::HEIGHT)
-        .state_colors(StateColors {
-            default: Color::TRANSPARENT,
-            hovered: Color::TRANSPARENT,
-            focused: Color::TRANSPARENT,
-            pressed: Color::TRANSPARENT,
-            dragged: th.on_surface.with_alpha_f32(0.12),
-            disabled: Color::TRANSPARENT,
-        })
-        .state_elevation(config.elevation.to_state_elevation())
-        .padding_values(PaddingValues {
-            left: config.horizontal_padding,
-            right: config.horizontal_padding,
-            top: Dp(0.0),
-            bottom: Dp(0.0),
-        })
-        .background(bg)
-        .clip_rounded(shape)
-        .align_items(AlignItems::CENTER)
-        .justify_content(JustifyContent::CENTER)
-        .then(config.modifier);
-
-    m = apply_m3_clickable(m, &ch_source, label_color, is_enabled, on_click);
-    m = with_button_semantics(m, is_enabled);
-
-    Box(m).child(
-        Row(Modifier::new().align_items(AlignItems::CENTER)).child((
-            leading_icon
-                .map(|v| {
-                    Box(Modifier::new().padding_values(PaddingValues {
-                        left: Dp(0.0),
-                        right: Dp(8.0),
-                        top: Dp(0.0),
-                        bottom: Dp(0.0),
-                    }))
-                    .child(with_content_color(leading_color, move || v))
-                })
-                .unwrap_or(Box(Modifier::new())),
-            with_content_color(label_color, move || label),
-            trailing_icon
-                .map(|v| {
-                    Box(Modifier::new().padding_values(PaddingValues {
-                        left: Dp(8.0),
-                        right: Dp(0.0),
-                        top: Dp(0.0),
-                        bottom: Dp(0.0),
-                    }))
-                    .child(with_content_color(trailing_color, move || v))
-                })
-                .unwrap_or(Box(Modifier::new())),
-        )),
+    chip_impl(
+        ChipStyle::Elevated,
+        false,
+        None,
+        on_click,
+        ChipContent {
+            label,
+            leading: leading_icon,
+            trailing: trailing_icon,
+        },
+        config,
     )
 }
 
@@ -327,109 +355,21 @@ pub fn FilterChip(
     trailing_icon: Option<View>,
     config: ChipConfig,
 ) -> View {
-    let th = theme();
     let id = remember(|| FILTERCHIP_COUNTER.fetch_add(1, Ordering::Relaxed));
-    let spec = th.motion.color;
-    let is_enabled = config.enabled;
-    let colors = &config.colors;
-
-    let bg = animate_color(
-        format!("fc_bg_{}", id),
-        colors.container(is_enabled, selected),
-        spec,
-    );
-    let label_color = animate_color(
-        format!("fc_lc_{}", id),
-        colors.label(is_enabled, selected),
-        spec,
-    );
-    let leading_color = animate_color(
-        format!("fc_lic_{}", id),
-        colors.leading_icon(is_enabled, selected),
-        spec,
-    );
-    let trailing_color = animate_color(
-        format!("fc_tic_{}", id),
-        colors.trailing_icon(is_enabled, selected),
-        spec,
-    );
-    let border = if !is_enabled {
-        if selected {
-            config.disabled_selected_border_color
-        } else {
-            config.disabled_border_color
-        }
-    } else {
-        if selected {
-            config.selected_border_color
-        } else {
-            config.border_color
-        }
-    };
-    let shape = config.shape_radius;
-
-    let ch_source: Rc<MutableInteractionSource> = config
-        .interaction_source
-        .clone()
-        .map(Rc::new)
-        .unwrap_or_else(|| remember(MutableInteractionSource::new));
-
-    let mut m = Modifier::new()
-        .flex_shrink(0.0)
-        .min_height(ChipDefaults::HEIGHT)
-        .height(ChipDefaults::HEIGHT)
-        .state_colors(StateColors {
-            default: Color::TRANSPARENT,
-            hovered: Color::TRANSPARENT,
-            focused: Color::TRANSPARENT,
-            pressed: Color::TRANSPARENT,
-            dragged: th.on_surface.with_alpha_f32(0.12),
-            disabled: Color::TRANSPARENT,
-        })
-        .padding_values(PaddingValues {
-            left: config.horizontal_padding,
-            right: config.horizontal_padding,
-            top: Dp(0.0),
-            bottom: Dp(0.0),
-        })
-        .background(bg)
-        .clip_rounded(shape)
-        .align_items(AlignItems::CENTER)
-        .justify_content(JustifyContent::CENTER)
-        .then(config.modifier);
-
-    if config.border_width.0 > 0.0 && border != Color::TRANSPARENT {
-        m = m.border(config.border_width, border, shape);
-    }
-    m = apply_m3_clickable(m, &ch_source, label_color, is_enabled, on_click);
-    m = with_button_semantics(m, is_enabled);
-
-    Box(m).child(
-        Row(Modifier::new().align_items(AlignItems::CENTER)).child((
-            leading_icon
-                .map(|v| {
-                    Box(Modifier::new().padding_values(PaddingValues {
-                        left: Dp(0.0),
-                        right: Dp(8.0),
-                        top: Dp(0.0),
-                        bottom: Dp(0.0),
-                    }))
-                    .child(with_content_color(leading_color, move || v))
-                })
-                .unwrap_or(Box(Modifier::new())),
-            with_content_color(label_color, move || label),
-            trailing_icon
-                .map(|v| {
-                    Box(Modifier::new().padding_values(PaddingValues {
-                        left: Dp(8.0),
-                        right: Dp(0.0),
-                        top: Dp(0.0),
-                        bottom: Dp(0.0),
-                    }))
-                    .child(with_content_color(trailing_color, move || v))
-                })
-                .unwrap_or(Box(Modifier::new())),
-        )),
+    chip_impl(
+        ChipStyle::Bordered,
+        selected,
+        Some(ChipAnim {
+            prefix: "fc",
+            id: *id,
+        }),
+        on_click,
+        ChipContent {
+            label,
+            leading: leading_icon,
+            trailing: trailing_icon,
+        },
+        config,
     )
 }
 
@@ -442,94 +382,21 @@ pub fn ElevatedFilterChip(
     trailing_icon: Option<View>,
     config: ChipConfig,
 ) -> View {
-    let th = theme();
     let id = remember(|| FILTERCHIP_COUNTER.fetch_add(1, Ordering::Relaxed));
-    let spec = th.motion.color;
-    let is_enabled = config.enabled;
-    let colors = &config.colors;
-
-    let bg = animate_color(
-        format!("efc_bg_{}", id),
-        colors.container(is_enabled, selected),
-        spec,
-    );
-    let label_color = animate_color(
-        format!("efc_lc_{}", id),
-        colors.label(is_enabled, selected),
-        spec,
-    );
-    let leading_color = animate_color(
-        format!("efc_lic_{}", id),
-        colors.leading_icon(is_enabled, selected),
-        spec,
-    );
-    let trailing_color = animate_color(
-        format!("efc_tic_{}", id),
-        colors.trailing_icon(is_enabled, selected),
-        spec,
-    );
-    let shape = config.shape_radius;
-
-    let ch_source: Rc<MutableInteractionSource> = config
-        .interaction_source
-        .clone()
-        .map(Rc::new)
-        .unwrap_or_else(|| remember(MutableInteractionSource::new));
-
-    let mut m = Modifier::new()
-        .flex_shrink(0.0)
-        .min_height(ChipDefaults::HEIGHT)
-        .height(ChipDefaults::HEIGHT)
-        .state_colors(StateColors {
-            default: Color::TRANSPARENT,
-            hovered: Color::TRANSPARENT,
-            focused: Color::TRANSPARENT,
-            pressed: Color::TRANSPARENT,
-            dragged: th.on_surface.with_alpha_f32(0.12),
-            disabled: Color::TRANSPARENT,
-        })
-        .state_elevation(config.elevation.to_state_elevation())
-        .padding_values(PaddingValues {
-            left: config.horizontal_padding,
-            right: config.horizontal_padding,
-            top: Dp(0.0),
-            bottom: Dp(0.0),
-        })
-        .background(bg)
-        .clip_rounded(shape)
-        .align_items(AlignItems::CENTER)
-        .justify_content(JustifyContent::CENTER)
-        .then(config.modifier);
-
-    m = apply_m3_clickable(m, &ch_source, label_color, is_enabled, on_click);
-    m = with_button_semantics(m, is_enabled);
-
-    Box(m).child(
-        Row(Modifier::new().align_items(AlignItems::CENTER)).child((
-            leading_icon
-                .map(|v| {
-                    Box(Modifier::new().padding_values(PaddingValues {
-                        left: Dp(0.0),
-                        right: Dp(8.0),
-                        top: Dp(0.0),
-                        bottom: Dp(0.0),
-                    }))
-                    .child(with_content_color(leading_color, move || v))
-                })
-                .unwrap_or(Box(Modifier::new())),
-            with_content_color(label_color, move || label),
-            trailing_icon
-                .map(|v| {
-                    Box(Modifier::new().padding_values(PaddingValues {
-                        left: Dp(8.0),
-                        right: Dp(0.0),
-                        top: Dp(0.0),
-                        bottom: Dp(0.0),
-                    }))
-                    .child(with_content_color(trailing_color, move || v))
-                })
-                .unwrap_or(Box(Modifier::new())),
-        )),
+    chip_impl(
+        ChipStyle::Elevated,
+        selected,
+        Some(ChipAnim {
+            prefix: "efc",
+            id: *id,
+        }),
+        on_click,
+        ChipContent {
+            label,
+            leading: leading_icon,
+            trailing: trailing_icon,
+        },
+        config,
     )
 }
 
@@ -539,69 +406,17 @@ pub fn SuggestionChip(
     icon: Option<View>,
     config: ChipConfig,
 ) -> View {
-    let th = theme();
-    let is_enabled = config.enabled;
-    let colors = &config.colors;
-    let bg = colors.container(is_enabled, false);
-    let label_color = colors.label(is_enabled, false);
-    let leading_color = colors.leading_icon(is_enabled, false);
-    let border = if is_enabled {
-        config.border_color
-    } else {
-        config.disabled_border_color
-    };
-    let shape = config.shape_radius;
-
-    let ch_source: Rc<MutableInteractionSource> = config
-        .interaction_source
-        .clone()
-        .map(Rc::new)
-        .unwrap_or_else(|| remember(MutableInteractionSource::new));
-
-    let mut m = Modifier::new()
-        .flex_shrink(0.0)
-        .min_height(ChipDefaults::HEIGHT)
-        .height(ChipDefaults::HEIGHT)
-        .state_colors(StateColors {
-            default: Color::TRANSPARENT,
-            hovered: Color::TRANSPARENT,
-            focused: Color::TRANSPARENT,
-            pressed: Color::TRANSPARENT,
-            dragged: th.on_surface.with_alpha_f32(0.12),
-            disabled: Color::TRANSPARENT,
-        })
-        .padding_values(PaddingValues {
-            left: config.horizontal_padding,
-            right: config.horizontal_padding,
-            top: Dp(0.0),
-            bottom: Dp(0.0),
-        })
-        .background(bg)
-        .clip_rounded(shape)
-        .align_items(AlignItems::CENTER)
-        .justify_content(JustifyContent::CENTER)
-        .then(config.modifier);
-
-    if config.border_width.0 > 0.0 && border != Color::TRANSPARENT {
-        m = m.border(config.border_width, border, shape);
-    }
-    m = apply_m3_clickable(m, &ch_source, label_color, is_enabled, on_click);
-    m = with_button_semantics(m, is_enabled);
-
-    Box(m).child(
-        Row(Modifier::new().align_items(AlignItems::CENTER)).child((
-            icon.map(|v| {
-                Box(Modifier::new().padding_values(PaddingValues {
-                    left: Dp(0.0),
-                    right: Dp(8.0),
-                    top: Dp(0.0),
-                    bottom: Dp(0.0),
-                }))
-                .child(with_content_color(leading_color, move || v))
-            })
-            .unwrap_or(Box(Modifier::new())),
-            with_content_color(label_color, move || label),
-        )),
+    chip_impl(
+        ChipStyle::Bordered,
+        false,
+        None,
+        on_click,
+        ChipContent {
+            label,
+            leading: icon,
+            trailing: None,
+        },
+        config,
     )
 }
 
@@ -612,62 +427,17 @@ pub fn ElevatedSuggestionChip(
     icon: Option<View>,
     config: ChipConfig,
 ) -> View {
-    let th = theme();
-    let is_enabled = config.enabled;
-    let colors = &config.colors;
-    let bg = colors.container(is_enabled, false);
-    let label_color = colors.label(is_enabled, false);
-    let leading_color = colors.leading_icon(is_enabled, false);
-    let shape = config.shape_radius;
-
-    let ch_source: Rc<MutableInteractionSource> = config
-        .interaction_source
-        .clone()
-        .map(Rc::new)
-        .unwrap_or_else(|| remember(MutableInteractionSource::new));
-
-    let mut m = Modifier::new()
-        .flex_shrink(0.0)
-        .min_height(ChipDefaults::HEIGHT)
-        .height(ChipDefaults::HEIGHT)
-        .state_colors(StateColors {
-            default: Color::TRANSPARENT,
-            hovered: Color::TRANSPARENT,
-            focused: Color::TRANSPARENT,
-            pressed: Color::TRANSPARENT,
-            dragged: th.on_surface.with_alpha_f32(0.12),
-            disabled: Color::TRANSPARENT,
-        })
-        .state_elevation(config.elevation.to_state_elevation())
-        .padding_values(PaddingValues {
-            left: config.horizontal_padding,
-            right: config.horizontal_padding,
-            top: Dp(0.0),
-            bottom: Dp(0.0),
-        })
-        .background(bg)
-        .clip_rounded(shape)
-        .align_items(AlignItems::CENTER)
-        .justify_content(JustifyContent::CENTER)
-        .then(config.modifier);
-
-    m = apply_m3_clickable(m, &ch_source, label_color, is_enabled, on_click);
-    m = with_button_semantics(m, is_enabled);
-
-    Box(m).child(
-        Row(Modifier::new().align_items(AlignItems::CENTER)).child((
-            icon.map(|v| {
-                Box(Modifier::new().padding_values(PaddingValues {
-                    left: Dp(0.0),
-                    right: Dp(8.0),
-                    top: Dp(0.0),
-                    bottom: Dp(0.0),
-                }))
-                .child(with_content_color(leading_color, move || v))
-            })
-            .unwrap_or(Box(Modifier::new())),
-            with_content_color(label_color, move || label),
-        )),
+    chip_impl(
+        ChipStyle::Elevated,
+        false,
+        None,
+        on_click,
+        ChipContent {
+            label,
+            leading: icon,
+            trailing: None,
+        },
+        config,
     )
 }
 
@@ -680,110 +450,21 @@ pub fn InputChip(
     trailing_icon: Option<View>,
     config: ChipConfig,
 ) -> View {
-    let th = theme();
     let id = remember(|| FILTERCHIP_COUNTER.fetch_add(1, Ordering::Relaxed));
-    let spec = th.motion.color;
-    let is_enabled = config.enabled;
-    let colors = &config.colors;
-
-    let bg = animate_color(
-        format!("ic_bg_{}", id),
-        colors.container(is_enabled, selected),
-        spec,
-    );
-    let label_color = animate_color(
-        format!("ic_lc_{}", id),
-        colors.label(is_enabled, selected),
-        spec,
-    );
-    let leading_color = animate_color(
-        format!("ic_lic_{}", id),
-        colors.leading_icon(is_enabled, selected),
-        spec,
-    );
-    let trailing_color = animate_color(
-        format!("ic_tic_{}", id),
-        colors.trailing_icon(is_enabled, selected),
-        spec,
-    );
-    let border = if !is_enabled {
-        if selected {
-            config.disabled_selected_border_color
-        } else {
-            config.disabled_border_color
-        }
-    } else {
-        if selected {
-            config.selected_border_color
-        } else {
-            config.border_color
-        }
-    };
-    let shape = config.shape_radius;
-
-    let ch_source: Rc<MutableInteractionSource> = config
-        .interaction_source
-        .clone()
-        .map(Rc::new)
-        .unwrap_or_else(|| remember(MutableInteractionSource::new));
-
-    let mut m = Modifier::new()
-        .flex_shrink(0.0)
-        .min_height(ChipDefaults::HEIGHT)
-        .height(ChipDefaults::HEIGHT)
-        .state_colors(StateColors {
-            default: Color::TRANSPARENT,
-            hovered: Color::TRANSPARENT,
-            focused: Color::TRANSPARENT,
-            pressed: Color::TRANSPARENT,
-            dragged: th.on_surface.with_alpha_f32(0.12),
-            disabled: Color::TRANSPARENT,
-        })
-        .padding_values(PaddingValues {
-            left: config.horizontal_padding,
-            right: config.horizontal_padding,
-            top: Dp(0.0),
-            bottom: Dp(0.0),
-        })
-        .background(bg)
-        .clip_rounded(shape)
-        .align_items(AlignItems::CENTER)
-        .justify_content(JustifyContent::CENTER)
-        .then(config.modifier);
-
-    if config.border_width.0 > 0.0 && border != Color::TRANSPARENT {
-        m = m.border(config.border_width, border, shape);
-    }
-    m = apply_m3_clickable(m, &ch_source, label_color, is_enabled, on_click);
-    m = with_button_semantics(m, is_enabled);
-
-    Box(m).child(
-        Row(Modifier::new().align_items(AlignItems::CENTER)).child((
-            avatar
-                .or(leading_icon)
-                .map(|v| {
-                    Box(Modifier::new().padding_values(PaddingValues {
-                        left: Dp(0.0),
-                        right: Dp(8.0),
-                        top: Dp(0.0),
-                        bottom: Dp(0.0),
-                    }))
-                    .child(with_content_color(leading_color, move || v))
-                })
-                .unwrap_or(Box(Modifier::new())),
-            with_content_color(label_color, move || label),
-            trailing_icon
-                .map(|v| {
-                    Box(Modifier::new().padding_values(PaddingValues {
-                        left: Dp(8.0),
-                        right: Dp(0.0),
-                        top: Dp(0.0),
-                        bottom: Dp(0.0),
-                    }))
-                    .child(with_content_color(trailing_color, move || v))
-                })
-                .unwrap_or(Box(Modifier::new())),
-        )),
+    chip_impl(
+        ChipStyle::Bordered,
+        selected,
+        Some(ChipAnim {
+            prefix: "ic",
+            id: *id,
+        }),
+        on_click,
+        ChipContent {
+            label,
+            leading: avatar.or(leading_icon),
+            trailing: trailing_icon,
+        },
+        config,
     )
 }
 

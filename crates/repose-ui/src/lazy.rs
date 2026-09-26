@@ -139,8 +139,8 @@ where
         + padding_top_px
         + padding_bottom_px;
 
-    let scroll_offset_px = state.scroll_offset.get();
-    let viewport_height_px = state.viewport_height.get();
+    let scroll_offset_px = state.core.axis.offset.get();
+    let viewport_height_px = state.core.axis.viewport.get();
     let padded_visible_start = scroll_offset_px - padding_top_px;
     let padded_visible_end = (scroll_offset_px + viewport_height_px) - padding_top_px;
     let (first_visible, last_visible) = if let Some(geometry) = geometry.as_ref() {
@@ -419,15 +419,15 @@ where
     let on_scroll = {
         let st = state.clone();
         Rc::new(move |d: repose_core::Vec2| -> repose_core::Vec2 {
-            let d = run_pre_scroll(&st.parent_connection, d);
-            let ch = st.content_height.get();
+            let d = run_pre_scroll(&st.core.parent_connection, d);
+            let ch = st.core.axis.content.get();
             let ch = if ch > 0.0 { ch } else { content_height_px };
             let leftover_y_px = st.scroll_immediate(d.y, ch);
             let result = repose_core::Vec2 {
                 x: d.x,
                 y: leftover_y_px,
             };
-            run_post_scroll(&st.parent_connection, result)
+            run_post_scroll(&st.core.parent_connection, result)
         })
     };
 
@@ -435,8 +435,8 @@ where
         let st = state.clone();
         Rc::new(move |h_px: f32| {
             let h = h_px.max(0.0);
-            if (st.viewport_height.get() - h).abs() > 0.5 {
-                st.viewport_height.set(h);
+            if (st.core.axis.viewport.get() - h).abs() > 0.5 {
+                st.core.axis.viewport.set(h);
                 repose_core::request_frame();
             }
         })
@@ -444,13 +444,13 @@ where
 
     let get_scroll = {
         let st = state.clone();
-        Rc::new(move || -> f32 { st.scroll_offset.get() })
+        Rc::new(move || -> f32 { st.core.axis.offset.get() })
     };
 
     let set_scroll = {
         let st = state.clone();
         Rc::new(move |off_px: f32| {
-            let ch = st.content_height.get();
+            let ch = st.core.axis.content.get();
             let ch = if ch > 0.0 { ch } else { content_height_px };
             st.set_offset(off_px, ch);
         })
@@ -459,9 +459,9 @@ where
     let measured_h_px = {
         let st = state.clone();
         Rc::new(move |h_px: f32| {
-            if (st.content_height.get() - h_px).abs() > 0.5 {
-                st.content_height.set(h_px);
-                st.set_offset(st.scroll_offset.get(), h_px);
+            if (st.core.axis.content.get() - h_px).abs() > 0.5 {
+                st.core.axis.content.set(h_px);
+                st.set_offset(st.core.axis.offset.get(), h_px);
                 repose_core::request_frame();
             }
         })
@@ -470,7 +470,7 @@ where
     let tick_scroll = {
         let st = state.clone();
         Rc::new(move || {
-            let ch = st.content_height.get();
+            let ch = st.core.axis.content.get();
             let ch = if ch > 0.0 { ch } else { content_height_px };
             st.tick(ch);
         })
@@ -581,8 +581,8 @@ where
     };
 
     let padding_top_px = content_padding.top.to_px().0;
-    let scroll_offset_px = state.scroll_offset.get();
-    let viewport_height_px = state.viewport_height.get();
+    let scroll_offset_px = state.core.axis.offset.get();
+    let viewport_height_px = state.core.axis.viewport.get();
 
     let padded_offset = scroll_offset_px - padding_top_px;
     let buffer_rows = 2usize;
@@ -662,14 +662,14 @@ where
     let on_scroll = {
         let st = state.clone();
         Rc::new(move |d: Vec2| -> Vec2 {
-            let d = run_pre_scroll(&st.parent_connection, d);
-            let ch = st.content_height.get();
+            let d = run_pre_scroll(&st.core.parent_connection, d);
+            let ch = st.core.axis.content.get();
             let ch = if ch > 0.0 { ch } else { content_height_px };
             let result = Vec2 {
                 x: d.x,
                 y: st.scroll_immediate(d.y, ch),
             };
-            run_post_scroll(&st.parent_connection, result)
+            run_post_scroll(&st.core.parent_connection, result)
         })
     };
 
@@ -677,8 +677,8 @@ where
         let st = state.clone();
         Rc::new(move |h: f32| {
             let h = h.max(0.0);
-            if (st.viewport_height.get() - h).abs() > 0.5 {
-                st.viewport_height.set(h);
+            if (st.core.axis.viewport.get() - h).abs() > 0.5 {
+                st.core.axis.viewport.set(h);
                 repose_core::request_frame();
             }
         })
@@ -686,13 +686,13 @@ where
 
     let get_scroll = {
         let st = state.clone();
-        Rc::new(move || -> f32 { st.scroll_offset.get() })
+        Rc::new(move || -> f32 { st.core.axis.offset.get() })
     };
 
     let set_scroll = {
         let st = state.clone();
         Rc::new(move |off: f32| {
-            let ch = st.content_height.get();
+            let ch = st.core.axis.content.get();
             st.set_offset(off, if ch > 0.0 { ch } else { content_height_px });
         })
     };
@@ -700,9 +700,9 @@ where
     let measured_h = {
         let st = state.clone();
         Rc::new(move |h: f32| {
-            if (st.content_height.get() - h).abs() > 0.5 {
-                st.content_height.set(h);
-                st.set_offset(st.scroll_offset.get(), h);
+            if (st.core.axis.content.get() - h).abs() > 0.5 {
+                st.core.axis.content.set(h);
+                st.set_offset(st.core.axis.offset.get(), h);
                 repose_core::request_frame();
             }
         })
@@ -711,7 +711,7 @@ where
     let tick_scroll = {
         let st = state.clone();
         Rc::new(move || {
-            let ch = st.content_height.get();
+            let ch = st.core.axis.content.get();
             let ch = if ch > 0.0 { ch } else { content_height_px };
             st.tick(ch);
         })
@@ -804,8 +804,8 @@ where
     };
 
     let padding_left_px = content_padding.left.to_px().0;
-    let scroll_offset_px = state.scroll_offset.get();
-    let viewport_width_px = state.viewport_width.get();
+    let scroll_offset_px = state.x.offset.get();
+    let viewport_width_px = state.x.viewport.get();
 
     let padded_offset = scroll_offset_px - padding_left_px;
     let buffer_cols = 2usize;
@@ -907,14 +907,14 @@ where
     let on_scroll = {
         let st = state.clone();
         Rc::new(move |d: Vec2| -> Vec2 {
-            let d = run_pre_scroll(&st.parent_connection, d);
-            let cw = st.content_width.get();
+            let d = run_pre_scroll(&st.core.parent_connection, d);
+            let cw = st.x.content.get();
             let cw = if cw > 0.0 { cw } else { content_width_px };
             let result = Vec2 {
                 x: st.scroll_immediate_x(d.x, cw),
                 y: d.y,
             };
-            run_post_scroll(&st.parent_connection, result)
+            run_post_scroll(&st.core.parent_connection, result)
         })
     };
 
@@ -922,8 +922,8 @@ where
         let st = state.clone();
         Rc::new(move |w_px: f32| {
             let w = w_px.max(0.0);
-            if (st.viewport_width.get() - w).abs() > 0.5 {
-                st.viewport_width.set(w);
+            if (st.x.viewport.get() - w).abs() > 0.5 {
+                st.x.viewport.set(w);
                 repose_core::request_frame();
             }
         })
@@ -932,9 +932,9 @@ where
     let set_content_w = {
         let st = state.clone();
         Rc::new(move |w: f32| {
-            if (st.content_width.get() - w).abs() > 0.5 {
-                st.content_width.set(w);
-                st.set_offset_x(st.scroll_offset.get(), w);
+            if (st.x.content.get() - w).abs() > 0.5 {
+                st.x.content.set(w);
+                st.set_offset_x(st.x.offset.get(), w);
                 repose_core::request_frame();
             }
         })
@@ -942,13 +942,13 @@ where
 
     let get_scroll = {
         let st = state.clone();
-        Rc::new(move || -> f32 { st.scroll_offset.get() })
+        Rc::new(move || -> f32 { st.x.offset.get() })
     };
 
     let set_scroll = {
         let st = state.clone();
         Rc::new(move |x: f32| {
-            let cw = st.content_width.get();
+            let cw = st.x.content.get();
             st.set_offset_x(x, if cw > 0.0 { cw } else { content_width_px });
         })
     };
@@ -956,7 +956,7 @@ where
     let tick_scroll = {
         let st = state.clone();
         Rc::new(move || {
-            let cw = st.content_width.get();
+            let cw = st.x.content.get();
             let cw = if cw > 0.0 { cw } else { content_width_px };
             st.tick_x(cw);
         })
@@ -1044,8 +1044,8 @@ where
     let item_w_px = Dp(item_width_dp).to_px().0.max(1.0);
     let content_width_px = items.len() as f32 * item_w_px + padding_left_px + padding_right_px;
 
-    let scroll_offset_px = state.scroll_offset.get();
-    let viewport_width_px = state.viewport_width.get();
+    let scroll_offset_px = state.core.axis.offset.get();
+    let viewport_width_px = state.core.axis.viewport.get();
 
     let padded_offset = scroll_offset_px - padding_left_px;
     let first_visible = if padded_offset <= 0.0 {
@@ -1115,14 +1115,14 @@ where
     let on_scroll = {
         let st = state.clone();
         Rc::new(move |d: Vec2| -> Vec2 {
-            let d = run_pre_scroll(&st.parent_connection, d);
-            let cw = st.content_width.get();
+            let d = run_pre_scroll(&st.core.parent_connection, d);
+            let cw = st.core.axis.content.get();
             let cw = if cw > 0.0 { cw } else { content_width_px };
             let result = Vec2 {
                 x: st.scroll_immediate(d.x, cw),
                 y: d.y,
             };
-            run_post_scroll(&st.parent_connection, result)
+            run_post_scroll(&st.core.parent_connection, result)
         })
     };
 
@@ -1130,8 +1130,8 @@ where
         let st = state.clone();
         Rc::new(move |w_px: f32| {
             let w = w_px.max(0.0);
-            if (st.viewport_width.get() - w).abs() > 0.5 {
-                st.viewport_width.set(w);
+            if (st.core.axis.viewport.get() - w).abs() > 0.5 {
+                st.core.axis.viewport.set(w);
                 repose_core::request_frame();
             }
         })
@@ -1140,9 +1140,9 @@ where
     let set_content_w = {
         let st = state.clone();
         Rc::new(move |w: f32| {
-            if (st.content_width.get() - w).abs() > 0.5 {
-                st.content_width.set(w);
-                st.set_offset(st.scroll_offset.get(), w);
+            if (st.core.axis.content.get() - w).abs() > 0.5 {
+                st.core.axis.content.set(w);
+                st.set_offset(st.core.axis.offset.get(), w);
                 repose_core::request_frame();
             }
         })
@@ -1150,13 +1150,13 @@ where
 
     let get_scroll = {
         let st = state.clone();
-        Rc::new(move || -> f32 { st.scroll_offset.get() })
+        Rc::new(move || -> f32 { st.core.axis.offset.get() })
     };
 
     let set_scroll = {
         let st = state.clone();
         Rc::new(move |x: f32| {
-            let cw = st.content_width.get();
+            let cw = st.core.axis.content.get();
             st.set_offset(x, if cw > 0.0 { cw } else { content_width_px });
         })
     };
@@ -1164,7 +1164,7 @@ where
     let tick_scroll = {
         let st = state.clone();
         Rc::new(move || {
-            let cw = st.content_width.get();
+            let cw = st.core.axis.content.get();
             let cw = if cw > 0.0 { cw } else { content_width_px };
             st.tick(cw);
         })
@@ -1314,8 +1314,8 @@ where
         + content_padding.bottom.to_px().0;
 
     let padding_top_px = content_padding.top.to_px().0;
-    let scroll_offset_px = state.scroll_offset.get();
-    let viewport_height_px = state.viewport_height.get();
+    let scroll_offset_px = state.core.axis.offset.get();
+    let viewport_height_px = state.core.axis.viewport.get();
 
     let buffer = 2;
     let mut first_visible = usize::MAX;
@@ -1429,13 +1429,13 @@ where
     let on_scroll = {
         let st = state.clone();
         Rc::new(move |d: Vec2| -> Vec2 {
-            let d = run_pre_scroll(&st.parent_connection, d);
-            let ch = st.content_height.get().max(st.viewport_height.get());
+            let d = run_pre_scroll(&st.core.parent_connection, d);
+            let ch = st.core.axis.content.get().max(st.core.axis.viewport.get());
             let result = Vec2 {
                 x: d.x,
                 y: st.scroll_immediate(d.y, ch),
             };
-            run_post_scroll(&st.parent_connection, result)
+            run_post_scroll(&st.core.parent_connection, result)
         })
     };
 
@@ -1443,8 +1443,8 @@ where
         let st = state.clone();
         Rc::new(move |h_px: f32| {
             let h = h_px.max(0.0);
-            if (st.viewport_height.get() - h).abs() > 0.5 {
-                st.viewport_height.set(h);
+            if (st.core.axis.viewport.get() - h).abs() > 0.5 {
+                st.core.axis.viewport.set(h);
                 repose_core::request_frame();
             }
         })
@@ -1452,13 +1452,13 @@ where
 
     let get_scroll = {
         let st = state.clone();
-        Rc::new(move || -> f32 { st.scroll_offset.get() })
+        Rc::new(move || -> f32 { st.core.axis.offset.get() })
     };
 
     let set_scroll = {
         let st = state.clone();
         Rc::new(move |off: f32| {
-            let ch = st.content_height.get().max(0.0);
+            let ch = st.core.axis.content.get().max(0.0);
             st.set_offset(off, ch);
         })
     };
@@ -1466,9 +1466,9 @@ where
     let measured_h = {
         let st = state.clone();
         Rc::new(move |h: f32| {
-            if (st.content_height.get() - h).abs() > 0.5 {
-                st.content_height.set(h);
-                st.set_offset(st.scroll_offset.get(), h);
+            if (st.core.axis.content.get() - h).abs() > 0.5 {
+                st.core.axis.content.set(h);
+                st.set_offset(st.core.axis.offset.get(), h);
                 repose_core::request_frame();
             }
         })
@@ -1477,7 +1477,7 @@ where
     let tick_scroll = {
         let st = state.clone();
         Rc::new(move || {
-            let ch = st.content_height.get().max(st.viewport_height.get());
+            let ch = st.core.axis.content.get().max(st.core.axis.viewport.get());
             st.tick(ch);
         })
     };
