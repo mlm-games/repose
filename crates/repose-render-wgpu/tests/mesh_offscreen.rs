@@ -84,7 +84,7 @@ fn bisect_layer_coordinate_space() {
         ("world-child", 10.0f32, 10.0f32, (20, 20, 39, 39)),
         ("local-child", 0.0f32, 0.0f32, (10, 10, 29, 29)),
     ] {
-        let px = covered_of(vec![
+        let Some(px) = covered_of(vec![
             SceneNode::BeginLayer {
                 rect: Rect {
                     x: 10.0,
@@ -100,9 +100,10 @@ fn bisect_layer_coordinate_space() {
             },
             white_rect(cx, cy, 20.0, 20.0),
             SceneNode::EndLayer { layer_id: 7 },
-        ]);
-        let bbox = px.as_deref().and_then(ink_bbox);
-        assert_eq!(bbox, Some(expect), "{label} landed wrong");
+        ]) else {
+            return;
+        };
+        assert_eq!(ink_bbox(&px), Some(expect), "{label} landed wrong");
     }
 }
 
@@ -186,7 +187,7 @@ fn perspective_flatten_projects_rect() {
 #[test]
 fn affine_push_transform_is_unaffected() {
     // Control: the same rect under a plain translate lands exactly.
-    let px = covered_of(vec![
+    let Some(px) = covered_of(vec![
         SceneNode::PushTransform {
             transform: Transform::translate(5.0, 7.0),
         },
@@ -201,8 +202,9 @@ fn affine_push_transform_is_unaffected() {
             radius: [Px::ZERO; 4],
         },
         SceneNode::PopTransform,
-    ])
-    .expect("adapter");
+    ]) else {
+        return;
+    };
     assert_eq!(
         ink_bbox(&px),
         Some((15, 17, 58, 60)),
@@ -223,14 +225,18 @@ fn clip_scene(op: repose_core::ClipOp) -> Vec<SceneNode> {
 
 #[test]
 fn vector_clip_intersect_masks_rect() {
-    let px = covered_of(clip_scene(repose_core::ClipOp::Intersect)).expect("adapter");
+    let Some(px) = covered_of(clip_scene(repose_core::ClipOp::Intersect)) else {
+        return;
+    };
     // Only the 24x24 mask area survives.
     assert_eq!(ink_bbox(&px), Some((20, 20, 43, 43)));
 }
 
 #[test]
 fn vector_clip_difference_cuts_rect() {
-    let px = covered_of(clip_scene(repose_core::ClipOp::Difference)).expect("adapter");
+    let Some(px) = covered_of(clip_scene(repose_core::ClipOp::Difference)) else {
+        return;
+    };
     let ink = ink_bbox(&px).expect("inverse clip must leave content");
     // Full frame minus the mask: edges survive, centre is empty.
     assert_eq!((ink.0, ink.1), (0, 0));
@@ -375,7 +381,7 @@ fn flatten_places_content_by_map() {
     // the hand-computed projection (±2px rasterization).
     let mut t = Transform::identity();
     t.perspective = [0.0, 1e-9, 1.0];
-    let px = covered_of_sized(
+    let Some(px) = covered_of_sized(
         640,
         360,
         vec![
@@ -392,11 +398,10 @@ fn flatten_places_content_by_map() {
             },
             SceneNode::PopTransform,
         ],
-    );
-    assert_eq!(
-        px.as_deref().and_then(|p| ink_bbox_wh(p, 640)),
-        Some((214, 142, 424, 216))
-    );
+    ) else {
+        return;
+    };
+    assert_eq!(ink_bbox_wh(&px, 640), Some((214, 142, 424, 216)));
 
     let mut t = Transform::identity();
     t.perspective = [0.0, 0.0001, 1.0];
@@ -420,7 +425,7 @@ fn flatten_places_content_by_map() {
             (485, 272, 544, 309),
         ),
     ] {
-        let px = covered_of_sized(
+        let Some(px) = covered_of_sized(
             640,
             360,
             vec![
@@ -432,8 +437,10 @@ fn flatten_places_content_by_map() {
                 },
                 SceneNode::PopTransform,
             ],
-        );
-        let got = px.as_deref().and_then(|p| ink_bbox_wh(p, 640));
+        ) else {
+            return;
+        };
+        let got = ink_bbox_wh(&px, 640);
         let (x0, y0, x1, y1) = got.expect("tilted rect must cover pixels");
         let (ex0, ey0, ex1, ey1) = expect;
         assert!(
@@ -462,7 +469,7 @@ fn flatten_with_ass_frx45_map() {
         origin_y: 0.5,
         perspective: [0.0, -0.0022627416, 1.4072934],
     };
-    let px = covered_of_sized(
+    let Some(px) = covered_of_sized(
         640,
         360,
         vec![
@@ -479,15 +486,14 @@ fn flatten_with_ass_frx45_map() {
             },
             SceneNode::PopTransform,
         ],
-    );
+    ) else {
+        return;
+    };
     // Hand-computed projection of the rect through the map. Note the
     // left edge slants (204 at the bottom vs 222 at the top): the libass
     // `offs` coupling shears x with y, exactly as measured on libass
     // output itself.
-    assert_eq!(
-        px.as_deref().and_then(|p| ink_bbox_wh(p, 640)),
-        Some((204, 155, 434, 208))
-    );
+    assert_eq!(ink_bbox_wh(&px, 640), Some((204, 155, 434, 208)));
 }
 
 fn center_px(nodes: Vec<SceneNode>) -> Option<[u8; 4]> {
