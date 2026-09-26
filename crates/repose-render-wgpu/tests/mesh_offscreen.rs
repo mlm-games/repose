@@ -346,11 +346,15 @@ fn ink_bbox_wh(px: &[u8], w: usize) -> Option<(u32, u32, u32, u32)> {
 
 #[test]
 fn flatten_with_tiny_tilt() {
-    // Near-identity perspective: output must sit approximately where the
-    // rect is (systematic placement check, independent of map math).
+    // Systematic placement check, independent of map math: `w = 1 + 1e-4*y`
+    // shrinks the far (bottom) edge hardest, so the quad lands at the
+    // analytic projection of its corners, not at the input rect.
+    // `project_rect` puts the corners in x 209.455..419.049, y 140.012..212.391,
+    // and the rasterizer keeps a pixel only when its centre is covered, so
+    // the ink lands one short of both far edges: (209, 140, 418, 211).
     let mut t = Transform::identity();
     t.perspective = [0.0, 0.0001, 1.0];
-    let px = covered_of_sized(
+    let Some(px) = covered_of_sized(
         640,
         360,
         vec![
@@ -367,10 +371,20 @@ fn flatten_with_tiny_tilt() {
             },
             SceneNode::PopTransform,
         ],
-    );
-    eprintln!(
-        "tiny-tilt bbox={:?}",
-        px.as_deref().and_then(|p| ink_bbox_wh(p, 640))
+    ) else {
+        return;
+    };
+    let got = ink_bbox_wh(&px, 640);
+    let (x0, y0, x1, y1) = got.expect("tilted rect must cover pixels");
+    // ±1px for cross-driver coverage differences at the AA fringe.
+    let expect = (209u32, 140u32, 418u32, 211u32);
+    let (ex0, ey0, ex1, ey1) = expect;
+    assert!(
+        x0.abs_diff(ex0) <= 1
+            && y0.abs_diff(ey0) <= 1
+            && x1.abs_diff(ex1) <= 1
+            && y1.abs_diff(ey1) <= 1,
+        "tiny-tilt rect at {got:?}, want {expect:?}"
     );
 }
 
