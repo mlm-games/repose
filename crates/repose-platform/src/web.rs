@@ -215,6 +215,8 @@ struct WebDropListeners {
     _context_menu: Closure<dyn FnMut(web_sys::MouseEvent)>,
     /// Suppresses browser middle-click autoscroll on the canvas.
     _middle_down: Closure<dyn FnMut(web_sys::MouseEvent)>,
+    /// Cancels drags originating on the canvas (the frame snapshot ghost).
+    _drag_start: Closure<dyn FnMut(DragEvent)>,
 }
 
 struct WebDeeplinkListener {
@@ -1033,11 +1035,29 @@ impl App {
         let _ = canvas
             .add_event_listener_with_callback("mousedown", middle_down.as_ref().unchecked_ref());
 
+        // `<canvas>` is a default-draggable element: a press-and-move would
+        // otherwise start a native drag carrying a snapshot of the frame.
+        let _ = canvas.set_attribute("draggable", "false");
+        let style = canvas.style();
+        let _ = style.set_property("user-select", "none");
+        let _ = style.set_property("-webkit-user-drag", "none");
+        // The runtime implements pan, scroll and pinch itself, so the browser
+        // must not take the gesture: it would claim the pan, cut it short with
+        // `pointercancel`, and double-tap-zoom would stall taps.
+        let _ = style.set_property("touch-action", "none");
+
+        let drag_start = Closure::wrap(Box::new(move |e: DragEvent| {
+            e.prevent_default();
+        }) as Box<dyn FnMut(_)>);
+        let _ = canvas
+            .add_event_listener_with_callback("dragstart", drag_start.as_ref().unchecked_ref());
+
         self.drop_listeners = Some(WebDropListeners {
             _drag_over: drag_over,
             _drop: drop,
             _context_menu: context_menu,
             _middle_down: middle_down,
+            _drag_start: drag_start,
         });
     }
 
