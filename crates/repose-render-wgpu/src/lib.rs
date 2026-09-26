@@ -455,6 +455,11 @@ enum ActiveClip {
         cnt: u32,
         rect: repose_core::Rect,
         radii: [f32; 4],
+        /// Scissor the matching push drew its stencil pass with. The pop must
+        /// reuse it: a different (wider) bound decrements stencil the push
+        /// never incremented, leaving those pixels a level below the base so
+        /// every later `Equal` draw drops them.
+        scissor: (u32, u32, u32, u32),
         difference: bool,
         applied: bool,
         blocked: bool,
@@ -464,6 +469,7 @@ enum ActiveClip {
         source: Arc<repose_core::VectorMeshData>,
         uoff: u64,
         affine: [f32; 6],
+        scissor: (u32, u32, u32, u32),
         difference: bool,
         applied: bool,
         blocked: bool,
@@ -1799,7 +1805,11 @@ enum Cmd {
     ClipPop {
         off: u64,
         cnt: u32,
+        /// Scissor restored for the draws that follow the pop (the parent clip).
         scissor: (u32, u32, u32, u32),
+        /// Scissor the matching push drew its stencil pass with; the decrement
+        /// must use it so both passes touch the same pixels.
+        stencil_scissor: (u32, u32, u32, u32),
         difference: bool,
         applied: bool,
     },
@@ -1930,6 +1940,7 @@ enum Cmd {
         mesh: MeshGpu,
         uoff: u64,
         scissor: (u32, u32, u32, u32),
+        stencil_scissor: (u32, u32, u32, u32),
         difference: bool,
         applied: bool,
     },
@@ -7149,6 +7160,7 @@ impl WgpuSceneRenderer {
                                 cnt: 1,
                                 rect: local_rect,
                                 radii: local_radii,
+                                scissor,
                                 difference,
                                 applied: true,
                                 blocked: false,
@@ -7208,6 +7220,7 @@ impl WgpuSceneRenderer {
                             source: source.clone(),
                             uoff,
                             affine: local_affine,
+                            scissor,
                             difference,
                             applied: true,
                             blocked: false,
@@ -7231,6 +7244,7 @@ impl WgpuSceneRenderer {
                     ActiveClip::Rect {
                         rect,
                         radii,
+                        scissor,
                         difference,
                         ..
                     } => ActiveClip::Rect {
@@ -7238,6 +7252,7 @@ impl WgpuSceneRenderer {
                         cnt: 0,
                         rect: *rect,
                         radii: *radii,
+                        scissor: *scissor,
                         difference: *difference,
                         applied: false,
                         blocked,
@@ -7246,6 +7261,7 @@ impl WgpuSceneRenderer {
                         mesh,
                         source,
                         affine,
+                        scissor,
                         difference,
                         ..
                     } => ActiveClip::Vector {
@@ -7254,6 +7270,7 @@ impl WgpuSceneRenderer {
                         uoff: 0,
                         affine: parent_affine_to_layer_affine(*affine, parent_transform, origin)
                             .unwrap_or([0.0; 6]),
+                        scissor: *scissor,
                         difference: *difference,
                         applied: false,
                         blocked,
@@ -9511,6 +9528,7 @@ impl WgpuSceneRenderer {
                         cnt: u32::from(applied),
                         rect: transformed,
                         radii: radius.map(|r| r.0),
+                        scissor,
                         difference: is_diff,
                         applied,
                         blocked,
@@ -9537,6 +9555,7 @@ impl WgpuSceneRenderer {
                         Some(ActiveClip::Rect {
                             off,
                             cnt,
+                            scissor: stencil_scissor,
                             difference,
                             applied,
                             ..
@@ -9545,6 +9564,7 @@ impl WgpuSceneRenderer {
                                 off,
                                 cnt,
                                 scissor,
+                                stencil_scissor,
                                 difference,
                                 applied: true,
                             });
@@ -10110,6 +10130,7 @@ impl WgpuSceneRenderer {
                         source: mesh.clone(),
                         uoff,
                         affine,
+                        scissor,
                         difference,
                         applied,
                         blocked,
@@ -10135,6 +10156,7 @@ impl WgpuSceneRenderer {
                         Some(ActiveClip::Vector {
                             mesh: Some(mesh),
                             uoff,
+                            scissor: stencil_scissor,
                             difference,
                             applied,
                             ..
@@ -10143,6 +10165,7 @@ impl WgpuSceneRenderer {
                                 mesh,
                                 uoff,
                                 scissor,
+                                stencil_scissor,
                                 difference,
                                 applied: true,
                             });
@@ -10718,18 +10741,28 @@ impl WgpuSceneRenderer {
                         off,
                         cnt: n,
                         scissor,
+                        stencil_scissor,
                         difference,
                         applied,
                     } => {
                         let scissor =
                             clamp_scissor(scissor.0, scissor.1, scissor.2, scissor.3, tw, th);
+                        let dec = clamp_scissor(
+                            stencil_scissor.0,
+                            stencil_scissor.1,
+                            stencil_scissor.2,
+                            stencil_scissor.3,
+                            tw,
+                            th,
+                        );
                         if scissor.2 > 0 && scissor.3 > 0 {
                             rpass.set_scissor_rect(scissor.0, scissor.1, scissor.2, scissor.3);
                             active_scissor = Some(scissor);
                         } else {
                             active_scissor = None;
                         }
-                        if applied && n > 0 && scissor.2 > 0 && scissor.3 > 0 {
+                        if applied && n > 0 && dec.2 > 0 && dec.3 > 0 {
+                            rpass.set_scissor_rect(dec.0, dec.1, dec.2, dec.3);
                             rpass.set_pipeline(if difference {
                                 &pipes.clip_bin
                             } else {
@@ -10738,6 +10771,14 @@ impl WgpuSceneRenderer {
                             let bytes = (n as u64) * std::mem::size_of::<ClipInstance>() as u64;
                             rpass.set_vertex_buffer(0, self.clip_ring.buf.slice(off..off + bytes));
                             rpass.draw(0..6, 0..n);
+                            if scissor.2 > 0 && scissor.3 > 0 {
+                                rpass.set_scissor_rect(
+                                    scissor.0,
+                                    scissor.1,
+                                    scissor.2,
+                                    scissor.3,
+                                );
+                            }
                             if !difference {
                                 clip_depth = clip_depth.saturating_sub(1);
                             }
@@ -11020,24 +11061,42 @@ impl WgpuSceneRenderer {
                         mesh,
                         uoff,
                         scissor,
+                        stencil_scissor,
                         difference,
                         applied,
                     } => {
                         let scissor =
                             clamp_scissor(scissor.0, scissor.1, scissor.2, scissor.3, tw, th);
+                        let dec = clamp_scissor(
+                            stencil_scissor.0,
+                            stencil_scissor.1,
+                            stencil_scissor.2,
+                            stencil_scissor.3,
+                            tw,
+                            th,
+                        );
                         if scissor.2 > 0 && scissor.3 > 0 {
                             rpass.set_scissor_rect(scissor.0, scissor.1, scissor.2, scissor.3);
                             active_scissor = Some(scissor);
                         } else {
                             active_scissor = None;
                         }
-                        if applied && scissor.2 > 0 && scissor.3 > 0 {
+                        if applied && dec.2 > 0 && dec.3 > 0 {
+                            rpass.set_scissor_rect(dec.0, dec.1, dec.2, dec.3);
                             let pipe = if difference {
                                 &pipes.mesh_clip_inc
                             } else {
                                 &pipes.mesh_clip_dec
                             };
                             draw_indexed_mesh!(pipe, uoff, mesh);
+                            if scissor.2 > 0 && scissor.3 > 0 {
+                                rpass.set_scissor_rect(
+                                    scissor.0,
+                                    scissor.1,
+                                    scissor.2,
+                                    scissor.3,
+                                );
+                            }
                             if !difference {
                                 clip_depth = clip_depth.saturating_sub(1);
                             }
