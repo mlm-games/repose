@@ -638,10 +638,18 @@ fn init_provider_sync() -> font_awl::Provider {
     provider.load_bundled_fonts();
     static MATERIAL_SYMBOLS_TTF: &[u8] = include_bytes!("assets/MaterialSymbolsOutlined.ttf");
     static NOTO_SYMBOLS_TTF: &[u8] = include_bytes!("assets/NotoSansSymbols2-Regular.ttf");
-    static NOTO_EMOJI_TTF: &[u8] = include_bytes!("assets/NotoColorEmoji-Regular.ttf");
     register_asset_if_missing(&mut provider, MATERIAL_SYMBOLS_TTF);
     register_asset_if_missing(&mut provider, NOTO_SYMBOLS_TTF);
-    register_asset_if_missing(&mut provider, NOTO_EMOJI_TTF);
+    // Excluded from wasm: 25 MB of binary weight for apps that never show an
+    // emoji, and this build is COLRv1, which swash cannot rasterize anyway
+    // (`Source::ColorOutline` reads COLRv0 records only). Without it, emoji
+    // codepoints shape to glyph 0 and the on-demand fallback fetches a
+    // rasterizable CBDT Noto Color Emoji instead.
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        static NOTO_EMOJI_TTF: &[u8] = include_bytes!("assets/NotoColorEmoji-Regular.ttf");
+        register_asset_if_missing(&mut provider, NOTO_EMOJI_TTF);
+    }
     #[cfg(not(target_arch = "wasm32"))]
     if let Err(e) = provider.load_system_fonts_best_effort() {
         log::warn!("font-awl: failed to load system fonts: {e}");

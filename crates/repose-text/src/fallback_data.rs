@@ -7,43 +7,43 @@ pub struct NotoFont {
 pub const NOTO_FONTS: &[NotoFont] = &[
     NotoFont {
         name: "Noto Color Emoji 0",
-        url: "https://raw.githubusercontent.com/google/fonts/296bb4790d3f9bd95547c733708a3666ed35d844/ofl/notocoloremoji/NotoColorEmoji-Regular.ttf",
+        url: "https://raw.githubusercontent.com/googlefonts/noto-emoji/1ffdd21391dd1f25c081fa93a9dea0c7c029442b/2D/fonts/NotoColorEmoji.ttf",
     },
     NotoFont {
         name: "Noto Color Emoji 1",
-        url: "https://raw.githubusercontent.com/google/fonts/296bb4790d3f9bd95547c733708a3666ed35d844/ofl/notocoloremoji/NotoColorEmoji-Regular.ttf",
+        url: "https://raw.githubusercontent.com/googlefonts/noto-emoji/1ffdd21391dd1f25c081fa93a9dea0c7c029442b/2D/fonts/NotoColorEmoji.ttf",
     },
     NotoFont {
         name: "Noto Color Emoji 2",
-        url: "https://raw.githubusercontent.com/google/fonts/296bb4790d3f9bd95547c733708a3666ed35d844/ofl/notocoloremoji/NotoColorEmoji-Regular.ttf",
+        url: "https://raw.githubusercontent.com/googlefonts/noto-emoji/1ffdd21391dd1f25c081fa93a9dea0c7c029442b/2D/fonts/NotoColorEmoji.ttf",
     },
     NotoFont {
         name: "Noto Color Emoji 3",
-        url: "https://raw.githubusercontent.com/google/fonts/296bb4790d3f9bd95547c733708a3666ed35d844/ofl/notocoloremoji/NotoColorEmoji-Regular.ttf",
+        url: "https://raw.githubusercontent.com/googlefonts/noto-emoji/1ffdd21391dd1f25c081fa93a9dea0c7c029442b/2D/fonts/NotoColorEmoji.ttf",
     },
     NotoFont {
         name: "Noto Color Emoji 4",
-        url: "https://raw.githubusercontent.com/google/fonts/296bb4790d3f9bd95547c733708a3666ed35d844/ofl/notocoloremoji/NotoColorEmoji-Regular.ttf",
+        url: "https://raw.githubusercontent.com/googlefonts/noto-emoji/1ffdd21391dd1f25c081fa93a9dea0c7c029442b/2D/fonts/NotoColorEmoji.ttf",
     },
     NotoFont {
         name: "Noto Color Emoji 5",
-        url: "https://raw.githubusercontent.com/google/fonts/296bb4790d3f9bd95547c733708a3666ed35d844/ofl/notocoloremoji/NotoColorEmoji-Regular.ttf",
+        url: "https://raw.githubusercontent.com/googlefonts/noto-emoji/1ffdd21391dd1f25c081fa93a9dea0c7c029442b/2D/fonts/NotoColorEmoji.ttf",
     },
     NotoFont {
         name: "Noto Color Emoji 6",
-        url: "https://raw.githubusercontent.com/google/fonts/296bb4790d3f9bd95547c733708a3666ed35d844/ofl/notocoloremoji/NotoColorEmoji-Regular.ttf",
+        url: "https://raw.githubusercontent.com/googlefonts/noto-emoji/1ffdd21391dd1f25c081fa93a9dea0c7c029442b/2D/fonts/NotoColorEmoji.ttf",
     },
     NotoFont {
         name: "Noto Color Emoji 7",
-        url: "https://raw.githubusercontent.com/google/fonts/296bb4790d3f9bd95547c733708a3666ed35d844/ofl/notocoloremoji/NotoColorEmoji-Regular.ttf",
+        url: "https://raw.githubusercontent.com/googlefonts/noto-emoji/1ffdd21391dd1f25c081fa93a9dea0c7c029442b/2D/fonts/NotoColorEmoji.ttf",
     },
     NotoFont {
         name: "Noto Color Emoji 8",
-        url: "https://raw.githubusercontent.com/google/fonts/296bb4790d3f9bd95547c733708a3666ed35d844/ofl/notocoloremoji/NotoColorEmoji-Regular.ttf",
+        url: "https://raw.githubusercontent.com/googlefonts/noto-emoji/1ffdd21391dd1f25c081fa93a9dea0c7c029442b/2D/fonts/NotoColorEmoji.ttf",
     },
     NotoFont {
         name: "Noto Color Emoji 9",
-        url: "https://raw.githubusercontent.com/google/fonts/296bb4790d3f9bd95547c733708a3666ed35d844/ofl/notocoloremoji/NotoColorEmoji-Regular.ttf",
+        url: "https://raw.githubusercontent.com/googlefonts/noto-emoji/1ffdd21391dd1f25c081fa93a9dea0c7c029442b/2D/fonts/NotoColorEmoji.ttf",
     },
     NotoFont {
         name: "Noto Music 0",
