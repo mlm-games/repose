@@ -10984,6 +10984,7 @@ impl WgpuSceneRenderer {
                     }
 
                     Cmd::VectorOverlay { mesh, uoff } => {
+                        rpass.set_stencil_reference(STENCIL_BASE + clip_depth);
                         draw_indexed_mesh!(&pipes.mesh_overlay, uoff, mesh);
                     }
 
