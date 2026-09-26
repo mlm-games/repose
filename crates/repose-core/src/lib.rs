@@ -157,7 +157,9 @@ pub use frame_clock::{
 };
 pub use geometry::*;
 pub use gesture::*;
-pub use image_intrinsic::{clear_image_intrinsic_size, image_intrinsic_size, set_image_intrinsic_size};
+pub use image_intrinsic::{
+    clear_image_intrinsic_size, image_intrinsic_size, set_image_intrinsic_size,
+};
 pub use locals::*;
 pub use modifier::*;
 pub use prelude::*;

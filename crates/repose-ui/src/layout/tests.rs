@@ -1713,3 +1713,138 @@ fn test_scrollbar_image_visuals_preserve_thumb_geometry() {
     assert_eq!(radii.len(), 2);
     assert!(radii.iter().all(|radius| *radius == [Px(4.0); 4]));
 }
+
+/// Locks the sizing table from Compose's `PainterNode.modifyConstraints`, which
+/// `NodeContext::Image` ports: an unspecified axis takes the image's natural
+/// size, a definite one (size/fill modifier) wins outright, and the pair is
+/// scaled by `ImageFit` before being clamped to the incoming constraints.
+#[test]
+fn image_reports_compose_intrinsic_size() {
+    // A handle no renderer will allocate, so the global size registry is only
+    // ever populated by this test.
+    const H: u64 = 0xFFFF_FFFF_FFFF;
+    set_image_intrinsic_size(H, 100, 50);
+
+    let sized = |m: Modifier| {
+        let root = Column(Modifier::new().size(Dp(400.0), Dp(400.0))).child(crate::Image(m, H));
+        let mut eng = make_engine();
+        let (scene, _, _) = eng.layout_frame(
+            &root,
+            (400, 400),
+            &HashMap::new(),
+            &Interactions::default(),
+            None,
+        );
+        scene.nodes.iter().find_map(|n| match n {
+            SceneNode::Image { rect, .. } => Some(*rect),
+            _ => None,
+        })
+    };
+
+    // Unsized: the intrinsic size on both axes, in a Column and in a Row.
+    let r = sized(Modifier::new()).expect("image rect");
+    assert_eq!(
+        (r.w, r.h),
+        (100.0, 50.0),
+        "unsized image is its natural size"
+    );
+
+    // A definite axis wins; the other keeps the natural size unscaled, because
+    // the default Contain never upscales.
+    let r = sized(Modifier::new().width(Dp(120.0))).expect("image rect");
+    assert_eq!(
+        (r.w, r.h),
+        (120.0, 50.0),
+        "width(120) keeps the natural height"
+    );
+
+    // Narrower than the source: the whole image scales down, aspect kept.
+    let r = sized(Modifier::new().width(Dp(30.0))).expect("image rect");
+    assert_eq!((r.w, r.h), (30.0, 15.0), "width(30) scales the pair down");
+
+    let r = sized(Modifier::new().height(Dp(25.0))).expect("image rect");
+    assert_eq!((r.w, r.h), (50.0, 25.0), "height(25) scales the pair down");
+
+    // An explicit size ignores the intrinsic size entirely.
+    let r = sized(Modifier::new().size(Dp(200.0), Dp(200.0))).expect("image rect");
+    assert_eq!((r.w, r.h), (200.0, 200.0), "an explicit size wins");
+
+    // fill_max fills the parent; fill_max_width only pins the width.
+    let fill = |m: Modifier| {
+        let root = Column(Modifier::new().size(Dp(400.0), Dp(400.0)))
+            .child(RBox(Modifier::new().size(Dp(300.0), Dp(150.0))).child(crate::Image(m, H)));
+        let mut eng = make_engine();
+        let (scene, _, _) = eng.layout_frame(
+            &root,
+            (400, 400),
+            &HashMap::new(),
+            &Interactions::default(),
+            None,
+        );
+        scene.nodes.iter().find_map(|n| match n {
+            SceneNode::Image { rect, .. } => Some(*rect),
+            _ => None,
+        })
+    };
+    let r = fill(Modifier::new().fill_max_size()).expect("image rect");
+    assert_eq!((r.w, r.h), (300.0, 150.0), "fill_max fills the parent");
+    let r = fill(Modifier::new().fill_max_width()).expect("image rect");
+    assert_eq!(
+        (r.w, r.h),
+        (300.0, 50.0),
+        "fill_max_width keeps natural height"
+    );
+
+    // An image whose size is not known yet measures to zero, which the renderer
+    // then skips. This is Compose's documented behavior for a `Painter` with an
+    // unspecified `intrinsicSize`.
+    let r = sized(Modifier::new());
+    assert!(r.is_some(), "node still exists");
+    let unknown = crate::Image(Modifier::new(), H.wrapping_sub(1));
+    let root = Column(Modifier::new().size(Dp(400.0), Dp(400.0))).child(unknown);
+    let mut eng = make_engine();
+    let (scene, _, _) = eng.layout_frame(
+        &root,
+        (400, 400),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
+    let rect = scene.nodes.iter().find_map(|n| match n {
+        SceneNode::Image { rect, .. } => Some(*rect),
+        _ => None,
+    });
+    assert_eq!(
+        rect.map(|r| (r.w, r.h)),
+        Some((0.0, 0.0)),
+        "unknown natural size measures to zero"
+    );
+}
+
+/// Compose's `Column`/`Row` default to `Alignment.Start`, so a child
+/// shrink-wraps on the cross axis instead of being stretched to fill it.
+#[test]
+fn children_do_not_stretch_on_the_cross_axis_by_default() {
+    let root = Column(Modifier::new().size(Dp(200.0), Dp(200.0))).child(RBox(
+        Modifier::new()
+            .height(Dp(20.0))
+            .background(Color::from_rgb(255, 0, 0)),
+    ));
+    let mut eng = make_engine();
+    let (scene, _, _) = eng.layout_frame(
+        &root,
+        (200, 200),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
+    let rect = scene.nodes.iter().find_map(|n| match n {
+        SceneNode::Rect { rect, .. } => Some(*rect),
+        _ => None,
+    });
+    assert_eq!(
+        rect.map(|r| r.w),
+        Some(0.0),
+        "a child with no cross-axis size must not stretch to the parent"
+    );
+}

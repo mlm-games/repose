@@ -6953,6 +6953,33 @@ impl RenderBackend for WgpuSurfaceBackend {
             }
         };
 
+        // The swapchain extent and the renderer's size are updated from
+        // separate events, so they can disagree for a frame mid-resize (most
+        // visibly when dragging a window into a portrait shape). With MSAA on,
+        // a color attachment whose extent differs from its resolve target
+        // fails wgpu validation, which drops the whole pass *including its
+        // clear*, so the just-reconfigured swapchain keeps undefined contents
+        // and presents as green/black streaks. Adopt the swapchain's size and
+        // retry next frame instead of rendering an invalid pass.
+        let (swap_w, swap_h) = (frame.texture.width(), frame.texture.height());
+        if swap_w != self.renderer.output_width || swap_h != self.renderer.output_height {
+            log::debug!(
+                "swapchain {swap_w}x{swap_h} != renderer {}x{}; resyncing",
+                self.renderer.output_width,
+                self.renderer.output_height
+            );
+            drop(frame);
+            if let Some(config) = self.surface_config.as_mut() {
+                config.width = swap_w;
+                config.height = swap_h;
+            }
+            self.renderer.resize(swap_w, swap_h);
+            self.pending_reconfigure = true;
+            self.renderer.end_frame();
+            request_frame();
+            return false;
+        }
+
         let swap_view = if let Some(view_format) = self
             .surface_config
             .as_ref()
@@ -9321,14 +9348,13 @@ impl WgpuSceneRenderer {
                             color: tint.to_linear(),
                             fwd_mat,
                         };
-                        if image_run
-                            .as_ref()
-                            .is_some_and(|(run_handle, run_filter, run_tile, _)| {
+                        if image_run.as_ref().is_some_and(
+                            |(run_handle, run_filter, run_tile, _)| {
                                 *run_handle != *handle
                                     || *run_filter != *filter
                                     || *run_tile != tile
-                            })
-                        {
+                            },
+                        ) {
                             flush_image_runs!();
                         }
                         match &mut image_run {

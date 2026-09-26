@@ -300,9 +300,7 @@ fn facet_hash_view_kind(kind: &ViewKind, hashers: &mut FacetHashers) {
             hashers.hash(FACET_PAINT, |h| std::mem::discriminant(fit).hash(h));
             hashers.hash(FACET_PAINT, |h| std::mem::discriminant(filter).hash(h));
             hashers.hash(FACET_PAINT, |h| source_rect.hash(h));
-            hashers.hash(FACET_PAINT, |h| {
-                std::mem::discriminant(alignment).hash(h)
-            });
+            hashers.hash(FACET_PAINT, |h| std::mem::discriminant(alignment).hash(h));
         }
         ViewKind::Box
         | ViewKind::Row
@@ -1876,8 +1874,7 @@ mod tests {
     use super::*;
     use repose_core::{
         DrawStyle, FontStyle, FontWeight, ImageAlignment, ImageFilter, ImageFit, ImageSourceRect,
-    Modifier,
-        TextAlign, TextDecoration, UnitExt, View, ViewKind,
+        Modifier, TextAlign, TextDecoration, UnitExt, View, ViewKind,
     };
 
     #[test]
