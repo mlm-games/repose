@@ -6,6 +6,7 @@ mod tests {
     use crate::Color;
     use crate::Dp;
     use crate::Modifier;
+    use crate::Mutable;
     use crate::Rect;
     use crate::ScrollbarStyle;
     use crate::Vec2;
@@ -13,10 +14,14 @@ mod tests {
     use crate::error::{ErrorBoundary, throw_boundary};
     use crate::remember_with_key;
     use crate::runtime::ComposeGuard;
+    use crate::runtime::remember_state_auto;
     use crate::scope::*;
     use crate::signal::*;
+    use crate::state::StateHolder;
     use crate::state::remember_mutable;
+    use crate::state::remember_mutable_auto;
     use crate::state::remember_mutable_with_key;
+    use crate::state::remember_reducer_auto;
     use crate::{View, ViewKind};
     use crate::{
         clear_composer, new_observer, produce_state, produce_state_eq, remove_observer,
@@ -533,6 +538,71 @@ mod tests {
         let b = remember_mutable_with_key("mv_keyed", || 0);
         a.set(99);
         assert_eq!(*b.get(), 99, "keyed Mutable must be stable across branches");
+    }
+
+    enum Counter {
+        Inc,
+        Reset,
+    }
+
+    struct CounterHolder;
+
+    impl StateHolder for CounterHolder {
+        type State = i32;
+        type Event = Counter;
+
+        fn initial_state() -> i32 {
+            0
+        }
+
+        fn reduce(state: &i32, event: Counter) -> i32 {
+            match event {
+                Counter::Inc => state + 1,
+                Counter::Reset => 0,
+            }
+        }
+    }
+
+    fn auto_counter() -> Mutable<i32> {
+        remember_mutable_auto("auto_counter", || 0)
+    }
+
+    fn auto_state() -> Rc<RefCell<i32>> {
+        remember_state_auto("auto_state", || 0)
+    }
+
+    fn auto_reducer() -> (Mutable<i32>, impl Fn(Counter) + Clone) {
+        remember_reducer_auto::<CounterHolder>("auto_reducer")
+    }
+
+    // Pins the identity contract the whole `*_auto` family rests on: identity is
+    // (call site, occurrence-within-frame), so N calls at one site get N distinct
+    // slots while the k-th call reuses last frame's k-th slot.
+    #[test]
+    fn auto_variants_persist_per_call_site() {
+        clear_composer();
+
+        let (a, b, s, r) = {
+            let _g = ComposeGuard::begin();
+            let a = auto_counter();
+            let b = auto_counter();
+            let s = auto_state();
+            let (r, dispatch) = auto_reducer();
+            a.set(5);
+            *s.borrow_mut() = 7;
+            dispatch(Counter::Inc);
+            (a, b, s, r)
+        };
+
+        let (a2, b2, s2, r2) = {
+            let _g = ComposeGuard::begin();
+            (auto_counter(), auto_counter(), auto_state(), auto_reducer().0)
+        };
+
+        assert_eq!(*a2.get(), 5, "occurrence 0 must reuse the previous frame's slot");
+        assert_eq!(*b2.get(), 0, "occurrence 1 is a distinct slot");
+        assert!(Rc::ptr_eq(&s, &s2), "state slots must persist by call site");
+        assert_eq!(*r2.get(), 1, "reducer state must persist and keep its value");
     }
 
     fn build_boundary(

@@ -944,6 +944,10 @@ fn push_key_part(key: &mut String, part: &str) {
     key.push('|');
 }
 
+/// Auto-keyed variant of [`remember`]: identity is the call site plus an
+/// occurrence index, so state follows a composition *position*, not an item.
+/// Only safe where the number of calls at this site is fixed across frames —
+/// list items and conditional branches need [`remember_with_key`].
 #[track_caller]
 pub fn remember_auto<T: 'static>(slot: &str, init: impl FnOnce() -> T) -> Rc<T> {
     let caller = Location::caller();
@@ -1067,6 +1071,13 @@ pub fn remember_state_with_key<T: 'static>(
     init: impl FnOnce() -> T,
 ) -> Rc<RefCell<T>> {
     remember_with_key(key, || RefCell::new(init()))
+}
+
+/// Auto-keyed variant of [`remember_state`]. Same positional caveat as
+/// [`remember_auto`] and the same no-frame-on-write caveat as [`remember_state`].
+#[track_caller]
+pub fn remember_state_auto<T: 'static>(slot: &str, init: impl FnOnce() -> T) -> Rc<RefCell<T>> {
+    remember_auto(slot, || RefCell::new(init()))
 }
 
 /// Frame - output of composition for a tick: scene + input/semantics.

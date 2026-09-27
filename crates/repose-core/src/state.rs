@@ -14,6 +14,7 @@ pub trait StateSaver<T>: 'static {
     fn restore(&self, saved: &dyn Any) -> Option<T>;
 }
 
+#[deprecated(note = "use `produce_state_eq`, which skips no-op writes")]
 pub fn remember_derived<T: Clone + 'static>(
     key: impl Into<String>,
     producer: impl Fn() -> T + 'static + Clone,
@@ -266,6 +267,16 @@ pub fn remember_mutable_with_key<T: 'static>(
         .clone()
 }
 
+/// Auto-keyed variant of [`remember_mutable`]. Only safe where the number of
+/// calls at this site is fixed across frames; use
+/// [`remember_mutable_with_key`] for list items.
+#[track_caller]
+pub fn remember_mutable_auto<T: 'static>(slot: &str, init: impl FnOnce() -> T) -> Mutable<T> {
+    crate::remember_auto(slot, || Mutable::new(init()))
+        .as_ref()
+        .clone()
+}
+
 /// Remember a reducer-backed local state. Returns a [`Mutable`] snapshot reader
 /// plus a dispatch closure that runs `H::reduce` and writes the result back.
 ///
@@ -278,12 +289,7 @@ where
     H::Event: 'static,
 {
     let state = remember_mutable(|| H::initial_state());
-    let dispatch = {
-        let state = state.clone();
-        move |ev: H::Event| {
-            state.update(|s| *s = H::reduce(s, ev));
-        }
-    };
+    let dispatch = reducer_dispatch::<H>(state.clone());
     (state, dispatch)
 }
 
@@ -297,11 +303,31 @@ where
     H::Event: 'static,
 {
     let state = remember_mutable_with_key(key, || H::initial_state());
-    let dispatch = {
-        let state = state.clone();
-        move |ev: H::Event| {
-            state.update(|s| *s = H::reduce(s, ev));
-        }
-    };
+    let dispatch = reducer_dispatch::<H>(state.clone());
     (state, dispatch)
+}
+
+/// Auto-keyed variant of [`remember_reducer`]. Only safe where the number of
+/// calls at this site is fixed across frames.
+#[track_caller]
+pub fn remember_reducer_auto<H: StateHolder>(
+    slot: &str,
+) -> (Mutable<H::State>, impl Fn(H::Event) + Clone)
+where
+    H::State: 'static,
+    H::Event: 'static,
+{
+    let state = remember_mutable_auto(slot, || H::initial_state());
+    let dispatch = reducer_dispatch::<H>(state.clone());
+    (state, dispatch)
+}
+
+fn reducer_dispatch<H: StateHolder>(state: Mutable<H::State>) -> impl Fn(H::Event) + Clone
+where
+    H::State: 'static,
+    H::Event: 'static,
+{
+    move |ev: H::Event| {
+        state.update(|s| *s = H::reduce(s, ev));
+    }
 }
