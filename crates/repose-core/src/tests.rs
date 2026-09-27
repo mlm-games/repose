@@ -596,13 +596,26 @@ mod tests {
 
         let (a2, b2, s2, r2) = {
             let _g = ComposeGuard::begin();
-            (auto_counter(), auto_counter(), auto_state(), auto_reducer().0)
+            (
+                auto_counter(),
+                auto_counter(),
+                auto_state(),
+                auto_reducer().0,
+            )
         };
 
-        assert_eq!(*a2.get(), 5, "occurrence 0 must reuse the previous frame's slot");
+        assert_eq!(
+            *a2.get(),
+            5,
+            "occurrence 0 must reuse the previous frame's slot"
+        );
         assert_eq!(*b2.get(), 0, "occurrence 1 is a distinct slot");
         assert!(Rc::ptr_eq(&s, &s2), "state slots must persist by call site");
-        assert_eq!(*r2.get(), 1, "reducer state must persist and keep its value");
+        assert_eq!(
+            *r2.get(),
+            1,
+            "reducer state must persist and keep its value"
+        );
     }
 
     fn build_boundary(

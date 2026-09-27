@@ -552,12 +552,16 @@ fn install_runtime_map(state: &ShortcutState, key: String, map: ShortcutMap) -> 
         }
     });
     let disposer = register_runtime_cleanup(state, "map", &key, cleanup);
-    state.runtime_installs.borrow_mut().maps.push(RuntimeShortcutMapEntry {
-        key,
-        token,
-        map,
-        cleanup: disposer.clone(),
-    });
+    state
+        .runtime_installs
+        .borrow_mut()
+        .maps
+        .push(RuntimeShortcutMapEntry {
+            key,
+            token,
+            map,
+            cleanup: disposer.clone(),
+        });
     disposer
 }
 
