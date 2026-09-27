@@ -344,8 +344,7 @@ impl LazyAxis {
         content_px: f32,
         physics: &RefCell<ScrollPhysics>,
     ) -> f32 {
-        physics.borrow_mut().cancel_fling();
-        self.apply_delta(delta_px, content_px, physics)
+        self.apply_delta(delta_px, content_px, physics, true)
     }
 
     /// Applies leftover from a nested child without cancelling this axis's own
@@ -356,10 +355,16 @@ impl LazyAxis {
         content_px: f32,
         physics: &RefCell<ScrollPhysics>,
     ) -> f32 {
-        self.apply_delta(delta_px, content_px, physics)
+        self.apply_delta(delta_px, content_px, physics, false)
     }
 
-    fn apply_delta(&self, delta_px: f32, content_px: f32, physics: &RefCell<ScrollPhysics>) -> f32 {
+    fn apply_delta(
+        &self,
+        delta_px: f32,
+        content_px: f32,
+        physics: &RefCell<ScrollPhysics>,
+        user: bool,
+    ) -> f32 {
         let before = self.offset.get();
         let max_offset = (content_px - self.viewport.get()).max(0.0);
         let delta_px = if delta_px.is_finite() { delta_px } else { 0.0 };
@@ -371,7 +376,11 @@ impl LazyAxis {
         };
         self.offset.set(new_offset);
         let consumed = new_offset - before;
-        physics.borrow_mut().record_input(consumed);
+        if user {
+            physics.borrow_mut().record_user_input(consumed);
+        } else {
+            physics.borrow_mut().record_nested_input(consumed);
+        }
         delta_px - consumed
     }
 

@@ -222,7 +222,7 @@ pub fn os_scroll_axis(
             let new_off = clamp_offset(before + remainder, max_off);
             off.set(new_off);
             let consumed = new_off - before;
-            physics.borrow_mut().record_input(consumed);
+            physics.borrow_mut().record_nested_input(consumed);
             return remainder - consumed;
         }
         return 0.0;
@@ -232,7 +232,7 @@ pub fn os_scroll_axis(
     let at_edge = (before <= 0.0 && leftover < 0.0) || (before >= max_off && leftover > 0.0);
     if max_off > 5.0 && at_edge && leftover.abs() > 0.5 {
         os.set(os_val + rubber_band(leftover, SCROLL_OVERSROLL_BAND_MAX));
-        physics.borrow_mut().record_input(0.0);
+        physics.borrow_mut().record_nested_input(0.0);
         return 0.0;
     }
     leftover
@@ -268,6 +268,7 @@ pub struct ScrollPhysics {
     pub(crate) animating: bool,
     /// Set when a delta arrived since the last integration.
     input_pending: bool,
+    last_dt: f32,
     decay_per_60hz: f32,
     stop_velocity: f32,
     input_activate_velocity: f32,
@@ -300,32 +301,57 @@ impl ScrollPhysics {
             last_input_t: now,
             animating: false,
             input_pending: false,
+            last_dt: 1.0 / 60.0,
             decay_per_60hz,
             stop_velocity,
             input_activate_velocity,
         }
     }
 
-    /// Drop any in-flight fling so a new gesture takes over cleanly. Compose
-    /// gets this from `MutatorMutex`: a new `scroll(MutatePriority.UserInput)`
-    /// cancels the fling coroutine holding the lock, so a drag mid-fling
-    /// follows the finger instead of being yanked by the stale velocity.
-    pub fn cancel_fling(&mut self) {
-        self.vel = 0.0;
-        self.animating = false;
+    /// Feed a delta that arrived from real user input.
+    ///
+    /// A first sample adopts its velocity outright, and a delta opposing an
+    /// in-flight fling takes over from it. Both mirror Compose, where a new
+    /// `scroll(MutatePriority.UserInput)` cancels the fling coroutine holding
+    /// the `MutatorMutex` so the drag wins. Smoothing only applies between
+    /// samples of one gesture: averaging up from zero on every frame would
+    /// leave every flick at a fraction of its real speed.
+    pub fn record_user_input(&mut self, consumed: f32) {
+        let (instant_vel, fresh) = self.sample(consumed);
+        if fresh || (self.animating && instant_vel * self.vel < 0.0) {
+            self.vel = instant_vel;
+        } else {
+            const SMOOTHING: f32 = 0.35;
+            self.vel = self.vel * (1.0 - SMOOTHING) + instant_vel * SMOOTHING;
+        }
+        self.finish_sample();
     }
 
-    pub fn record_input(&mut self, consumed: f32) {
+    /// Feed a delta that arrived as leftover from a nested child. Never takes
+    /// over an in-flight fling: Compose's `dispatchRawDelta` bypasses mutual
+    /// exclusion precisely so a parent keeps coasting.
+    pub fn record_nested_input(&mut self, consumed: f32) {
+        let (instant_vel, _) = self.sample(consumed);
+        const SMOOTHING: f32 = 0.35;
+        self.vel = self.vel * (1.0 - SMOOTHING) + instant_vel * SMOOTHING;
+        self.finish_sample();
+    }
+
+    fn sample(&mut self, consumed: f32) -> (f32, bool) {
         let now = Instant::now();
         let raw_dt = (now - self.last_input_t).as_secs_f32();
         let dt = raw_dt.clamp(1.0 / 240.0, 1.0 / 15.0);
+        self.last_dt = dt;
+        // A gap this long means a new gesture rather than another sample.
+        let fresh = raw_dt > 0.05;
         self.last_input_t = now;
         if raw_dt > 0.1 {
             self.vel = 0.0;
         }
-        let instant_vel = consumed / dt;
-        const SMOOTHING: f32 = 0.35;
-        self.vel = self.vel * (1.0 - SMOOTHING) + instant_vel * SMOOTHING;
+        (consumed / dt, fresh)
+    }
+
+    fn finish_sample(&mut self) {
         const MAX_VEL: f32 = 8000.0;
         self.vel = self.vel.clamp(-MAX_VEL, MAX_VEL);
         self.animating = self.vel.abs() > self.input_activate_velocity;
@@ -340,6 +366,11 @@ impl ScrollPhysics {
     }
 
     pub fn tick_integrate(&mut self, current: f32, min: f32, max: f32) -> Option<f32> {
+        // Sample the clock first, unconditionally. Bailing out before this
+        // would let `last_t` go stale for the whole duration of a drag and
+        // then dump all of it into the first fling frame, which shows up as a
+        // single large lurch the moment the finger lifts.
+        let dt = self.dt();
         if self.input_pending {
             // A delta was applied since the last integration, so this frame's
             // motion is already accounted for. Compose feeds velocity from the
@@ -352,7 +383,6 @@ impl ScrollPhysics {
         if !self.animating {
             return None;
         }
-        let dt = self.dt();
         if dt <= 0.0 {
             return None;
         }
@@ -517,18 +547,17 @@ impl ScrollState {
     /// fling, matching Compose where a new `scroll(UserInput)` cancels the
     /// fling coroutine holding the `MutatorMutex`.
     pub fn scroll_immediate(&self, dy: f32) -> f32 {
-        self.physics.borrow_mut().cancel_fling();
-        self.apply_delta(dy)
+        self.apply_delta(dy, true)
     }
 
     /// Apply a delta that arrived as leftover from a nested child. This is
     /// Compose's `dispatchRawDelta`: it bypasses mutual exclusion, so it must
     /// not cancel this container's own fling.
     pub fn scroll_nested(&self, dy: f32) -> f32 {
-        self.apply_delta(dy)
+        self.apply_delta(dy, false)
     }
 
-    fn apply_delta(&self, dy: f32) -> f32 {
+    fn apply_delta(&self, dy: f32, user: bool) -> f32 {
         let dy = if dy.is_finite() { dy } else { 0.0 };
         let before = self.scroll_offset.get();
         let vh = self.viewport_height.get();
@@ -538,7 +567,11 @@ impl ScrollState {
         let new_off = clamp_offset(before + dy, max_off);
         self.scroll_offset.set(new_off);
         let consumed = new_off - before;
-        self.physics.borrow_mut().record_input(consumed);
+        if user {
+            self.physics.borrow_mut().record_user_input(consumed);
+        } else {
+            self.physics.borrow_mut().record_nested_input(consumed);
+        }
         dy - consumed
     }
 
@@ -769,17 +802,16 @@ impl HorizontalScrollState {
     /// Apply a scroll delta from real user input; pre-empts any in-flight
     /// fling. See [`ScrollState::scroll_immediate`].
     pub fn scroll_immediate(&self, dx: f32) -> f32 {
-        self.physics.borrow_mut().cancel_fling();
-        self.apply_delta(dx)
+        self.apply_delta(dx, true)
     }
 
     /// Apply leftover from a nested child without cancelling this container's
     /// own fling. See [`ScrollState::scroll_nested`].
     pub fn scroll_nested(&self, dx: f32) -> f32 {
-        self.apply_delta(dx)
+        self.apply_delta(dx, false)
     }
 
-    fn apply_delta(&self, dx: f32) -> f32 {
+    fn apply_delta(&self, dx: f32, user: bool) -> f32 {
         let dx = if dx.is_finite() { dx } else { 0.0 };
         let before = self.scroll_offset.get();
         let max_off = (self.content_width.get() - self.viewport_width.get()).max(0.0);
@@ -787,7 +819,11 @@ impl HorizontalScrollState {
         let new_off = clamp_offset(before + dx, max_off);
         self.scroll_offset.set(new_off);
         let consumed = new_off - before;
-        self.physics.borrow_mut().record_input(consumed);
+        if user {
+            self.physics.borrow_mut().record_user_input(consumed);
+        } else {
+            self.physics.borrow_mut().record_nested_input(consumed);
+        }
         dx - consumed
     }
 
@@ -1032,7 +1068,7 @@ impl ScrollStateXY {
                 let new_off = clamp_offset(before + remainder, max_off);
                 off.set(new_off);
                 let consumed = new_off - before;
-                physics.borrow_mut().record_input(consumed);
+                physics.borrow_mut().record_nested_input(consumed);
                 return remainder - consumed;
             }
             return 0.0;
@@ -1042,7 +1078,7 @@ impl ScrollStateXY {
         let at_edge = (before <= 0.0 && leftover < 0.0) || (before >= max_off && leftover > 0.0);
         if max_off > 5.0 && at_edge && leftover.abs() > 0.5 {
             os.set(os_val + rubber_band(leftover, SCROLL_OVERSROLL_BAND_MAX));
-            physics.borrow_mut().record_input(0.0);
+            physics.borrow_mut().record_nested_input(0.0);
             return 0.0;
         }
         leftover
@@ -1050,18 +1086,16 @@ impl ScrollStateXY {
     /// Apply a scroll delta from real user input; pre-empts any in-flight
     /// fling. See [`ScrollState::scroll_immediate`].
     pub fn scroll_immediate(&self, d: Vec2) -> Vec2 {
-        self.physics_x.borrow_mut().cancel_fling();
-        self.physics_y.borrow_mut().cancel_fling();
-        self.apply_delta(d)
+        self.apply_delta(d, true)
     }
 
     /// Apply leftover from a nested child without cancelling this container's
     /// own fling. See [`ScrollState::scroll_nested`].
     pub fn scroll_nested(&self, d: Vec2) -> Vec2 {
-        self.apply_delta(d)
+        self.apply_delta(d, false)
     }
 
-    fn apply_delta(&self, d: Vec2) -> Vec2 {
+    fn apply_delta(&self, d: Vec2, user: bool) -> Vec2 {
         let d = Vec2 {
             x: if d.x.is_finite() { d.x } else { 0.0 },
             y: if d.y.is_finite() { d.y } else { 0.0 },
@@ -1078,8 +1112,13 @@ impl ScrollStateXY {
 
         let mut px = self.physics_x.borrow_mut();
         let mut py = self.physics_y.borrow_mut();
-        px.record_input(cx);
-        py.record_input(cy);
+        if user {
+            px.record_user_input(cx);
+            py.record_user_input(cy);
+        } else {
+            px.record_nested_input(cx);
+            py.record_nested_input(cy);
+        }
         drop((px, py));
 
         Vec2 {
@@ -1336,6 +1375,30 @@ mod fling_tests {
         }
         assert!(coasted > 0.0, "fling stopped immediately after release");
         assert!(st.get() > at_release, "fling must travel further");
+    }
+
+    /// The first frame after release must continue at roughly the speed the
+    /// finger was moving. A lurch here reads as a jitter kick: the integrator
+    /// used to bail out before sampling the clock, so `last_t` went stale for
+    /// the whole drag and all of it landed in one frame.
+    #[test]
+    fn release_is_continuous_with_the_drag() {
+        for step in [8.0f32, 30.0, 70.0] {
+            let mut st = seeded();
+            for _ in 0..10 {
+                st.scroll_immediate(step);
+                frame();
+                st.tick();
+            }
+            let released = st.get();
+            frame();
+            st.tick();
+            let first = st.get() - released;
+            assert!(
+                (first - step).abs() < step * 0.25,
+                "drag at {step}px/frame released into a {first}px step"
+            );
+        }
     }
 
     /// A drag landing mid-fling follows the finger instead of being yanked by
