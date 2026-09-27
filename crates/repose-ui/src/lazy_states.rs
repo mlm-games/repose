@@ -547,9 +547,14 @@ impl LazyColumnState {
 /// Two-axis state. `core.axis` is the vertical axis used by
 /// [`crate::lazy::LazyVerticalGrid`]; `x` is the horizontal axis used by
 /// [`crate::lazy::LazyHorizontalGrid`]. Both share one fling physics.
+/// State for both grid orientations. A grid scrolls on exactly one axis, and
+/// the component decides how to read it: [`crate::lazy::LazyVerticalGrid`]
+/// treats it as vertical, [`crate::lazy::LazyHorizontalGrid`] as horizontal.
+/// This mirrors Compose, where `LazyGridState` is a single-axis
+/// `ScrollableState` and the orientation is supplied at measure time rather
+/// than stored in the state.
 pub struct LazyGridState {
     pub(crate) core: LazyScrollCore,
-    pub(crate) x: LazyAxis,
 }
 
 impl Default for LazyGridState {
@@ -562,7 +567,6 @@ impl LazyGridState {
     pub fn new() -> Self {
         Self {
             core: LazyScrollCore::new(),
-            x: LazyAxis::new(),
         }
     }
 
@@ -594,29 +598,16 @@ impl LazyGridState {
             .cache_revision_for_with(key, value_identity, height, variation)
     }
 
-    pub fn set_offset(&self, off: f32, content_height: f32) {
-        self.core.set_offset(off, content_height);
+    pub fn set_offset(&self, off: f32, content_main: f32) {
+        self.core.set_offset(off, content_main);
     }
 
-    pub fn scroll_immediate(&self, delta_px: f32, content_height_px: f32) -> f32 {
-        self.core.scroll_immediate(delta_px, content_height_px)
+    pub fn scroll_immediate(&self, delta_px: f32, content_main_px: f32) -> f32 {
+        self.core.scroll_immediate(delta_px, content_main_px)
     }
 
-    pub fn tick(&self, content_height_px: f32) -> bool {
-        self.core.tick(content_height_px)
-    }
-
-    pub fn set_offset_x(&self, off: f32, content_width: f32) {
-        self.x.set_offset(off, content_width);
-    }
-
-    pub fn scroll_immediate_x(&self, delta_px: f32, content_width_px: f32) -> f32 {
-        self.x
-            .scroll_immediate(delta_px, content_width_px, &self.core.physics)
-    }
-
-    pub fn tick_x(&self, content_width_px: f32) -> bool {
-        self.x.tick(content_width_px, &self.core.physics)
+    pub fn tick(&self, content_main_px: f32) -> bool {
+        self.core.tick(content_main_px)
     }
 }
 

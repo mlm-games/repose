@@ -804,8 +804,8 @@ where
     };
 
     let padding_left_px = content_padding.left.to_px().0;
-    let scroll_offset_px = state.x.offset.get();
-    let viewport_width_px = state.x.viewport.get();
+    let scroll_offset_px = state.core.axis.offset.get();
+    let viewport_width_px = state.core.axis.viewport.get();
 
     let padded_offset = scroll_offset_px - padding_left_px;
     let buffer_cols = 2usize;
@@ -908,10 +908,10 @@ where
         let st = state.clone();
         Rc::new(move |d: Vec2| -> Vec2 {
             let d = run_pre_scroll(&st.core.parent_connection, d);
-            let cw = st.x.content.get();
+            let cw = st.core.axis.content.get();
             let cw = if cw > 0.0 { cw } else { content_width_px };
             let result = Vec2 {
-                x: st.scroll_immediate_x(d.x, cw),
+                x: st.scroll_immediate(d.x, cw),
                 y: d.y,
             };
             run_post_scroll(&st.core.parent_connection, result)
@@ -922,8 +922,8 @@ where
         let st = state.clone();
         Rc::new(move |w_px: f32| {
             let w = w_px.max(0.0);
-            if (st.x.viewport.get() - w).abs() > 0.5 {
-                st.x.viewport.set(w);
+            if (st.core.axis.viewport.get() - w).abs() > 0.5 {
+                st.core.axis.viewport.set(w);
                 repose_core::request_frame();
             }
         })
@@ -932,9 +932,9 @@ where
     let set_content_w = {
         let st = state.clone();
         Rc::new(move |w: f32| {
-            if (st.x.content.get() - w).abs() > 0.5 {
-                st.x.content.set(w);
-                st.set_offset_x(st.x.offset.get(), w);
+            if (st.core.axis.content.get() - w).abs() > 0.5 {
+                st.core.axis.content.set(w);
+                st.set_offset(st.core.axis.offset.get(), w);
                 repose_core::request_frame();
             }
         })
@@ -942,23 +942,23 @@ where
 
     let get_scroll = {
         let st = state.clone();
-        Rc::new(move || -> f32 { st.x.offset.get() })
+        Rc::new(move || -> f32 { st.core.axis.offset.get() })
     };
 
     let set_scroll = {
         let st = state.clone();
         Rc::new(move |x: f32| {
-            let cw = st.x.content.get();
-            st.set_offset_x(x, if cw > 0.0 { cw } else { content_width_px });
+            let cw = st.core.axis.content.get();
+            st.set_offset(x, if cw > 0.0 { cw } else { content_width_px });
         })
     };
 
     let tick_scroll = {
         let st = state.clone();
         Rc::new(move || {
-            let cw = st.x.content.get();
+            let cw = st.core.axis.content.get();
             let cw = if cw > 0.0 { cw } else { content_width_px };
-            st.tick_x(cw);
+            st.tick(cw);
         })
     };
 
