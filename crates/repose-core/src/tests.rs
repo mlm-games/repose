@@ -909,3 +909,71 @@ mod tests {
         assert_eq!(modifier.scrollbar_style, Some(style));
     }
 }
+
+/// Regression cover for keyed-slot liveness. A keyed slot used to be pinned to
+/// its owner scope's lifetime, so a slot abandoned inside a permanently mounted
+/// scope was never freed - which is how a closed context menu kept its overlay
+/// entry (and full-screen scrim) alive forever. Liveness is now per key per
+/// frame, with an explicit carve-out for scopes served from cache.
+#[cfg(test)]
+mod keyed_slot_liveness {
+    use crate::runtime::{ComposeGuard, Scheduler, clear_composer};
+    use crate::view::{View, ViewKind};
+
+    fn has_key(key: &str) -> bool {
+        crate::runtime::COMPOSER.with(|composer| composer.borrow().keyed_slots.contains_key(key))
+    }
+
+    #[test]
+    fn slot_abandoned_by_a_rerun_scope_is_collected() {
+        clear_composer();
+        let mut scheduler = Scheduler::new();
+        let key = "liveness_abandoned";
+        for frame in 0..2u32 {
+            let _guard = ComposeGuard::begin();
+            let _ = crate::scope!("liveness_abandoned_scope", &mut scheduler, [frame], {
+                if frame == 0 {
+                    let _ = crate::remember_with_key(key, || 7u32);
+                }
+                View::new(0, ViewKind::Box)
+            });
+        }
+        assert!(
+            !has_key(key),
+            "a key a re-run scope stopped reading must be collected"
+        );
+    }
+
+    #[test]
+    fn slot_in_a_scope_served_from_cache_is_preserved() {
+        clear_composer();
+        let mut scheduler = Scheduler::new();
+        let key = "liveness_cached";
+        for _ in 0..3 {
+            let _guard = ComposeGuard::begin();
+            let _ = crate::scope!("liveness_cached_scope", &mut scheduler, [0u32], {
+                let _ = crate::remember_with_key(key, || 7u32);
+                View::new(0, ViewKind::Box)
+            });
+        }
+        assert!(
+            has_key(key),
+            "a cached scope's slots are never read but must survive"
+        );
+    }
+
+    #[test]
+    fn slot_read_every_frame_survives() {
+        clear_composer();
+        let mut scheduler = Scheduler::new();
+        let key = "liveness_steady";
+        for _ in 0..3 {
+            let _guard = ComposeGuard::begin();
+            let _ = crate::scope!("liveness_steady_scope", &mut scheduler, [0u32], {
+                let _ = crate::remember_with_key(key, || 7u32);
+                View::new(0, ViewKind::Box)
+            });
+        }
+        assert!(has_key(key), "a consistently read slot must survive");
+    }
+}

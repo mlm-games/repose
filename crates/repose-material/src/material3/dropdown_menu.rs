@@ -1056,3 +1056,92 @@ fn render_dropdown_card_modifier(th: &Theme, config: &DropdownMenuConfig) -> Mod
 
     card_modifier
 }
+
+#[cfg(test)]
+mod keyed_lifetime_tests {
+    use super::*;
+    use repose_core::runtime::ComposeGuard;
+    use repose_core::scope::Scope;
+    use repose_ui::overlay::OverlayHandle;
+
+    fn entry_count(overlay: &OverlayHandle) -> usize {
+        overlay
+            .host(Modifier::new(), View::new(0, ViewKind::Box))
+            .children
+            .len()
+            - 1
+    }
+
+    fn compose_menu(scope: &Scope, overlay: &OverlayHandle, state: &Rc<MenuState>) {
+        let guard = ComposeGuard::begin();
+        repose_ui::overlay::with_ambient_overlay(overlay.clone(), || {
+            scope.run(|| {
+                let _ = DropdownMenu(
+                    state.clone(),
+                    Modifier::new(),
+                    Box(Modifier::new()),
+                    vec![DropdownMenuEntry::Item(DropdownMenuItem::new("A", || {}))],
+                    DropdownMenuConfig {
+                        min_width: Dp(100.0),
+                        ..Default::default()
+                    },
+                );
+            });
+        });
+        drop(guard);
+    }
+
+    /// A host that stops composing a `DropdownMenu` (a context menu closing, say)
+    /// must not strand the overlay entry. The guard lives in a keyed slot, so
+    /// this only works if a slot abandoned inside a still-composed scope is
+    /// collected rather than pinned to the scope's lifetime.
+    #[test]
+    fn dropdown_entry_released_when_host_stops_composing_it() {
+        let scope = Scope::new();
+        let overlay = OverlayHandle::new();
+        let state = Rc::new(MenuState::new());
+        state.open();
+        compose_menu(&scope, &overlay, &state);
+        assert_eq!(entry_count(&overlay), 1, "menu should be showing");
+
+        state.dismiss();
+        for _ in 0..4 {
+            let guard = ComposeGuard::begin();
+            scope.run(|| {
+                let _ = View::new(0, ViewKind::Box);
+            });
+            drop(guard);
+        }
+        assert_eq!(
+            entry_count(&overlay),
+            0,
+            "overlay entry outlived the host that owned it"
+        );
+    }
+
+    /// The counterpart that must keep working: a menu whose host stays composed
+    /// releases the entry once the exit animation finishes.
+    #[test]
+    fn dropdown_entry_released_after_exit_animation() {
+        let scope = Scope::new();
+        let overlay = OverlayHandle::new();
+        let state = Rc::new(MenuState::new());
+        let mut clock = repose_core::animation::TestClock {
+            t: web_time::Instant::now(),
+        };
+        repose_core::animation::set_clock(Box::new(repose_core::animation::TestClock {
+            t: clock.t,
+        }));
+        state.open();
+        for frame in 0..120u32 {
+            compose_menu(&scope, &overlay, &state);
+            if frame == 0 {
+                state.dismiss();
+            }
+            clock.t += Duration::from_millis(16);
+        }
+        let left = entry_count(&overlay);
+        repose_core::animation::set_clock(Box::new(repose_core::animation::SystemClock));
+        assert_eq!(left, 0, "entry survived the exit animation");
+    }
+}
