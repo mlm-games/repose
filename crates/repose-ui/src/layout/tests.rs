@@ -1675,9 +1675,7 @@ fn test_scrollbar_image_visuals_preserve_thumb_geometry() {
         .nodes
         .iter()
         .filter_map(|node| match node {
-            SceneNode::Image {
-                rect, source_rect, ..
-            } => Some((*rect, *source_rect)),
+            SceneNode::Image { rect, style, .. } => Some((*rect, style.source_rect)),
             _ => None,
         })
         .collect();

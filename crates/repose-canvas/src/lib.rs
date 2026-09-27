@@ -1741,16 +1741,10 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                         text: Arc::<str>::from(text.clone()),
                         color: alpha_color(*color, alpha),
                         size: *size,
-                        font_family: *font_family,
-                        text_align: TextAlign::Unspecified,
-                        font_weight: FontWeight::NORMAL,
-                        font_style: FontStyle::Normal,
-                        text_decoration: TextDecoration::default(),
-                        letter_spacing: Px::ZERO,
-                        line_height: Px::ZERO,
-                        extra_style: Default::default(),
-                        url: None,
-                        font_variation_settings: None,
+                        style: TextPaintStyle {
+                            font_family: *font_family,
+                            ..Default::default()
+                        },
                     });
                 }
                 DrawCommand::VectorMesh {
@@ -1828,10 +1822,12 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                         },
                         handle: *handle,
                         tint: alpha_color(*tint, alpha),
-                        fit: *fit,
-                        filter: *filter,
-                        source_rect: *source_rect,
-                        alignment: repose_core::ImageAlignment::Center,
+                        style: ImagePaintStyle {
+                            fit: *fit,
+                            filter: *filter,
+                            source_rect: *source_rect,
+                            ..Default::default()
+                        },
                     });
                 }
             }

@@ -9,8 +9,8 @@ use std::sync::{Arc, Weak};
 
 use repose_core::color::{ChromaSiting, ColorInfo, PixelFormat};
 use repose_core::{
-    Brush, FontStyle, ImageAlignment, ImageFilter, ImageFit, ImageSourceRect, Scene, SceneNode,
-    StrokeCap, Transform, Vec2,
+    Brush, FontStyle, ImageAlignment, ImageFilter, ImageFit, ImagePaintStyle, ImageSourceRect,
+    Scene, SceneNode, StrokeCap, TextPaintStyle, Transform, Vec2,
 };
 #[cfg(feature = "winit-surface")]
 use repose_core::{GlyphRasterConfig, PresentModePref, RenderBackend, request_frame};
@@ -8812,17 +8812,19 @@ impl WgpuSceneRenderer {
                     text,
                     color,
                     size,
-                    font_family,
-                    text_align: _,
-                    font_weight,
-                    font_style,
-                    text_decoration,
-                    letter_spacing,
-                    line_height: _,
-                    extra_style,
-                    url: _,
-                    font_variation_settings,
+                    style,
                 } => {
+                    let TextPaintStyle {
+                        font_family,
+                        font_weight,
+                        font_style,
+                        text_decoration,
+                        letter_spacing,
+                        font_variation_settings,
+                        baseline_shift,
+                        draw_style,
+                        ..
+                    } = style;
                     let px = size.0;
                     if !px.is_finite()
                         || px <= 0.0
@@ -8920,7 +8922,7 @@ impl WgpuSceneRenderer {
                             }
                         };
 
-                    let baseline_shift_y: f32 = px * extra_style.baseline_shift.0;
+                    let baseline_shift_y: f32 = px * baseline_shift.0;
 
                     let (
                         draws_fill,
@@ -8930,7 +8932,7 @@ impl WgpuSceneRenderer {
                         stroke_join,
                         stroke_miter,
                         stroke_path_effect,
-                    ) = match &extra_style.draw_style {
+                    ) = match draw_style {
                         repose_core::DrawStyle::Stroke {
                             width,
                             cap,
@@ -9279,11 +9281,14 @@ impl WgpuSceneRenderer {
                     rect,
                     handle,
                     tint,
-                    fit,
-                    filter,
-                    source_rect,
-                    alignment,
+                    style,
                 } => {
+                    let ImagePaintStyle {
+                        fit,
+                        filter,
+                        source_rect,
+                        alignment,
+                    } = style;
                     let clip = scissor_stack.last().copied().unwrap_or(root_clip_rect);
                     if !visible(affine_aabb(current_transform, rect), clip) {
                         continue;

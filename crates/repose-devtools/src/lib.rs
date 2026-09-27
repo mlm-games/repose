@@ -3,9 +3,7 @@ use std::sync::Arc;
 
 use web_time::Instant;
 
-use repose_core::{
-    Brush, Color, FontStyle, FontWeight, Px, Rect, Scene, SceneNode, TextAlign, TextDecoration,
-};
+use repose_core::{Brush, Color, Px, Rect, Scene, SceneNode, TextPaintStyle};
 
 const FPS_HISTORY_LEN: usize = 60;
 
@@ -305,16 +303,7 @@ impl Hud {
             text: Arc::<str>::from(txt.to_string()),
             color: Color::from_hex(color),
             size: Px(size),
-            font_family: None,
-            text_align: TextAlign::Unspecified,
-            font_weight: FontWeight::NORMAL,
-            font_style: FontStyle::Normal,
-            text_decoration: TextDecoration::default(),
-            letter_spacing: Px::ZERO,
-            line_height: Px::ZERO,
-            extra_style: Default::default(),
-            url: None,
-            font_variation_settings: None,
+            style: TextPaintStyle::default(),
         });
     }
 

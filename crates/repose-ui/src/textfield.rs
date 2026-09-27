@@ -2763,10 +2763,7 @@ pub(crate) fn paint_text_field(
                         h: line_h,
                     },
                     text: Arc::from(text_input.hint.clone()),
-                    color: mul_alpha_color(
-                        ts.color.unwrap_or(th.on_surface_variant),
-                        alpha_accum,
-                    ),
+                    color: mul_alpha_color(ts.color.unwrap_or(th.on_surface_variant), alpha_accum),
                     size: Px(font_val),
                     style: TextPaintStyle {
                         font_family: metrics.font_family,
@@ -3044,20 +3041,23 @@ pub(crate) fn paint_text_field(
                     text: Arc::<str>::from(ln),
                     color: mul_alpha_color(th.on_surface, alpha_accum),
                     size: Px(font_val),
-                    font_family: metrics.font_family,
-                    text_align: TextAlign::Unspecified,
-                    font_weight: FontWeight(metrics.font_weight),
-                    font_style: if metrics.font_style == 1 {
-                        FontStyle::Italic
-                    } else {
-                        FontStyle::Normal
+                    style: TextPaintStyle {
+                        font_family: metrics.font_family,
+                        font_weight: FontWeight(metrics.font_weight),
+                        font_style: if metrics.font_style == 1 {
+                            FontStyle::Italic
+                        } else {
+                            FontStyle::Normal
+                        },
+                        text_decoration: ts.text_decoration.unwrap_or_default(),
+                        letter_spacing: Px(metrics.letter_spacing_px),
+                        line_height: Px(metrics.line_height_px),
+                        font_variation_settings: metrics
+                            .font_variation_settings
+                            .clone()
+                            .map(Arc::from),
+                        ..Default::default()
                     },
-                    text_decoration: ts.text_decoration.unwrap_or_default(),
-                    letter_spacing: Px(metrics.letter_spacing_px),
-                    line_height: Px(metrics.line_height_px),
-                    extra_style: Default::default(),
-                    url: None,
-                    font_variation_settings: metrics.font_variation_settings.clone().map(Arc::from),
                 });
             }
         } else {
@@ -3071,20 +3071,20 @@ pub(crate) fn paint_text_field(
                 text: Arc::from(rendered_by_vt(&text_input.value)),
                 color: mul_alpha_color(th.on_surface, alpha_accum),
                 size: Px(font_val),
-                font_family: metrics.font_family,
-                text_align: TextAlign::Unspecified,
-                font_weight: FontWeight(metrics.font_weight),
-                font_style: if metrics.font_style == 1 {
-                    FontStyle::Italic
-                } else {
-                    FontStyle::Normal
+                style: TextPaintStyle {
+                    font_family: metrics.font_family,
+                    font_weight: FontWeight(metrics.font_weight),
+                    font_style: if metrics.font_style == 1 {
+                        FontStyle::Italic
+                    } else {
+                        FontStyle::Normal
+                    },
+                    text_decoration: ts.text_decoration.unwrap_or_default(),
+                    letter_spacing: Px(metrics.letter_spacing_px),
+                    line_height: Px(metrics.line_height_px),
+                    font_variation_settings: metrics.font_variation_settings.clone().map(Arc::from),
+                    ..Default::default()
                 },
-                text_decoration: ts.text_decoration.unwrap_or_default(),
-                letter_spacing: Px(metrics.letter_spacing_px),
-                line_height: Px(metrics.line_height_px),
-                extra_style: Default::default(),
-                url: None,
-                font_variation_settings: metrics.font_variation_settings.clone().map(Arc::from),
             });
         }
     }

@@ -5,7 +5,9 @@
 //! The scale factors are Compose's `ContentScale.computeScaleFactor`; clipping
 //! stands in for Compose's `clipToBounds` and Godot's `clip_contents`.
 
-use repose_core::{Color, ImageAlignment, ImageFilter, ImageFit, Rect, Scene, SceneNode};
+use repose_core::{
+    Color, ImageAlignment, ImageFilter, ImageFit, ImagePaintStyle, Rect, Scene, SceneNode,
+};
 use repose_render_wgpu::offscreen::OffscreenRenderer;
 
 fn try_offscreen(w: u32, h: u32) -> Option<OffscreenRenderer> {
@@ -36,10 +38,12 @@ fn draw(
                 rect,
                 handle,
                 tint: Color::WHITE,
-                fit,
-                filter: ImageFilter::Nearest,
-                source_rect: None,
-                alignment,
+                style: ImagePaintStyle {
+                    fit,
+                    filter: ImageFilter::Nearest,
+                    alignment,
+                    ..Default::default()
+                },
             }],
         },
         None,
