@@ -1277,3 +1277,117 @@ pub fn run_post_scroll(conn: &RefCell<Option<NestedScrollConnection>>, leftover:
         leftover
     }
 }
+
+#[cfg(test)]
+mod fling_tests {
+    use super::*;
+
+    const FRAME: std::time::Duration = std::time::Duration::from_millis(16);
+
+    fn seeded() -> ScrollState {
+        let st = ScrollState::new();
+        st.set_viewport_height(100.0);
+        st.set_content_height(4000.0);
+        st
+    }
+
+    /// Advance one 60Hz frame. The physics derives `dt` from the wall clock, so
+    /// a test that never advances real time cannot observe fling integration at
+    /// all and would pass even with the double-count restored.
+    fn frame() {
+        std::thread::sleep(FRAME);
+    }
+
+    /// A sustained drag must move the surface by the input and nothing more.
+    /// This is the regression: the per-frame integrator used to run on the same
+    /// frames that applied the drag delta, so travel was roughly doubled.
+    #[test]
+    fn drag_does_not_double_count() {
+        let st = seeded();
+        let (frames, step) = (10, 30.0);
+        for _ in 0..frames {
+            st.scroll_immediate(step);
+            frame();
+            st.tick();
+        }
+        let expected = step * frames as f32;
+        assert!(
+            (st.get() - expected).abs() < 1.0,
+            "drag of {expected} over {frames} frames moved {}",
+            st.get()
+        );
+    }
+
+    /// Once input stops arriving the stored velocity must carry the surface on
+    /// as a fling, so a flick still coasts.
+    #[test]
+    fn fling_continues_after_input_stops() {
+        let st = seeded();
+        st.scroll_immediate(200.0);
+        frame();
+        st.tick();
+        let at_release = st.get();
+        let mut coasted = 0.0;
+        for _ in 0..10 {
+            frame();
+            if st.tick() {
+                coasted += 1.0;
+            }
+        }
+        assert!(coasted > 0.0, "fling stopped immediately after release");
+        assert!(st.get() > at_release, "fling must travel further");
+    }
+
+    /// A drag landing mid-fling follows the finger instead of being yanked by
+    /// the stale velocity.
+    #[test]
+    fn drag_cancels_stale_fling_direction() {
+        let st = seeded();
+        for _ in 0..6 {
+            st.scroll_immediate(200.0);
+            frame();
+            st.tick();
+        }
+        let before = st.get();
+        for _ in 0..6 {
+            st.scroll_immediate(-20.0);
+            frame();
+            st.tick();
+        }
+        assert!(
+            st.get() < before,
+            "reverse drag must win over the old fling ({} -> {})",
+            before,
+            st.get()
+        );
+    }
+
+    /// A parent handed leftover by a child must still be able to fling.
+    #[test]
+    fn parent_flings_after_taking_child_leftover() {
+        let st = seeded();
+        let conn = st.connection();
+        let consumed = conn.dispatch_post_scroll(
+            Vec2::ZERO,
+            Vec2 { x: 0.0, y: 200.0 },
+            NestedScrollSource::UserInput,
+        );
+        // `on_post_scroll` reports what THIS container consumed.
+        assert!(
+            (consumed.y - 200.0).abs() < 0.001,
+            "consumed {}",
+            consumed.y
+        );
+        assert!(st.get() > 0.0, "parent scrolled");
+        assert!(st.physics.borrow().is_animating(), "parent has velocity");
+        frame();
+        st.tick();
+        let before_coast = st.get();
+        frame();
+        st.tick();
+        assert!(
+            st.get() > before_coast,
+            "parent must coast: nested velocity reached the driven physics"
+        );
+    }
+}

@@ -837,3 +837,87 @@ impl LazyVerticalStaggeredGridState {
         self.core.tick(content_height_px)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const FRAME: std::time::Duration = std::time::Duration::from_millis(16);
+
+    fn frame() {
+        std::thread::sleep(FRAME);
+    }
+
+    fn seeded() -> LazyColumnState {
+        let st = LazyColumnState::new();
+        st.set_vp_height(100.0);
+        st.core.axis.content.set(4000.0);
+        st
+    }
+
+    /// Lazy lists share the same integrator, so they inherit the same
+    /// double-count regression if the stand-down is missing.
+    #[test]
+    fn lazy_drag_does_not_double_count() {
+        let st = seeded();
+        let (frames, step) = (10, 30.0);
+        for _ in 0..frames {
+            st.scroll_immediate(step, 4000.0);
+            frame();
+            st.tick(4000.0);
+        }
+        let expected = step * frames as f32;
+        let got = st.core.axis.offset.get();
+        assert!(
+            (got - expected).abs() < 1.0,
+            "drag of {expected} moved {got}"
+        );
+    }
+
+    /// The rubber band absorbs leftover at the edge instead of the offset
+    /// running away, and it decays back to rest.
+    #[test]
+    fn overscroll_absorbs_at_edge_and_decays() {
+        let st = seeded();
+        st.set_offset(0.0, 4000.0);
+        // Push past the start edge: nothing left to consume.
+        let leftover = st.apply_overscroll(-60.0, 4000.0);
+        assert!(leftover.abs() < 0.001, "band should absorb, got {leftover}");
+        let band = st.overscroll_offset();
+        assert!(
+            band < 0.0,
+            "band should stretch against the overscroll, got {band}"
+        );
+
+        for _ in 0..40 {
+            frame();
+            st.tick(4000.0);
+        }
+        assert!(
+            st.overscroll_offset().abs() < 0.5,
+            "band settled to {}",
+            st.overscroll_offset()
+        );
+    }
+
+    /// A live fling must request the next frame. Repose composes only on
+    /// demand, so without this the lazy fling integrates once and freezes.
+    #[test]
+    fn fling_requests_follow_up_frame() {
+        let st = seeded();
+        st.scroll_immediate(200.0, 4000.0);
+        frame();
+        st.tick(4000.0);
+        while repose_core::frame_clock::take_frame_request() {}
+        assert!(
+            st.core.physics.borrow().is_animating(),
+            "still coasting, so a frame must be pending"
+        );
+        frame();
+        assert!(st.tick(4000.0), "fling integrates");
+        assert!(
+            repose_core::frame_clock::peek_frame_request(),
+            "an integrating fling must request the next frame"
+        );
+    }
+}
