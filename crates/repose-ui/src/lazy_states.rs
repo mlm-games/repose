@@ -317,13 +317,30 @@ impl LazyAxis {
         }
     }
 
-    /// Applies `delta_px`, returning the part the axis could not consume.
+    /// Applies `delta_px` from real user input, pre-empting any in-flight
+    /// fling. Returns the part the axis could not consume.
     pub(crate) fn scroll_immediate(
         &self,
         delta_px: f32,
         content_px: f32,
         physics: &RefCell<ScrollPhysics>,
     ) -> f32 {
+        physics.borrow_mut().cancel_fling();
+        self.apply_delta(delta_px, content_px, physics)
+    }
+
+    /// Applies leftover from a nested child without cancelling this axis's own
+    /// fling. See [`repose_core::scroll::ScrollState::scroll_nested`].
+    pub(crate) fn scroll_nested(
+        &self,
+        delta_px: f32,
+        content_px: f32,
+        physics: &RefCell<ScrollPhysics>,
+    ) -> f32 {
+        self.apply_delta(delta_px, content_px, physics)
+    }
+
+    fn apply_delta(&self, delta_px: f32, content_px: f32, physics: &RefCell<ScrollPhysics>) -> f32 {
         let before = self.offset.get();
         let max_offset = (content_px - self.viewport.get()).max(0.0);
         let delta_px = if delta_px.is_finite() { delta_px } else { 0.0 };
@@ -356,24 +373,54 @@ impl LazyAxis {
 /// the scrolling axis, its fling physics, nested-scroll wiring, and the
 /// cache-revision hook.
 pub(crate) struct LazyScrollCore {
-    pub(crate) axis: LazyAxis,
-    pub(crate) physics: RefCell<ScrollPhysics>,
-    pub(crate) parent_connection: RefCell<Option<NestedScrollConnection>>,
+    pub(crate) axis: Rc<LazyAxis>,
+    pub(crate) physics: Rc<RefCell<ScrollPhysics>>,
+    pub(crate) parent_connection: Rc<RefCell<Option<NestedScrollConnection>>>,
     cache_revision: RefCell<Option<CacheRevision>>,
 }
 
 impl LazyScrollCore {
     fn new() -> Self {
         Self {
-            axis: LazyAxis::new(),
-            physics: RefCell::new(ScrollPhysics::new()),
-            parent_connection: RefCell::new(None),
+            axis: Rc::new(LazyAxis::new()),
+            physics: Rc::new(RefCell::new(ScrollPhysics::new())),
+            parent_connection: Rc::new(RefCell::new(None)),
             cache_revision: RefCell::new(None),
         }
     }
 
     pub(crate) fn set_nested_scroll_parent(&self, conn: NestedScrollConnection) {
         *self.parent_connection.borrow_mut() = Some(conn);
+    }
+
+    /// A `NestedScrollConnection` that consumes leftover scroll by scrolling
+    /// THIS container, then chains anything still unabsorbed to this
+    /// container's own parent. This is what lets a lazy container act as a
+    /// nested-scroll parent, matching Compose where `LazyListState` is itself a
+    /// `ScrollableState`.
+    pub fn connection(&self) -> NestedScrollConnection {
+        let axis = Rc::clone(&self.axis);
+        let physics = Rc::clone(&self.physics);
+        let parent = Rc::clone(&self.parent_connection);
+        NestedScrollConnection::new().on_post_scroll(
+            move |_consumed: Vec2, available: Vec2, _source: NestedScrollSource| -> Vec2 {
+                if available.y.abs() < 0.001 {
+                    return Vec2::ZERO;
+                }
+                let leftover = axis.scroll_nested(available.y, axis.content.get(), &physics);
+                let after = repose_core::scroll::run_post_scroll(
+                    &parent,
+                    Vec2 {
+                        x: available.x,
+                        y: leftover,
+                    },
+                );
+                Vec2 {
+                    x: available.x - after.x,
+                    y: available.y - after.y,
+                }
+            },
+        )
     }
 
     pub(crate) fn set_cache_revision(&self, revision: impl Fn(u64) -> u64 + 'static) {
@@ -443,6 +490,11 @@ impl LazyColumnState {
 
     pub fn set_nested_scroll_parent(&self, conn: NestedScrollConnection) {
         self.core.set_nested_scroll_parent(conn);
+    }
+
+    /// Wire a child scrollable to this container as its nested-scroll parent.
+    pub fn connection(&self) -> NestedScrollConnection {
+        self.core.connection()
     }
 
     pub fn set_cache_revision(&self, revision: impl Fn(u64) -> u64 + 'static) {
@@ -518,6 +570,11 @@ impl LazyGridState {
         self.core.set_nested_scroll_parent(conn);
     }
 
+    /// Wire a child scrollable to this container as its nested-scroll parent.
+    pub fn connection(&self) -> NestedScrollConnection {
+        self.core.connection()
+    }
+
     pub fn set_cache_revision(&self, revision: impl Fn(u64) -> u64 + 'static) {
         self.core.set_cache_revision(revision);
     }
@@ -584,6 +641,11 @@ impl LazyRowState {
         self.core.set_nested_scroll_parent(conn);
     }
 
+    /// Wire a child scrollable to this container as its nested-scroll parent.
+    pub fn connection(&self) -> NestedScrollConnection {
+        self.core.connection()
+    }
+
     pub fn set_cache_revision(&self, revision: impl Fn(u64) -> u64 + 'static) {
         self.core.set_cache_revision(revision);
     }
@@ -635,6 +697,11 @@ impl LazyVerticalStaggeredGridState {
 
     pub fn set_nested_scroll_parent(&self, conn: NestedScrollConnection) {
         self.core.set_nested_scroll_parent(conn);
+    }
+
+    /// Wire a child scrollable to this container as its nested-scroll parent.
+    pub fn connection(&self) -> NestedScrollConnection {
+        self.core.connection()
     }
 
     pub fn set_cache_revision(&self, revision: impl Fn(u64) -> u64 + 'static) {
