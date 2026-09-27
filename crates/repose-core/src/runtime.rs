@@ -560,7 +560,13 @@ pub struct Composer {
     pub keyed_slots: FxHashMap<String, Box<dyn Any>>,
     pub keyed_owner: FxHashMap<String, String>,
     pub keyed_owners: FxHashMap<String, rustc_hash::FxHashSet<String>>,
+    /// Owner tokens of registered scopes visited this frame, plus the root token.
     pub live_keyed_owners: rustc_hash::FxHashSet<String>,
+    /// Raw keys read through `remember_with_key` this frame.
+    pub live_keyed_keys: rustc_hash::FxHashSet<String>,
+    /// Owner tokens of scopes served from cache this frame. Their bodies did not
+    /// re-run, so their keyed slots go unread and must not be collected.
+    pub cache_preserved_owners: rustc_hash::FxHashSet<String>,
     pub scope_caches: FxHashMap<String, crate::scope_cache::ScopeCache>,
     pub live_scope_keys: rustc_hash::FxHashSet<String>,
 }
@@ -606,27 +612,43 @@ pub(crate) fn release_keyed_owner(key: &str, owner: &str) -> (bool, Option<Box<d
     (result.0, result.1)
 }
 
+/// A keyed slot survives when both hold:
+///
+/// * an owning scope is live (registered and visited this frame, or root) —
+///   unchanged rule, so slots whose owner is not a real scope (a bare
+///   `with_scope_key`, as `produce_state` tests use) are still collected, and
+///   `ProduceHandle::drop` can strip the reactive observer; and
+/// * the key was read this frame, or an owning scope was served from cache and
+///   so legitimately never read it.
+///
+/// The second condition is the fix. A scope that re-runs but stops reading a
+/// key now drops it, so a slot abandoned inside a permanently mounted scope —
+/// an overlay guard held by a component the host stopped composing — releases
+/// its entry instead of pinning it for the life of the app.
 pub(crate) fn take_dead_keyed_slots(composer: &mut Composer) -> Vec<(String, Box<dyn Any>)> {
+    fn owners_of<'a>(composer: &'a Composer, key: &str) -> Vec<&'a String> {
+        match composer.keyed_owners.get(key) {
+            Some(owners) => owners.iter().collect(),
+            None => composer.keyed_owner.get(key).into_iter().collect(),
+        }
+    }
     let dead: Vec<String> = composer
         .keyed_slots
         .keys()
         .filter(|key| {
-            let live = composer
-                .keyed_owners
-                .get(*key)
-                .map(|owners| {
-                    owners
-                        .iter()
-                        .any(|owner| composer.live_keyed_owners.contains(owner))
-                })
-                .or_else(|| {
-                    composer
-                        .keyed_owner
-                        .get(*key)
-                        .map(|owner| composer.live_keyed_owners.contains(owner))
-                })
-                .unwrap_or(false);
-            !live
+            let owners = owners_of(composer, key);
+            let scope_live = owners
+                .iter()
+                .any(|owner| composer.live_keyed_owners.contains(*owner));
+            if !scope_live {
+                return true;
+            }
+            if composer.live_keyed_keys.contains(*key) {
+                return false;
+            }
+            !owners
+                .iter()
+                .any(|owner| composer.cache_preserved_owners.contains(*owner))
         })
         .cloned()
         .collect();
@@ -685,6 +707,8 @@ impl ComposeGuard {
             c.auto_counts.clear();
             c.live_scope_keys.clear();
             c.live_keyed_owners.clear();
+            c.live_keyed_keys.clear();
+            c.cache_preserved_owners.clear();
             c.live_scope_keys.insert(String::new());
             c.live_keyed_owners.insert(scope_owner_token(None));
         });
@@ -748,6 +772,8 @@ pub fn shutdown_composition() {
         c.keyed_owner.clear();
         c.keyed_owners.clear();
         c.live_keyed_owners.clear();
+        c.live_keyed_keys.clear();
+        c.cache_preserved_owners.clear();
         c.live_scope_keys.clear();
         c.cursor = 0;
         c.auto_counts.clear();
@@ -996,6 +1022,7 @@ pub fn remember_with_key<T: 'static>(key: impl Into<String>, init: impl FnOnce()
     if let Some(existing) = existing {
         let old_owner = COMPOSER.with(|composer| {
             let mut composer = composer.borrow_mut();
+            composer.live_keyed_keys.insert(key.clone());
             let old_owner = composer.keyed_owner.insert(key.clone(), owner.clone());
             composer
                 .keyed_owners
@@ -1033,6 +1060,7 @@ pub fn remember_with_key<T: 'static>(key: impl Into<String>, init: impl FnOnce()
             && let Some(existing) = existing.downcast_ref::<Rc<T>>()
         {
             let existing = existing.clone();
+            composer.live_keyed_keys.insert(key.clone());
             composer.keyed_owner.insert(key.clone(), owner.clone());
             composer
                 .keyed_owners
@@ -1045,6 +1073,7 @@ pub fn remember_with_key<T: 'static>(key: impl Into<String>, init: impl FnOnce()
         let old = composer
             .keyed_slots
             .insert(key.clone(), Box::new(value.clone()));
+        composer.live_keyed_keys.insert(key.clone());
         composer.keyed_owner.insert(key.clone(), owner.clone());
         composer
             .keyed_owners

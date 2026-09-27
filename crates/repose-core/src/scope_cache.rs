@@ -426,6 +426,18 @@ fn restore_cached_deps(key: &str) {
 }
 
 fn mark_scope_live(key: &str) {
+    mark_scopes(key, false);
+}
+
+/// A scope served from cache did not re-run, so the keyed slots its body would
+/// have read were never touched this frame. Record that, so
+/// `take_dead_keyed_slots` can tell "unread because cached" apart from "unread
+/// because abandoned" and only collect the latter.
+fn mark_scope_cache_preserved(key: &str) {
+    mark_scopes(key, true);
+}
+
+fn mark_scopes(key: &str, cache_preserved: bool) {
     let mut pending = vec![key.to_string()];
     let mut seen = FxHashSet::default();
     while let Some(current) = pending.pop() {
@@ -441,6 +453,11 @@ fn mark_scope_live(key: &str) {
                 composer
                     .live_keyed_owners
                     .insert(crate::runtime::scope_owner_token(Some(&current)));
+                if cache_preserved {
+                    composer
+                        .cache_preserved_owners
+                        .insert(crate::runtime::scope_owner_token(Some(&current)));
+                }
             }
             exists
         });
@@ -468,6 +485,7 @@ pub fn get_cached(key: &str, _scheduler: &mut crate::runtime::Scheduler) -> View
     record_cached_child(key);
     restore_cached_deps(key);
     mark_scope_live(key);
+    mark_scope_cache_preserved(key);
     view
 }
 
@@ -568,6 +586,8 @@ pub fn gc_dead_scopes() {
         }
         composer.live_scope_keys.clear();
         composer.live_keyed_owners.clear();
+        composer.live_keyed_keys.clear();
+        composer.cache_preserved_owners.clear();
         composer.live_scope_keys.insert(String::new());
         composer
             .live_keyed_owners

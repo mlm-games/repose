@@ -483,9 +483,20 @@ fn runtime_owner_disposer(key: String, cleanup: Dispose, owner: String) -> Dispo
     })
 }
 
-fn register_runtime_cleanup(state: &ShortcutState, key: &str, cleanup: Dispose) -> Dispose {
+/// `slot` separates the map and handler registries. They used to share one key,
+/// so installing the handler displaced the map's disposer and ran its cleanup on
+/// the spot — from inside the caller's `runtime_installs` borrow, so the cleanup
+/// re-borrowed a `RefCell` that was already mutably borrowed. The resulting
+/// panic was swallowed by `run_keyed_disposer`, leaving a stale map entry and no
+/// handler. Distinct keys make registration non-destructive.
+fn register_runtime_cleanup(
+    state: &ShortcutState,
+    slot: &str,
+    key: &str,
+    cleanup: Dispose,
+) -> Dispose {
     let cleanup_key = format!(
-        "runtime-shortcut-cleanup:{}:{key}",
+        "runtime-shortcut-{slot}-cleanup:{}:{key}",
         Rc::as_ptr(&state.runtime_installs) as usize
     );
     let owner =
@@ -513,13 +524,18 @@ fn register_runtime_cleanup(state: &ShortcutState, key: &str, cleanup: Dispose) 
 }
 
 fn install_runtime_map(state: &ShortcutState, key: String, map: ShortcutMap) -> Dispose {
-    let mut installs = state.runtime_installs.borrow_mut();
-    if let Some(entry) = installs.maps.iter_mut().find(|entry| entry.key == key) {
-        entry.map = map;
-        return entry.cleanup.clone();
-    }
-    let token = installs.next_token;
-    installs.next_token = installs.next_token.wrapping_add(1);
+    let token = {
+        let mut installs = state.runtime_installs.borrow_mut();
+        if let Some(entry) = installs.maps.iter_mut().find(|entry| entry.key == key) {
+            entry.map = map;
+            return entry.cleanup.clone();
+        }
+        let token = installs.next_token;
+        installs.next_token = installs.next_token.wrapping_add(1);
+        token
+    };
+    // Registered outside the `installs` borrow: registration can run a cleanup
+    // for this key, and that cleanup re-borrows `installs`.
     let weak: Weak<RefCell<RuntimeShortcutInstalls>> = Rc::downgrade(&state.runtime_installs);
     let cleanup_key = key.clone();
     let cleanup = Dispose::new(move || {
@@ -532,11 +548,13 @@ fn install_runtime_map(state: &ShortcutState, key: String, map: ShortcutMap) -> 
             .iter()
             .position(|entry| entry.key == cleanup_key && entry.token == token)
         {
+            eprintln!("DBGMAPREMOVE key={cleanup_key}");
             installs.maps.remove(index);
         }
     });
-    let disposer = register_runtime_cleanup(state, &key, cleanup);
-    installs.maps.push(RuntimeShortcutMapEntry {
+    let disposer = register_runtime_cleanup(state, "map", &key, cleanup);
+    eprintln!("DBGMAP push key={key} ptr={:p}", state.runtime_installs);
+    state.runtime_installs.borrow_mut().maps.push(RuntimeShortcutMapEntry {
         key,
         token,
         map,
@@ -546,13 +564,16 @@ fn install_runtime_map(state: &ShortcutState, key: String, map: ShortcutMap) -> 
 }
 
 fn install_runtime_handler(state: &ShortcutState, key: String, handler: Handler) -> Dispose {
-    let mut installs = state.runtime_installs.borrow_mut();
-    if let Some(entry) = installs.handlers.iter_mut().find(|entry| entry.key == key) {
-        entry.handler = handler;
-        return entry.cleanup.clone();
-    }
-    let token = installs.next_token;
-    installs.next_token = installs.next_token.wrapping_add(1);
+    let token = {
+        let mut installs = state.runtime_installs.borrow_mut();
+        if let Some(entry) = installs.handlers.iter_mut().find(|entry| entry.key == key) {
+            entry.handler = handler;
+            return entry.cleanup.clone();
+        }
+        let token = installs.next_token;
+        installs.next_token = installs.next_token.wrapping_add(1);
+        token
+    };
     let weak: Weak<RefCell<RuntimeShortcutInstalls>> = Rc::downgrade(&state.runtime_installs);
     let cleanup_key = key.clone();
     let cleanup = Dispose::new(move || {
@@ -565,16 +586,22 @@ fn install_runtime_handler(state: &ShortcutState, key: String, handler: Handler)
             .iter()
             .position(|entry| entry.key == cleanup_key && entry.token == token)
         {
+            eprintln!("DBGHANDREMOVE key={cleanup_key}");
             installs.handlers.remove(index);
         }
     });
-    let disposer = register_runtime_cleanup(state, &key, cleanup);
-    installs.handlers.push(RuntimeShortcutHandlerEntry {
-        key,
-        token,
-        handler,
-        cleanup: disposer.clone(),
-    });
+    let disposer = register_runtime_cleanup(state, "handler", &key, cleanup);
+    eprintln!("DBGHAND push key={key} ptr={:p}", state.runtime_installs);
+    state
+        .runtime_installs
+        .borrow_mut()
+        .handlers
+        .push(RuntimeShortcutHandlerEntry {
+            key,
+            token,
+            handler,
+            cleanup: disposer.clone(),
+        });
     disposer
 }
 
@@ -996,6 +1023,7 @@ mod tests {
         let scope_a = compose(&a, "a", &fired_a);
         let scope_b = compose(&b, "b", &fired_b);
         let chord = KeyChord::new(Key::Character('j'), Modifiers::default());
+        eprintln!("DBGTEST a ptr={:p} maps={} handlers={}", a.runtime_installs, a.runtime_installs.borrow().maps.len(), a.runtime_installs.borrow().handlers.len());
         let action_a = a.resolve_action(&chord).unwrap();
         let action_b = b.resolve_action(&chord).unwrap();
         assert!(a.handle(action_a));
