@@ -1,6 +1,7 @@
 use repose_core::*;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
+use web_time::Instant;
 
 type CacheRevision = Rc<dyn Fn(u64) -> u64>;
 
@@ -287,6 +288,9 @@ pub(crate) struct LazyAxis {
     pub(crate) offset: Signal<f32>,
     pub(crate) viewport: Cell<f32>,
     pub(crate) content: Signal<f32>,
+    /// Rubber-band stretch while the axis is pinned past an edge.
+    pub(crate) overscroll: Signal<f32>,
+    overscroll_enabled: Cell<bool>,
 }
 
 impl LazyAxis {
@@ -295,7 +299,22 @@ impl LazyAxis {
             offset: signal(0.0),
             viewport: Cell::new(0.0),
             content: signal(0.0),
+            overscroll: signal(0.0),
+            overscroll_enabled: Cell::new(true),
         }
+    }
+
+    pub(crate) fn set_overscroll_enabled(&self, enabled: bool) {
+        self.overscroll_enabled.set(enabled);
+    }
+
+    pub(crate) fn overscroll_offset(&self) -> f32 {
+        self.overscroll.get()
+    }
+
+    /// What a painter should translate by: scroll position plus rubber band.
+    pub(crate) fn paint_offset(&self) -> f32 {
+        self.offset.get() + self.overscroll.get()
     }
 
     /// Drops sub-pixel writes so layout jitter below half a pixel does not
@@ -356,12 +375,38 @@ impl LazyAxis {
         delta_px - consumed
     }
 
-    pub(crate) fn tick(&self, content_px: f32, physics: &RefCell<ScrollPhysics>) -> bool {
+    /// Fold leftover into the rubber band. Runs last so nested parents get
+    /// first dibs on the delta.
+    pub(crate) fn apply_overscroll(
+        &self,
+        leftover: f32,
+        content_px: f32,
+        physics: &RefCell<ScrollPhysics>,
+    ) -> f32 {
+        let max_offset = (content_px - self.viewport.get()).max(0.0);
+        repose_core::scroll::os_scroll_axis(
+            &self.offset,
+            &self.overscroll,
+            self.overscroll_enabled.get(),
+            max_offset,
+            self.offset.get(),
+            leftover,
+            physics,
+        )
+    }
+
+    pub(crate) fn tick(&self, content_px: f32, physics: &RefCell<ScrollPhysics>, dt: f32) -> bool {
+        if repose_core::scroll::tick_os_axis(&self.overscroll, self.overscroll_enabled.get(), dt) {
+            return true;
+        }
         let max_offset = (content_px - self.viewport.get()).max(0.0);
         let mut p = physics.borrow_mut();
         if let Some(new_off) = p.tick_integrate(self.offset.get(), 0.0, max_offset) {
             drop(p);
             self.offset.set(new_off);
+            // Repose only composes on demand, so a live fling has to ask for
+            // the next frame itself or it freezes after one integration.
+            request_frame();
             true
         } else {
             false
@@ -377,6 +422,7 @@ pub(crate) struct LazyScrollCore {
     pub(crate) physics: Rc<RefCell<ScrollPhysics>>,
     pub(crate) parent_connection: Rc<RefCell<Option<NestedScrollConnection>>>,
     cache_revision: RefCell<Option<CacheRevision>>,
+    prev_tick: Cell<Instant>,
 }
 
 impl LazyScrollCore {
@@ -386,6 +432,7 @@ impl LazyScrollCore {
             physics: Rc::new(RefCell::new(ScrollPhysics::new())),
             parent_connection: Rc::new(RefCell::new(None)),
             cache_revision: RefCell::new(None),
+            prev_tick: Cell::new(Instant::now()),
         }
     }
 
@@ -460,8 +507,16 @@ impl LazyScrollCore {
             .scroll_immediate(delta_px, content_px, &self.physics)
     }
 
+    pub(crate) fn apply_overscroll(&self, leftover: f32, content_px: f32) -> f32 {
+        self.axis
+            .apply_overscroll(leftover, content_px, &self.physics)
+    }
+
     pub(crate) fn tick(&self, content_px: f32) -> bool {
-        self.axis.tick(content_px, &self.physics)
+        let now = Instant::now();
+        let dt = (now - self.prev_tick.get()).as_secs_f32().min(0.1);
+        self.prev_tick.set(now);
+        self.axis.tick(content_px, &self.physics, dt)
     }
 }
 
@@ -495,6 +550,20 @@ impl LazyColumnState {
     /// Wire a child scrollable to this container as its nested-scroll parent.
     pub fn connection(&self) -> NestedScrollConnection {
         self.core.connection()
+    }
+
+    pub fn set_overscroll_enabled(&self, enabled: bool) {
+        self.core.axis.set_overscroll_enabled(enabled);
+    }
+
+    pub fn overscroll_offset(&self) -> f32 {
+        self.core.axis.overscroll_offset()
+    }
+
+    /// Fold leftover into the rubber band. Runs after the nested parent chain
+    /// so parents get first dibs on the delta.
+    pub fn apply_overscroll(&self, leftover: f32, content_px: f32) -> f32 {
+        self.core.apply_overscroll(leftover, content_px)
     }
 
     pub fn set_cache_revision(&self, revision: impl Fn(u64) -> u64 + 'static) {
@@ -579,6 +648,20 @@ impl LazyGridState {
         self.core.connection()
     }
 
+    pub fn set_overscroll_enabled(&self, enabled: bool) {
+        self.core.axis.set_overscroll_enabled(enabled);
+    }
+
+    pub fn overscroll_offset(&self) -> f32 {
+        self.core.axis.overscroll_offset()
+    }
+
+    /// Fold leftover into the rubber band. Runs after the nested parent chain
+    /// so parents get first dibs on the delta.
+    pub fn apply_overscroll(&self, leftover: f32, content_px: f32) -> f32 {
+        self.core.apply_overscroll(leftover, content_px)
+    }
+
     pub fn set_cache_revision(&self, revision: impl Fn(u64) -> u64 + 'static) {
         self.core.set_cache_revision(revision);
     }
@@ -637,6 +720,20 @@ impl LazyRowState {
         self.core.connection()
     }
 
+    pub fn set_overscroll_enabled(&self, enabled: bool) {
+        self.core.axis.set_overscroll_enabled(enabled);
+    }
+
+    pub fn overscroll_offset(&self) -> f32 {
+        self.core.axis.overscroll_offset()
+    }
+
+    /// Fold leftover into the rubber band. Runs after the nested parent chain
+    /// so parents get first dibs on the delta.
+    pub fn apply_overscroll(&self, leftover: f32, content_px: f32) -> f32 {
+        self.core.apply_overscroll(leftover, content_px)
+    }
+
     pub fn set_cache_revision(&self, revision: impl Fn(u64) -> u64 + 'static) {
         self.core.set_cache_revision(revision);
     }
@@ -693,6 +790,20 @@ impl LazyVerticalStaggeredGridState {
     /// Wire a child scrollable to this container as its nested-scroll parent.
     pub fn connection(&self) -> NestedScrollConnection {
         self.core.connection()
+    }
+
+    pub fn set_overscroll_enabled(&self, enabled: bool) {
+        self.core.axis.set_overscroll_enabled(enabled);
+    }
+
+    pub fn overscroll_offset(&self) -> f32 {
+        self.core.axis.overscroll_offset()
+    }
+
+    /// Fold leftover into the rubber band. Runs after the nested parent chain
+    /// so parents get first dibs on the delta.
+    pub fn apply_overscroll(&self, leftover: f32, content_px: f32) -> f32 {
+        self.core.apply_overscroll(leftover, content_px)
     }
 
     pub fn set_cache_revision(&self, revision: impl Fn(u64) -> u64 + 'static) {

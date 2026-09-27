@@ -427,7 +427,11 @@ where
                 x: d.x,
                 y: leftover_y_px,
             };
-            run_post_scroll(&st.core.parent_connection, result)
+            let after_parent = run_post_scroll(&st.core.parent_connection, result);
+            repose_core::Vec2 {
+                x: after_parent.x,
+                y: st.apply_overscroll(after_parent.y, ch),
+            }
         })
     };
 
@@ -444,7 +448,7 @@ where
 
     let get_scroll = {
         let st = state.clone();
-        Rc::new(move || -> f32 { st.core.axis.offset.get() })
+        Rc::new(move || -> f32 { st.core.axis.paint_offset() })
     };
 
     let set_scroll = {
@@ -669,7 +673,11 @@ where
                 x: d.x,
                 y: st.scroll_immediate(d.y, ch),
             };
-            run_post_scroll(&st.core.parent_connection, result)
+            let after_parent = run_post_scroll(&st.core.parent_connection, result);
+            Vec2 {
+                x: after_parent.x,
+                y: st.apply_overscroll(after_parent.y, ch),
+            }
         })
     };
 
@@ -686,7 +694,7 @@ where
 
     let get_scroll = {
         let st = state.clone();
-        Rc::new(move || -> f32 { st.core.axis.offset.get() })
+        Rc::new(move || -> f32 { st.core.axis.paint_offset() })
     };
 
     let set_scroll = {
@@ -914,7 +922,11 @@ where
                 x: st.scroll_immediate(d.x, cw),
                 y: d.y,
             };
-            run_post_scroll(&st.core.parent_connection, result)
+            let after_parent = run_post_scroll(&st.core.parent_connection, result);
+            Vec2 {
+                x: st.apply_overscroll(after_parent.x, cw),
+                y: after_parent.y,
+            }
         })
     };
 
@@ -942,7 +954,7 @@ where
 
     let get_scroll = {
         let st = state.clone();
-        Rc::new(move || -> f32 { st.core.axis.offset.get() })
+        Rc::new(move || -> f32 { st.core.axis.paint_offset() })
     };
 
     let set_scroll = {
@@ -1122,7 +1134,11 @@ where
                 x: st.scroll_immediate(d.x, cw),
                 y: d.y,
             };
-            run_post_scroll(&st.core.parent_connection, result)
+            let after_parent = run_post_scroll(&st.core.parent_connection, result);
+            Vec2 {
+                x: st.apply_overscroll(after_parent.x, cw),
+                y: after_parent.y,
+            }
         })
     };
 
@@ -1150,7 +1166,7 @@ where
 
     let get_scroll = {
         let st = state.clone();
-        Rc::new(move || -> f32 { st.core.axis.offset.get() })
+        Rc::new(move || -> f32 { st.core.axis.paint_offset() })
     };
 
     let set_scroll = {
@@ -1435,7 +1451,11 @@ where
                 x: d.x,
                 y: st.scroll_immediate(d.y, ch),
             };
-            run_post_scroll(&st.core.parent_connection, result)
+            let after_parent = run_post_scroll(&st.core.parent_connection, result);
+            Vec2 {
+                x: after_parent.x,
+                y: st.apply_overscroll(after_parent.y, ch),
+            }
         })
     };
 
@@ -1452,7 +1472,7 @@ where
 
     let get_scroll = {
         let st = state.clone();
-        Rc::new(move || -> f32 { st.core.axis.offset.get() })
+        Rc::new(move || -> f32 { st.core.axis.paint_offset() })
     };
 
     let set_scroll = {
