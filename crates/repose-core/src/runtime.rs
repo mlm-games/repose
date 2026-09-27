@@ -1036,19 +1036,28 @@ pub fn remember_with_key<T: 'static>(key: impl Into<String>, init: impl FnOnce()
         return existing;
     }
 
-    let has_wrong_type = COMPOSER.with(|composer| {
+    // Reaching here means the same-type early return above did not fire, so the
+    // key is either absent or held under a different type. Keep the two signals
+    // apart: fusing them made a type collision also log the "unbounded dynamic
+    // keys" message, and left the real key-count check unable to fire outside
+    // debug builds.
+    let (wrong_type, key_count_high) = COMPOSER.with(|composer| {
         let composer = composer.borrow();
-        if composer.keyed_slots.contains_key(&key) {
-            log::warn!(
-                "remember_with_key: key '{}' reused with a different type; replacing.",
-                key
-            );
-        }
-        cfg!(debug_assertions) && composer.keyed_slots.len() > 10_000
+        (
+            composer.keyed_slots.contains_key(&key),
+            composer.keyed_slots.len() > 10_000,
+        )
     });
-    if has_wrong_type {
+    if wrong_type {
         log::warn!(
-            "remember_with_key: more than 10k keys stored; are you generating unbounded dynamic keys?"
+            "remember_with_key: key '{}' reused with a different type; replacing.",
+            key
+        );
+    }
+    if key_count_high {
+        log::warn!(
+            "remember_with_key: {} keys stored; are you generating unbounded dynamic keys?",
+            COMPOSER.with(|composer| composer.borrow().keyed_slots.len())
         );
     }
 

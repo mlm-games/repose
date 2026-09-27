@@ -1065,11 +1065,7 @@ mod keyed_lifetime_tests {
     use repose_ui::overlay::OverlayHandle;
 
     fn entry_count(overlay: &OverlayHandle) -> usize {
-        overlay
-            .host(Modifier::new(), View::new(0, ViewKind::Box))
-            .children
-            .len()
-            - 1
+        overlay.entry_count()
     }
 
     fn compose_menu(scope: &Scope, overlay: &OverlayHandle, state: &Rc<MenuState>) {
@@ -1143,5 +1139,74 @@ mod keyed_lifetime_tests {
         let left = entry_count(&overlay);
         repose_core::animation::set_clock(Box::new(repose_core::animation::SystemClock));
         assert_eq!(left, 0, "entry survived the exit animation");
+    }
+}
+
+#[cfg(test)]
+mod cached_scope_overlay_tests {
+    use super::*;
+    use repose_core::runtime::{ComposeGuard, Scheduler};
+    use repose_core::scope::Scope;
+    use repose_ui::overlay::OverlayHandle;
+
+    thread_local! {
+        static RUNS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+    }
+
+    fn entry_count(overlay: &OverlayHandle) -> usize {
+        overlay.entry_count()
+    }
+
+    /// A menu hosted inside a `scope!` that serves from cache does not re-run, so
+    /// it never re-registers its overlay entry. The entry survives only because
+    /// the remembered guard is preserved for cached scopes.
+    ///
+    /// Guards against a tempting refactor: pruning overlay entries that were not
+    /// re-registered during a compose. `OverlayHandle::host` builds every
+    /// registered entry unconditionally, so a compose-anchored sweep cannot
+    /// distinguish an owner that re-composed from one being served from cache -
+    /// it makes an open menu vanish the moment its scope goes clean.
+    #[test]
+    fn open_menu_inside_a_cached_scope_keeps_its_entry() {
+        let scope = Scope::new();
+        let mut scheduler = Scheduler::new();
+        let overlay = OverlayHandle::new();
+        let state = Rc::new(MenuState::new());
+        state.open();
+
+        for _ in 0..3 {
+            let guard = ComposeGuard::begin();
+            // Mirrors the runtime: compose under the ambient overlay, then host
+            // the entries. `host` is what prunes unrefreshed entries.
+            repose_ui::overlay::with_ambient_overlay(overlay.clone(), || {
+                let content = scope.run(|| {
+                    repose_core::scope!("cached_menu_scope", &mut scheduler, [0u32], {
+                        RUNS.with(|c| c.set(c.get() + 1));
+                        DropdownMenu(
+                            state.clone(),
+                            Modifier::new(),
+                            Box(Modifier::new()),
+                            vec![DropdownMenuEntry::Item(DropdownMenuItem::new("A", || {}))],
+                            DropdownMenuConfig {
+                                min_width: Dp(100.0),
+                                ..Default::default()
+                            },
+                        )
+                    })
+                });
+                let _ = overlay.host(Modifier::new(), content);
+            });
+            drop(guard);
+            assert_eq!(
+                RUNS.with(|c| c.get()),
+                1,
+                "the scope must actually be served from cache for this test to mean anything"
+            );
+        }
+        assert_eq!(
+            entry_count(&overlay),
+            1,
+            "an open menu must survive its scope being served from cache"
+        );
     }
 }

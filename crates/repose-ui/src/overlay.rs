@@ -181,6 +181,13 @@ impl OverlayHandle {
         handlers.into_iter().any(|handler| handler())
     }
 
+    /// Number of live entries. Reads state directly rather than going through
+    /// [`Self::host`], which rebuilds every entry and so cannot be used to
+    /// observe what is registered.
+    pub fn entry_count(&self) -> usize {
+        self.inner.borrow().entries.len()
+    }
+
     pub fn dismiss(&self, id: u64) -> bool {
         let mut inner = self.inner.borrow_mut();
         let before = inner.entries.len();
