@@ -122,10 +122,11 @@ impl ImageSourceRect {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 #[non_exhaustive]
 pub enum ImageFit {
     /// ContentScale.Fit - default in Compose Image
+    #[default]
     Contain,
     /// ContentScale.Crop
     Cover,
@@ -330,24 +331,41 @@ pub struct Scene {
     pub nodes: Vec<SceneNode>,
 }
 
-/// Rarely-tweaked text style properties bundled for ergonomic Default.
-#[derive(Clone, Debug, PartialEq)]
-pub struct TextExtraStyle {
+/// Tunable text properties bundled for ergonomic [`Default`], so a
+/// [`SceneNode::Text`] stays `{ rect, text, color, size, style }` and simple
+/// nodes don't spell out every knob. `color` and `size` stay on the variant
+/// because a default for either would silently draw invisible text.
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct TextPaintStyle {
+    pub font_family: Option<&'static str>,
+    pub text_align: TextAlign,
+    pub font_weight: FontWeight,
+    pub font_style: FontStyle,
+    pub text_decoration: TextDecoration,
+    pub letter_spacing: Px,
+    pub line_height: Px,
     pub text_direction: TextDirection,
+    /// Whether the font renderer may synthesize bold/italic/small-caps.
     pub font_synthesis: FontSynthesis,
     pub baseline_shift: BaselineShift,
+    /// Fill, outline, or both.
     pub draw_style: DrawStyle,
+    /// URL for clickable link text.
+    pub url: Option<Arc<str>>,
+    /// OpenType font variation settings (e.g. "wght 700, opsz 24").
+    pub font_variation_settings: Option<Arc<str>>,
 }
 
-impl Default for TextExtraStyle {
-    fn default() -> Self {
-        Self {
-            text_direction: TextDirection::Ltr,
-            font_synthesis: FontSynthesis::Unspecified,
-            baseline_shift: BaselineShift::Unspecified,
-            draw_style: DrawStyle::Fill,
-        }
-    }
+/// How an image is sampled and placed inside its [`Rect`], bundled for
+/// ergonomic [`Default`]. `tint` stays on [`SceneNode::Image`] because
+/// untinted is an explicit choice, not a neutral one.
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub struct ImagePaintStyle {
+    pub fit: ImageFit,
+    pub filter: ImageFilter,
+    /// Sub-region of the source texture to sample.
+    pub source_rect: Option<ImageSourceRect>,
+    pub alignment: ImageAlignment,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -386,19 +404,7 @@ pub enum SceneNode {
         text: Arc<str>,
         color: Color,
         size: Px,
-        font_family: Option<&'static str>,
-        text_align: TextAlign,
-        font_weight: FontWeight,
-        font_style: FontStyle,
-        text_decoration: TextDecoration,
-        letter_spacing: Px,
-        line_height: Px,
-        /// Rarely-tweaked style properties, bundled for ergonomic Default.
-        extra_style: TextExtraStyle,
-        /// URL for clickable link text.
-        url: Option<Arc<str>>,
-        /// OpenType font variation settings (e.g. "wght 700, opsz 24").
-        font_variation_settings: Option<Arc<str>>,
+        style: TextPaintStyle,
     },
     Ellipse {
         rect: Rect,
@@ -423,10 +429,7 @@ pub enum SceneNode {
         rect: Rect,
         handle: ImageHandle,
         tint: Color,
-        fit: ImageFit,
-        filter: ImageFilter,
-        source_rect: Option<ImageSourceRect>,
-        alignment: ImageAlignment,
+        style: ImagePaintStyle,
     },
     /// Tinted A8 coverage mask: samples `handle` (registered with
     /// `register_coverage_a8`) as coverage and composites `color` with

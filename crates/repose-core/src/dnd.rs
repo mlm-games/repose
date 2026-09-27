@@ -4,8 +4,8 @@ use crate::geometry::Rect;
 use crate::input::{Modifiers, PointerKind};
 use crate::runtime::{Frame, HitRegion};
 use crate::shortcuts::DragAction;
-use crate::text::{FontStyle, FontWeight, TextAlign, TextDecoration};
-use crate::view::{Scene, SceneNode};
+use crate::text::FontWeight;
+use crate::view::{Scene, SceneNode, TextPaintStyle};
 use std::cell::RefCell;
 use std::{any::Any, path::PathBuf, rc::Rc, sync::Arc};
 use web_time::Instant;
@@ -338,16 +338,10 @@ fn draw_label_chip(scene: &mut Scene, pointer: Vec2, label: &str, accent: Color,
         text: Arc::<str>::from(label),
         color: Color::WHITE,
         size: font_px,
-        font_family: None,
-        text_align: TextAlign::Unspecified,
-        font_weight: FontWeight::MEDIUM,
-        font_style: FontStyle::Normal,
-        text_decoration: TextDecoration::default(),
-        letter_spacing: Px::ZERO,
-        line_height: Px::ZERO,
-        extra_style: Default::default(),
-        url: None,
-        font_variation_settings: None,
+        style: TextPaintStyle {
+            font_weight: FontWeight::MEDIUM,
+            ..Default::default()
+        },
     });
 }
 

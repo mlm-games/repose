@@ -53,8 +53,8 @@ pub use crate::text::{
 pub use crate::units::{lerp_dp, lerp_px, lerp_sp, max_dp, min_dp, size_px_to_dp};
 pub use crate::view::{
     BlendMode, BoxWithConstraintsScope, ImageAlignment, ImageFilter, ImageFit, ImageHandle,
-    ImageSourceRect, PaintDesc, Scene, SceneNode, SubcomposeScope, TextExtraStyle, TextOverflow,
-    VectorMeshData, VectorVertex, View, ViewId, ViewKind,
+    ImagePaintStyle, ImageSourceRect, PaintDesc, Scene, SceneNode, SubcomposeScope, TextOverflow,
+    TextPaintStyle, VectorMeshData, VectorVertex, View, ViewId, ViewKind,
 };
 pub use crate::visual::{ControlPainter, ControlVisual, ControlVisualSet, ControlVisualState};
 pub use taffy::{

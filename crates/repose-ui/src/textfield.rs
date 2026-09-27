@@ -2678,19 +2678,20 @@ pub(crate) fn paint_text_field(
                 text: Arc::from(render_txt),
                 color: mul_alpha_color(txt_col, alpha_accum),
                 size: Px(font_val),
-                font_family: metrics.font_family,
-                text_align: ts.text_align,
-                font_weight: FontWeight(metrics.font_weight),
-                font_style: match metrics.font_style {
-                    1 => FontStyle::Italic,
-                    _ => FontStyle::Normal,
+                style: TextPaintStyle {
+                    font_family: metrics.font_family,
+                    text_align: ts.text_align,
+                    font_weight: FontWeight(metrics.font_weight),
+                    font_style: match metrics.font_style {
+                        1 => FontStyle::Italic,
+                        _ => FontStyle::Normal,
+                    },
+                    text_decoration: ts.text_decoration.unwrap_or_default(),
+                    letter_spacing: Px(metrics.letter_spacing_px),
+                    line_height: Px(metrics.line_height_px),
+                    font_variation_settings: metrics.font_variation_settings.clone().map(Arc::from),
+                    ..Default::default()
                 },
-                text_decoration: ts.text_decoration.unwrap_or_default(),
-                letter_spacing: Px(metrics.letter_spacing_px),
-                line_height: Px(metrics.line_height_px),
-                extra_style: Default::default(),
-                url: None,
-                font_variation_settings: metrics.font_variation_settings.clone().map(Arc::from),
             });
 
             // Caret (only when enabled && !readOnly)
@@ -2762,21 +2763,28 @@ pub(crate) fn paint_text_field(
                         h: line_h,
                     },
                     text: Arc::from(text_input.hint.clone()),
-                    color: mul_alpha_color(ts.color.unwrap_or(th.on_surface_variant), alpha_accum),
+                    color: mul_alpha_color(
+                        ts.color.unwrap_or(th.on_surface_variant),
+                        alpha_accum,
+                    ),
                     size: Px(font_val),
-                    font_family: metrics.font_family,
-                    text_align: ts.text_align,
-                    font_weight: FontWeight(metrics.font_weight),
-                    font_style: match metrics.font_style {
-                        1 => FontStyle::Italic,
-                        _ => FontStyle::Normal,
+                    style: TextPaintStyle {
+                        font_family: metrics.font_family,
+                        text_align: ts.text_align,
+                        font_weight: FontWeight(metrics.font_weight),
+                        font_style: match metrics.font_style {
+                            1 => FontStyle::Italic,
+                            _ => FontStyle::Normal,
+                        },
+                        text_decoration: ts.text_decoration.unwrap_or_default(),
+                        letter_spacing: Px(metrics.letter_spacing_px),
+                        line_height: Px(metrics.line_height_px),
+                        font_variation_settings: metrics
+                            .font_variation_settings
+                            .clone()
+                            .map(Arc::from),
+                        ..Default::default()
                     },
-                    text_decoration: ts.text_decoration.unwrap_or_default(),
-                    letter_spacing: Px(metrics.letter_spacing_px),
-                    line_height: Px(metrics.line_height_px),
-                    extra_style: Default::default(),
-                    url: None,
-                    font_variation_settings: metrics.font_variation_settings.clone().map(Arc::from),
                 });
             } else {
                 for i in first_visible_line..last_visible_line {
@@ -2796,22 +2804,23 @@ pub(crate) fn paint_text_field(
                         text: Arc::<str>::from(ln),
                         color: mul_alpha_color(ts.color.unwrap_or(th.on_surface), alpha_accum),
                         size: Px(font_val),
-                        font_family: metrics.font_family,
-                        text_align: ts.text_align,
-                        font_weight: FontWeight(metrics.font_weight),
-                        font_style: match metrics.font_style {
-                            1 => FontStyle::Italic,
-                            _ => FontStyle::Normal,
+                        style: TextPaintStyle {
+                            font_family: metrics.font_family,
+                            text_align: ts.text_align,
+                            font_weight: FontWeight(metrics.font_weight),
+                            font_style: match metrics.font_style {
+                                1 => FontStyle::Italic,
+                                _ => FontStyle::Normal,
+                            },
+                            text_decoration: ts.text_decoration.unwrap_or_default(),
+                            letter_spacing: Px(metrics.letter_spacing_px),
+                            line_height: Px(metrics.line_height_px),
+                            font_variation_settings: metrics
+                                .font_variation_settings
+                                .clone()
+                                .map(Arc::from),
+                            ..Default::default()
                         },
-                        text_decoration: ts.text_decoration.unwrap_or_default(),
-                        letter_spacing: Px(metrics.letter_spacing_px),
-                        line_height: Px(metrics.line_height_px),
-                        extra_style: Default::default(),
-                        url: None,
-                        font_variation_settings: metrics
-                            .font_variation_settings
-                            .clone()
-                            .map(Arc::from),
                     });
                 }
             }
@@ -2987,20 +2996,20 @@ pub(crate) fn paint_text_field(
                 text: Arc::from(text_input.hint.clone()),
                 color: mul_alpha_color(th.on_surface_variant, alpha_accum),
                 size: Px(font_val),
-                font_family: metrics.font_family,
-                text_align: TextAlign::Unspecified,
-                font_weight: FontWeight(metrics.font_weight),
-                font_style: if metrics.font_style == 1 {
-                    FontStyle::Italic
-                } else {
-                    FontStyle::Normal
+                style: TextPaintStyle {
+                    font_family: metrics.font_family,
+                    font_weight: FontWeight(metrics.font_weight),
+                    font_style: if metrics.font_style == 1 {
+                        FontStyle::Italic
+                    } else {
+                        FontStyle::Normal
+                    },
+                    text_decoration: ts.text_decoration.unwrap_or_default(),
+                    letter_spacing: Px(metrics.letter_spacing_px),
+                    line_height: Px(metrics.line_height_px),
+                    font_variation_settings: metrics.font_variation_settings.clone().map(Arc::from),
+                    ..Default::default()
                 },
-                text_decoration: ts.text_decoration.unwrap_or_default(),
-                letter_spacing: Px(metrics.letter_spacing_px),
-                line_height: Px(metrics.line_height_px),
-                extra_style: Default::default(),
-                url: None,
-                font_variation_settings: metrics.font_variation_settings.clone().map(Arc::from),
             });
         } else if text_input.multiline {
             let render_text = if text_input.value.is_empty() {

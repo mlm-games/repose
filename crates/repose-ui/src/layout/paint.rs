@@ -1694,25 +1694,25 @@ impl LayoutEngine {
                                 text: Arc::<str>::from(seg_text.to_string().into_boxed_str()),
                                 color: mul_alpha_color(seg_color, alpha_accum),
                                 size: Px(info.px),
-                                font_family: info.font_family,
-                                text_align: *text_align,
-                                font_weight: FontWeight(info.font_weight),
-                                font_style: if info.font_style == 1 {
-                                    FontStyle::Italic
-                                } else {
-                                    FontStyle::Normal
-                                },
-                                text_decoration: info.decoration,
-                                letter_spacing: Px(font_px(info.letter_spacing)),
-                                line_height: Px(font_px(info.line_height)),
-                                extra_style: TextExtraStyle {
+                                style: TextPaintStyle {
+                                    font_family: info.font_family,
+                                    text_align: *text_align,
+                                    font_weight: FontWeight(info.font_weight),
+                                    font_style: if info.font_style == 1 {
+                                        FontStyle::Italic
+                                    } else {
+                                        FontStyle::Normal
+                                    },
+                                    text_decoration: info.decoration,
+                                    letter_spacing: Px(font_px(info.letter_spacing)),
+                                    line_height: Px(font_px(info.line_height)),
                                     text_direction: info.text_direction,
                                     font_synthesis: info.font_synthesis,
                                     baseline_shift: info.baseline_shift,
                                     draw_style: info.draw_style.clone(),
+                                    url: info.url.clone(),
+                                    font_variation_settings: info.font_variation_settings.clone(),
                                 },
-                                url: info.url.clone(),
-                                font_variation_settings: info.font_variation_settings.clone(),
                             });
                             if let Some(url) = &info.url {
                                 let mut link_hash = view_id.wrapping_mul(0x9E3779B97F4A7C15);
@@ -1776,19 +1776,19 @@ impl LayoutEngine {
                             text: Arc::<str>::from(ln.clone()),
                             color: mul_alpha_color(*color, alpha_accum),
                             size: Px(size_px),
-                            font_family: *font_family,
-                            text_align: *text_align,
-                            font_weight: *font_weight,
-                            font_style: *font_style,
-                            text_decoration: *text_decoration,
-                            letter_spacing: Px(font_px(*letter_spacing)),
-                            line_height: Px(font_px(*line_height)),
-                            extra_style: TextExtraStyle {
+                            style: TextPaintStyle {
+                                font_family: *font_family,
+                                text_align: *text_align,
+                                font_weight: *font_weight,
+                                font_style: *font_style,
+                                text_decoration: *text_decoration,
+                                letter_spacing: Px(font_px(*letter_spacing)),
+                                line_height: Px(font_px(*line_height)),
                                 draw_style: draw_style.clone(),
+                                url: url.clone(),
+                                font_variation_settings: font_variation_settings.clone(),
                                 ..Default::default()
                             },
-                            url: url.clone(),
-                            font_variation_settings: font_variation_settings.clone(),
                         });
                         if let Some(link_url) = url {
                             let link_id = view_id ^ 0x8000_0000_0000_0000;
@@ -1841,10 +1841,12 @@ impl LayoutEngine {
                     rect,
                     handle: *handle,
                     tint: mul_alpha_color(*tint, alpha_accum),
-                    fit: *fit,
-                    filter: *filter,
-                    source_rect: *source_rect,
-                    alignment: *alignment,
+                    style: ImagePaintStyle {
+                        fit: *fit,
+                        filter: *filter,
+                        source_rect: *source_rect,
+                        alignment: *alignment,
+                    },
                 });
             }
             ViewKind::Box if modifier.text_input.is_some() => {

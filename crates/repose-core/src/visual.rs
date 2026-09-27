@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use crate::{
-    Brush, Color, ImageAlignment, ImageFilter, ImageFit, ImageHandle, ImageSourceRect, Px, Rect,
-    Scene, SceneNode,
+    Brush, Color, ImageAlignment, ImageFilter, ImageFit, ImageHandle, ImagePaintStyle,
+    ImageSourceRect, Px, Rect, Scene, SceneNode,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -113,10 +113,12 @@ impl ControlVisual {
                 rect,
                 handle: *handle,
                 tint: scale_color_alpha(*tint, state.alpha),
-                fit: *fit,
-                filter: *filter,
-                source_rect: *source_rect,
-                alignment: *alignment,
+                style: ImagePaintStyle {
+                    fit: *fit,
+                    filter: *filter,
+                    source_rect: *source_rect,
+                    alignment: *alignment,
+                },
             }),
             Self::Custom(painter) => painter(scene, rect, state),
         }
