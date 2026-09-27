@@ -366,7 +366,7 @@ impl LazyScrollCore {
     fn new() -> Self {
         Self {
             axis: LazyAxis::new(),
-            physics: RefCell::new(ScrollPhysics::new(0.90, 5.0, 10.0)),
+            physics: RefCell::new(ScrollPhysics::new()),
             parent_connection: RefCell::new(None),
             cache_revision: RefCell::new(None),
         }

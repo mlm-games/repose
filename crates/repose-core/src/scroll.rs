@@ -166,6 +166,13 @@ impl ScrollBinding {
 
 const OVERSHOOT_DECAY_PER_60HZ: f32 = 0.78;
 
+/// Per-60Hz-frame velocity decay at low speed. Higher stops the fling sooner.
+pub const SCROLL_DECAY_PER_60HZ: f32 = 0.85;
+/// Fling is abandoned once speed falls below this (px/s).
+pub const SCROLL_STOP_VELOCITY: f32 = 15.0;
+/// A gesture must exceed this speed (px/s) to leave a fling behind.
+pub const SCROLL_FLING_ACTIVATE_VELOCITY: f32 = 50.0;
+
 /// Clamp a scroll offset into `[0, max]` with NaN/inf sanitization.
 /// `f32::clamp` propagates NaN, so one bad write would poison the offset
 /// signal permanently (every later frame reads NaN). Central helper so all
@@ -187,18 +194,38 @@ pub struct ScrollPhysics {
     last_t: Instant,
     last_input_t: Instant,
     pub(crate) animating: bool,
+    decay_per_60hz: f32,
     stop_velocity: f32,
     input_activate_velocity: f32,
 }
 
+impl Default for ScrollPhysics {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ScrollPhysics {
-    pub fn new(_decay_per_60hz: f32, stop_velocity: f32, input_activate_velocity: f32) -> Self {
+    pub fn new() -> Self {
+        Self::with_tuning(
+            SCROLL_DECAY_PER_60HZ,
+            SCROLL_STOP_VELOCITY,
+            SCROLL_FLING_ACTIVATE_VELOCITY,
+        )
+    }
+
+    pub fn with_tuning(
+        decay_per_60hz: f32,
+        stop_velocity: f32,
+        input_activate_velocity: f32,
+    ) -> Self {
         let now = Instant::now();
         Self {
             vel: 0.0,
             last_t: now,
             last_input_t: now,
             animating: false,
+            decay_per_60hz,
             stop_velocity,
             input_activate_velocity,
         }
@@ -253,7 +280,7 @@ impl ScrollPhysics {
         }
         let speed = self.vel.abs();
         let t = (speed / 4000.0).min(1.0);
-        let effective_decay = 0.85 + t * 0.10;
+        let effective_decay = (self.decay_per_60hz + t * 0.10).min(0.999);
         let decay = effective_decay.powf(dt * 60.0);
         self.vel = vel0 * decay;
         if self.vel.abs() < self.stop_velocity {
@@ -295,7 +322,7 @@ impl ScrollState {
             scroll_offset: signal(0.0),
             viewport_height: signal(0.0),
             content_height: signal(0.0),
-            physics: RefCell::new(ScrollPhysics::new(0.90, 15.0, 50.0)),
+            physics: RefCell::new(ScrollPhysics::new()),
             overscroll: signal(0.0),
             overscroll_enabled: Cell::new(true),
             parent_connection: Rc::new(RefCell::new(None)),
@@ -583,7 +610,7 @@ impl HorizontalScrollState {
             scroll_offset: signal(0.0),
             viewport_width: signal(0.0),
             content_width: signal(0.0),
-            physics: RefCell::new(ScrollPhysics::new(0.90, 15.0, 50.0)),
+            physics: RefCell::new(ScrollPhysics::new()),
             overscroll: signal(0.0),
             overscroll_enabled: Cell::new(true),
             parent_connection: Rc::new(RefCell::new(None)),
@@ -847,8 +874,8 @@ impl ScrollStateXY {
             vp_h: signal(0.0),
             c_w: signal(0.0),
             c_h: signal(0.0),
-            physics_x: RefCell::new(ScrollPhysics::new(0.90, 15.0, 50.0)),
-            physics_y: RefCell::new(ScrollPhysics::new(0.90, 15.0, 50.0)),
+            physics_x: RefCell::new(ScrollPhysics::new()),
+            physics_y: RefCell::new(ScrollPhysics::new()),
             os_x: signal(0.0),
             os_y: signal(0.0),
             overscroll_enabled: Cell::new(true),
