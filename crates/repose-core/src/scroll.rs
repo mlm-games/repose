@@ -194,6 +194,8 @@ pub struct ScrollPhysics {
     last_t: Instant,
     last_input_t: Instant,
     pub(crate) animating: bool,
+    /// Set when a delta arrived since the last integration.
+    input_pending: bool,
     decay_per_60hz: f32,
     stop_velocity: f32,
     input_activate_velocity: f32,
@@ -225,10 +227,20 @@ impl ScrollPhysics {
             last_t: now,
             last_input_t: now,
             animating: false,
+            input_pending: false,
             decay_per_60hz,
             stop_velocity,
             input_activate_velocity,
         }
+    }
+
+    /// Drop any in-flight fling so a new gesture takes over cleanly. Compose
+    /// gets this from `MutatorMutex`: a new `scroll(MutatePriority.UserInput)`
+    /// cancels the fling coroutine holding the lock, so a drag mid-fling
+    /// follows the finger instead of being yanked by the stale velocity.
+    pub fn cancel_fling(&mut self) {
+        self.vel = 0.0;
+        self.animating = false;
     }
 
     pub fn record_input(&mut self, consumed: f32) {
@@ -245,6 +257,7 @@ impl ScrollPhysics {
         const MAX_VEL: f32 = 8000.0;
         self.vel = self.vel.clamp(-MAX_VEL, MAX_VEL);
         self.animating = self.vel.abs() > self.input_activate_velocity;
+        self.input_pending = true;
     }
 
     fn dt(&mut self) -> f32 {
@@ -255,6 +268,15 @@ impl ScrollPhysics {
     }
 
     pub fn tick_integrate(&mut self, current: f32, min: f32, max: f32) -> Option<f32> {
+        if self.input_pending {
+            // A delta was applied since the last integration, so this frame's
+            // motion is already accounted for. Compose feeds velocity from the
+            // gesture layer and runs no integrator mid-drag; we infer velocity
+            // from the same delta stream we also apply, so integrating here
+            // would move the surface by roughly 2x.
+            self.input_pending = false;
+            return None;
+        }
         if !self.animating {
             return None;
         }
@@ -353,7 +375,7 @@ impl ScrollState {
                 if available.x.abs() < 0.001 && available.y.abs() < 0.001 {
                     return Vec2::ZERO;
                 }
-                let leftover_y = this.scroll_immediate(available.y);
+                let leftover_y = this.scroll_nested(available.y);
                 let after = run_post_scroll(
                     &pc,
                     Vec2 {
@@ -419,7 +441,22 @@ impl ScrollState {
         self.scroll_offset.get()
     }
 
+    /// Apply a scroll delta from real user input. Pre-empts any in-flight
+    /// fling, matching Compose where a new `scroll(UserInput)` cancels the
+    /// fling coroutine holding the `MutatorMutex`.
     pub fn scroll_immediate(&self, dy: f32) -> f32 {
+        self.physics.borrow_mut().cancel_fling();
+        self.apply_delta(dy)
+    }
+
+    /// Apply a delta that arrived as leftover from a nested child. This is
+    /// Compose's `dispatchRawDelta`: it bypasses mutual exclusion, so it must
+    /// not cancel this container's own fling.
+    pub fn scroll_nested(&self, dy: f32) -> f32 {
+        self.apply_delta(dy)
+    }
+
+    fn apply_delta(&self, dy: f32) -> f32 {
         let dy = if dy.is_finite() { dy } else { 0.0 };
         let before = self.scroll_offset.get();
         let vh = self.viewport_height.get();
@@ -642,7 +679,7 @@ impl HorizontalScrollState {
                 if available.x.abs() < 0.001 && available.y.abs() < 0.001 {
                     return Vec2::ZERO;
                 }
-                let leftover_x = this.scroll_immediate(available.x);
+                let leftover_x = this.scroll_nested(available.x);
                 let after = run_post_scroll(
                     &pc,
                     Vec2 {
@@ -698,7 +735,20 @@ impl HorizontalScrollState {
         self.scroll_offset.get()
     }
 
+    /// Apply a scroll delta from real user input; pre-empts any in-flight
+    /// fling. See [`ScrollState::scroll_immediate`].
     pub fn scroll_immediate(&self, dx: f32) -> f32 {
+        self.physics.borrow_mut().cancel_fling();
+        self.apply_delta(dx)
+    }
+
+    /// Apply leftover from a nested child without cancelling this container's
+    /// own fling. See [`ScrollState::scroll_nested`].
+    pub fn scroll_nested(&self, dx: f32) -> f32 {
+        self.apply_delta(dx)
+    }
+
+    fn apply_delta(&self, dx: f32) -> f32 {
         let dx = if dx.is_finite() { dx } else { 0.0 };
         let before = self.scroll_offset.get();
         let max_off = (self.content_width.get() - self.viewport_width.get()).max(0.0);
@@ -912,7 +962,7 @@ impl ScrollStateXY {
                 if available.x.abs() < 0.001 && available.y.abs() < 0.001 {
                     return Vec2::ZERO;
                 }
-                let after = this.scroll_immediate(available);
+                let after = this.scroll_nested(available);
                 let after2 = run_post_scroll(&pc, after);
                 Vec2 {
                     x: available.x - after2.x,
@@ -1006,7 +1056,21 @@ impl ScrollStateXY {
         }
         leftover
     }
+    /// Apply a scroll delta from real user input; pre-empts any in-flight
+    /// fling. See [`ScrollState::scroll_immediate`].
     pub fn scroll_immediate(&self, d: Vec2) -> Vec2 {
+        self.physics_x.borrow_mut().cancel_fling();
+        self.physics_y.borrow_mut().cancel_fling();
+        self.apply_delta(d)
+    }
+
+    /// Apply leftover from a nested child without cancelling this container's
+    /// own fling. See [`ScrollState::scroll_nested`].
+    pub fn scroll_nested(&self, d: Vec2) -> Vec2 {
+        self.apply_delta(d)
+    }
+
+    fn apply_delta(&self, d: Vec2) -> Vec2 {
         let d = Vec2 {
             x: if d.x.is_finite() { d.x } else { 0.0 },
             y: if d.y.is_finite() { d.y } else { 0.0 },
