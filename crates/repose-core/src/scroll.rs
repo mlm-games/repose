@@ -172,6 +172,8 @@ pub const SCROLL_DECAY_PER_60HZ: f32 = 0.85;
 pub const SCROLL_STOP_VELOCITY: f32 = 15.0;
 /// A gesture must exceed this speed (px/s) to leave a fling behind.
 pub const SCROLL_FLING_ACTIVATE_VELOCITY: f32 = 50.0;
+/// Rubber-band asymptote: overscroll never stretches past this many px.
+pub const SCROLL_OVERSROLL_BAND_MAX: f32 = 150.0;
 
 /// Clamp a scroll offset into `[0, max]` with NaN/inf sanitization.
 /// `f32::clamp` propagates NaN, so one bad write would poison the offset
@@ -183,6 +185,76 @@ fn clamp_offset(off: f32, max: f32) -> f32 {
         off.clamp(0.0, max)
     } else {
         0.0
+    }
+}
+
+/// Asymptotic rubber band: never reaches `max`, so pulling harder always
+/// moves a little more without ever running away.
+pub fn rubber_band(amount: f32, max: f32) -> f32 {
+    let abs_val = amount.abs();
+    if abs_val <= 0.0 {
+        return 0.0;
+    }
+    (1.0 - 1.0 / (1.0 + abs_val / max)) * max * amount.signum()
+}
+
+/// Fold `leftover` into one axis's rubber band after the nested parent chain
+/// has declined it. Returns whatever is still unconsumed.
+pub fn os_scroll_axis(
+    off: &Signal<f32>,
+    os: &Signal<f32>,
+    overscroll_enabled: bool,
+    max_off: f32,
+    before: f32,
+    leftover: f32,
+    physics: &RefCell<ScrollPhysics>,
+) -> f32 {
+    if !overscroll_enabled || leftover.abs() < 0.001 {
+        return leftover;
+    }
+    let os_val = os.get();
+    // Recovering from an active rubber band: absorb the reverse delta first.
+    if os_val.abs() > 0.5 && os_val.signum() * leftover < 0.0 {
+        let reduction = leftover.abs().min(os_val.abs());
+        os.set(os_val - os_val.signum() * reduction);
+        let remainder = leftover - leftover.signum() * reduction;
+        if remainder.abs() > 0.5 {
+            let new_off = clamp_offset(before + remainder, max_off);
+            off.set(new_off);
+            let consumed = new_off - before;
+            physics.borrow_mut().record_input(consumed);
+            return remainder - consumed;
+        }
+        return 0.0;
+    }
+
+    // At the edge, pushing further: stretch the rubber band.
+    let at_edge = (before <= 0.0 && leftover < 0.0) || (before >= max_off && leftover > 0.0);
+    if max_off > 5.0 && at_edge && leftover.abs() > 0.5 {
+        os.set(os_val + rubber_band(leftover, SCROLL_OVERSROLL_BAND_MAX));
+        physics.borrow_mut().record_input(0.0);
+        return 0.0;
+    }
+    leftover
+}
+
+/// Decay one axis's rubber band back to rest. Returns true while it is active.
+pub fn tick_os_axis(os: &Signal<f32>, enabled: bool, dt: f32) -> bool {
+    if !enabled {
+        return false;
+    }
+    let v = os.get();
+    if v.abs() > 0.5 {
+        let decayed = v * OVERSHOOT_DECAY_PER_60HZ.powf(dt * 60.0);
+        if decayed.abs() < 0.5 {
+            os.set(0.0);
+        } else {
+            os.set(decayed);
+        }
+        request_frame();
+        true
+    } else {
+        false
     }
 }
 
@@ -474,48 +546,17 @@ impl ScrollState {
     /// post-scroll) into the rubber-band overscroll. Returns the amount still
     /// unconsumed. Overscroll deliberately runs LAST so parents get first dibs.
     pub fn apply_overscroll(&self, leftover: f32) -> f32 {
-        if !self.overscroll_enabled.get() || leftover.abs() < 0.001 {
-            return leftover;
-        }
-        let os = self.overscroll.get();
         let vh = self.viewport_height.get();
         let ch = self.content_height.get();
-        let max_off = (ch - vh).max(0.0);
-        let before = self.scroll_offset.get();
-
-        // Recovering from an active rubber band: absorb the reverse delta first.
-        if os.abs() > 0.5 && os.signum() * leftover < 0.0 {
-            let reduction = leftover.abs().min(os.abs());
-            self.overscroll.set(os - os.signum() * reduction);
-            let remainder = leftover - leftover.signum() * reduction;
-            if remainder.abs() > 0.5 {
-                let new_off = clamp_offset(before + remainder, max_off);
-                self.scroll_offset.set(new_off);
-                let consumed = new_off - before;
-                self.physics.borrow_mut().record_input(consumed);
-                return remainder - consumed;
-            }
-            return 0.0;
-        }
-
-        // At the edge, pushing further: stretch the rubber band.
-        let at_edge = (before <= 0.0 && leftover < 0.0) || (before >= max_off && leftover > 0.0);
-        if max_off > 5.0 && at_edge && leftover.abs() > 0.5 {
-            let bandied = Self::rubber_band(leftover, 150.0);
-            self.overscroll.set(os + bandied);
-            self.physics.borrow_mut().record_input(0.0);
-            return 0.0;
-        }
-        leftover
-    }
-
-    fn rubber_band(amount: f32, max: f32) -> f32 {
-        let sign = amount.signum();
-        let abs_val = amount.abs();
-        if abs_val <= 0.0 {
-            return 0.0;
-        }
-        (1.0 - 1.0 / (1.0 + abs_val / max)) * max * sign
+        os_scroll_axis(
+            &self.scroll_offset,
+            &self.overscroll,
+            self.overscroll_enabled.get(),
+            (ch - vh).max(0.0),
+            self.scroll_offset.get(),
+            leftover,
+            &self.physics,
+        )
     }
 
     pub fn tick(&self) -> bool {
@@ -523,18 +564,8 @@ impl ScrollState {
         let dt = (now - self.prev_tick.get()).as_secs_f32().min(0.1);
         self.prev_tick.set(now);
 
-        if self.overscroll_enabled.get() {
-            let os = self.overscroll.get();
-            if os.abs() > 0.5 {
-                let decayed = os * OVERSHOOT_DECAY_PER_60HZ.powf(dt * 60.0);
-                if decayed.abs() < 0.5 {
-                    self.overscroll.set(0.0);
-                } else {
-                    self.overscroll.set(decayed);
-                }
-                request_frame();
-                return true;
-            }
+        if tick_os_axis(&self.overscroll, self.overscroll_enabled.get(), dt) {
+            return true;
         }
 
         let vh = self.viewport_height.get();
@@ -762,35 +793,16 @@ impl HorizontalScrollState {
 
     /// Feed leftover (after the nested parent chain) into rubber-band overscroll.
     pub fn apply_overscroll(&self, leftover: f32) -> f32 {
-        if !self.overscroll_enabled.get() || leftover.abs() < 0.001 {
-            return leftover;
-        }
-        let os = self.overscroll.get();
         let max_off = (self.content_width.get() - self.viewport_width.get()).max(0.0);
-        let before = self.scroll_offset.get();
-
-        if os.abs() > 0.5 && os.signum() * leftover < 0.0 {
-            let reduction = leftover.abs().min(os.abs());
-            self.overscroll.set(os - os.signum() * reduction);
-            let remainder = leftover - leftover.signum() * reduction;
-            if remainder.abs() > 0.5 {
-                let new_off = clamp_offset(before + remainder, max_off);
-                self.scroll_offset.set(new_off);
-                let consumed = new_off - before;
-                self.physics.borrow_mut().record_input(consumed);
-                return remainder - consumed;
-            }
-            return 0.0;
-        }
-
-        let at_edge = (before <= 0.0 && leftover < 0.0) || (before >= max_off && leftover > 0.0);
-        if max_off > 5.0 && at_edge && leftover.abs() > 0.5 {
-            let bandied = ScrollState::rubber_band(leftover, 150.0);
-            self.overscroll.set(os + bandied);
-            self.physics.borrow_mut().record_input(0.0);
-            return 0.0;
-        }
-        leftover
+        os_scroll_axis(
+            &self.scroll_offset,
+            &self.overscroll,
+            self.overscroll_enabled.get(),
+            max_off,
+            self.scroll_offset.get(),
+            leftover,
+            &self.physics,
+        )
     }
 
     pub fn tick(&self) -> bool {
@@ -798,18 +810,8 @@ impl HorizontalScrollState {
         let dt = (now - self.prev_tick.get()).as_secs_f32().min(0.1);
         self.prev_tick.set(now);
 
-        if self.overscroll_enabled.get() {
-            let os = self.overscroll.get();
-            if os.abs() > 0.5 {
-                let decayed = os * OVERSHOOT_DECAY_PER_60HZ.powf(dt * 60.0);
-                if decayed.abs() < 0.5 {
-                    self.overscroll.set(0.0);
-                } else {
-                    self.overscroll.set(decayed);
-                }
-                request_frame();
-                return true;
-            }
+        if tick_os_axis(&self.overscroll, self.overscroll_enabled.get(), dt) {
+            return true;
         }
 
         let max_off = (self.content_width.get() - self.viewport_width.get()).max(0.0);
@@ -1008,16 +1010,6 @@ impl ScrollStateXY {
         (self.off_x.get(), self.off_y.get())
     }
 
-    fn rubber_band(amount: f32, max: f32) -> f32 {
-        let sign = amount.signum();
-        let abs_val = amount.abs();
-        let result = if abs_val <= 0.0 {
-            0.0
-        } else {
-            (1.0 - 1.0 / (1.0 + abs_val / max)) * max
-        };
-        result * sign
-    }
     fn os_scroll_axis(
         off: &Signal<f32>,
         os: &Signal<f32>,
@@ -1049,8 +1041,7 @@ impl ScrollStateXY {
         // At the edge, pushing further: stretch the rubber band.
         let at_edge = (before <= 0.0 && leftover < 0.0) || (before >= max_off && leftover > 0.0);
         if max_off > 5.0 && at_edge && leftover.abs() > 0.5 {
-            let bandied = Self::rubber_band(leftover, 150.0);
-            os.set(os_val + bandied);
+            os.set(os_val + rubber_band(leftover, SCROLL_OVERSROLL_BAND_MAX));
             physics.borrow_mut().record_input(0.0);
             return 0.0;
         }
@@ -1123,32 +1114,13 @@ impl ScrollStateXY {
         );
         Vec2 { x: lx, y: ly }
     }
-    fn tick_os_axis(os: &Signal<f32>, enabled: bool, dt: f32) -> bool {
-        if !enabled {
-            return false;
-        }
-        let v = os.get();
-        if v.abs() > 0.5 {
-            let decayed = v * OVERSHOOT_DECAY_PER_60HZ.powf(dt * 60.0);
-            if decayed.abs() < 0.5 {
-                os.set(0.0);
-            } else {
-                os.set(decayed);
-            }
-            request_frame();
-            true
-        } else {
-            false
-        }
-    }
     pub fn tick(&self) -> bool {
         let now = Instant::now();
         let dt = (now - self.prev_tick.get()).as_secs_f32().min(0.1);
         self.prev_tick.set(now);
 
         if self.overscroll_enabled.get()
-            && (Self::tick_os_axis(&self.os_x, true, dt)
-                || Self::tick_os_axis(&self.os_y, true, dt))
+            && (tick_os_axis(&self.os_x, true, dt) || tick_os_axis(&self.os_y, true, dt))
         {
             return true;
         }
