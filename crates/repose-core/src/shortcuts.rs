@@ -548,12 +548,10 @@ fn install_runtime_map(state: &ShortcutState, key: String, map: ShortcutMap) -> 
             .iter()
             .position(|entry| entry.key == cleanup_key && entry.token == token)
         {
-            eprintln!("DBGMAPREMOVE key={cleanup_key}");
             installs.maps.remove(index);
         }
     });
     let disposer = register_runtime_cleanup(state, "map", &key, cleanup);
-    eprintln!("DBGMAP push key={key} ptr={:p}", state.runtime_installs);
     state.runtime_installs.borrow_mut().maps.push(RuntimeShortcutMapEntry {
         key,
         token,
@@ -586,12 +584,10 @@ fn install_runtime_handler(state: &ShortcutState, key: String, handler: Handler)
             .iter()
             .position(|entry| entry.key == cleanup_key && entry.token == token)
         {
-            eprintln!("DBGHANDREMOVE key={cleanup_key}");
             installs.handlers.remove(index);
         }
     });
     let disposer = register_runtime_cleanup(state, "handler", &key, cleanup);
-    eprintln!("DBGHAND push key={key} ptr={:p}", state.runtime_installs);
     state
         .runtime_installs
         .borrow_mut()
@@ -989,7 +985,6 @@ mod tests {
             let state = state.clone();
             let fired = fired.clone();
             scope.run(|| {
-                let _guard = ComposeGuard::begin();
                 with_runtime_state(&state, || {
                     crate::scope::scoped_effect_once(move || {
                         let mut map = ShortcutMap::new();
@@ -1020,10 +1015,14 @@ mod tests {
         let b = ShortcutState::new();
         let fired_a = Rc::new(Cell::new(0));
         let fired_b = Rc::new(Cell::new(0));
-        let scope_a = compose(&a, "a", &fired_a);
-        let scope_b = compose(&b, "b", &fired_b);
+        // One compose pass, as a real frame: a keyed slot that no longer gets
+        // read is collected at the end of the pass, so composing the two
+        // runtimes in separate passes would dispose the first one's effect.
+        let (scope_a, scope_b) = {
+            let _guard = ComposeGuard::begin();
+            (compose(&a, "a", &fired_a), compose(&b, "b", &fired_b))
+        };
         let chord = KeyChord::new(Key::Character('j'), Modifiers::default());
-        eprintln!("DBGTEST a ptr={:p} maps={} handlers={}", a.runtime_installs, a.runtime_installs.borrow().maps.len(), a.runtime_installs.borrow().handlers.len());
         let action_a = a.resolve_action(&chord).unwrap();
         let action_b = b.resolve_action(&chord).unwrap();
         assert!(a.handle(action_a));
