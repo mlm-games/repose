@@ -17,8 +17,8 @@ use std::time::Duration;
 use repose_core::animation::{AnimatedValue, AnimationSpec, Easing};
 use repose_core::animation_driver;
 use repose_core::{
-    Color, Dp, Indication, IndicationDrawNode, IndicationNodeFactory, InteractionSource, PressId,
-    Px, Rect, Scene, SceneNode, Vec2, remember_state_with_key, request_frame,
+    Color, Dp, Indication, IndicationDrawNode, IndicationNodeFactory, InteractionSource, Px, Rect,
+    Scene, SceneNode, Vec2, remember_state_with_key, request_frame,
 };
 
 const FADE_IN_MS: u64 = 75;
@@ -212,9 +212,11 @@ impl IndicationDrawNode for RippleDrawNode {
         let k_phase = format!("{}:ph", base);
         let phase = remember_state_with_key(&k_phase, || 0u8);
 
-        // Track last processed press ID to detect new presses
+        // Track last processed press ID to detect new presses. Seeded from the
+        // source: a press older than this node's state (the control was hidden,
+        // so its keyed ripple state was collected) is history, not a new press.
         let k_last_pid = format!("{}:lpid", base);
-        let last_pid = remember_state_with_key(&k_last_pid, || None::<PressId>);
+        let last_pid = remember_state_with_key(&k_last_pid, || current_pid);
 
         // Pending release flag -> set when release occurs before fade-in completes
         let k_release_pending = format!("{}:rpend", base);
@@ -434,14 +436,16 @@ mod tests {
         };
         let node = factory.create(&read_source);
         let scope = Scope::new();
+        let mut scene = Scene::default();
+        draw(node.as_ref(), &scope, &mut scene);
+        scene.nodes.clear();
+
         let press = Interaction::new_press(Vec2 { x: 20.0, y: 20.0 });
         let press_id = match press {
             Interaction::Press(id, _) => id,
             _ => unreachable!(),
         };
         source.emit(press);
-
-        let mut scene = Scene::default();
         draw(node.as_ref(), &scope, &mut scene);
         clock.t += Duration::from_millis(80);
         set_clock(Box::new(clock.clone()));
@@ -466,6 +470,75 @@ mod tests {
                 .nodes
                 .iter()
                 .any(|node| matches!(node, SceneNode::Ellipse { .. }))
+        );
+
+        let base = format!("rp:{:p}", read_source.stable_id());
+        animation_driver::unregister(&format!("{base}:drv:a"));
+        animation_driver::unregister(&format!("{base}:drv:r"));
+        animation_driver::unregister(&format!("{base}:drv:c"));
+        scope.dispose();
+        set_clock(Box::new(SystemClock));
+    }
+
+    #[test]
+    fn remount_after_press_does_not_replay_ripple() {
+        let mut clock = TestClock { t: Instant::now() };
+        set_clock(Box::new(clock.clone()));
+        let source = MutableInteractionSource::new();
+        let read_source = source.source();
+        let factory = RippleNodeFactory {
+            config: RippleConfig::default(),
+        };
+        let node = factory.create(&read_source);
+        let scope = Scope::new();
+        let mut scene = Scene::default();
+
+        draw(node.as_ref(), &scope, &mut scene);
+        scene.nodes.clear();
+
+        let press = Interaction::new_press(Vec2 { x: 20.0, y: 20.0 });
+        let press_id = match press {
+            Interaction::Press(id, _) => id,
+            _ => unreachable!(),
+        };
+        source.emit(press);
+        draw(node.as_ref(), &scope, &mut scene);
+        clock.t += Duration::from_millis(80);
+        set_clock(Box::new(clock.clone()));
+        animation_driver::tick();
+        scene.nodes.clear();
+        draw(node.as_ref(), &scope, &mut scene);
+        assert!(
+            scene
+                .nodes
+                .iter()
+                .any(|node| matches!(node, SceneNode::Ellipse { .. }))
+        );
+
+        source.emit(Interaction::Release(press_id));
+
+        // Frame where the control is hidden: its keyed ripple state is unread,
+        // so the composer collects it while the interaction source survives.
+        {
+            let guard = ComposeGuard::begin();
+            drop(guard);
+        }
+
+        clock.t += Duration::from_millis(80);
+        set_clock(Box::new(clock.clone()));
+        scene.nodes.clear();
+        draw(node.as_ref(), &scope, &mut scene);
+        clock.t += Duration::from_millis(80);
+        set_clock(Box::new(clock.clone()));
+        animation_driver::tick();
+        scene.nodes.clear();
+        draw(node.as_ref(), &scope, &mut scene);
+        assert!(
+            !scene
+                .nodes
+                .iter()
+                .any(|node| matches!(node, SceneNode::Ellipse { .. })),
+            "ripple replayed a press that predates the remounted node"
         );
 
         let base = format!("rp:{:p}", read_source.stable_id());
