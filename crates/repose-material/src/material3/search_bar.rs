@@ -579,7 +579,7 @@ pub fn SearchBarInputField(
         .interaction_source
         .clone()
         .map(Rc::new)
-        .unwrap_or_else(|| Rc::new(MutableInteractionSource::new()));
+        .unwrap_or_else(|| remember_auto("interaction", MutableInteractionSource::new));
     let focused = source.source().collect_is_focused();
     let state = config.state;
     let query = state.as_ref().map(|state| state.query()).unwrap_or(query);
