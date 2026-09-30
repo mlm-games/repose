@@ -1897,3 +1897,96 @@ fn children_stretch_on_the_cross_axis_by_default() {
         "align_items(FLEX_START) must shrink-wrap"
     );
 }
+
+#[test]
+fn animated_visibility_overlay_fills_parent_height() {
+    use crate::ZStack;
+    use crate::anim_ext::{
+        AnimatedVisibility, AnimatedVisibilityConfig, EnterTransition, ExitTransition,
+    };
+    use repose_core::animation::{SystemClock, TestClock, set_clock};
+    use repose_core::animation_driver;
+    use repose_core::prelude::JustifyContent;
+    use repose_core::runtime::ComposeGuard;
+    use repose_core::scope::Scope;
+    use std::time::Duration;
+    use web_time::Instant;
+
+    let mut clock = TestClock { t: Instant::now() };
+    set_clock(Box::new(clock.clone()));
+
+    let config = AnimatedVisibilityConfig {
+        key: "overlay".into(),
+        enter: EnterTransition::ScaleIn { initial: 0.95 },
+        exit: ExitTransition::ScaleOut { target: 0.95 },
+        ..Default::default()
+    };
+    let scope = Scope::new();
+    let compose = |visible: bool| {
+        let guard = ComposeGuard::begin();
+        let view = scope.run(|| {
+            ZStack(Modifier::new().fill_max_size()).child(AnimatedVisibility(
+                visible,
+                Column(
+                    Modifier::new()
+                        .fill_max_size()
+                        .justify_content(JustifyContent::CENTER)
+                        .align_items(AlignItems::CENTER)
+                        .background(Color::from_rgb(0, 0, 0)),
+                )
+                .child(RBox(
+                    Modifier::new()
+                        .size(Dp(340.0), Dp(300.0))
+                        .background(Color::from_rgb(255, 255, 255)),
+                )),
+                config.clone(),
+            ))
+        });
+        drop(guard);
+        view
+    };
+
+    // Hidden, then shown: the second pass bumps the transition version so the
+    // enter wrapper exists, and a settled animation paints it opaque.
+    let _ = compose(false);
+    let _ = compose(true);
+    clock.t += Duration::from_secs(5);
+    set_clock(Box::new(clock.clone()));
+    animation_driver::tick();
+    let view = compose(true);
+
+    let mut engine = LayoutEngine::new();
+    let (scene, _, _) = engine.layout_frame(
+        &view,
+        (1280, 720),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
+    let rect_of = |c: Color| {
+        scene.nodes.iter().find_map(|n| match n {
+            SceneNode::Rect {
+                rect,
+                brush: Brush::Solid(b),
+                ..
+            } if *b == c => Some(*rect),
+            _ => None,
+        })
+    };
+
+    let scrim = rect_of(Color::from_rgb(0, 0, 0)).expect("scrim is painted");
+    assert_eq!(
+        (scrim.x, scrim.y, scrim.w, scrim.h),
+        (0.0, 0.0, 1280.0, 720.0),
+        "enter wrapper must not shrink a fill_max_size overlay to content height"
+    );
+    let panel = rect_of(Color::from_rgb(255, 255, 255)).expect("panel is painted");
+    assert_eq!(
+        (panel.x, panel.y, panel.w, panel.h),
+        (470.0, 210.0, 340.0, 300.0),
+        "overlay content must stay centered inside the full-height scrim"
+    );
+
+    scope.dispose();
+    set_clock(Box::new(SystemClock));
+}

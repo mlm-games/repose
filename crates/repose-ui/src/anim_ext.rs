@@ -279,11 +279,20 @@ fn transition_child_key(key: &str, version: u64, tag: &str) -> u64 {
     h.finish()
 }
 
-/// In-flow wrapper modifier for enter/exit transitions. Intentionally does NOT
-/// `fill_max_size()`: that would fight the parent `Column` (fill-max height on a
-/// flex child makes it grow to consume leftover space).
-fn flow_mod() -> Modifier {
-    Modifier::new().fill_max_width()
+/// In-flow wrapper modifier for enter/exit transitions. Never fills height
+/// unconditionally: that would fight the parent `Column` (fill-max height on a
+/// flex child makes it grow to consume leftover space). The wrapper mirrors
+/// the wrapped view's own height fill instead, so `fill_max_size` overlays
+/// keep their parent's height rather than degrading to content height under
+/// a hug-height wrapper.
+fn flow_mod(content: &View) -> Modifier {
+    let m = &content.modifier;
+    let mut modifier = Modifier::new().fill_max_width();
+    let explicit_height = m.height.is_some() || m.size.is_some() || m.required_size.is_some();
+    if !explicit_height && let Some(frac) = m.fill_max_h.or(m.fill_max) {
+        modifier = modifier.fill_max_height_frac(frac);
+    }
+    modifier
 }
 
 /// Hit tests must pass through so a closing overlay can never steal clicks
@@ -293,8 +302,8 @@ fn exit_mod_fill() -> Modifier {
 }
 
 /// In-flow variant for exiting content in a Column/Row.
-fn exit_mod_flow() -> Modifier {
-    Modifier::new().fill_max_width().hit_passthrough()
+fn exit_mod_flow(content: &View) -> Modifier {
+    flow_mod(content).hit_passthrough()
 }
 
 /// Which axis an expand/shrink transition animates.
@@ -817,7 +826,7 @@ fn apply_enter_inflow(
     match enter {
         EnterTransition::FadeIn => {
             let val = animate_f32_from(format!("{key}:v{version}:enter:fade"), 0.0, 1.0, *spec);
-            Box(flow_mod().alpha(val)).child(view)
+            Box(flow_mod(&view).alpha(val)).child(view)
         }
         EnterTransition::SlideIn { offset_x, offset_y } => {
             let offset = animate_vec2_from(
@@ -829,7 +838,7 @@ fn apply_enter_inflow(
                 Vec2::default(),
                 *spec,
             );
-            Box(flow_mod().translate_vec2(offset)).child(view)
+            Box(flow_mod(&view).translate_vec2(offset)).child(view)
         }
         EnterTransition::ScaleIn { initial } => {
             let s = animate_f32_from(
@@ -839,7 +848,7 @@ fn apply_enter_inflow(
                 *spec,
             );
             let a = animate_f32_from(format!("{key}:v{version}:enter:fade"), 0.0, 1.0, *spec);
-            Box(flow_mod().transform_origin(0.5, 0.5).scale(s).alpha(a)).child(view)
+            Box(flow_mod(&view).transform_origin(0.5, 0.5).scale(s).alpha(a)).child(view)
         }
         EnterTransition::ExpandVertically { clip, expand_from } => apply_size_fraction(
             &format!("{key}:meas"),
@@ -894,7 +903,7 @@ fn apply_enter_inflow_single(
     match enter {
         EnterTransition::FadeIn => {
             let val = animate_f32_from(format!("{key}:v{version}:enter:fade"), 0.0, 1.0, *spec);
-            Box(flow_mod().alpha(val)).child(view)
+            Box(flow_mod(&view).alpha(val)).child(view)
         }
         EnterTransition::SlideIn { offset_x, offset_y } => {
             let offset = animate_vec2_from(
@@ -906,7 +915,7 @@ fn apply_enter_inflow_single(
                 Vec2::default(),
                 *spec,
             );
-            Box(flow_mod().translate_vec2(offset)).child(view)
+            Box(flow_mod(&view).translate_vec2(offset)).child(view)
         }
         EnterTransition::ScaleIn { initial } => {
             let s = animate_f32_from(
@@ -915,7 +924,7 @@ fn apply_enter_inflow_single(
                 1.0,
                 *spec,
             );
-            Box(flow_mod().transform_origin(0.5, 0.5).scale(s)).child(view)
+            Box(flow_mod(&view).transform_origin(0.5, 0.5).scale(s)).child(view)
         }
         EnterTransition::ExpandVertically { clip, expand_from } => apply_size_fraction(
             &format!("{key}:meas"),
@@ -970,7 +979,7 @@ fn apply_exit_inflow(
     match exit {
         ExitTransition::FadeOut => {
             let val = animate_f32_from(format!("{key}:v{version}:exit:fade"), 1.0, 0.0, *spec);
-            Box(exit_mod_flow().alpha(val)).child(view)
+            Box(exit_mod_flow(&view).alpha(val)).child(view)
         }
         ExitTransition::SlideOut { offset_x, offset_y } => {
             let offset = animate_vec2_from(
@@ -982,12 +991,16 @@ fn apply_exit_inflow(
                 },
                 *spec,
             );
-            Box(exit_mod_flow().translate_vec2(offset)).child(view)
+            Box(exit_mod_flow(&view).translate_vec2(offset)).child(view)
         }
         ExitTransition::ScaleOut { target } => {
             let s = animate_f32_from(format!("{key}:v{version}:exit:scale"), 1.0, *target, *spec);
             let a = animate_f32_from(format!("{key}:v{version}:exit:fade"), 1.0, 0.0, *spec);
-            Box(exit_mod_flow().transform_origin(0.5, 0.5).scale(s).alpha(a)).child(view)
+            Box(exit_mod_flow(&view)
+                .transform_origin(0.5, 0.5)
+                .scale(s)
+                .alpha(a))
+            .child(view)
         }
         ExitTransition::ShrinkVertically {
             clip,
@@ -1048,7 +1061,7 @@ fn apply_exit_inflow_single(
     match exit {
         ExitTransition::FadeOut => {
             let val = animate_f32_from(format!("{key}:v{version}:exit:fade"), 1.0, 0.0, *spec);
-            Box(exit_mod_flow().alpha(val)).child(view)
+            Box(exit_mod_flow(&view).alpha(val)).child(view)
         }
         ExitTransition::SlideOut { offset_x, offset_y } => {
             let offset = animate_vec2_from(
@@ -1060,11 +1073,11 @@ fn apply_exit_inflow_single(
                 },
                 *spec,
             );
-            Box(exit_mod_flow().translate_vec2(offset)).child(view)
+            Box(exit_mod_flow(&view).translate_vec2(offset)).child(view)
         }
         ExitTransition::ScaleOut { target } => {
             let s = animate_f32_from(format!("{key}:v{version}:exit:scale"), 1.0, *target, *spec);
-            Box(exit_mod_flow().transform_origin(0.5, 0.5).scale(s)).child(view)
+            Box(exit_mod_flow(&view).transform_origin(0.5, 0.5).scale(s)).child(view)
         }
         ExitTransition::ShrinkVertically {
             clip,
