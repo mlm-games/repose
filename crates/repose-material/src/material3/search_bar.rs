@@ -222,8 +222,18 @@ pub struct AppBarWithSearchConfig {
     pub shadow_elevation: Dp,
     pub content_padding: PaddingValues,
     pub window_insets: WindowInsets,
+    /// Collapse progress in `0.0..=1.0` driving the container color lerp.
+    /// Ignored when [`scroll_behavior`](AppBarWithSearchConfig::scroll_behavior) is set.
     pub scroll_fraction: f32,
+    /// Vertical translate offset (negative = collapsed upward).
+    /// Ignored when [`scroll_behavior`](AppBarWithSearchConfig::scroll_behavior) is set.
     pub scroll_offset: f32,
+    /// Optional shared scroll behavior. When set, the bar reads
+    /// [`SearchBarScrollBehavior::offset`] and
+    /// [`SearchBarScrollBehavior::overlapped_fraction`] reactively itself,
+    /// so translate, height, drag and container color stay in sync without
+    /// manual wiring, like upstream `AppBarWithSearch`'s `scrollBehavior`.
+    pub scroll_behavior: Option<Rc<SearchBarScrollBehavior>>,
 }
 
 impl Default for AppBarWithSearchConfig {
@@ -239,6 +249,7 @@ impl Default for AppBarWithSearchConfig {
             window_insets: WindowInsets::default(),
             scroll_fraction: 0.0,
             scroll_offset: 0.0,
+            scroll_behavior: None,
         }
     }
 }
@@ -256,6 +267,10 @@ fn is_back_event(event: &KeyEvent) -> bool {
         event.modifiers,
     ));
     event.key == Key::Escape || matches!(action, Some(repose_core::shortcuts::Action::Back))
+}
+
+fn lerp(start: f32, stop: f32, fraction: f32) -> f32 {
+    start + (stop - start) * fraction
 }
 
 /// Scroll offset state for [`SearchBarScrollBehavior`].
@@ -289,18 +304,25 @@ impl SearchBarScrollState {
 pub struct SearchBarScrollBehavior {
     pub scroll_state: SearchBarScrollState,
     pub height: Dp,
-    pub collapsed_height: Dp,
+    /// What the pre-scroll handler let through to the child scroller, paired
+    /// with the post-scroll handler that follows it. The runtime's post-scroll
+    /// dispatch passes only the child's *leftover* delta, so the child's own
+    /// consumption (which upstream's `onPostScroll` receives as `consumed`)
+    /// is recovered from this.
+    passed: Rc<Cell<Option<f32>>>,
 }
 
 impl SearchBarScrollBehavior {
-    pub fn new(scroll_state: SearchBarScrollState, height: Dp, collapsed_height: Dp) -> Self {
-        scroll_state
-            .scroll_offset_limit
-            .set(-(height - collapsed_height).0);
+    /// `height` seeds [`SearchBarScrollState::scroll_offset_limit`] with the
+    /// bar's full height; [`AppBarWithSearch`] re-syncs the limit to the
+    /// measured height while laying out, mirroring upstream's
+    /// `onSizeChanged { scrollOffsetLimit = -size.height }`.
+    pub fn new(scroll_state: SearchBarScrollState, height: Dp) -> Self {
+        scroll_state.scroll_offset_limit.set(-height.0);
         Self {
             scroll_state,
             height,
-            collapsed_height,
+            passed: Rc::new(Cell::new(None)),
         }
     }
 
@@ -308,26 +330,107 @@ impl SearchBarScrollBehavior {
         self.scroll_state.scroll_offset.get()
     }
 
-    pub fn nested_scroll_connection(&self) -> NestedScrollConnection {
+    /// Fraction of the search bar overlapped by content scrolled behind it,
+    /// `0.0..=1.0`, as upstream `overlappedFraction`.
+    pub fn overlapped_fraction(&self) -> f32 {
+        let limit = self.scroll_state.scroll_offset_limit.get();
+        if limit == 0.0 {
+            return 0.0;
+        }
+        let content = self.scroll_state.content_offset.get();
+        1.0 - ((limit - content).clamp(limit, 0.0) / limit)
+    }
+
+    /// Syncs [`SearchBarScrollState::scroll_offset_limit`] from the bar's
+    /// measured height (upstream's `onSizeChanged` hook).
+    pub fn set_scroll_offset_limit(&self, height: Dp) {
+        self.scroll_state.scroll_offset_limit.set(-height.0);
+    }
+
+    /// Drag layer of upstream's `searchBarScrollBehaviorModifier`: dragging
+    /// the bar itself up hides it, down reveals it, and releasing snaps it to
+    /// the nearest end. (Upstream also flings with velocity before snapping;
+    /// this port has no drag velocity, so it snaps directly.)
+    pub fn scroll_behavior_modifier(&self) -> Modifier {
         let offset = self.scroll_state.scroll_offset.clone();
-        let content = self.scroll_state.content_offset.clone();
-        let max_offset = self.height - self.collapsed_height;
-        NestedScrollConnection::new()
-            .on_pre_scroll(move |delta: Vec2, _source| {
+        let limit = self.scroll_state.scroll_offset_limit.clone();
+        Modifier::new().draggable_with_end(
+            {
+                let offset = offset.clone();
+                let limit = limit.clone();
+                move |delta: Vec2| {
+                    let cur = offset.get();
+                    let new = (cur + delta.y).clamp(limit.get(), 0.0);
+                    if new != cur {
+                        offset.set(new);
+                        request_frame();
+                    }
+                }
+            },
+            move || {
                 let cur = offset.get();
-                let new = (cur - delta.y).clamp(-max_offset.0, 0.0);
-                let consumed = cur - new;
-                offset.set(new);
-                request_frame();
-                Vec2 {
-                    x: 0.0,
-                    y: consumed,
+                let limit = limit.get();
+                if limit < cur && cur < 0.0 {
+                    let fraction = if limit != 0.0 { cur / limit } else { 0.0 };
+                    offset.set(if fraction < 0.5 { 0.0 } else { limit });
+                    request_frame();
+                }
+            },
+        )
+    }
+
+    pub fn nested_scroll_connection(&self) -> NestedScrollConnection {
+        NestedScrollConnection::new()
+            .on_pre_scroll({
+                let offset = self.scroll_state.scroll_offset.clone();
+                let limit = self.scroll_state.scroll_offset_limit.clone();
+                let passed = Rc::clone(&self.passed);
+                move |delta: Vec2, _source| {
+                    let cur = offset.get();
+                    let new = (cur - delta.y).clamp(limit.get(), 0.0);
+                    if new != cur {
+                        // Upstream consumes all of `available` whenever the
+                        // offset changed, swallowing the clamped excess.
+                        offset.set(new);
+                        passed.set(Some(0.0));
+                        request_frame();
+                        Vec2 { x: 0.0, y: delta.y }
+                    } else {
+                        passed.set(Some(delta.y));
+                        Vec2::ZERO
+                    }
                 }
             })
-            .on_post_scroll(move |consumed: Vec2, _available: Vec2, _source| {
-                content.set(content.get() + consumed.y);
-                Vec2::ZERO
+            .on_post_scroll({
+                let offset = self.scroll_state.scroll_offset.clone();
+                let limit = self.scroll_state.scroll_offset_limit.clone();
+                let content = self.scroll_state.content_offset.clone();
+                let passed = Rc::clone(&self.passed);
+                move |_consumed: Vec2, available: Vec2, _source| {
+                    if let Some(passed) = passed.take() {
+                        // Child consumption = what pre-scroll let through minus
+                        // what the child could not use (upstream's `consumed.y`,
+                        // sign-flipped into this scroll convention).
+                        let child = passed - available.y;
+                        if child != 0.0 {
+                            let cur = offset.get();
+                            offset.set((cur - child).clamp(limit.get(), 0.0));
+                            content.update(|c| *c -= child);
+                            request_frame();
+                        }
+                    }
+                    Vec2::ZERO
+                }
             })
+    }
+}
+
+impl std::fmt::Debug for SearchBarScrollBehavior {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SearchBarScrollBehavior")
+            .field("offset", &self.offset())
+            .field("height", &self.height)
+            .finish()
     }
 }
 
@@ -802,8 +905,7 @@ pub fn SearchBar(
 ) -> View {
     let th = theme();
     let colors = config.colors;
-    let active = state.is_active() || state.is_expanded();
-    let bar_color = colors.container(active);
+    let bar_color = colors.container_color;
     let insets = config.window_insets;
 
     let mut bar_m = modifier
@@ -846,11 +948,7 @@ pub fn SearchBar(
             }
         })
         .background(bar_color)
-        .clip_rounded(if state.is_active() || state.is_expanded() {
-            config.active_shape_radius
-        } else {
-            config.shape_radius
-        })
+        .clip_rounded(config.shape_radius)
         .then(track_collapsed_layout(&state));
 
     bar_m = apply_tonal_elevation(bar_m, config.tonal_elevation, bar_color);
@@ -1368,17 +1466,60 @@ fn expanded_full_screen_search_bar(
                         }
                     }
 
-                    let header = Box(Modifier::new()
-                        .fill_max_width()
-                        .height(SearchBarDefaults::HEIGHT)
-                        .padding_values(PaddingValues {
-                            left: Dp(16.0),
-                            right: Dp(16.0),
-                            top: Dp(0.0),
-                            bottom: Dp(0.0),
-                        })
-                        .background(config.colors.container_color)
-                        .clip_rounded(config.collapsed_shape_radius)
+                    // Absolute morph geometry per upstream FullScreenSearchBarLayout.
+                    let (cx, cy, cw, ch) = state.collapsed_layout_rect.get();
+                    let win_w = get_window_container_width();
+                    let win_h = get_window_container_height();
+                    let collapsed_left = if cw > 0.0 { cx } else { 0.0 };
+                    let collapsed_top = if ch > 0.0 { cy } else { 0.0 };
+                    let collapsed_w = if cw > 0.0 {
+                        cw
+                    } else {
+                        SearchBarDefaults::EXPANDED_WIDTH.0
+                    };
+                    let collapsed_h = if ch > 0.0 {
+                        ch
+                    } else {
+                        SearchBarDefaults::HEIGHT.0
+                    };
+
+                    let insets = config.window_insets;
+                    let top_pad = Px(insets.top).to_dp().0
+                        + if contained {
+                            SearchBarDefaults::CONTAINED_TOP_PADDING.0
+                        } else {
+                            SearchBarDefaults::VERTICAL_PADDING.0
+                        };
+                    let animated_offset_y = lerp(collapsed_top, 0.0, alpha);
+                    let animated_top_pad = lerp(0.0, top_pad, alpha);
+                    let bottom_pad = if contained {
+                        SearchBarDefaults::VERTICAL_PADDING.0
+                    } else {
+                        lerp(0.0, SearchBarDefaults::VERTICAL_PADDING.0, alpha)
+                    };
+
+                    let (surf_x, surf_y, surf_w, surf_h) = if contained {
+                        (0.0, 0.0, win_w, win_h)
+                    } else {
+                        (
+                            lerp(collapsed_left, 0.0, alpha),
+                            animated_offset_y,
+                            lerp(collapsed_w, win_w, alpha),
+                            lerp(collapsed_h, win_h, alpha),
+                        )
+                    };
+
+                    let surface_bg = if contained {
+                        config.colors.container(state.is_expanded())
+                    } else {
+                        config.colors.container_color
+                    };
+                    let surface = Box(Modifier::new()
+                        .absolute()
+                        .offset(Some(Dp(surf_x)), Some(Dp(surf_y)), None, None)
+                        .size(Dp(surf_w), Dp(surf_h))
+                        .background(surface_bg)
+                        .clip_rounded(Dp(config.collapsed_shape_radius.0 * (1.0 - alpha)))
                         .state_elevation(StateElevation {
                             default: config.tonal_elevation,
                             hovered: config.tonal_elevation,
@@ -1388,84 +1529,81 @@ fn expanded_full_screen_search_bar(
                             disabled: Dp::ZERO,
                         })
                         .shadow(config.shadow_elevation, Dp::ZERO)
-                        .alpha(alpha))
+                        .alpha(if contained { alpha } else { 1.0 }));
+
+                    let input_pads = if contained { 16.0 } else { 0.0 };
+                    let input_w = lerp(collapsed_w, surf_w - input_pads, alpha);
+                    let center_x = lerp(
+                        collapsed_left + collapsed_w / 2.0,
+                        surf_x + surf_w / 2.0,
+                        alpha,
+                    );
+                    let field = Box(Modifier::new()
+                        .absolute()
+                        .offset(
+                            Some(Dp(center_x - input_w / 2.0)),
+                            Some(Dp(animated_offset_y + animated_top_pad)),
+                            None,
+                            None,
+                        )
+                        .size(Dp(input_w), Dp(collapsed_h))
+                        .background(config.colors.container_color)
+                        .clip_rounded(config.collapsed_shape_radius)
+                        .padding_values(PaddingValues {
+                            left: Px(insets.left).to_dp() + SearchBarDefaults::CONTENT_PADDING.left,
+                            right: Px(insets.right).to_dp()
+                                + SearchBarDefaults::CONTENT_PADDING.right,
+                            top: Dp(0.0),
+                            bottom: Dp(0.0),
+                        }))
                     .child(inp);
 
-                    let body_bg = if contained {
-                        config.colors.container(state.is_expanded())
+                    let content_y = animated_offset_y + animated_top_pad + collapsed_h + bottom_pad;
+                    let content_h =
+                        (surf_h - (collapsed_h + animated_top_pad + bottom_pad)).max(0.0);
+                    let body_alpha = if contained { c_alpha } else { alpha };
+                    let inner_content = if contained {
+                        content
                     } else {
-                        config.colors.container_color
+                        Column(Modifier::new().fill_max_width()).child((
+                            Box(Modifier::new()
+                                .fill_max_width()
+                                .height(Dp(1.0))
+                                .background(config.colors.divider_color)),
+                            content,
+                        ))
                     };
-                    let body = Box(Modifier::new()
-                        .fill_max_width()
-                        .flex_grow(1.0)
-                        .alpha(alpha)
-                        .background(body_bg))
-                    .child(
-                        Box(Modifier::new().fill_max_width().alpha(if contained {
-                            c_alpha
-                        } else {
-                            1.0
+                    let content_box = Box(Modifier::new()
+                        .absolute()
+                        .offset(Some(Dp(surf_x)), Some(Dp(content_y)), None, None)
+                        .size(Dp(surf_w), Dp(content_h))
+                        .alpha(body_alpha)
+                        .padding_values(PaddingValues {
+                            left: Px(insets.left).to_dp(),
+                            right: Px(insets.right).to_dp(),
+                            top: Dp(0.0),
+                            bottom: Px(insets.bottom).to_dp(),
                         }))
-                        .child(content),
-                    );
+                    .child(inner_content);
 
-                    let insets = config.window_insets;
-                    let top_pad = if contained {
-                        SearchBarDefaults::CONTAINED_TOP_PADDING
-                    } else {
-                        SearchBarDefaults::VERTICAL_PADDING
-                    };
-                    let bottom_pad = if contained {
-                        SearchBarDefaults::VERTICAL_PADDING
-                    } else {
-                        Dp(SearchBarDefaults::VERTICAL_PADDING.0 * alpha)
-                    };
-                    let mut children: Vec<View> = Vec::new();
-                    children.push(Box(Modifier::new()
-                        .fill_max_width()
-                        .height(Dp(top_pad.0 * alpha))
-                        .alpha(alpha)
-                        .background(body_bg)));
-                    children.push(header);
-                    children.push(Box(Modifier::new()
-                        .fill_max_width()
-                        .height(bottom_pad)
-                        .alpha(alpha)
-                        .background(body_bg)));
-                    if !contained {
-                        children.push(Box(Modifier::new()
-                            .fill_max_width()
-                            .height(Dp(1.0))
-                            .background(config.colors.divider_color)
-                            .alpha(alpha)));
-                    }
-                    children.push(body);
-
-                    let full = Column(
-                        modifier
-                            .clone()
-                            .fill_max_size()
-                            .padding_values(PaddingValues {
-                                left: Px(insets.left).to_dp(),
-                                right: Px(insets.right).to_dp(),
-                                top: Px(insets.top).to_dp(),
-                                bottom: Px(insets.bottom).to_dp(),
-                            })
-                            .focus_group()
-                            .on_preview_key_event({
-                                let state = state.clone();
-                                move |event: KeyEvent| {
-                                    if state.is_expanded() && is_back_event(&event) {
-                                        state.collapse();
-                                        true
-                                    } else {
-                                        false
-                                    }
+                    let full = Box(modifier
+                        .clone()
+                        .fill_max_size()
+                        .focus_group()
+                        .on_preview_key_event({
+                            let state = state.clone();
+                            move |event: KeyEvent| {
+                                if state.is_expanded() && is_back_event(&event) {
+                                    state.collapse();
+                                    true
+                                } else {
+                                    false
                                 }
-                            }),
-                    )
-                    .child(children);
+                            }
+                        }))
+                    .child(surface)
+                    .child(field)
+                    .child(content_box);
 
                     let scrim = Box(Modifier::new()
                         .fill_max_size()
@@ -1809,8 +1947,30 @@ pub fn AppBarWithSearch(
     actions: Option<Vec<View>>,
     config: AppBarWithSearchConfig,
 ) -> View {
-    let bg = config.colors.search_bar_container(config.scroll_fraction);
-    let app_bar_bg = config.colors.app_bar_container(config.scroll_fraction);
+    let scroll_behavior = config.scroll_behavior.clone();
+    let (scroll_offset, scroll_fraction) = match scroll_behavior.as_ref() {
+        Some(sb) => {
+            let overlapped = sb.overlapped_fraction();
+            (sb.offset(), if overlapped > 0.01 { 1.0 } else { 0.0 })
+        }
+        None => (config.scroll_offset, config.scroll_fraction),
+    };
+
+    let bg = config.colors.search_bar_container(scroll_fraction);
+    let app_bar_bg = config
+        .colors
+        .app_bar_container(if scroll_behavior.is_some() {
+            // Upstream animates the app bar container to the transition target
+            // while the search bar container switches instantly.
+            animate_search_value(
+                state.key("app-bar-color"),
+                scroll_fraction,
+                scroll_fraction,
+                AnimationSpec::default(),
+            )
+        } else {
+            scroll_fraction
+        });
 
     let insets = config.window_insets;
 
@@ -1831,10 +1991,20 @@ pub fn AppBarWithSearch(
     let hide_collapsed = state.expands_to_full_screen.get() && state.is_expanded();
     let collapsed_alpha = if hide_collapsed { 0.0 } else { 1.0 };
 
-    let bar_m = Modifier::new()
+    let base_height = config.height + Px(insets.top).to_dp();
+    // With a scroll behavior attached, mirror upstream's layout: the bar's
+    // slot shrinks by the scroll offset while its content keeps the full
+    // height, translates up and is clipped to the slot. The manual path
+    // translates the whole bar as before.
+    let slot_height = if scroll_behavior.is_some() {
+        Dp((base_height.0 + scroll_offset).max(0.0))
+    } else {
+        base_height
+    };
+
+    let mut bar_m = Modifier::new()
         .fill_max_width()
-        .height(config.height + Px(insets.top).to_dp())
-        .translate(0.0, config.scroll_offset)
+        .height(slot_height)
         .background(app_bar_bg)
         .state_elevation(StateElevation {
             default: tonal_elevation,
@@ -1847,7 +2017,7 @@ pub fn AppBarWithSearch(
         .then(config.modifier.clone())
         .semantics(Semantics::new(Role::Container).with_selectable_group());
 
-    let row = Row(Modifier::new()
+    let mut row_m = Modifier::new()
         .fill_max_size()
         .align_items(AlignItems::CENTER)
         .padding_values(PaddingValues {
@@ -1855,8 +2025,22 @@ pub fn AppBarWithSearch(
             right: config.content_padding.right + Px(insets.right).to_dp(),
             top: Px(insets.top).to_dp(),
             bottom: Dp(0.0),
-        }))
-    .child({
+        });
+
+    if let Some(sb) = scroll_behavior.as_ref() {
+        bar_m = bar_m.then(sb.scroll_behavior_modifier());
+        row_m = row_m
+            .height(base_height)
+            .translate(0.0, scroll_offset)
+            .on_size_changed({
+                let sb = Rc::clone(sb);
+                move |size| sb.set_scroll_offset_limit(Dp(size.y))
+            });
+    } else {
+        bar_m = bar_m.translate(0.0, scroll_offset);
+    }
+
+    let row = Row(row_m).child({
         let mut children: Vec<View> = Vec::new();
         if let Some(nav) = navigation_icon {
             children.push(with_content_color(

@@ -1554,9 +1554,20 @@ impl Modifier {
     }
 
     pub fn draggable(self, on_drag: impl Fn(Vec2) + 'static) -> Self {
+        self.draggable_with_end(on_drag, || {})
+    }
+
+    /// Like [`draggable`](Self::draggable), but also reports when the gesture
+    /// ends (pointer up or cancel) so the consumer can settle to a rest state.
+    pub fn draggable_with_end(
+        self,
+        on_drag: impl Fn(Vec2) + 'static,
+        on_drag_end: impl Fn() + 'static,
+    ) -> Self {
         let drag_pos = crate::state::remember_mutable(Vec2::default);
         let is_dragging = crate::state::remember_mutable(|| false);
         let on_drag = Rc::new(on_drag);
+        let on_drag_end = Rc::new(on_drag_end);
         self.on_pointer_down({
             let drag_pos = drag_pos.clone();
             let is_dragging = is_dragging.clone();
@@ -1567,11 +1578,23 @@ impl Modifier {
         })
         .on_pointer_up({
             let is_dragging = is_dragging.clone();
-            move |_| is_dragging.set(false)
+            let on_drag_end = on_drag_end.clone();
+            move |_| {
+                if *is_dragging.get() {
+                    is_dragging.set(false);
+                    on_drag_end();
+                }
+            }
         })
         .on_pointer_cancel({
             let is_dragging = is_dragging.clone();
-            move |_| is_dragging.set(false)
+            let on_drag_end = on_drag_end.clone();
+            move |_| {
+                if *is_dragging.get() {
+                    is_dragging.set(false);
+                    on_drag_end();
+                }
+            }
         })
         .on_pointer_move({
             let drag_pos = drag_pos.clone();
