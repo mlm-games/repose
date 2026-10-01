@@ -1197,6 +1197,9 @@ pub struct HitRegion {
     pub on_key_event: Option<Rc<dyn Fn(crate::input::KeyEvent) -> bool>>,
     /// Called before `on_key_event`. Return `true` to consume before normal dispatch.
     pub on_preview_key_event: Option<Rc<dyn Fn(crate::input::KeyEvent) -> bool>>,
+    /// Called when an IME event (composition update/commit) is received
+    /// while this element is focused. Return `true` to consume the event.
+    pub on_ime: Option<Rc<dyn Fn(crate::input::ImeEvent) -> bool>>,
 
     /// Cursor hint for desktop/web.
     pub cursor: Option<crate::CursorIcon>,
@@ -1244,6 +1247,7 @@ impl HitRegion {
             on_action: m.on_action.clone(),
             on_key_event: m.on_key_event.clone(),
             on_preview_key_event: m.on_preview_key_event.clone(),
+            on_ime: m.on_ime.clone(),
             cursor: m.cursor.clone(),
             on_drag_start: m.on_drag_start.clone(),
             on_drag_end: m.on_drag_end.clone(),

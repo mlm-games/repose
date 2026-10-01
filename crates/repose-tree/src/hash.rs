@@ -569,6 +569,7 @@ fn facet_hash_modifier(modifier: &Modifier, hashers: &mut FacetHashers) {
         modifier.on_size_changed.is_some().hash(h);
         modifier.on_key_event.is_some().hash(h);
         modifier.on_preview_key_event.is_some().hash(h);
+        modifier.on_ime.is_some().hash(h);
         modifier.on_drag_start.is_some().hash(h);
         modifier.on_drag_end.is_some().hash(h);
         modifier.on_drag_enter.is_some().hash(h);

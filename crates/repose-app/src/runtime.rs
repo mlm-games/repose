@@ -525,11 +525,12 @@ impl ReposeRuntime {
             .focused
             .and_then(|fid| f.hit_regions.iter().find(|h| h.id == fid));
         let ime_allowed = focused_hit.is_some_and(|hit| {
-            hit.tf_enabled
-                && !hit.tf_read_only
-                && f.semantics_nodes.iter().any(|node| {
-                    node.id == hit.id && node.role == repose_core::semantics::Role::TextField
-                })
+            hit.on_ime.is_some()
+                || (hit.tf_enabled
+                    && !hit.tf_read_only
+                    && f.semantics_nodes.iter().any(|node| {
+                        node.id == hit.id && node.role == repose_core::semantics::Role::TextField
+                    }))
         });
 
         let ime_cursor_area = if ime_allowed {
@@ -2740,7 +2741,6 @@ impl ReposeRuntime {
     pub fn handle_ime(&mut self, event: &ImeEvent) {
         if matches!(event, ImeEvent::Cancel) {
             self.cancel_ime_compositions();
-            return;
         }
         let Some(fid) = self.sched.focused else {
             return;
@@ -2748,7 +2748,17 @@ impl ReposeRuntime {
         let Some(frame) = self.frame_cache.clone() else {
             return;
         };
-        if !matches!(event, ImeEvent::Cancel) && !is_tf_editable(&frame, fid) {
+        if !(is_tf_editable(&frame, fid) && is_textfield_in_frame(&frame, fid)) {
+            if let Some(hit) = frame.hit_regions.iter().find(|hit| hit.id == fid)
+                && !hit.disabled
+                && let Some(cb) = &hit.on_ime
+                && cb(event.clone())
+            {
+                request_frame();
+            }
+            return;
+        }
+        if matches!(event, ImeEvent::Cancel) {
             return;
         }
         let key = tf_key_of(&frame, fid);
@@ -3166,8 +3176,19 @@ impl ReposeRuntime {
     }
 
     /// Drain queued rumble requests (platform runners call this after `poll`).
+    /// [`repose_core::rumble`] entries broadcast to every connected pad.
     pub fn take_rumble_requests(&mut self) -> Vec<(u32, f32, f32, u32)> {
-        std::mem::take(&mut self.pending_rumble)
+        let mut requests = std::mem::take(&mut self.pending_rumble);
+        let global = repose_core::rumble::take();
+        if !global.is_empty() {
+            let pads: Vec<u32> = self.gamepads.keys().copied().collect();
+            for (low, high, duration_ms) in global {
+                for &id in &pads {
+                    requests.push((id, low, high, duration_ms));
+                }
+            }
+        }
+        requests
     }
 
     /// Process a key event with an optional host-composed `text` payload
@@ -3813,6 +3834,43 @@ mod ime_tests {
         assert_eq!(rt.textfield_states[&TF_ID].borrow().text, "x");
         assert!(!rt.ime_preedit);
     }
+
+    #[test]
+    fn focused_game_node_receives_events() {
+        let mut rt = ReposeRuntime::new();
+        rt.sched.focused = Some(TF_ID);
+        let mut frame = editable_frame(TF_ID);
+        frame.hit_regions[0].tf_state_key = None;
+        frame.hit_regions[0].tf_enabled = false;
+        frame.semantics_nodes.clear();
+        let seen: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
+        let sink = seen.clone();
+        frame.hit_regions[0].on_ime = Some(Rc::new(move |event| {
+            if let ImeEvent::Commit(text) = event {
+                sink.borrow_mut().push(text);
+            }
+            true
+        }));
+        rt.cache_frame(frame);
+        rt.handle_ime(&ImeEvent::Commit("あ".to_string()));
+        rt.handle_ime(&ImeEvent::Cancel);
+        assert_eq!(&*seen.borrow(), &["あ".to_string()]);
+        assert!(rt.textfield_states.is_empty());
+    }
+
+    #[test]
+    fn unconsumed_events_leave_textfields_untouched() {
+        let mut rt = ReposeRuntime::new();
+        rt.sched.focused = Some(TF_ID);
+        let mut frame = editable_frame(TF_ID);
+        frame.hit_regions[0].tf_state_key = None;
+        frame.hit_regions[0].tf_enabled = false;
+        frame.semantics_nodes.clear();
+        frame.hit_regions[0].on_ime = Some(Rc::new(|_| false));
+        rt.cache_frame(frame);
+        rt.handle_ime(&ImeEvent::Commit("x".to_string()));
+        assert!(rt.textfield_states.is_empty());
+    }
 }
 
 #[cfg(test)]
@@ -3865,5 +3923,27 @@ mod gamepad_tests {
         assert_eq!(reqs[0], (1, 1.0, 0.0, 150));
         assert_eq!(reqs[1], (1, 0.0, 0.0, 0));
         assert!(rt.take_rumble_requests().is_empty());
+    }
+
+    #[test]
+    fn global_rumble_broadcasts_to_connected_pads() {
+        let mut rt = ReposeRuntime::new();
+        rt.handle_gamepad(&GamepadEvent::Connected {
+            id: GamepadId(1),
+            name: "Pad".to_string(),
+        });
+        repose_core::rumble::push(0.9, 0.5, 200);
+        repose_core::rumble::push(0.0, 0.0, 0);
+        let reqs = rt.take_rumble_requests();
+        assert_eq!(reqs, vec![(1, 0.9, 0.5, 200), (1, 0.0, 0.0, 0)]);
+        assert!(rt.take_rumble_requests().is_empty());
+    }
+
+    #[test]
+    fn global_rumble_without_pads_is_dropped() {
+        let mut rt = ReposeRuntime::new();
+        repose_core::rumble::push(0.5, 0.5, 100);
+        assert!(rt.take_rumble_requests().is_empty());
+        assert!(repose_core::rumble::take().is_empty());
     }
 }

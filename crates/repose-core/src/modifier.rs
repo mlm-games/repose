@@ -113,7 +113,7 @@ macro_rules! impl_option_fields {
                     on_pointer_enter, on_pointer_leave,
                     on_click, on_double_click, on_long_click,
                     on_globally_positioned, on_size_changed,
-                    on_key_event, on_preview_key_event,
+                    on_key_event, on_preview_key_event, on_ime,
                     semantics, alpha, transform,
                     grid, grid_col_span, grid_row_span,
                     position_type,
@@ -778,6 +778,9 @@ pub struct Modifier {
     /// Called before `on_key_event` -> if the preview handler returns `true`,
     /// the event is consumed and `on_key_event` is NOT called.
     pub on_preview_key_event: Option<Rc<dyn Fn(crate::input::KeyEvent) -> bool>>,
+    /// Called when an IME event (composition update/commit) is received
+    /// while this element is focused. Return `true` to consume the event.
+    pub on_ime: Option<Rc<dyn Fn(crate::input::ImeEvent) -> bool>>,
     /// Apply a gaussian blur to this element's rendered content.
     /// When set, `graphics_layer` is auto-enabled if not already set.
     /// Use `Modifier::blur(radius)` for uniform blur, or
@@ -976,6 +979,7 @@ impl std::fmt::Debug for Modifier {
             on_size_changed,
             on_key_event,
             on_preview_key_event,
+            on_ime,
             painter,
             paint_callback,
             on_drag_start,
@@ -2074,6 +2078,13 @@ impl Modifier {
     /// propagate further (e.g. to text input handling or shortcut dispatch).
     pub fn on_key_event(mut self, f: impl Fn(crate::input::KeyEvent) -> bool + 'static) -> Self {
         self.on_key_event = Some(Rc::new(f));
+        self
+    }
+
+    /// Called when an IME event is received while this element is focused.
+    /// Return `true` to indicate the event was consumed.
+    pub fn on_ime(mut self, f: impl Fn(crate::input::ImeEvent) -> bool + 'static) -> Self {
+        self.on_ime = Some(Rc::new(f));
         self
     }
 

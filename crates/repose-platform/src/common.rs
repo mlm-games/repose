@@ -357,6 +357,15 @@ pub(crate) fn is_editable_textfield_hit(frame: &Frame, id: u64) -> bool {
     editable_textfield_hit(&frame.hit_regions, &frame.semantics_nodes, id).is_some()
 }
 
+pub(crate) fn has_ime_handler_hit(hits: &[repose_core::HitRegion], id: u64) -> bool {
+    hits.iter()
+        .any(|hit| hit.id == id && !hit.disabled && hit.on_ime.is_some())
+}
+
+pub(crate) fn has_ime_handler(frame: &Frame, id: u64) -> bool {
+    has_ime_handler_hit(&frame.hit_regions, id)
+}
+
 #[allow(dead_code)]
 pub(crate) fn hit_index_by_id(frame: &Frame, id: u64) -> Option<usize> {
     repose_app::hit_index_by_id(frame, id)

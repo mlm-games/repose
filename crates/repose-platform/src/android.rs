@@ -401,10 +401,9 @@ pub fn run_android_app_with_options(
                 && self.ime_output_allowed
                 && self.rt.sched.window_focused
                 && self.rt.sched.focused.is_some_and(|id| {
-                    self.rt
-                        .frame_cache
-                        .as_ref()
-                        .is_some_and(|frame| rc::is_editable_textfield_hit(frame, id))
+                    self.rt.frame_cache.as_ref().is_some_and(|frame| {
+                        rc::is_editable_textfield_hit(frame, id) || rc::has_ime_handler(frame, id)
+                    })
                 })
         }
 

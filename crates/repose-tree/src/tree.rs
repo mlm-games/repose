@@ -253,6 +253,7 @@ fn modifier_identity_change(old: &Modifier, new: &Modifier) -> IdentityChange {
         on_size_changed,
         on_key_event,
         on_preview_key_event,
+        on_ime,
         on_drag_start,
         on_drag_end,
         on_drag_enter,

@@ -412,11 +412,9 @@ pub fn run_desktop_app_with_config(
                 && !WINDOW_OCCLUDED.load(Ordering::Relaxed)
                 && self.ime_output_allowed
                 && self.rt.sched.window_focused
-                && self
-                    .rt
-                    .sched
-                    .focused
-                    .is_some_and(|id| rc::is_editable_textfield_hit(frame, id))
+                && self.rt.sched.focused.is_some_and(|id| {
+                    rc::is_editable_textfield_hit(frame, id) || rc::has_ime_handler(frame, id)
+                })
         }
 
         fn ime_allowed_for_output(
@@ -429,11 +427,10 @@ pub fn run_desktop_app_with_config(
                 && !WINDOW_OCCLUDED.load(Ordering::Relaxed)
                 && output_allowed
                 && self.rt.sched.window_focused
-                && self
-                    .rt
-                    .sched
-                    .focused
-                    .is_some_and(|id| rc::editable_textfield_hit(hits, semantics, id).is_some())
+                && self.rt.sched.focused.is_some_and(|id| {
+                    rc::editable_textfield_hit(hits, semantics, id).is_some()
+                        || rc::has_ime_handler_hit(hits, id)
+                })
         }
 
         fn sync_ime_for_focus(&mut self) {

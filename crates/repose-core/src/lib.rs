@@ -127,6 +127,7 @@ pub mod present_mode;
 pub mod reactive;
 pub mod render_api;
 pub mod render_context;
+pub mod rumble;
 pub mod runtime;
 pub mod scope;
 pub mod scope_cache;
