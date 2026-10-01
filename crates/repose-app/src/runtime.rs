@@ -774,6 +774,11 @@ impl ReposeRuntime {
         self.dispatch_pointer_to_targets(kind, pos, &targets, touch);
     }
 
+    /// Splits captured targets into live/stale against the current frame.
+    /// Live targets keep the snapshot captured at press time so the whole
+    /// gesture dispatches to the original closures (pointer-capture
+    /// semantics); stale targets (gone or disabled) keep their snapshot so
+    /// the cancel reaches the handlers that received the press.
     fn refreshed_capture_targets(
         &self,
         targets: &[repose_ui::HitRegionSnapshot],
@@ -787,12 +792,12 @@ impl ReposeRuntime {
         let mut live = Vec::with_capacity(targets.len());
         let mut stale = Vec::new();
         for target in targets {
-            if let Some(hit) = frame
+            if frame
                 .hit_regions
                 .iter()
-                .find(|hit| hit.id == target.id() && !hit.disabled)
+                .any(|hit| hit.id == target.id() && !hit.disabled)
             {
-                live.push(repose_ui::HitRegionSnapshot::new(hit));
+                live.push(target.clone());
             } else {
                 stale.push(target.clone());
             }

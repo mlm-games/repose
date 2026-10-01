@@ -497,6 +497,45 @@ fn stale_capture_dispatches_one_cancel_before_pruning() {
 }
 
 #[test]
+fn live_capture_keeps_press_time_closures_across_frames() {
+    use repose_core::input::{PointerEvent, PointerEventKind};
+    let mut rt = ReposeRuntime::new();
+    let first = Rc::new(RefCell::new(0u32));
+    let second = Rc::new(RefCell::new(0u32));
+    let make_hit = |observer: Rc<RefCell<u32>>| HitRegion {
+        id: BTN_ID,
+        rect: Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 100.0,
+            h: 50.0,
+        },
+        on_pointer_up: Some(Rc::new(move |event: PointerEvent| {
+            assert!(matches!(event.event, PointerEventKind::Up(_)));
+            *observer.borrow_mut() += 1;
+        })),
+        ..Default::default()
+    };
+    rt.cache_frame(Frame {
+        scene: Scene::default(),
+        hit_regions: vec![make_hit(first.clone())],
+        semantics_nodes: Vec::new(),
+        focus_chain: Vec::new(),
+    });
+    let pos = Vec2 { x: 10.0, y: 10.0 };
+    rt.handle_pointer_press(pos, PointerButton::Primary);
+    rt.cache_frame(Frame {
+        scene: Scene::default(),
+        hit_regions: vec![make_hit(second.clone())],
+        semantics_nodes: Vec::new(),
+        focus_chain: Vec::new(),
+    });
+    rt.handle_pointer_release(pos, PointerButton::Primary);
+    assert_eq!(*first.borrow(), 1);
+    assert_eq!(*second.borrow(), 0);
+}
+
+#[test]
 fn pointer_cancel_clears_capture_for_reentry() {
     let mut rt = ReposeRuntime::new();
     rt.cache_frame(button_frame(BTN_ID, None, None, None));
