@@ -157,6 +157,32 @@ impl Default for ExpandedFullScreenSearchBarConfig {
     }
 }
 
+/// Configuration for [`ExpandedFullScreenContainedSearchBar`].
+#[derive(Clone, Debug)]
+pub struct ExpandedFullScreenContainedSearchBarConfig {
+    pub modifier: Modifier,
+    pub colors: SearchBarColors,
+    pub collapsed_shape_radius: Dp,
+    pub tonal_elevation: Dp,
+    pub shadow_elevation: Dp,
+    pub window_insets: WindowInsets,
+    pub scrim_color: Color,
+}
+
+impl Default for ExpandedFullScreenContainedSearchBarConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            colors: SearchBarDefaults::contained_colors(),
+            collapsed_shape_radius: SearchBarDefaults::SHAPE_RADIUS,
+            tonal_elevation: SearchBarDefaults::TONAL_ELEVATION,
+            shadow_elevation: SearchBarDefaults::SHADOW_ELEVATION,
+            window_insets: WindowInsets::default(),
+            scrim_color: SearchBarDefaults::scrim_color(),
+        }
+    }
+}
+
 /// Configuration for [`ExpandedDockedSearchBar`].
 #[derive(Clone, Debug)]
 pub struct ExpandedDockedSearchBarConfig {
@@ -232,42 +258,76 @@ fn is_back_event(event: &KeyEvent) -> bool {
     event.key == Key::Escape || matches!(action, Some(repose_core::shortcuts::Action::Back))
 }
 
-/// Scroll behavior for [`AppBarWithSearch`] -> collapses/expands on scroll.
-pub struct SearchBarScrollBehavior {
-    pub collapsed_offset: Signal<f32>,
-    pub height: Dp,
-    pub collapsed_height: Dp,
-    _pending: Rc<Cell<f32>>,
+/// Scroll offset state for [`SearchBarScrollBehavior`].
+pub struct SearchBarScrollState {
+    pub scroll_offset: Signal<f32>,
+    pub scroll_offset_limit: Signal<f32>,
+    pub content_offset: Signal<f32>,
 }
 
-impl SearchBarScrollBehavior {
-    pub fn new(height: Dp, collapsed_height: Dp) -> Self {
+impl Default for SearchBarScrollState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl SearchBarScrollState {
+    pub fn new() -> Self {
         Self {
-            collapsed_offset: signal(0.0),
-            height,
-            collapsed_height,
-            _pending: Rc::new(Cell::new(0.0)),
+            scroll_offset: signal(0.0),
+            scroll_offset_limit: signal(0.0),
+            content_offset: signal(0.0),
         }
     }
 
     pub fn offset(&self) -> f32 {
-        self.collapsed_offset.get()
+        self.scroll_offset.get()
+    }
+}
+
+/// Scroll behavior for [`AppBarWithSearch`] -> collapses/expands on scroll.
+pub struct SearchBarScrollBehavior {
+    pub scroll_state: SearchBarScrollState,
+    pub height: Dp,
+    pub collapsed_height: Dp,
+}
+
+impl SearchBarScrollBehavior {
+    pub fn new(scroll_state: SearchBarScrollState, height: Dp, collapsed_height: Dp) -> Self {
+        scroll_state
+            .scroll_offset_limit
+            .set(-(height - collapsed_height).0);
+        Self {
+            scroll_state,
+            height,
+            collapsed_height,
+        }
+    }
+
+    pub fn offset(&self) -> f32 {
+        self.scroll_state.scroll_offset.get()
     }
 
     pub fn nested_scroll_connection(&self) -> NestedScrollConnection {
-        let offset = self.collapsed_offset.clone();
+        let offset = self.scroll_state.scroll_offset.clone();
+        let content = self.scroll_state.content_offset.clone();
         let max_offset = self.height - self.collapsed_height;
-        NestedScrollConnection::new().on_pre_scroll(move |delta: Vec2, _source| {
-            let cur = offset.get();
-            let new = (cur - delta.y).clamp(-max_offset.0, 0.0);
-            let consumed = cur - new;
-            offset.set(new);
-            request_frame();
-            Vec2 {
-                x: 0.0,
-                y: consumed,
-            }
-        })
+        NestedScrollConnection::new()
+            .on_pre_scroll(move |delta: Vec2, _source| {
+                let cur = offset.get();
+                let new = (cur - delta.y).clamp(-max_offset.0, 0.0);
+                let consumed = cur - new;
+                offset.set(new);
+                request_frame();
+                Vec2 {
+                    x: 0.0,
+                    y: consumed,
+                }
+            })
+            .on_post_scroll(move |consumed: Vec2, _available: Vec2, _source| {
+                content.set(content.get() + consumed.y);
+                Vec2::ZERO
+            })
     }
 }
 
@@ -731,7 +791,7 @@ fn track_collapsed_layout(state: &Rc<SearchBarState>) -> Modifier {
 /// Pressing <kbd>Escape</kbd> deactivates the search bar (cross-platform back).
 ///
 /// Use [`ExpandedFullScreenSearchBar`] / [`ExpandedDockedSearchBar`] for the
-/// expanded state, or [`SearchBarWithContent`] for an all-in-one variant.
+/// expanded state.
 pub fn SearchBar(
     state: Rc<SearchBarState>,
     input_field: View,
@@ -814,6 +874,9 @@ pub fn SearchBar(
 ///
 /// The bar itself is a passive surface (no click handling) -> expansion is
 /// driven by the `InputField`'s focus tracking inside `input_field`.
+#[deprecated(
+    note = "use `SearchBar` with `SearchBarState`, plus `ExpandedFullScreenSearchBar` or `ExpandedDockedSearchBar` to display results"
+)]
 pub fn SearchBarWithContent(
     input_field: View,
     expanded: bool,
@@ -922,6 +985,9 @@ pub fn SearchBarWithContent(
 /// dropdown (height + alpha).  Equivalent to CK's
 /// `DockedSearchBar(inputField, expanded, onExpandedChange, ..., content)`.
 /// The bar itself is a passive Surface -> expansion is driven by `InputField`.
+#[deprecated(
+    note = "use `SearchBar` with `SearchBarState`, plus `ExpandedDockedSearchBar` to display results"
+)]
 pub fn DockedSearchBar(
     input_field: View,
     expanded: bool,
@@ -1177,6 +1243,45 @@ pub fn ExpandedFullScreenSearchBar(
     config: ExpandedFullScreenSearchBarConfig,
     content: View,
 ) -> View {
+    expanded_full_screen_search_bar(state, input_field, modifier, config, false, content)
+}
+
+/// M3 Expanded Full-Screen Contained Search Bar -> like [`ExpandedFullScreenSearchBar`]
+/// but keeps the collapsed input-field shape without a divider, app-bar-style top
+/// padding, and contained container colors.
+pub fn ExpandedFullScreenContainedSearchBar(
+    state: Rc<SearchBarState>,
+    input_field: View,
+    modifier: Modifier,
+    config: ExpandedFullScreenContainedSearchBarConfig,
+    content: View,
+) -> View {
+    expanded_full_screen_search_bar(
+        state,
+        input_field,
+        modifier,
+        ExpandedFullScreenSearchBarConfig {
+            modifier: config.modifier,
+            colors: config.colors,
+            collapsed_shape_radius: config.collapsed_shape_radius,
+            tonal_elevation: config.tonal_elevation,
+            shadow_elevation: config.shadow_elevation,
+            window_insets: config.window_insets,
+            scrim_color: config.scrim_color,
+        },
+        true,
+        content,
+    )
+}
+
+fn expanded_full_screen_search_bar(
+    state: Rc<SearchBarState>,
+    input_field: View,
+    modifier: Modifier,
+    config: ExpandedFullScreenSearchBarConfig,
+    contained: bool,
+    content: View,
+) -> View {
     let overlay = ambient_overlay();
     // Mark as full-screen so AppBarWithSearch can hide the collapsed bar
     state.expands_to_full_screen.set_neq(true);
@@ -1270,7 +1375,11 @@ pub fn ExpandedFullScreenSearchBar(
                         .padding_values(PaddingValues {
                             left: Dp(16.0),
                             right: Dp(16.0),
-                            top: Dp(0.0),
+                            top: if contained {
+                                SearchBarDefaults::CONTAINED_TOP_PADDING
+                            } else {
+                                Dp(0.0)
+                            },
                             bottom: Dp(0.0),
                         })
                         .background(config.colors.container(state.is_expanded()))
@@ -1287,14 +1396,37 @@ pub fn ExpandedFullScreenSearchBar(
                         .alpha(alpha))
                     .child(inp);
 
-                    let body = Box(Modifier::new()
+                    let mut body_m = Modifier::new()
                         .fill_max_width()
                         .flex_grow(1.0)
-                        .alpha(c_alpha)
-                        .background(th.surface))
+                        .alpha(c_alpha);
+                    if contained {
+                        body_m = body_m.padding_values(PaddingValues {
+                            left: Dp(0.0),
+                            right: Dp(0.0),
+                            top: Dp(0.0),
+                            bottom: SearchBarDefaults::VERTICAL_PADDING,
+                        });
+                    }
+                    let body = Box(body_m.background(if contained {
+                        config.colors.container(state.is_expanded())
+                    } else {
+                        th.surface
+                    }))
                     .child(content);
 
                     let insets = config.window_insets;
+                    let mut children: Vec<View> = Vec::new();
+                    children.push(header);
+                    if !contained {
+                        children.push(Box(Modifier::new()
+                            .fill_max_width()
+                            .height(Dp(1.0))
+                            .background(config.colors.divider_color)
+                            .alpha(c_alpha)));
+                    }
+                    children.push(body);
+
                     let full = Column(
                         modifier
                             .clone()
@@ -1318,7 +1450,7 @@ pub fn ExpandedFullScreenSearchBar(
                                 }
                             }),
                     )
-                    .child((header, body));
+                    .child(children);
 
                     let scrim = Box(Modifier::new()
                         .fill_max_size()
@@ -1369,8 +1501,8 @@ pub fn ExpandedFullScreenSearchBar(
     Box(Modifier::new())
 }
 
-/// M3 Expanded Docked Search Bar -> rendered as an overlay popup anchored below
-/// the collapsed search bar using `collapsed_layout_rect`.
+/// M3 Expanded Docked Search Bar -> popup over the collapsed search bar; results
+/// connect below the input field behind a divider.
 /// Equivalent to CK's `ExpandedDockedSearchBar(state, inputField, ...)`.
 ///
 /// Renders into the ambient overlay layer installed by the runtime.
@@ -1381,12 +1513,43 @@ pub fn ExpandedDockedSearchBar(
     config: ExpandedDockedSearchBarConfig,
     content: View,
 ) -> View {
+    expanded_docked_search_bar(state, input_field, modifier, config, false, content)
+}
+
+/// M3 Expanded Docked Search Bar With Gap -> like [`ExpandedDockedSearchBar`] but
+/// drops results into a separate rounded surface below the input field, separated
+/// by `dropdown_gap_size`.
+pub fn ExpandedDockedSearchBarWithGap(
+    state: Rc<SearchBarState>,
+    input_field: View,
+    modifier: Modifier,
+    config: ExpandedDockedSearchBarConfig,
+    content: View,
+) -> View {
+    expanded_docked_search_bar(state, input_field, modifier, config, true, content)
+}
+
+fn expanded_docked_search_bar(
+    state: Rc<SearchBarState>,
+    input_field: View,
+    modifier: Modifier,
+    config: ExpandedDockedSearchBarConfig,
+    with_gap: bool,
+    content: View,
+) -> View {
     let overlay = ambient_overlay();
     // Docked search bar does NOT expand to full-screen
     state.expands_to_full_screen.set_neq(false);
 
     let overlay_instance = remember(unique_component_id);
-    let eds_id = format!("{}_{}", state.key("expanded-docked"), overlay_instance);
+    let variant = if with_gap { "gap" } else { "plain" };
+    let eds_id = format!(
+        "{}_{}_{}",
+        state.key("expanded-docked"),
+        variant,
+        overlay_instance
+    );
+    let dropdown_height = remember_with_key(format!("{eds_id}:dropdown-h"), || signal(0.0));
     let overlay_guard = remember_with_key(format!("eds_oguard_{eds_id}"), || {
         RefCell::new(None::<OverlayGuard>)
     });
@@ -1467,53 +1630,87 @@ pub fn ExpandedDockedSearchBar(
                         }
                     }
 
-                    let header = Box(Modifier::new()
-                        .fill_max_width()
-                        .height(SearchBarDefaults::HEIGHT)
-                        .alpha(alpha)
-                        .background(config.colors.container(state.is_expanded()))
-                        .clip_rounded(config.shape_radius)
-                        .state_elevation(StateElevation {
-                            default: config.tonal_elevation,
-                            hovered: config.tonal_elevation,
-                            focused: config.tonal_elevation,
-                            pressed: config.tonal_elevation,
-                            dragged: config.tonal_elevation,
-                            disabled: Dp::ZERO,
-                        })
-                        .shadow(config.shadow_elevation, Dp::ZERO))
-                    .child(inp);
+                    let bar_bg = config.colors.container(state.is_expanded());
+                    let elevation = StateElevation {
+                        default: config.tonal_elevation,
+                        hovered: config.tonal_elevation,
+                        focused: config.tonal_elevation,
+                        pressed: config.tonal_elevation,
+                        dragged: config.tonal_elevation,
+                        disabled: Dp::ZERO,
+                    };
 
-                    let dropdown = Box(Modifier::new()
-                        .fill_max_width()
-                        .max_height(Dp(get_window_container_height() * 2.0 / 3.0))
-                        .alpha(c_alpha)
-                        .clip_rounded(config.dropdown_shape_radius)
-                        .background(config.colors.container(state.is_expanded()))
-                        .state_elevation(StateElevation {
-                            default: config.tonal_elevation,
-                            hovered: config.tonal_elevation,
-                            focused: config.tonal_elevation,
-                            pressed: config.tonal_elevation,
-                            dragged: config.tonal_elevation,
-                            disabled: Dp::ZERO,
-                        })
-                        .shadow(config.shadow_elevation, Dp::ZERO))
-                    .child(
-                        Column(Modifier::new().fill_max_width()).child((
-                            Box(Modifier::new()
-                                .fill_max_width()
-                                .height(Dp(1.0))
-                                .background(config.colors.divider_color)),
-                            content,
-                        )),
-                    );
+                    let col = if with_gap {
+                        let header = Box(Modifier::new()
+                            .fill_max_width()
+                            .height(SearchBarDefaults::HEIGHT)
+                            .alpha(alpha)
+                            .background(bar_bg)
+                            .clip_rounded(config.shape_radius)
+                            .state_elevation(elevation)
+                            .shadow(config.shadow_elevation, Dp::ZERO))
+                        .child(inp);
+
+                        let gap = Box(Modifier::new()
+                            .fill_max_width()
+                            .height(config.dropdown_gap_size));
+
+                        let slide_y = -(dropdown_height.get() / 2.0) * (1.0 - c_alpha);
+                        let dh = dropdown_height.clone();
+                        let dropdown = Box(Modifier::new()
+                            .fill_max_width()
+                            .translate(0.0, slide_y)
+                            .max_height(Dp(get_window_container_height()
+                                * SearchBarDefaults::DOCKED_WITH_GAP_HEIGHT_RATIO))
+                            .alpha(c_alpha)
+                            .clip_rounded(config.dropdown_shape_radius)
+                            .background(bar_bg)
+                            .state_elevation(elevation)
+                            .shadow(config.shadow_elevation, Dp::ZERO)
+                            .on_globally_positioned(move |rect| dh.set(rect.h)))
+                        .child(content);
+
+                        Column(Modifier::new().fill_max_width()).child((header, gap, dropdown))
+                    } else {
+                        let panel_h = ((get_window_container_height()
+                            * SearchBarDefaults::DOCKED_HEIGHT_RATIO)
+                            - SearchBarDefaults::HEIGHT.0)
+                            .max(0.0)
+                            * alpha;
+
+                        Box(Modifier::new()
+                            .fill_max_width()
+                            .alpha(alpha)
+                            .background(bar_bg)
+                            .clip_rounded(config.shape_radius)
+                            .state_elevation(elevation)
+                            .shadow(config.shadow_elevation, Dp::ZERO))
+                        .child(
+                            Column(Modifier::new().fill_max_width()).child((
+                                Box(Modifier::new()
+                                    .fill_max_width()
+                                    .height(SearchBarDefaults::HEIGHT))
+                                .child(inp),
+                                Box(Modifier::new()
+                                    .fill_max_width()
+                                    .height(Dp(panel_h))
+                                    .alpha(c_alpha))
+                                .child(
+                                    Column(Modifier::new().fill_max_width()).child((
+                                        Box(Modifier::new()
+                                            .fill_max_width()
+                                            .height(Dp(1.0))
+                                            .background(config.colors.divider_color)),
+                                        content,
+                                    )),
+                                ),
+                            )),
+                        )
+                    };
 
                     let docked_width = Dp(_cw).max(SearchBarDefaults::MIN_WIDTH);
                     let popup_left = Dp(_cx);
-                    let popup_top = Dp(_cy) + Dp(_ch) + config.dropdown_gap_size;
-
-                    let col = Column(Modifier::new().fill_max_width()).child((header, dropdown));
+                    let popup_top = Dp(_cy);
 
                     let positioned = Box(modifier
                         .clone()

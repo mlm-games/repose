@@ -1,5 +1,7 @@
 use repose_core::*;
 
+use super::search_bar::SearchBarColors;
+
 pub struct SurfaceDefaults;
 
 impl SurfaceDefaults {
@@ -1043,6 +1045,9 @@ impl SearchBarDefaults {
     pub const MIN_WIDTH: Dp = Self::COLLAPSED_WIDTH;
     pub const MAX_WIDTH: Dp = Dp(720.0);
     pub const VERTICAL_PADDING: Dp = Dp(8.0);
+    pub const CONTAINED_TOP_PADDING: Dp = Dp(4.0);
+    pub const DOCKED_HEIGHT_RATIO: f32 = 2.0 / 3.0;
+    pub const DOCKED_WITH_GAP_HEIGHT_RATIO: f32 = 1.0 / 2.0;
 
     pub const CONTENT_PADDING: PaddingValues = PaddingValues {
         left: Dp(16.0),
@@ -1086,6 +1091,19 @@ impl SearchBarDefaults {
     }
     pub fn dropdown_scrim_color() -> Color {
         Color::TRANSPARENT
+    }
+    pub fn contained_active_container_color() -> Color {
+        theme().surface_container_low
+    }
+    pub fn contained_colors() -> SearchBarColors {
+        SearchBarColors {
+            container_color: Self::container_color(),
+            active_container_color: Self::contained_active_container_color(),
+            divider_color: Self::divider_color(),
+            content_color: Self::content_color(),
+            placeholder_color: Self::placeholder_color(),
+            scrim_color: Self::scrim_color(),
+        }
     }
 }
 
