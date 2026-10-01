@@ -1348,7 +1348,6 @@ fn expanded_full_screen_search_bar(
                     let content_alpha = state.content_progress();
                     let alpha = progress.clamp(0.0, 1.0);
                     let c_alpha = content_alpha.clamp(0.0, 1.0);
-                    let th = theme();
                     let content = current_content.borrow().clone();
 
                     let attached = attach_focus_requester(&mut input_field, &input_fr);
@@ -1375,14 +1374,10 @@ fn expanded_full_screen_search_bar(
                         .padding_values(PaddingValues {
                             left: Dp(16.0),
                             right: Dp(16.0),
-                            top: if contained {
-                                SearchBarDefaults::CONTAINED_TOP_PADDING
-                            } else {
-                                Dp(0.0)
-                            },
+                            top: Dp(0.0),
                             bottom: Dp(0.0),
                         })
-                        .background(config.colors.container(state.is_expanded()))
+                        .background(config.colors.container_color)
                         .clip_rounded(config.collapsed_shape_radius)
                         .state_elevation(StateElevation {
                             default: config.tonal_elevation,
@@ -1396,34 +1391,54 @@ fn expanded_full_screen_search_bar(
                         .alpha(alpha))
                     .child(inp);
 
-                    let mut body_m = Modifier::new()
-                        .fill_max_width()
-                        .flex_grow(1.0)
-                        .alpha(c_alpha);
-                    if contained {
-                        body_m = body_m.padding_values(PaddingValues {
-                            left: Dp(0.0),
-                            right: Dp(0.0),
-                            top: Dp(0.0),
-                            bottom: SearchBarDefaults::VERTICAL_PADDING,
-                        });
-                    }
-                    let body = Box(body_m.background(if contained {
+                    let body_bg = if contained {
                         config.colors.container(state.is_expanded())
                     } else {
-                        th.surface
-                    }))
-                    .child(content);
+                        config.colors.container_color
+                    };
+                    let body = Box(Modifier::new()
+                        .fill_max_width()
+                        .flex_grow(1.0)
+                        .alpha(alpha)
+                        .background(body_bg))
+                    .child(
+                        Box(Modifier::new().fill_max_width().alpha(if contained {
+                            c_alpha
+                        } else {
+                            1.0
+                        }))
+                        .child(content),
+                    );
 
                     let insets = config.window_insets;
+                    let top_pad = if contained {
+                        SearchBarDefaults::CONTAINED_TOP_PADDING
+                    } else {
+                        SearchBarDefaults::VERTICAL_PADDING
+                    };
+                    let bottom_pad = if contained {
+                        SearchBarDefaults::VERTICAL_PADDING
+                    } else {
+                        Dp(SearchBarDefaults::VERTICAL_PADDING.0 * alpha)
+                    };
                     let mut children: Vec<View> = Vec::new();
+                    children.push(Box(Modifier::new()
+                        .fill_max_width()
+                        .height(Dp(top_pad.0 * alpha))
+                        .alpha(alpha)
+                        .background(body_bg)));
                     children.push(header);
+                    children.push(Box(Modifier::new()
+                        .fill_max_width()
+                        .height(bottom_pad)
+                        .alpha(alpha)
+                        .background(body_bg)));
                     if !contained {
                         children.push(Box(Modifier::new()
                             .fill_max_width()
                             .height(Dp(1.0))
                             .background(config.colors.divider_color)
-                            .alpha(c_alpha)));
+                            .alpha(alpha)));
                     }
                     children.push(body);
 
@@ -1549,7 +1564,6 @@ fn expanded_docked_search_bar(
         variant,
         overlay_instance
     );
-    let dropdown_height = remember_with_key(format!("{eds_id}:dropdown-h"), || signal(0.0));
     let overlay_guard = remember_with_key(format!("eds_oguard_{eds_id}"), || {
         RefCell::new(None::<OverlayGuard>)
     });
@@ -1630,7 +1644,6 @@ fn expanded_docked_search_bar(
                         }
                     }
 
-                    let bar_bg = config.colors.container(state.is_expanded());
                     let elevation = StateElevation {
                         default: config.tonal_elevation,
                         hovered: config.tonal_elevation,
@@ -1640,48 +1653,51 @@ fn expanded_docked_search_bar(
                         disabled: Dp::ZERO,
                     };
 
+                    let max_h = get_window_container_height()
+                        * if with_gap {
+                            SearchBarDefaults::DOCKED_WITH_GAP_HEIGHT_RATIO
+                        } else {
+                            SearchBarDefaults::DOCKED_HEIGHT_RATIO
+                        };
+                    let upper = ((max_h - SearchBarDefaults::HEIGHT.0) * alpha).max(0.0);
+                    let lower = ((SearchBarDefaults::DOCKED_MIN_HEIGHT.0.min(max_h))
+                        - SearchBarDefaults::HEIGHT.0)
+                        .max(0.0)
+                        .min(upper);
+
                     let col = if with_gap {
                         let header = Box(Modifier::new()
                             .fill_max_width()
                             .height(SearchBarDefaults::HEIGHT)
-                            .alpha(alpha)
-                            .background(bar_bg)
+                            .background(config.colors.container_color)
                             .clip_rounded(config.shape_radius)
                             .state_elevation(elevation)
                             .shadow(config.shadow_elevation, Dp::ZERO))
                         .child(inp);
 
-                        let gap = Box(Modifier::new()
-                            .fill_max_width()
-                            .height(config.dropdown_gap_size));
+                        if state.is_expanded() && alpha > 0.1 {
+                            let gap = config.dropdown_gap_size;
+                            let dropdown = Box(Modifier::new()
+                                .fill_max_width()
+                                .fit_content_height(Dp((upper - gap.0).max(0.0)))
+                                .min_height(Dp((lower - gap.0).max(0.0)))
+                                .alpha(c_alpha)
+                                .clip_rounded(config.dropdown_shape_radius)
+                                .background(config.colors.container_color)
+                                .state_elevation(elevation)
+                                .shadow(config.shadow_elevation, Dp::ZERO))
+                            .child(content);
+                            let gap_box = Box(Modifier::new().fill_max_width().height(gap));
 
-                        let slide_y = -(dropdown_height.get() / 2.0) * (1.0 - c_alpha);
-                        let dh = dropdown_height.clone();
-                        let dropdown = Box(Modifier::new()
-                            .fill_max_width()
-                            .translate(0.0, slide_y)
-                            .max_height(Dp(get_window_container_height()
-                                * SearchBarDefaults::DOCKED_WITH_GAP_HEIGHT_RATIO))
-                            .alpha(c_alpha)
-                            .clip_rounded(config.dropdown_shape_radius)
-                            .background(bar_bg)
-                            .state_elevation(elevation)
-                            .shadow(config.shadow_elevation, Dp::ZERO)
-                            .on_globally_positioned(move |rect| dh.set(rect.h)))
-                        .child(content);
-
-                        Column(Modifier::new().fill_max_width()).child((header, gap, dropdown))
+                            Column(Modifier::new().fill_max_width())
+                                .child((header, gap_box, dropdown))
+                        } else {
+                            header
+                        }
                     } else {
-                        let panel_h = ((get_window_container_height()
-                            * SearchBarDefaults::DOCKED_HEIGHT_RATIO)
-                            - SearchBarDefaults::HEIGHT.0)
-                            .max(0.0)
-                            * alpha;
-
                         Box(Modifier::new()
                             .fill_max_width()
-                            .alpha(alpha)
-                            .background(bar_bg)
+                            .background(config.colors.container_color)
                             .clip_rounded(config.shape_radius)
                             .state_elevation(elevation)
                             .shadow(config.shadow_elevation, Dp::ZERO))
@@ -1693,8 +1709,8 @@ fn expanded_docked_search_bar(
                                 .child(inp),
                                 Box(Modifier::new()
                                     .fill_max_width()
-                                    .height(Dp(panel_h))
-                                    .alpha(c_alpha))
+                                    .fit_content_height(Dp(upper))
+                                    .min_height(Dp(lower)))
                                 .child(
                                     Column(Modifier::new().fill_max_width()).child((
                                         Box(Modifier::new()
@@ -1733,7 +1749,13 @@ fn expanded_docked_search_bar(
 
                     let scrim = Box(Modifier::new()
                         .fill_max_size()
-                        .background(config.dropdown_scrim_color)
+                        .background(if with_gap {
+                            config.dropdown_scrim_color.with_alpha(
+                                (config.dropdown_scrim_color.3 as f32 * alpha).round() as u8,
+                            )
+                        } else {
+                            Color::TRANSPARENT
+                        })
                         .input_blocker()
                         .focusable(false)
                         .on_scroll(|_| Vec2::default())

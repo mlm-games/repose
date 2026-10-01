@@ -1048,6 +1048,7 @@ impl SearchBarDefaults {
     pub const CONTAINED_TOP_PADDING: Dp = Dp(4.0);
     pub const DOCKED_HEIGHT_RATIO: f32 = 2.0 / 3.0;
     pub const DOCKED_WITH_GAP_HEIGHT_RATIO: f32 = 1.0 / 2.0;
+    pub const DOCKED_MIN_HEIGHT: Dp = Dp(240.0);
 
     pub const CONTENT_PADDING: PaddingValues = PaddingValues {
         left: Dp(16.0),
@@ -1090,7 +1091,7 @@ impl SearchBarDefaults {
         theme().on_surface_variant
     }
     pub fn dropdown_scrim_color() -> Color {
-        Color::TRANSPARENT
+        theme().scrim.with_alpha(82)
     }
     pub fn contained_active_container_color() -> Color {
         theme().surface_container_low
