@@ -834,3 +834,32 @@ fn runtime_shortcuts_are_per_runtime() {
         Some(Action::Custom("b".into()))
     );
 }
+
+#[test]
+fn pointer_move_cursor_follows_frame_override() {
+    use repose_core::runtime::Scheduler;
+    use repose_core::{RenderContext, View, ViewKind};
+
+    fn empty_root(_: &mut Scheduler, _: &RenderContext) -> View {
+        View::new(0, ViewKind::Box)
+    }
+
+    let mut rt = ReposeRuntime::new();
+    rt.cache_frame(textfield_frame(TF_ID));
+
+    let moved = rt.handle_pointer_move(Vec2 { x: 10.0, y: 10.0 });
+    assert_eq!(moved.cursor, Some(CursorIcon::Text));
+
+    rt.sched.cursor_override = Some(CursorIcon::Grab);
+    let out = rt.frame(empty_root, &RenderContext::default());
+    assert_eq!(out.platform.cursor, Some(CursorIcon::Grab));
+
+    let moved = rt.handle_pointer_move(Vec2 { x: 11.0, y: 10.0 });
+    assert_eq!(moved.cursor, Some(CursorIcon::Grab));
+
+    rt.sched.cursor_override = None;
+    let _ = rt.frame(empty_root, &RenderContext::default());
+
+    let moved = rt.handle_pointer_move(Vec2 { x: 12.0, y: 10.0 });
+    assert_eq!(moved.cursor, Some(CursorIcon::Text));
+}

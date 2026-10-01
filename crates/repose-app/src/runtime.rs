@@ -258,6 +258,7 @@ pub struct ReposeRuntime {
     pub frame_cache: Option<Rc<Frame>>,
 
     cursor: Option<CursorIcon>,
+    frame_cursor_override: Option<CursorIcon>,
 
     pub shortcuts: repose_core::shortcuts::ShortcutState,
 
@@ -339,6 +340,7 @@ impl ReposeRuntime {
             pending_click: None,
             frame_cache: None,
             cursor: None,
+            frame_cursor_override: None,
             shortcuts: repose_core::shortcuts::ShortcutState::new().without_global_fallback(),
             textfield_states: HashMap::new(),
             gamepads: HashMap::new(),
@@ -570,12 +572,10 @@ impl ReposeRuntime {
                 ),
             };
 
+        let declared = self.sched.cursor_override.take();
+        self.frame_cursor_override = declared.clone();
         let platform = PlatformOutput {
-            cursor: self
-                .sched
-                .cursor_override
-                .take()
-                .or_else(|| self.take_cursor_suggestion()),
+            cursor: declared.or_else(|| self.take_cursor_suggestion()),
             ime_allowed,
             ime_cursor_area,
             clipboard_text,
@@ -963,7 +963,7 @@ impl ReposeRuntime {
 
         let Some(f) = &self.frame_cache else {
             return PointerMoveResult {
-                cursor: None,
+                cursor: self.move_cursor_suggestion(),
                 hover_id: None,
             };
         };
@@ -1064,7 +1064,7 @@ impl ReposeRuntime {
                 self.dispatch_pointer_to_path(PointerEventKind::Move, pos, &path, Some(tid));
             }
             return PointerMoveResult {
-                cursor: self.cursor.clone(),
+                cursor: self.move_cursor_suggestion(),
                 hover_id: self.hover_id,
             };
         }
@@ -1091,7 +1091,7 @@ impl ReposeRuntime {
         }
 
         PointerMoveResult {
-            cursor: self.cursor.clone(),
+            cursor: self.move_cursor_suggestion(),
             hover_id: self.hover_id,
         }
     }
@@ -3296,6 +3296,12 @@ impl ReposeRuntime {
     /// Take the cursor suggestion (clears it).
     pub fn take_cursor_suggestion(&mut self) -> Option<CursorIcon> {
         self.cursor.take()
+    }
+
+    fn move_cursor_suggestion(&self) -> Option<CursorIcon> {
+        self.frame_cursor_override
+            .clone()
+            .or_else(|| self.cursor.clone())
     }
 }
 
