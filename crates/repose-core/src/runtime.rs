@@ -162,10 +162,11 @@ pub(crate) fn remove_keyed_disposer_for_owner(key: &str, disposer: &Dispose, own
         }
         owner_removed = entry.owners.remove(owner);
         if entry.owners.is_empty()
-            && let Some(entry) = registry.remove(key) {
-                to_run = Some(entry.disposer);
-                registry_removed = true;
-            }
+            && let Some(entry) = registry.remove(key)
+        {
+            to_run = Some(entry.disposer);
+            registry_removed = true;
+        }
         true
     });
     if !matches!(result, Ok(true)) {
@@ -220,7 +221,7 @@ pub(crate) fn take_all_keyed_disposers() -> Vec<Dispose> {
         .ok()
         .flatten()
         .unwrap_or_default();
-    
+
     KEYED_DISPOSERS
         .try_with(|registry| {
             registry.try_borrow_mut().ok().map(|mut registry| {

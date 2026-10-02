@@ -392,9 +392,10 @@ impl LayoutEngine {
     /// tree resolution so shifts come from the tree that laid the node out.
     fn baseline_shift_for(&self, node_id: NodeId) -> Option<f32> {
         if self.scope_root_map.contains_key(&node_id)
-            && let Some(&s) = self.baseline_shifts.get(&node_id) {
-                return Some(s);
-            }
+            && let Some(&s) = self.baseline_shifts.get(&node_id)
+        {
+            return Some(s);
+        }
         if let Some(parent_id) = self.tree.get(node_id).and_then(|n| n.parent)
             && let Some(outer_key) = self.node_to_scope.get(&parent_id)
             && let Some(st) = self.scope_trees.get(outer_key)

@@ -1172,11 +1172,13 @@ pub fn DockedSearchBar(
         .on_key_event({
             let cb = on_expanded_change.clone();
             move |ev| {
-                if expanded && is_back_event(&ev)
-                    && let Some(ref cb) = cb {
-                        cb(false);
-                        return true;
-                    }
+                if expanded
+                    && is_back_event(&ev)
+                    && let Some(ref cb) = cb
+                {
+                    cb(false);
+                    return true;
+                }
                 false
             }
         })

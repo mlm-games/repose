@@ -1076,20 +1076,19 @@ fn apply_canvas_corner_effect(path: &lyon_path::Path, radius: f32) -> lyon_path:
                 current.push(at);
             }
             PathEvent::Line { to, .. } => current.push(to),
-            PathEvent::End { close, .. }
-                if !current.is_empty() => {
-                    if close
-                        && current
-                            .last()
-                            .is_some_and(|last| (*last - contour_start).square_length() > 1e-6)
-                    {
-                        current.push(contour_start);
-                    }
-                    contours.push(CornerContour {
-                        points: std::mem::take(&mut current),
-                        closed: close,
-                    });
+            PathEvent::End { close, .. } if !current.is_empty() => {
+                if close
+                    && current
+                        .last()
+                        .is_some_and(|last| (*last - contour_start).square_length() > 1e-6)
+                {
+                    current.push(contour_start);
                 }
+                contours.push(CornerContour {
+                    points: std::mem::take(&mut current),
+                    closed: close,
+                });
+            }
             _ => {}
         }
     }

@@ -2668,14 +2668,15 @@ impl LayoutEngine {
                 scene.nodes.push(SceneNode::PopClip);
             }
             if let Some(id) = layer_id
-                && let Some(shadow) = &modifier.shadow {
-                    scene.nodes.push(SceneNode::CompositeShadow {
-                        layer_id: id,
-                        blur_px: shadow.blur_radius.to_px(),
-                        offset_px: (Px::ZERO, shadow.offset_y.to_px()),
-                        color: shadow.color,
-                    });
-                }
+                && let Some(shadow) = &modifier.shadow
+            {
+                scene.nodes.push(SceneNode::CompositeShadow {
+                    layer_id: id,
+                    blur_px: shadow.blur_radius.to_px(),
+                    offset_px: (Px::ZERO, shadow.offset_y.to_px()),
+                    color: shadow.color,
+                });
+            }
             if modifier.transform.is_some() {
                 scene.nodes.push(SceneNode::PopTransform);
             }
@@ -2757,14 +2758,15 @@ impl LayoutEngine {
             scene.nodes.push(SceneNode::PopClip);
         }
         if let Some(id) = layer_id
-            && let Some(shadow) = &modifier.shadow {
-                scene.nodes.push(SceneNode::CompositeShadow {
-                    layer_id: id,
-                    blur_px: shadow.blur_radius.to_px(),
-                    offset_px: (Px::ZERO, shadow.offset_y.to_px()),
-                    color: shadow.color,
-                });
-            }
+            && let Some(shadow) = &modifier.shadow
+        {
+            scene.nodes.push(SceneNode::CompositeShadow {
+                layer_id: id,
+                blur_px: shadow.blur_radius.to_px(),
+                offset_px: (Px::ZERO, shadow.offset_y.to_px()),
+                color: shadow.color,
+            });
+        }
         if modifier.transform.is_some() {
             scene.nodes.push(SceneNode::PopTransform);
         }

@@ -144,7 +144,6 @@ struct FacetHashers {
     hashers: [FacetHasher; 4],
 }
 
-
 impl FacetHashers {
     fn hash(&mut self, mask: u8, write: impl Fn(&mut FacetHasher)) {
         for (index, hasher) in self.hashers.iter_mut().enumerate() {

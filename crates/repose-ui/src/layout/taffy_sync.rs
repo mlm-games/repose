@@ -592,15 +592,17 @@ impl LayoutEngine {
             }
         }
         if let Some(w) = m.width
-            && w.0.is_finite() {
-                s.size.width = length(px(w.max(Dp::ZERO)));
-                width_set = true;
-            }
+            && w.0.is_finite()
+        {
+            s.size.width = length(px(w.max(Dp::ZERO)));
+            width_set = true;
+        }
         if let Some(h) = m.height
-            && h.0.is_finite() {
-                s.size.height = length(px(h.max(Dp::ZERO)));
-                height_set = true;
-            }
+            && h.0.is_finite()
+        {
+            s.size.height = length(px(h.max(Dp::ZERO)));
+            height_set = true;
+        }
 
         if !width_set {
             if let Some(mode) = m.intrinsic_width {
@@ -628,16 +630,18 @@ impl LayoutEngine {
         }
 
         if let Some(sz) = m.required_size
-            && sz.width.0.is_finite() && sz.height.0.is_finite() {
-                s.size.width = length(px(sz.width.max(Dp::ZERO)));
-                s.size.height = length(px(sz.height.max(Dp::ZERO)));
-                s.min_size.width = length(px(sz.width.max(Dp::ZERO)));
-                s.min_size.height = length(px(sz.height.max(Dp::ZERO)));
-                s.max_size.width = length(px(sz.width.max(Dp::ZERO)));
-                s.max_size.height = length(px(sz.height.max(Dp::ZERO)));
-                width_set = true;
-                height_set = true;
-            }
+            && sz.width.0.is_finite()
+            && sz.height.0.is_finite()
+        {
+            s.size.width = length(px(sz.width.max(Dp::ZERO)));
+            s.size.height = length(px(sz.height.max(Dp::ZERO)));
+            s.min_size.width = length(px(sz.width.max(Dp::ZERO)));
+            s.min_size.height = length(px(sz.height.max(Dp::ZERO)));
+            s.max_size.width = length(px(sz.width.max(Dp::ZERO)));
+            s.max_size.height = length(px(sz.height.max(Dp::ZERO)));
+            width_set = true;
+            height_set = true;
+        }
 
         let fill_w = m.fill_max_w.or(m.fill_max);
         if let Some(frac) = fill_w {
@@ -664,21 +668,25 @@ impl LayoutEngine {
 
         if m.required_size.is_none() {
             if let Some(v) = m.min_width
-                && v.0.is_finite() {
-                    s.min_size.width = length(px(v.max(Dp::ZERO)));
-                }
+                && v.0.is_finite()
+            {
+                s.min_size.width = length(px(v.max(Dp::ZERO)));
+            }
             if let Some(v) = m.min_height
-                && v.0.is_finite() {
-                    s.min_size.height = length(px(v.max(Dp::ZERO)));
-                }
+                && v.0.is_finite()
+            {
+                s.min_size.height = length(px(v.max(Dp::ZERO)));
+            }
             if let Some(v) = m.max_width
-                && v.0.is_finite() {
-                    s.max_size.width = length(px(v.max(Dp::ZERO)));
-                }
+                && v.0.is_finite()
+            {
+                s.max_size.width = length(px(v.max(Dp::ZERO)));
+            }
             if let Some(v) = m.max_height
-                && v.0.is_finite() {
-                    s.max_size.height = length(px(v.max(Dp::ZERO)));
-                }
+                && v.0.is_finite()
+            {
+                s.max_size.height = length(px(v.max(Dp::ZERO)));
+            }
         }
 
         // Required range (overrides constraints, like required_size but per-axis)

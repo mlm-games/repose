@@ -5673,7 +5673,8 @@ impl WgpuSceneRenderer {
             .saturating_add(bytes);
         let projected_gpu = self
             .gpu_bytes_total()
-            .saturating_sub(old_bytes).saturating_add(bytes);
+            .saturating_sub(old_bytes)
+            .saturating_add(bytes);
         let projected_transient = self
             .transient_layer_bytes_total
             .saturating_sub(old_transient_bytes)
@@ -11176,7 +11177,9 @@ impl WgpuSceneRenderer {
         let transient_ids: HashSet<u32> = flatten_ids_used.iter().copied().collect();
         let producer_ids = std::mem::take(&mut self.producer_layer_ids);
         let stale_layers: Vec<u32> = self
-            .layer_pool.keys().filter_map(|id| {
+            .layer_pool
+            .keys()
+            .filter_map(|id| {
                 (!producer_ids.contains(id) && !transient_ids.contains(id)).then_some(*id)
             })
             .collect();
@@ -11345,9 +11348,9 @@ fn validate_sampler_descriptor(
         && !device
             .features()
             .contains(wgpu::Features::ADDRESS_MODE_CLAMP_TO_BORDER)
-        {
-            anyhow::bail!("native sampler uses unsupported clamp-to-border addressing");
-        }
+    {
+        anyhow::bail!("native sampler uses unsupported clamp-to-border addressing");
+    }
     Ok(())
 }
 
