@@ -73,7 +73,7 @@ fn srgb_eotf(c: f32) -> f32 {
 }
 
 fn bt709_eotf(c: f32) -> f32 {
-    return pow(max(c, 0.0), 1.0 / 2.2);
+    return pow(max(c, 0.0), 2.2);
 }
 
 fn pq_eotf(c: f32) -> f32 {
