@@ -6,7 +6,7 @@ thread_local! {
     static PRIMARY: RefCell<Option<Box<dyn Fn(&str)>>> = RefCell::new(None);
     static CLIPBOARD_READ: RefCell<Option<Box<dyn Fn() -> Option<String>>>> = RefCell::new(None);
     static CAPTURE_DEPTH: Cell<usize> = const { Cell::new(0) };
-    static PENDING_TEXT: RefCell<Option<String>> = RefCell::new(None);
+    static PENDING_TEXT: RefCell<Option<String>> = const { RefCell::new(None) };
 }
 
 /// Register a global clipboard write function (Ctrl+C / system clipboard).

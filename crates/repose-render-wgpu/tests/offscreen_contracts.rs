@@ -462,7 +462,7 @@ fn zero_arc_is_empty() {
         }],
     };
     let px = off.render_rgba(&scene, None).expect("render");
-    assert!(px.chunks_exact(4).all(|pixel| pixel[3] == 0));
+    assert!(px.as_chunks::<4>().0.iter().all(|pixel| pixel[3] == 0));
 }
 
 #[test]

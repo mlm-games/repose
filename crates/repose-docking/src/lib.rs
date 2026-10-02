@@ -1221,7 +1221,7 @@ fn insert_into_first_tabs(node: &mut DockNode, pid: PanelId) -> bool {
     }
 }
 
-fn find_node<'a>(node: &'a DockNode, id: u64) -> Option<&'a DockNode> {
+fn find_node(node: &DockNode, id: u64) -> Option<&DockNode> {
     if node.id == id {
         return Some(node);
     }

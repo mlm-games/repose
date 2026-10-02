@@ -3096,12 +3096,12 @@ impl ReposeRuntime {
                     },
                 );
                 request_frame();
-                return false;
+                false
             }
             GamepadEvent::Disconnected { id } => {
                 self.gamepads.remove(&id.0);
                 request_frame();
-                return false;
+                false
             }
             GamepadEvent::Button {
                 id,
@@ -3140,13 +3140,13 @@ impl ReposeRuntime {
                     utf16_code_point: 0,
                     physical: None,
                 };
-                return self.handle_key(&synthetic);
+                self.handle_key(&synthetic)
             }
             GamepadEvent::Axis { id, axis, value } => {
                 if let Some(pad) = self.gamepads.get_mut(&id.0) {
                     pad.axes.insert(*axis, *value);
                 }
-                return false;
+                false
             }
         }
     }

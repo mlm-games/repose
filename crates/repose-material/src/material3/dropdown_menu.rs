@@ -325,7 +325,7 @@ pub fn DropdownMenu(
                             w: 1.0,
                             h: 1.0,
                         })
-                        .unwrap_or_else(|| trigger_rect.borrow().clone().unwrap_or_default());
+                        .unwrap_or_else(|| (*trigger_rect.borrow()).unwrap_or_default());
                     let win_w = get_window_container_width();
                     let win_h = get_window_container_height();
                     let horizontal_margin = DropdownMenuDefaults::HORIZONTAL_MARGIN.0;

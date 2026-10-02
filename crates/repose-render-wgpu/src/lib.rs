@@ -5673,9 +5673,7 @@ impl WgpuSceneRenderer {
             .saturating_add(bytes);
         let projected_gpu = self
             .gpu_bytes_total()
-            .saturating_sub(old_bytes)
-            .checked_add(bytes)
-            .unwrap_or(u64::MAX);
+            .saturating_sub(old_bytes).saturating_add(bytes);
         let projected_transient = self
             .transient_layer_bytes_total
             .saturating_sub(old_transient_bytes)
@@ -7612,7 +7610,7 @@ impl WgpuSceneRenderer {
             log::warn!("vector mesh has no geometry");
             return None;
         }
-        if mesh.indices.len() % 3 != 0 {
+        if !mesh.indices.len().is_multiple_of(3) {
             log::warn!("vector mesh index count is not a triangle list");
             return None;
         }
@@ -11178,9 +11176,7 @@ impl WgpuSceneRenderer {
         let transient_ids: HashSet<u32> = flatten_ids_used.iter().copied().collect();
         let producer_ids = std::mem::take(&mut self.producer_layer_ids);
         let stale_layers: Vec<u32> = self
-            .layer_pool
-            .iter()
-            .filter_map(|(id, _)| {
+            .layer_pool.keys().filter_map(|id| {
                 (!producer_ids.contains(id) && !transient_ids.contains(id)).then_some(*id)
             })
             .collect();
@@ -11265,7 +11261,7 @@ fn validate_dmabuf_plane(
     if width == 0 || height == 0 || bytes_per_pixel == 0 {
         anyhow::bail!("DMA-BUF plane dimensions and bytes per pixel must be non-zero");
     }
-    if offset % 4 != 0 || stride % 4 != 0 {
+    if !offset.is_multiple_of(4) || !stride.is_multiple_of(4) {
         anyhow::bail!("DMA-BUF offset and stride must be 4-byte aligned");
     }
     let row_bytes = (width as u64)
@@ -11343,17 +11339,15 @@ fn validate_sampler_descriptor(
     {
         anyhow::bail!("native sampler must be non-comparison linear filtering with finite LODs");
     }
-    if matches!(sampler.address_mode_u, wgpu::AddressMode::ClampToBorder)
+    if (matches!(sampler.address_mode_u, wgpu::AddressMode::ClampToBorder)
         || matches!(sampler.address_mode_v, wgpu::AddressMode::ClampToBorder)
-        || matches!(sampler.address_mode_w, wgpu::AddressMode::ClampToBorder)
-    {
-        if !device
+        || matches!(sampler.address_mode_w, wgpu::AddressMode::ClampToBorder))
+        && !device
             .features()
             .contains(wgpu::Features::ADDRESS_MODE_CLAMP_TO_BORDER)
         {
             anyhow::bail!("native sampler uses unsupported clamp-to-border addressing");
         }
-    }
     Ok(())
 }
 

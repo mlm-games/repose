@@ -471,7 +471,7 @@ pub fn tick() -> bool {
                 }
             }
         };
-        for_each_owner(&key, |owner| crate::scope_cache::mark_scope_dirty(owner));
+        for_each_owner(&key, crate::scope_cache::mark_scope_dirty);
         results.push((key, tick_fn, still, generation));
     }
 

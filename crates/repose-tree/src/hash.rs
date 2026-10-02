@@ -139,22 +139,11 @@ const FACET_ALL: u8 = FACET_LAYOUT | FACET_MEASUREMENT | FACET_PAINT | FACET_SEM
 
 type FacetHasher = RapidHasher<'static>;
 
+#[derive(Default)]
 struct FacetHashers {
     hashers: [FacetHasher; 4],
 }
 
-impl Default for FacetHashers {
-    fn default() -> Self {
-        Self {
-            hashers: [
-                FacetHasher::default(),
-                FacetHasher::default(),
-                FacetHasher::default(),
-                FacetHasher::default(),
-            ],
-        }
-    }
-}
 
 impl FacetHashers {
     fn hash(&mut self, mask: u8, write: impl Fn(&mut FacetHasher)) {
@@ -2022,7 +2011,7 @@ mod tests {
                 text_decoration: TextDecoration::default(),
                 letter_spacing: Sp::ZERO,
                 line_height: Sp::ZERO,
-                url: url.map(|u| std::sync::Arc::from(u)),
+                url: url.map(std::sync::Arc::from),
                 font_variation_settings: None,
                 draw_style: DrawStyle::Fill,
             },

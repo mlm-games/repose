@@ -24,9 +24,9 @@ impl FramePacer {
     }
 
     pub(crate) fn deadline(&self, now: web_time::Instant) -> Option<web_time::Instant> {
-        let interval = match self.max_fps.filter(|fps| fps.is_finite() && *fps > 0.0) {
-            Some(fps) => web_time::Duration::from_secs_f64((1.0 / f64::from(fps)).clamp(0.0, 1.0)),
-            None => return None,
+        let interval = {
+            let fps = self.max_fps.filter(|fps| fps.is_finite() && *fps > 0.0)?;
+            web_time::Duration::from_secs_f64((1.0 / f64::from(fps)).clamp(0.0, 1.0))
         };
         let deadline = self.last_render.map(|last| last + interval)?;
         (deadline > now).then_some(deadline)

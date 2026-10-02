@@ -1291,7 +1291,7 @@ impl ViewTree {
         if self
             .view_id_map
             .get(&requested)
-            .map_or(true, |existing| *existing == node_id)
+            .is_none_or(|existing| *existing == node_id)
         {
             return requested;
         }
@@ -1305,7 +1305,7 @@ impl ViewTree {
             if self
                 .view_id_map
                 .get(&candidate)
-                .map_or(true, |existing| *existing == node_id)
+                .is_none_or(|existing| *existing == node_id)
             {
                 return candidate;
             }

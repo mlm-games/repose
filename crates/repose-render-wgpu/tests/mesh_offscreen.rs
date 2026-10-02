@@ -54,7 +54,7 @@ fn covered_of(nodes: Vec<SceneNode>) -> Option<Vec<u8>> {
 
 fn ink_bbox(px: &[u8]) -> Option<(u32, u32, u32, u32)> {
     let (mut x0, mut y0, mut x1, mut y1) = (64u32, 64u32, 0u32, 0u32);
-    for (i, p) in px.chunks_exact(4).enumerate() {
+    for (i, p) in px.as_chunks::<4>().0.iter().enumerate() {
         if p[3] > 8 {
             let (x, y) = ((i % 64) as u32, (i / 64) as u32);
             x0 = x0.min(x);
@@ -126,7 +126,7 @@ fn vector_mesh_covers_pixels_offscreen() {
         }],
     };
     let px = off.render_rgba(&scene, None).expect("render");
-    let covered = px.chunks_exact(4).filter(|p| p[3] > 8).count();
+    let covered = px.as_chunks::<4>().0.iter().filter(|p| p[3] > 8).count();
     assert!(covered > 1000, "mesh must cover pixels, got {covered}");
     // Centre of the quad must be opaque white.
     let c = (32 * 64 + 32) * 4;
@@ -332,7 +332,7 @@ fn covered_of_sized(w: u32, h: u32, nodes: Vec<SceneNode>) -> Option<Vec<u8>> {
 
 fn ink_bbox_wh(px: &[u8], w: usize) -> Option<(u32, u32, u32, u32)> {
     let (mut x0, mut y0, mut x1, mut y1) = (w as u32, 100000u32, 0u32, 0u32);
-    for (i, p) in px.chunks_exact(4).enumerate() {
+    for (i, p) in px.as_chunks::<4>().0.iter().enumerate() {
         if p[3] > 8 {
             let (x, y) = ((i % w) as u32, (i / w) as u32);
             x0 = x0.min(x);

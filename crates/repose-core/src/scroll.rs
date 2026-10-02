@@ -1384,7 +1384,7 @@ mod fling_tests {
     #[test]
     fn release_is_continuous_with_the_drag() {
         for step in [8.0f32, 30.0, 70.0] {
-            let mut st = seeded();
+            let st = seeded();
             for _ in 0..10 {
                 st.scroll_immediate(step);
                 frame();

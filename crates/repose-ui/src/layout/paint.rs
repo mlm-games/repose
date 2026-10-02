@@ -1821,7 +1821,7 @@ impl LayoutEngine {
                         .or_else(|| Some(text.clone())),
                     rect,
                     focused: is_focused,
-                    enabled: semantic.map_or(true, |s| s.enabled) && !modifier.disabled,
+                    enabled: semantic.is_none_or(|s| s.enabled) && !modifier.disabled,
                     selectable_group: semantic.is_some_and(|s| s.selectable_group),
                     checked: semantic.and_then(|s| s.checked),
                     selected: semantic.and_then(|s| s.selected),
@@ -2196,7 +2196,7 @@ impl LayoutEngine {
                         .or_else(|| Some(hint.clone())),
                     rect,
                     focused: is_focused,
-                    enabled: ti.enabled && semantic.map_or(true, |s| s.enabled),
+                    enabled: ti.enabled && semantic.is_none_or(|s| s.enabled),
                     selectable_group: semantic.is_some_and(|s| s.selectable_group),
                     checked: semantic.and_then(|s| s.checked),
                     selected: semantic.and_then(|s| s.selected),
@@ -2667,8 +2667,8 @@ impl LayoutEngine {
             if push_round_clip && overflow_clip {
                 scene.nodes.push(SceneNode::PopClip);
             }
-            if let Some(id) = layer_id {
-                if let Some(shadow) = &modifier.shadow {
+            if let Some(id) = layer_id
+                && let Some(shadow) = &modifier.shadow {
                     scene.nodes.push(SceneNode::CompositeShadow {
                         layer_id: id,
                         blur_px: shadow.blur_radius.to_px(),
@@ -2676,7 +2676,6 @@ impl LayoutEngine {
                         color: shadow.color,
                     });
                 }
-            }
             if modifier.transform.is_some() {
                 scene.nodes.push(SceneNode::PopTransform);
             }
@@ -2757,8 +2756,8 @@ impl LayoutEngine {
         if push_round_clip && overflow_clip {
             scene.nodes.push(SceneNode::PopClip);
         }
-        if let Some(id) = layer_id {
-            if let Some(shadow) = &modifier.shadow {
+        if let Some(id) = layer_id
+            && let Some(shadow) = &modifier.shadow {
                 scene.nodes.push(SceneNode::CompositeShadow {
                     layer_id: id,
                     blur_px: shadow.blur_radius.to_px(),
@@ -2766,7 +2765,6 @@ impl LayoutEngine {
                     color: shadow.color,
                 });
             }
-        }
         if modifier.transform.is_some() {
             scene.nodes.push(SceneNode::PopTransform);
         }

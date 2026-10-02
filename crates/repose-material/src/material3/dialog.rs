@@ -671,10 +671,9 @@ pub fn Dialog(
                         }
                     }
 
-                    let scrim_color = state
+                    let scrim_color = (*state
                         .scrim_color
-                        .borrow()
-                        .clone()
+                        .borrow())
                         .unwrap_or_else(AlertDialogDefaults::scrim_color);
                     let scrim = Box(Modifier::new()
                         .fill_max_size()

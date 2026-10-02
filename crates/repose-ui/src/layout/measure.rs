@@ -308,7 +308,7 @@ impl LayoutEngine {
         // Recomputed from scratch every layout: a child that loses its flag
         // (or its row) must not keep a stale shift.
         shifts_out.clear();
-        for (&view_nid, _) in taffy_map.iter() {
+        for &view_nid in taffy_map.keys() {
             let Some(node) = tree.get(view_nid) else {
                 continue;
             };

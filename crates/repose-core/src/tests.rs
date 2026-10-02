@@ -582,7 +582,7 @@ mod tests {
     fn auto_variants_persist_per_call_site() {
         clear_composer();
 
-        let (a, b, s, r) = {
+        let (_a, _b, s, _r) = {
             let _g = ComposeGuard::begin();
             let a = auto_counter();
             let b = auto_counter();

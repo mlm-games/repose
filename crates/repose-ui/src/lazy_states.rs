@@ -66,7 +66,7 @@ impl LazyColumnGeometry {
             self.fenwick[index + 1] = height;
         }
         for index in 1..self.fenwick.len() {
-            let parent = index + (index & index.wrapping_neg());
+            let parent = index + index.isolate_lowest_one();
             if parent < self.fenwick.len() {
                 self.fenwick[parent] += self.fenwick[index];
             }

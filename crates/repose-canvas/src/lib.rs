@@ -1076,8 +1076,8 @@ fn apply_canvas_corner_effect(path: &lyon_path::Path, radius: f32) -> lyon_path:
                 current.push(at);
             }
             PathEvent::Line { to, .. } => current.push(to),
-            PathEvent::End { close, .. } => {
-                if !current.is_empty() {
+            PathEvent::End { close, .. }
+                if !current.is_empty() => {
                     if close
                         && current
                             .last()
@@ -1090,7 +1090,6 @@ fn apply_canvas_corner_effect(path: &lyon_path::Path, radius: f32) -> lyon_path:
                         closed: close,
                     });
                 }
-            }
             _ => {}
         }
     }
