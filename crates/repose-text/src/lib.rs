@@ -637,9 +637,7 @@ fn init_provider_sync() -> font_awl::Provider {
     let mut provider = font_awl::Provider::new();
     provider.load_bundled_fonts();
     static MATERIAL_SYMBOLS_TTF: &[u8] = include_bytes!("assets/MaterialSymbolsOutlined.ttf");
-    static NOTO_SYMBOLS_TTF: &[u8] = include_bytes!("assets/NotoSansSymbols2-Regular.ttf");
     register_asset_if_missing(&mut provider, MATERIAL_SYMBOLS_TTF);
-    register_asset_if_missing(&mut provider, NOTO_SYMBOLS_TTF);
     // Excluded from wasm: 25 MB of binary weight for apps that never show an
     // emoji, and this build is COLRv1, which swash cannot rasterize anyway
     // (`Source::ColorOutline` reads COLRv0 records only). Without it, emoji
