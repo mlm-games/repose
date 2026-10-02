@@ -17,6 +17,7 @@ mod common;
 pub mod gamepad;
 pub mod render;
 pub mod runner_common;
+pub mod sensor;
 pub mod window_v2;
 
 use common as rc;
@@ -309,6 +310,10 @@ pub fn run_desktop_app_with_config(
         touch_gestures: rc::TouchGestureState,
 
         gamepad: Option<Box<dyn gamepad::GamepadBackend>>,
+        sensors: Option<Box<dyn sensor::SensorBackend>>,
+        /// Devices whose samples never routed to a pad, warned once each
+        /// rather than per sample (an IMU reports hundreds a second).
+        sensor_drops: Vec<String>,
     }
 
     impl App {
@@ -400,6 +405,9 @@ pub fn run_desktop_app_with_config(
                 touch_gestures: rc::TouchGestureState::default(),
                 gamepad: gamepad::create_backend()
                     .map(|b| Box::new(b) as Box<dyn gamepad::GamepadBackend>),
+                sensors: sensor::create_backend()
+                    .map(|b| Box::new(b) as Box<dyn sensor::SensorBackend>),
+                sensor_drops: Vec::new(),
             }
         }
 
@@ -1427,6 +1435,22 @@ pub fn run_desktop_app_with_config(
                 }
             } else {
                 self.rt.take_rumble_requests();
+            }
+
+            if let Some(backend) = &mut self.sensors {
+                for reading in backend.poll_sensors() {
+                    match self.rt.gamepad_id_by_sensor_device(&reading.device) {
+                        Some(id) => self.rt.handle_sensor_sample(id, reading.sample),
+                        None if !self.sensor_drops.contains(&reading.device) => {
+                            self.sensor_drops.push(reading.device.clone());
+                            log::warn!(
+                                "sensor: no connected pad named {:?}, dropping samples",
+                                reading.device
+                            );
+                        }
+                        None => {}
+                    }
+                }
             }
 
             #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]

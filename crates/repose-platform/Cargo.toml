@@ -10,6 +10,8 @@ description = "Platform runners (winit Desktop, Android and Web)"
 [features]
 # Gamepad hardware polling..
 gamepad = ["dep:gilrs"]
+# Motion sensor polling (gyroscope / accelerometer).
+sensors = ["dep:evdev"]
 
 [dependencies]
 repose-app.workspace = true
@@ -30,6 +32,9 @@ rustc-hash = { workspace = true }
 winit = { workspace = true }
 accesskit_winit = { workspace = true }
 gilrs = { workspace = true, optional = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+evdev = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
 winit = { workspace = true, features = ["android-native-activity"] }

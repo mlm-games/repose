@@ -4,8 +4,9 @@ use std::rc::Rc;
 
 use repose_core::dnd;
 use repose_core::input::{
-    GamepadAxis, GamepadButton, GamepadEvent, ImeEvent, Key, KeyEvent, KeyEventType, Modifiers,
-    PointerButton, PointerEvent, PointerEventKind, PointerId, PointerKind,
+    GamepadAxis, GamepadButton, GamepadEvent, GamepadId, ImeEvent, Key, KeyEvent, KeyEventType,
+    Modifiers, PointerButton, PointerEvent, PointerEventKind, PointerId, PointerKind, SensorKind,
+    SensorSample,
 };
 use repose_core::locals::{Density, set_density_default, with_density};
 use repose_core::runtime::{Frame, Scheduler};
@@ -268,6 +269,9 @@ pub struct ReposeRuntime {
     pub gamepads: HashMap<u32, GamepadPad>,
     /// Queued dual-motor rumble requests.
     pub pending_rumble: Vec<(u32, f32, f32, u32)>,
+    /// Latest motion-sensor reading per pad and sensor, fed by
+    /// [`ReposeRuntime::handle_sensor_sample`].
+    pub sensors: HashMap<(u32, SensorKind), [f32; 3]>,
 }
 
 /// Live state of one connected gamepad, mirrored from [`GamepadEvent`]s.
@@ -345,6 +349,7 @@ impl ReposeRuntime {
             textfield_states: HashMap::new(),
             gamepads: HashMap::new(),
             pending_rumble: Vec::new(),
+            sensors: HashMap::new(),
         }
     }
 
@@ -3100,6 +3105,7 @@ impl ReposeRuntime {
             }
             GamepadEvent::Disconnected { id } => {
                 self.gamepads.remove(&id.0);
+                self.sensors.retain(|(pad, _), _| *pad != id.0);
                 request_frame();
                 false
             }
@@ -3189,6 +3195,78 @@ impl ReposeRuntime {
             }
         }
         requests
+    }
+
+    /// Record a motion-sensor reading for `id` (platform runners call this
+    /// once per polled sample). A frame is requested only once the reading
+    /// moves past its deadband, compared against the reading that last asked
+    /// for one: resting noise then cannot pin the app at display rate, while
+    /// slow drift keeps accumulating until it counts as motion.
+    pub fn handle_sensor_sample(&mut self, id: GamepadId, sample: SensorSample) {
+        let key = (id.0, sample.kind);
+        let deadband = match sample.kind {
+            SensorKind::Gyroscope => SENSOR_GYRO_DEADBAND,
+            SensorKind::Accelerometer => SENSOR_ACCEL_DEADBAND,
+        };
+        let moved = self.sensors.get(&key).is_none_or(|stored| {
+            sample
+                .data
+                .iter()
+                .zip(stored)
+                .any(|(now, was)| (now - was).abs() > deadband)
+        });
+        if moved {
+            self.sensors.insert(key, sample.data);
+            request_frame();
+        }
+    }
+
+    /// Reading for `id`'s `kind`, or `None` while the pad has never reported
+    /// it. Gyroscope values are degrees per second, accelerometer values g,
+    /// both in the device frame. A reading holds until the sensor moves past
+    /// its deadband, so a resting pad reports a stable value instead of noise.
+    pub fn gamepad_sensor(&self, id: GamepadId, kind: SensorKind) -> Option<[f32; 3]> {
+        self.sensors.get(&(id.0, kind)).copied()
+    }
+
+    /// Which sensors `id` has reported, in gyroscope-then-accelerometer order.
+    pub fn gamepad_sensor_kinds(&self, id: GamepadId) -> Vec<SensorKind> {
+        [SensorKind::Gyroscope, SensorKind::Accelerometer]
+            .into_iter()
+            .filter(|kind| self.sensors.contains_key(&(id.0, *kind)))
+            .collect()
+    }
+
+    /// Resolve a sensor driver's device name to a connected pad. Sensor nodes
+    /// are separate from the pad node, so they are matched by name: exact
+    /// first, then case- and punctuation-insensitively, since drivers append
+    /// interface suffixes ("Wireless Controller (Vendor: 054c)"). Ambiguous
+    /// names resolve to nothing rather than picking a pad at random.
+    pub fn gamepad_id_by_sensor_device(&self, device: &str) -> Option<GamepadId> {
+        let exact: Vec<u32> = self
+            .gamepads
+            .iter()
+            .filter(|(_, pad)| pad.name == device)
+            .map(|(id, _)| *id)
+            .collect();
+        if exact.len() == 1 {
+            return Some(GamepadId(exact[0]));
+        }
+        if !exact.is_empty() {
+            return None;
+        }
+        let needle = repose_core::input::normalize_device_name(device);
+        let matches: Vec<u32> = self
+            .gamepads
+            .iter()
+            .filter(|(_, pad)| repose_core::input::normalize_device_name(&pad.name) == needle)
+            .map(|(id, _)| *id)
+            .collect();
+        if matches.len() == 1 {
+            Some(GamepadId(matches[0]))
+        } else {
+            None
+        }
     }
 
     /// Process a key event with an optional host-composed `text` payload
@@ -3583,6 +3661,14 @@ fn tf_can_edit(hit: &HitRegion) -> bool {
     hit.tf_enabled && !hit.tf_read_only
 }
 
+/// Movement a sensor must show before the app is asked to redraw, in the
+/// units [`ReposeRuntime::gamepad_sensor`] reports. Each sits above its
+/// drivers' resting noise and per-count quantization (gyro 0.5 °/s against
+/// hid-steam's 0.0625 °/s per count, accel 0.02 g against hid-sony's 0.0088
+/// g), so a connected but untouched pad lets the app idle.
+const SENSOR_GYRO_DEADBAND: f32 = 0.5;
+const SENSOR_ACCEL_DEADBAND: f32 = 0.02;
+
 fn tf_is_sensitive(hit: &HitRegion) -> bool {
     hit.tf_sensitive
         || matches!(
@@ -3945,5 +4031,134 @@ mod gamepad_tests {
         repose_core::rumble::push(0.5, 0.5, 100);
         assert!(rt.take_rumble_requests().is_empty());
         assert!(repose_core::rumble::take().is_empty());
+    }
+
+    #[test]
+    fn sensor_samples_are_latest_wins_per_pad_and_kind() {
+        let mut rt = ReposeRuntime::new();
+        rt.handle_sensor_sample(GamepadId(0), SensorSample::gyroscope(1.0, 2.0, 3.0));
+        rt.handle_sensor_sample(GamepadId(0), SensorSample::gyroscope(4.0, 5.0, 6.0));
+        rt.handle_sensor_sample(GamepadId(0), SensorSample::accelerometer(0.0, 0.0, 1.0));
+        rt.handle_sensor_sample(GamepadId(2), SensorSample::gyroscope(-1.0, 0.0, 0.0));
+
+        assert_eq!(
+            rt.gamepad_sensor(GamepadId(0), SensorKind::Gyroscope),
+            Some([4.0, 5.0, 6.0])
+        );
+        assert_eq!(
+            rt.gamepad_sensor(GamepadId(0), SensorKind::Accelerometer),
+            Some([0.0, 0.0, 1.0])
+        );
+        assert_eq!(
+            rt.gamepad_sensor(GamepadId(2), SensorKind::Gyroscope),
+            Some([-1.0, 0.0, 0.0])
+        );
+        assert_eq!(rt.gamepad_sensor(GamepadId(1), SensorKind::Gyroscope), None);
+        assert_eq!(
+            rt.gamepad_sensor_kinds(GamepadId(0)),
+            vec![SensorKind::Gyroscope, SensorKind::Accelerometer]
+        );
+        assert_eq!(
+            rt.gamepad_sensor_kinds(GamepadId(2)),
+            vec![SensorKind::Gyroscope]
+        );
+    }
+
+    #[test]
+    fn resting_sensor_noise_holds_still_until_motion_accumulates() {
+        let mut rt = ReposeRuntime::new();
+        rt.handle_sensor_sample(GamepadId(0), SensorSample::gyroscope(0.0, 0.0, 0.0));
+        rt.handle_sensor_sample(GamepadId(0), SensorSample::gyroscope(0.1, -0.1, 0.05));
+        rt.handle_sensor_sample(GamepadId(0), SensorSample::accelerometer(1.0, 0.004, 0.0));
+        rt.handle_sensor_sample(GamepadId(0), SensorSample::accelerometer(1.0, -0.004, 0.0));
+
+        assert_eq!(
+            rt.gamepad_sensor(GamepadId(0), SensorKind::Gyroscope),
+            Some([0.0, 0.0, 0.0])
+        );
+        assert_eq!(
+            rt.gamepad_sensor(GamepadId(0), SensorKind::Accelerometer),
+            Some([1.0, 0.004, 0.0])
+        );
+
+        rt.handle_sensor_sample(GamepadId(0), SensorSample::gyroscope(40.0, 0.0, 0.0));
+        rt.handle_sensor_sample(GamepadId(0), SensorSample::accelerometer(1.03, 0.0, 0.0));
+
+        assert_eq!(
+            rt.gamepad_sensor(GamepadId(0), SensorKind::Gyroscope),
+            Some([40.0, 0.0, 0.0])
+        );
+        assert_eq!(
+            rt.gamepad_sensor(GamepadId(0), SensorKind::Accelerometer),
+            Some([1.03, 0.0, 0.0])
+        );
+    }
+
+    #[test]
+    fn sensor_state_drops_with_the_pad() {
+        let mut rt = ReposeRuntime::new();
+        rt.handle_gamepad(&GamepadEvent::Connected {
+            id: GamepadId(0),
+            name: "Pad".to_string(),
+        });
+        rt.handle_sensor_sample(GamepadId(0), SensorSample::gyroscope(1.0, 1.0, 1.0));
+        assert!(
+            rt.gamepad_sensor(GamepadId(0), SensorKind::Gyroscope)
+                .is_some()
+        );
+
+        rt.handle_gamepad(&GamepadEvent::Disconnected { id: GamepadId(0) });
+        assert_eq!(rt.gamepad_sensor(GamepadId(0), SensorKind::Gyroscope), None);
+    }
+
+    #[test]
+    fn sensor_devices_resolve_to_connected_pads_by_name() {
+        let mut rt = ReposeRuntime::new();
+        rt.handle_gamepad(&GamepadEvent::Connected {
+            id: GamepadId(3),
+            name: "Wireless Controller (Vendor: 054c)".to_string(),
+        });
+
+        assert_eq!(
+            rt.gamepad_id_by_sensor_device("Wireless Controller (Vendor: 054c)"),
+            Some(GamepadId(3))
+        );
+        assert_eq!(
+            rt.gamepad_id_by_sensor_device("wireless controller vendor 054c"),
+            Some(GamepadId(3))
+        );
+        assert_eq!(rt.gamepad_id_by_sensor_device("Some Other Pad"), None);
+    }
+
+    #[test]
+    fn ambiguous_sensor_device_names_resolve_to_nothing() {
+        let mut rt = ReposeRuntime::new();
+        for (id, name) in [(0, "Wireless Controller"), (1, "wireless controller!")] {
+            rt.handle_gamepad(&GamepadEvent::Connected {
+                id: GamepadId(id),
+                name: name.to_string(),
+            });
+        }
+        assert_eq!(rt.gamepad_id_by_sensor_device("WIRELESS CONTROLLER"), None);
+        assert_eq!(
+            rt.gamepad_id_by_sensor_device("Wireless Controller"),
+            Some(GamepadId(0))
+        );
+    }
+
+    #[test]
+    fn two_pads_sharing_one_name_never_win_by_hash_order() {
+        let mut rt = ReposeRuntime::new();
+        for id in 0..2 {
+            rt.handle_gamepad(&GamepadEvent::Connected {
+                id: GamepadId(id),
+                name: "Nintendo Switch Pro Controller".to_string(),
+            });
+        }
+        assert_eq!(
+            rt.gamepad_id_by_sensor_device("Nintendo Switch Pro Controller"),
+            None,
+            "an identical name cannot pick a pad by map order"
+        );
     }
 }

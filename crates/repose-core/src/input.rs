@@ -572,6 +572,48 @@ pub enum GamepadAxis {
     RightTrigger,
 }
 
+/// Motion sensor a gamepad can report.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum SensorKind {
+    /// Angular velocity in degrees per second.
+    Gyroscope,
+    /// Proper acceleration in g.
+    Accelerometer,
+}
+
+/// One reading from a motion sensor, in the device frame.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SensorSample {
+    pub kind: SensorKind,
+    /// `[x, y, z]`, scaled per [`SensorKind`].
+    pub data: [f32; 3],
+}
+
+/// Lowercases and strips punctuation, so a driver name matches a pad name
+/// despite interface suffixes ("Wireless Controller (Vendor: 054c)").
+pub fn normalize_device_name(name: &str) -> String {
+    name.chars()
+        .filter(|c| c.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+impl SensorSample {
+    pub fn gyroscope(x: f32, y: f32, z: f32) -> Self {
+        Self {
+            kind: SensorKind::Gyroscope,
+            data: [x, y, z],
+        }
+    }
+
+    pub fn accelerometer(x: f32, y: f32, z: f32) -> Self {
+        Self {
+            kind: SensorKind::Accelerometer,
+            data: [x, y, z],
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum GamepadEvent {
     Connected {
