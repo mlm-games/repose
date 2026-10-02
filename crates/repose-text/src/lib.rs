@@ -584,6 +584,10 @@ static WASM_FONT_CONTEXT_READY: std::sync::atomic::AtomicBool =
 #[cfg(target_arch = "wasm32")]
 static WASM_FONT_INIT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+#[cfg(target_arch = "wasm32")]
+static WEB_FONTS_LOADED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 fn append_generic_family_once(
     collection: &mut parley::fontique::Collection,
     generic: parley::fontique::GenericFamily,
@@ -679,9 +683,18 @@ fn init_engine_sync() -> Engine {
     }
 }
 
+/// True once the browser's local fonts have been registered into the
+/// provider. [`init_fonts_wasm`] keeps retrying until this is true:
+/// `queryLocalFonts()` rejects unless the document has transient user
+/// activation, so the startup call can never succeed on its own.
+#[cfg(target_arch = "wasm32")]
+pub fn web_fonts_loaded() -> bool {
+    WEB_FONTS_LOADED.load(Ordering::Acquire)
+}
+
 #[cfg(target_arch = "wasm32")]
 pub async fn init_fonts_wasm() {
-    if WASM_FONT_CONTEXT_READY.load(Ordering::Acquire) {
+    if WEB_FONTS_LOADED.load(Ordering::Acquire) {
         return;
     }
     if WASM_FONT_INIT
@@ -691,9 +704,16 @@ pub async fn init_fonts_wasm() {
         return;
     }
 
+    let startup_attempt = !WASM_FONT_CONTEXT_READY.load(Ordering::Acquire);
+
     let mut candidate = init_provider_sync();
-    if let Err(error) = candidate.load_web_fonts().await {
-        log::warn!("font-awl: failed to load web fonts: {error} (continuing with bundled fonts)");
+    let web_fonts = candidate.load_web_fonts().await;
+    if let Err(error) = &web_fonts {
+        if startup_attempt {
+            log::info!("font-awl: local fonts deferred to a user gesture: {error}");
+        } else {
+            log::warn!("font-awl: local font access failed: {error} (bundled fonts kept)");
+        }
     }
     restore_retained_font_data(candidate.collection_mut());
     configure_collection(candidate.collection_mut());
@@ -708,6 +728,9 @@ pub async fn init_fonts_wasm() {
         clear_caches_for_fallback_in(&mut eng);
     } else {
         drop(font_cx);
+    }
+    if web_fonts.is_ok() {
+        WEB_FONTS_LOADED.store(true, Ordering::Release);
     }
     WASM_FONT_CONTEXT_READY.store(true, Ordering::Release);
     WASM_FONT_INIT.store(false, Ordering::Release);

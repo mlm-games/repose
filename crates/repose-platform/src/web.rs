@@ -166,6 +166,9 @@ pub fn run_web_app(
     repose_text::ensure_web_fallback_initialized();
     wasm_bindgen_futures::spawn_local(async {
         repose_text::init_fonts_wasm().await;
+        if !repose_text::web_fonts_loaded() {
+            install_local_font_retry();
+        }
     });
 
     repose_core::animation::set_clock(Box::new(repose_core::animation::SystemClock));
@@ -205,6 +208,29 @@ pub fn run_web_app(
 
     event_loop.spawn_app(app);
     Ok(())
+}
+
+/// `queryLocalFonts()` rejects unless the document has transient activation,
+/// which the startup call above never has. Retry it once from the first
+/// pointer/key event, while activation is still live.
+fn install_local_font_retry() {
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let attempts_in_callback = Rc::new(Cell::new(false));
+    let callback = Closure::wrap(Box::new(move || {
+        if repose_text::web_fonts_loaded() || attempts_in_callback.get() {
+            return;
+        }
+        attempts_in_callback.set(true);
+        spawn_local(async {
+            repose_text::init_fonts_wasm().await;
+        });
+    }) as Box<dyn FnMut()>);
+    let _ =
+        window.add_event_listener_with_callback("pointerdown", callback.as_ref().unchecked_ref());
+    let _ = window.add_event_listener_with_callback("keydown", callback.as_ref().unchecked_ref());
+    std::mem::forget(callback);
 }
 
 struct WebDropListeners {
