@@ -585,8 +585,7 @@ static WASM_FONT_CONTEXT_READY: std::sync::atomic::AtomicBool =
 static WASM_FONT_INIT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 #[cfg(target_arch = "wasm32")]
-static WEB_FONTS_LOADED: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+static WEB_FONTS_LOADED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 fn append_generic_family_once(
     collection: &mut parley::fontique::Collection,
