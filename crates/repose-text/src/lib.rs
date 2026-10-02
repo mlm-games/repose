@@ -692,11 +692,8 @@ pub async fn init_fonts_wasm() {
     }
 
     let mut candidate = init_provider_sync();
-    let result = candidate.load_web_fonts().await;
-    if let Err(error) = result {
-        WASM_FONT_INIT.store(false, Ordering::Release);
-        log::warn!("font-awl: failed to load web fonts: {error}");
-        return;
+    if let Err(error) = candidate.load_web_fonts().await {
+        log::warn!("font-awl: failed to load web fonts: {error} (continuing with bundled fonts)");
     }
     restore_retained_font_data(candidate.collection_mut());
     configure_collection(candidate.collection_mut());
