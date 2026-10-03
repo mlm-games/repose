@@ -24,6 +24,8 @@ pub struct AppConfig {
     pub common: ReposeOptions,
     pub window_title: String,
     pub window_size: (u32, u32),
+    /// Start borderless fullscreen on the window's monitor.
+    pub fullscreen: bool,
     pub enable_inspector: bool,
 }
 
@@ -33,6 +35,7 @@ impl Default for AppConfig {
             common: ReposeOptions::default(),
             window_title: "Repose".to_string(),
             window_size: (1280, 800),
+            fullscreen: false,
             enable_inspector: true,
         }
     }

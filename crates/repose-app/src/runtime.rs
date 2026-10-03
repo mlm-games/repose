@@ -260,6 +260,7 @@ pub struct ReposeRuntime {
 
     cursor: Option<CursorIcon>,
     frame_cursor_override: Option<CursorIcon>,
+    fullscreen_request: Option<bool>,
 
     pub shortcuts: repose_core::shortcuts::ShortcutState,
 
@@ -278,6 +279,11 @@ pub struct ReposeRuntime {
 #[derive(Clone, Debug, Default)]
 pub struct GamepadPad {
     pub name: String,
+    /// USB vendor and product ids, `0` where the platform reports none. Enough
+    /// to tell a model apart (a GameCube adapter, a Switch pad) without
+    /// carrying a driver identity.
+    pub vendor_id: u16,
+    pub product_id: u16,
     pub pressed: HashSet<GamepadButton>,
     pub axes: HashMap<GamepadAxis, f32>,
 }
@@ -345,6 +351,7 @@ impl ReposeRuntime {
             frame_cache: None,
             cursor: None,
             frame_cursor_override: None,
+            fullscreen_request: None,
             shortcuts: repose_core::shortcuts::ShortcutState::new().without_global_fallback(),
             textfield_states: HashMap::new(),
             gamepads: HashMap::new(),
@@ -3092,11 +3099,18 @@ impl ReposeRuntime {
     /// Returns `true` when the event drove UI navigation.
     pub fn handle_gamepad(&mut self, event: &GamepadEvent) -> bool {
         match event {
-            GamepadEvent::Connected { id, name } => {
+            GamepadEvent::Connected {
+                id,
+                name,
+                vendor_id,
+                product_id,
+            } => {
                 self.gamepads.insert(
                     id.0,
                     GamepadPad {
                         name: name.clone(),
+                        vendor_id: *vendor_id,
+                        product_id: *product_id,
                         ..GamepadPad::default()
                     },
                 );
@@ -3235,6 +3249,14 @@ impl ReposeRuntime {
             .into_iter()
             .filter(|kind| self.sensors.contains_key(&(id.0, *kind)))
             .collect()
+    }
+
+    /// Vendor and product ids of a connected pad, `None` while it is not
+    /// connected. Both `0` where the platform reports no ids.
+    pub fn gamepad_vendor_product(&self, id: GamepadId) -> Option<(u16, u16)> {
+        self.gamepads
+            .get(&id.0)
+            .map(|pad| (pad.vendor_id, pad.product_id))
     }
 
     /// Resolve a sensor driver's device name to a connected pad. Sensor nodes
@@ -3395,6 +3417,23 @@ impl ReposeRuntime {
     /// Take the cursor suggestion (clears it).
     pub fn take_cursor_suggestion(&mut self) -> Option<CursorIcon> {
         self.cursor.take()
+    }
+
+    /// Ask the runner for borderless fullscreen on or off, as dock and
+    /// handheld mode switches need. Read back with
+    /// [`take_fullscreen_request`](Self::take_fullscreen_request).
+    pub fn request_fullscreen(&mut self, fullscreen: bool) {
+        self.fullscreen_request = Some(fullscreen);
+    }
+
+    /// Whether the window is currently fullscreen, as far as requests go.
+    pub fn fullscreen(&self) -> Option<bool> {
+        self.fullscreen_request
+    }
+
+    /// Take the pending fullscreen request (clears it).
+    pub fn take_fullscreen_request(&mut self) -> Option<bool> {
+        self.fullscreen_request.take()
     }
 
     fn move_cursor_suggestion(&self) -> Option<CursorIcon> {
@@ -3970,6 +4009,8 @@ mod gamepad_tests {
         rt.handle_gamepad(&GamepadEvent::Connected {
             id: GamepadId(0),
             name: "Pad".to_string(),
+            vendor_id: 0,
+            product_id: 0,
         });
         assert_eq!(rt.gamepads.len(), 1);
 
@@ -4017,6 +4058,8 @@ mod gamepad_tests {
         rt.handle_gamepad(&GamepadEvent::Connected {
             id: GamepadId(1),
             name: "Pad".to_string(),
+            vendor_id: 0,
+            product_id: 0,
         });
         repose_core::rumble::push(0.9, 0.5, 200);
         repose_core::rumble::push(0.0, 0.0, 0);
@@ -4100,6 +4143,8 @@ mod gamepad_tests {
         rt.handle_gamepad(&GamepadEvent::Connected {
             id: GamepadId(0),
             name: "Pad".to_string(),
+            vendor_id: 0,
+            product_id: 0,
         });
         rt.handle_sensor_sample(GamepadId(0), SensorSample::gyroscope(1.0, 1.0, 1.0));
         assert!(
@@ -4117,6 +4162,8 @@ mod gamepad_tests {
         rt.handle_gamepad(&GamepadEvent::Connected {
             id: GamepadId(3),
             name: "Wireless Controller (Vendor: 054c)".to_string(),
+            vendor_id: 0,
+            product_id: 0,
         });
 
         assert_eq!(
@@ -4137,6 +4184,8 @@ mod gamepad_tests {
             rt.handle_gamepad(&GamepadEvent::Connected {
                 id: GamepadId(id),
                 name: name.to_string(),
+                vendor_id: 0,
+                product_id: 0,
             });
         }
         assert_eq!(rt.gamepad_id_by_sensor_device("WIRELESS CONTROLLER"), None);
@@ -4153,6 +4202,8 @@ mod gamepad_tests {
             rt.handle_gamepad(&GamepadEvent::Connected {
                 id: GamepadId(id),
                 name: "Nintendo Switch Pro Controller".to_string(),
+                vendor_id: 0,
+                product_id: 0,
             });
         }
         assert_eq!(

@@ -116,8 +116,16 @@ impl GamepadBackend for GilrsBackend {
             let id = GamepadId(usize::from(ev.id) as u32);
             match ev.event {
                 E::Connected => {
-                    let name = self.gilrs.gamepad(ev.id).name().to_string();
-                    out.push(GamepadEvent::Connected { id, name });
+                    let pad = self.gilrs.gamepad(ev.id);
+                    let name = pad.name().to_string();
+                    let vendor_id = pad.vendor_id().unwrap_or(0);
+                    let product_id = pad.product_id().unwrap_or(0);
+                    out.push(GamepadEvent::Connected {
+                        id,
+                        name,
+                        vendor_id,
+                        product_id,
+                    });
                 }
                 E::Disconnected => out.push(GamepadEvent::Disconnected { id }),
                 E::ButtonPressed(b, _) | E::ButtonRepeated(b, _) => {
@@ -167,10 +175,17 @@ impl GamepadBackend for GilrsBackend {
         }
         if !self.boot_done {
             self.boot_done = true;
-            let live: Vec<(GamepadId, String)> = self
+            let live: Vec<(GamepadId, String, u16, u16)> = self
                 .gilrs
                 .gamepads()
-                .map(|(gid, pad)| (GamepadId(usize::from(gid) as u32), pad.name().to_string()))
+                .map(|(gid, pad)| {
+                    (
+                        GamepadId(usize::from(gid) as u32),
+                        pad.name().to_string(),
+                        pad.vendor_id().unwrap_or(0),
+                        pad.product_id().unwrap_or(0),
+                    )
+                })
                 .collect();
             let mut synth = synthesize_boot(live.into_iter(), &out);
             synth.append(&mut out);
@@ -322,6 +337,8 @@ impl AndroidBackend {
             out.push(GamepadEvent::Connected {
                 id: GamepadId(0),
                 name: "Android controller".to_string(),
+                vendor_id: 0,
+                product_id: 0,
             });
         }
         out.push(GamepadEvent::Button {
@@ -367,15 +384,22 @@ pub fn android_code_to_button(code: u32) -> Option<GamepadButton> {
 /// kept so device 0 sorts first for "Press Start" flows.
 #[cfg(all(feature = "gamepad", not(target_os = "android")))]
 fn synthesize_boot(
-    live: impl Iterator<Item = (GamepadId, String)>,
+    live: impl Iterator<Item = (GamepadId, String, u16, u16)>,
     reported: &[GamepadEvent],
 ) -> Vec<GamepadEvent> {
-    live.filter(|(id, _)| {
+    live.filter(|(id, _, _, _)| {
         !reported
             .iter()
             .any(|ev| matches!(ev, GamepadEvent::Connected { id: eid, .. } if eid == id))
     })
-    .map(|(id, name)| GamepadEvent::Connected { id, name })
+    .map(
+        |(id, name, vendor_id, product_id)| GamepadEvent::Connected {
+            id,
+            name,
+            vendor_id,
+            product_id,
+        },
+    )
     .collect()
 }
 
@@ -434,15 +458,15 @@ mod tests {
     #[test]
     fn boot_synthesis_reports_all_live_devices() {
         let live = vec![
-            (GamepadId(0), "Pad A".to_string()),
-            (GamepadId(1), "Pad B".to_string()),
+            (GamepadId(0), "Pad A".to_string(), 0x045e, 0x028e),
+            (GamepadId(1), "Pad B".to_string(), 0x057e, 0x2009),
         ];
         let synth = synthesize_boot(live.into_iter(), &[]);
         assert_eq!(synth.len(), 2);
         assert!(matches!(
             &synth[0],
-            GamepadEvent::Connected { id, name }
-            if *id == GamepadId(0) && name == "Pad A"
+            GamepadEvent::Connected { id, name, vendor_id, product_id }
+            if *id == GamepadId(0) && name == "Pad A" && *vendor_id == 0x045e && *product_id == 0x028e
         ));
     }
 
@@ -450,12 +474,14 @@ mod tests {
     #[test]
     fn boot_synthesis_skips_self_reported_ids() {
         let live = vec![
-            (GamepadId(0), "Pad A".to_string()),
-            (GamepadId(1), "Pad B".to_string()),
+            (GamepadId(0), "Pad A".to_string(), 0, 0),
+            (GamepadId(1), "Pad B".to_string(), 0, 0),
         ];
         let reported = vec![GamepadEvent::Connected {
             id: GamepadId(1),
             name: "Pad B".to_string(),
+            vendor_id: 0,
+            product_id: 0,
         }];
         let synth = synthesize_boot(live.into_iter(), &reported);
         assert_eq!(synth.len(), 1);
@@ -468,7 +494,7 @@ mod tests {
             button: GamepadButton::South,
             pressed: true,
         }];
-        let live = vec![(GamepadId(0), "Pad A".to_string())];
+        let live = vec![(GamepadId(0), "Pad A".to_string(), 0, 0)];
         assert_eq!(synthesize_boot(live.into_iter(), &reported).len(), 1);
     }
 

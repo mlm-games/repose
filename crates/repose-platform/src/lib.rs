@@ -204,12 +204,20 @@ pub fn run_desktop_app(
     run_desktop_app_with_config(root, AppConfig::default())
 }
 
+/// Default sink so a game sees the engine's own diagnostics without wiring a
+/// logger. A logger the host already installed wins.
+pub fn install_default_logger() {
+    let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+        .try_init();
+}
+
 /// Run a desktop app with the given [`AppConfig`].
 #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 pub fn run_desktop_app_with_config(
     root: impl FnMut(&mut Scheduler, &RenderContext) -> View + 'static,
     config: AppConfig,
 ) -> anyhow::Result<()> {
+    install_default_logger();
     use winit::application::ApplicationHandler;
     use winit::dpi::{LogicalPosition, LogicalSize, PhysicalSize};
     use winit::event::{ElementState, MouseButton, WindowEvent};
@@ -276,6 +284,7 @@ pub fn run_desktop_app_with_config(
         present_mode: PresentModePref,
         window_title: String,
         window_size: (u32, u32),
+        fullscreen: bool,
 
         // Files
         pending_dropped_files: Vec<std::path::PathBuf>,
@@ -370,6 +379,7 @@ pub fn run_desktop_app_with_config(
                 present_mode: config.common.present_mode,
                 window_title: config.window_title,
                 window_size: config.window_size,
+                fullscreen: config.fullscreen,
                 pending_dropped_files: Vec::new(),
                 pending_drop_pos_px: None,
 
@@ -685,12 +695,15 @@ pub fn run_desktop_app_with_config(
             let _ = rc::setup_clipboard();
 
             if self.window.is_none() {
-                match el.create_window(
-                    WindowAttributes::default()
-                        .with_title(self.window_title.clone())
-                        .with_inner_size(PhysicalSize::new(self.window_size.0, self.window_size.1))
-                        .with_visible(false),
-                ) {
+                let mut attributes = WindowAttributes::default()
+                    .with_title(self.window_title.clone())
+                    .with_inner_size(PhysicalSize::new(self.window_size.0, self.window_size.1))
+                    .with_visible(false);
+                if self.fullscreen {
+                    attributes = attributes
+                        .with_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
+                }
+                match el.create_window(attributes) {
                     Ok(win) => {
                         let w = Arc::new(win);
 
@@ -1272,6 +1285,17 @@ pub fn run_desktop_app_with_config(
                             Some(el),
                             cursor,
                         );
+                    }
+
+                    if let Some(fullscreen) = self.rt.take_fullscreen_request()
+                        && fullscreen != self.fullscreen
+                    {
+                        self.fullscreen = fullscreen;
+                        let _ = win.set_fullscreen(if fullscreen {
+                            Some(winit::window::Fullscreen::Borderless(None))
+                        } else {
+                            None
+                        });
                     }
 
                     if let Some(dark) = output.platform.window_theme_dark

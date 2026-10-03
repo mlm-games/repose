@@ -619,6 +619,9 @@ pub enum GamepadEvent {
     Connected {
         id: GamepadId,
         name: String,
+        /// USB vendor and product ids, `0` where the platform reports none.
+        vendor_id: u16,
+        product_id: u16,
     },
     Disconnected {
         id: GamepadId,
