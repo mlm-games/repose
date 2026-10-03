@@ -8998,8 +8998,7 @@ impl WgpuSceneRenderer {
                         if self.slug_enabled {
                             let ck = sg.cache_key;
                             let color_linear = color.to_linear();
-                            let stroke_color_linear =
-                                stroke_color.unwrap_or(*color).to_linear();
+                            let stroke_color_linear = stroke_color.unwrap_or(*color).to_linear();
                             let glyph_pos = (rect.x + sg.x, rect.y + sg.y + baseline_shift_y);
                             let fill_key = draws_fill.then(|| {
                                 Self::slug_draw_key(
@@ -9028,10 +9027,12 @@ impl WgpuSceneRenderer {
 
                             // The draw cache outlives the frame, so probing both keys up
                             // front lets a steady-state glyph clone neither buffer.
-                            let fill_cache =
-                                fill_key.as_ref().and_then(|k| self.get_cached_slug_vertices(k));
-                            let stroke_cache =
-                                stroke_key.as_ref().and_then(|k| self.get_cached_slug_vertices(k));
+                            let fill_cache = fill_key
+                                .as_ref()
+                                .and_then(|k| self.get_cached_slug_vertices(k));
+                            let stroke_cache = stroke_key
+                                .as_ref()
+                                .and_then(|k| self.get_cached_slug_vertices(k));
                             let fill_miss = fill_key.is_some() && fill_cache.is_none();
                             let stroke_miss = stroke_key.is_some() && stroke_cache.is_none();
                             if (fill_key.is_some() || stroke_key.is_some())
@@ -9084,9 +9085,7 @@ impl WgpuSceneRenderer {
                                     if has_linear {
                                         (
                                             lin[0] * x + lin[1] * y + current_transform.translate_x,
-                                            lin[2] * x
-                                                + lin[3] * y
-                                                + current_transform.translate_y,
+                                            lin[2] * x + lin[3] * y + current_transform.translate_y,
                                         )
                                     } else {
                                         (
@@ -9113,33 +9112,34 @@ impl WgpuSceneRenderer {
                                 } else {
                                     Vec::new()
                                 };
-                                let mut emit = |verts: &Vec<[f32; 2]>,
-                                                key: &Option<SlugDrawKey>,
-                                                cached: &Option<Arc<[slug::TessVertex]>>,
-                                                vertex_color: [f32; 4]| {
-                                    if let Some(vertices) = cached {
-                                        slug_verts_local.extend_from_slice(vertices);
-                                        return;
-                                    }
-                                    let Some(key) = *key else {
-                                        return;
+                                let mut emit =
+                                    |verts: &Vec<[f32; 2]>,
+                                     key: &Option<SlugDrawKey>,
+                                     cached: &Option<Arc<[slug::TessVertex]>>,
+                                     vertex_color: [f32; 4]| {
+                                        if let Some(vertices) = cached {
+                                            slug_verts_local.extend_from_slice(vertices);
+                                            return;
+                                        }
+                                        let Some(key) = *key else {
+                                            return;
+                                        };
+                                        let transformed: Vec<slug::TessVertex> = verts
+                                            .iter()
+                                            .map(|v| {
+                                                let (sx, sy) = tf(ox + v[0] * px, oy - v[1] * px);
+                                                slug::TessVertex {
+                                                    ndc_pos: [
+                                                        sx / tw * 2.0 - 1.0,
+                                                        -(sy / th) * 2.0 + 1.0,
+                                                    ],
+                                                    color: vertex_color,
+                                                }
+                                            })
+                                            .collect();
+                                        let vertices = self.cached_slug_vertices(key, transformed);
+                                        slug_verts_local.extend_from_slice(&vertices);
                                     };
-                                    let transformed: Vec<slug::TessVertex> = verts
-                                        .iter()
-                                        .map(|v| {
-                                            let (sx, sy) = tf(ox + v[0] * px, oy - v[1] * px);
-                                            slug::TessVertex {
-                                                ndc_pos: [
-                                                    sx / tw * 2.0 - 1.0,
-                                                    -(sy / th) * 2.0 + 1.0,
-                                                ],
-                                                color: vertex_color,
-                                            }
-                                        })
-                                        .collect();
-                                    let vertices = self.cached_slug_vertices(key, transformed);
-                                    slug_verts_local.extend_from_slice(&vertices);
-                                };
                                 // A contrasting outline reads as a halo and
                                 // goes under the fill; a same-colour stroke is
                                 // faux-bold and stays on top.

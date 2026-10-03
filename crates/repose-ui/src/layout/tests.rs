@@ -1998,7 +1998,9 @@ fn zstack_centers_an_auto_sized_layer() {
     use crate::ZStack;
 
     let root = ZStack(Modifier::new().fill_max_size()).child(RBox(
-        Modifier::new().size(Dp(100.0), Dp(60.0)).background(Color::WHITE),
+        Modifier::new()
+            .size(Dp(100.0), Dp(60.0))
+            .background(Color::WHITE),
     ));
 
     let mut eng = make_engine();
@@ -2039,9 +2041,13 @@ fn zstack_without_a_box_pins_layers_to_its_origin() {
                 .absolute()
                 .offset(Some(Dp(200.0)), Some(Dp(150.0)), None, None),
         )
-        .child(ZStack(Modifier::new()).child(RBox(
-            Modifier::new().size(Dp(100.0), Dp(60.0)).background(Color::WHITE),
-        ))),
+        .child(
+            ZStack(Modifier::new()).child(RBox(
+                Modifier::new()
+                    .size(Dp(100.0), Dp(60.0))
+                    .background(Color::WHITE),
+            )),
+        ),
     );
 
     let mut eng = make_engine();
