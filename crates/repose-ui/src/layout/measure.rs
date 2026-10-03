@@ -586,6 +586,11 @@ impl LayoutEngine {
                     let annos = annotations.as_ref().unwrap();
                     let mut width = 0.0f32;
                     let mut cursor = start_b;
+                    // A centred stroke only overhangs the measured range where a stroked
+                    // span touches that edge; interior overhangs land on neighbouring
+                    // text and add nothing.
+                    let mut leading_expand: Option<f32> = None;
+                    let mut trailing_expand: Option<f32> = None;
                     for span in annos.iter().filter(|s| s.start < end_b && s.end > start_b) {
                         let seg_start = span.start.max(start_b);
                         let seg_end = span.end.min(end_b);
@@ -632,10 +637,18 @@ impl LayoutEngine {
                             .last()
                             .copied()
                             .unwrap_or(0.0);
-                            if let Some(repose_core::DrawStyle::Stroke { width: sw, .. }) =
-                                &span.style.draw_style
+                            if let Some(
+                                repose_core::DrawStyle::Stroke { width: sw, .. }
+                                | repose_core::DrawStyle::FillAndStroke { width: sw, .. },
+                            ) = &span.style.draw_style
                             {
-                                width += *sw * seg_px;
+                                let half = *sw * seg_px * 0.5;
+                                if seg_start == start_b {
+                                    leading_expand.get_or_insert(half);
+                                }
+                                if seg_end == end_b {
+                                    trailing_expand = Some(half);
+                                }
                             }
                         }
                         cursor = seg_end;
@@ -660,6 +673,7 @@ impl LayoutEngine {
                             .unwrap_or(0.0);
                         }
                     }
+                    width += leading_expand.unwrap_or(0.0) + trailing_expand.unwrap_or(0.0);
                     width
                 };
 
@@ -942,14 +956,15 @@ impl LayoutEngine {
                                 .baseline_shift
                                 .map(|b| b.0 * seg_px)
                                 .unwrap_or(0.0);
-                            let stroke_expand =
-                                if let Some(repose_core::DrawStyle::Stroke { width, .. }) =
-                                    &span.style.draw_style
-                                {
-                                    *width * seg_px * 0.5
-                                } else {
-                                    0.0
-                                };
+                            let stroke_expand = if let Some(
+                                repose_core::DrawStyle::Stroke { width, .. }
+                                | repose_core::DrawStyle::FillAndStroke { width, .. },
+                            ) = &span.style.draw_style
+                            {
+                                *width * seg_px * 0.5
+                            } else {
+                                0.0
+                            };
                             let top = baseline.min(0.0) - stroke_expand - 2.0;
                             let bottom = baseline.max(0.0) + seg_line_h + stroke_expand + 6.0;
                             let seg_h = bottom - top;

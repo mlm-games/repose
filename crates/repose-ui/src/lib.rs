@@ -647,6 +647,11 @@ pub trait TextStyle {
     /// Faux-bold: fill plus a same-color outline (`width` in em-units,
     /// 0.04 is a good start). For fonts without a bold face.
     fn fill_and_stroke(self, width: f32) -> View;
+    /// Godot `font_outline_size` / `font_outline_color`: the fill with a
+    /// contrasting outline drawn underneath, in one layout pass. `width` is
+    /// em-units and the stroke is centred on the glyph outline, so pass
+    /// `2 * outline_px / font_px` to grow `outline_px` outward.
+    fn outlined(self, width: f32, color: Color) -> View;
 }
 impl TextStyle for View {
     fn color(mut self, c: Color) -> View {
@@ -791,6 +796,12 @@ impl TextStyle for View {
     fn fill_and_stroke(mut self, width: f32) -> View {
         if let ViewKind::Text { draw_style, .. } = &mut self.kind {
             *draw_style = DrawStyle::fill_and_stroke(width);
+        }
+        self
+    }
+    fn outlined(mut self, width: f32, color: Color) -> View {
+        if let ViewKind::Text { draw_style, .. } = &mut self.kind {
+            *draw_style = DrawStyle::fill_and_stroke_with_outline(width, color);
         }
         self
     }

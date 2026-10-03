@@ -1054,8 +1054,12 @@ fn hash_draw_style(style: &repose_core::DrawStyle, hasher: &mut impl Hasher) {
             join,
             miter,
             path_effect,
+            ..
         } => {
             std::mem::discriminant(style).hash(hasher);
+            if let repose_core::DrawStyle::FillAndStroke { outline_color, .. } = style {
+                hash_opt_color(outline_color.as_ref(), hasher);
+            }
             hash_f32(*width, hasher);
             (*cap as u8).hash(hasher);
             (*join as u8).hash(hasher);

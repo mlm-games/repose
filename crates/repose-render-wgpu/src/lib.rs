@@ -8931,6 +8931,7 @@ impl WgpuSceneRenderer {
                         stroke_join,
                         stroke_miter,
                         stroke_path_effect,
+                        stroke_color,
                     ) = match draw_style {
                         repose_core::DrawStyle::Stroke {
                             width,
@@ -8946,6 +8947,7 @@ impl WgpuSceneRenderer {
                             *join,
                             *miter,
                             path_effect.clone(),
+                            None,
                         ),
                         repose_core::DrawStyle::FillAndStroke {
                             width,
@@ -8953,7 +8955,17 @@ impl WgpuSceneRenderer {
                             join,
                             miter,
                             path_effect,
-                        } => (true, true, *width, *cap, *join, *miter, path_effect.clone()),
+                            outline_color,
+                        } => (
+                            true,
+                            true,
+                            *width,
+                            *cap,
+                            *join,
+                            *miter,
+                            path_effect.clone(),
+                            *outline_color,
+                        ),
                         _ => (
                             true,
                             false,
@@ -8962,8 +8974,13 @@ impl WgpuSceneRenderer {
                             repose_core::StrokeJoin::Miter,
                             4.0,
                             None,
+                            None,
                         ),
                     };
+                    // A contrasting outline reads as a halo, so it goes under
+                    // the fill; a same-colour stroke is faux-bold and stays on
+                    // top.
+                    let outline_under = stroke_color.is_some();
                     let stroke_tess_key = if is_stroke {
                         Some(slug::StrokeTessKey::new(
                             stroke_width,
@@ -8978,18 +8995,19 @@ impl WgpuSceneRenderer {
 
                     let mut legacy_shaped = None;
                     for (glyph_index, sg) in shaped.glyphs.iter().enumerate() {
-                        let mut fill_cached = false;
-                        let mut stroke_cached = false;
                         if self.slug_enabled {
                             let ck = sg.cache_key;
                             let color_linear = color.to_linear();
+                            let stroke_color_linear =
+                                stroke_color.unwrap_or(*color).to_linear();
+                            let glyph_pos = (rect.x + sg.x, rect.y + sg.y + baseline_shift_y);
                             let fill_key = draws_fill.then(|| {
                                 Self::slug_draw_key(
                                     ck,
                                     true,
                                     None,
                                     current_transform,
-                                    (rect.x + sg.x, rect.y + sg.y + baseline_shift_y),
+                                    glyph_pos,
                                     px,
                                     current_target_size,
                                     color_linear,
@@ -9001,96 +9019,92 @@ impl WgpuSceneRenderer {
                                     false,
                                     stroke_tess_key.as_ref(),
                                     current_transform,
-                                    (rect.x + sg.x, rect.y + sg.y + baseline_shift_y),
+                                    glyph_pos,
                                     px,
                                     current_target_size,
-                                    color_linear,
+                                    stroke_color_linear,
                                 )
                             });
-                            let mut all_cached = true;
-                            if let Some(key) = fill_key {
-                                if let Some(vertices) = self.get_cached_slug_vertices(&key) {
-                                    slug_verts_local.extend_from_slice(&vertices);
-                                    fill_cached = true;
+
+                            // The draw cache outlives the frame, so probing both keys up
+                            // front lets a steady-state glyph clone neither buffer.
+                            let fill_cache =
+                                fill_key.as_ref().and_then(|k| self.get_cached_slug_vertices(k));
+                            let stroke_cache =
+                                stroke_key.as_ref().and_then(|k| self.get_cached_slug_vertices(k));
+                            let fill_miss = fill_key.is_some() && fill_cache.is_none();
+                            let stroke_miss = stroke_key.is_some() && stroke_cache.is_none();
+                            if (fill_key.is_some() || stroke_key.is_some())
+                                && !fill_miss
+                                && !stroke_miss
+                            {
+                                let mut push = |cached: &Option<Arc<[slug::TessVertex]>>| {
+                                    if let Some(vertices) = cached {
+                                        slug_verts_local.extend_from_slice(vertices);
+                                    }
+                                };
+                                if outline_under {
+                                    push(&stroke_cache);
+                                    push(&fill_cache);
                                 } else {
-                                    all_cached = false;
+                                    push(&fill_cache);
+                                    push(&stroke_cache);
                                 }
-                            }
-                            if let Some(key) = stroke_key {
-                                if let Some(vertices) = self.get_cached_slug_vertices(&key) {
-                                    slug_verts_local.extend_from_slice(&vertices);
-                                    stroke_cached = true;
-                                } else {
-                                    all_cached = false;
-                                }
-                            }
-                            if all_cached {
                                 continue;
                             }
+
                             let outline = self.cached_glyph_outline(ck);
                             if let Some(commands) = outline.as_ref() {
-                                let need_tessellate = self.slug_cache.get(&ck).is_none_or(|g| {
-                                    (draws_fill && g.fill_vertices.is_none())
-                                        || (is_stroke
-                                            && !g
-                                                .stroke_variants
-                                                .contains_key(stroke_tess_key.as_ref().unwrap()))
-                                });
-                                if need_tessellate {
-                                    let font_size_px = f32::from_bits(ck.font_size_bits);
-                                    if draws_fill {
-                                        self.slug_cache.get_or_insert(
-                                            ck,
-                                            font_size_px,
-                                            commands.as_ref(),
-                                        );
-                                    }
-                                    if is_stroke {
-                                        self.slug_cache.get_or_insert_stroke(
-                                            ck,
-                                            font_size_px,
-                                            commands.as_ref(),
-                                            stroke_width,
-                                            stroke_cap,
-                                            stroke_join,
-                                            stroke_miter,
-                                            &stroke_path_effect,
-                                        );
-                                    }
-                                } else {
-                                    self.slug_cache.touch(&ck);
+                                let font_size_px = f32::from_bits(ck.font_size_bits);
+                                if draws_fill {
+                                    self.slug_cache.get_or_insert(
+                                        ck,
+                                        font_size_px,
+                                        commands.as_ref(),
+                                    );
+                                }
+                                if is_stroke {
+                                    self.slug_cache.get_or_insert_stroke(
+                                        ck,
+                                        font_size_px,
+                                        commands.as_ref(),
+                                        stroke_width,
+                                        stroke_cap,
+                                        stroke_join,
+                                        stroke_miter,
+                                        &stroke_path_effect,
+                                    );
                                 }
                             }
-                            if let Some(_commands) = outline.as_ref()
-                                && let Some(entry) = self.slug_cache.get(&ck)
-                            {
+
+                            if let Some(entry) = self.slug_cache.get(&ck) {
                                 let ox = rect.x + sg.x;
                                 let oy = rect.y + sg.y + baseline_shift_y;
-                                let scx = current_transform.scale_x;
-                                let scy = current_transform.scale_y;
-                                let ttx = current_transform.translate_x;
-                                let tty = current_transform.translate_y;
-
                                 let tf = |x: f32, y: f32| -> (f32, f32) {
                                     if has_linear {
                                         (
-                                            lin[0] * x + lin[1] * y + ttx,
-                                            lin[2] * x + lin[3] * y + tty,
+                                            lin[0] * x + lin[1] * y + current_transform.translate_x,
+                                            lin[2] * x
+                                                + lin[3] * y
+                                                + current_transform.translate_y,
                                         )
                                     } else {
-                                        (x * scx + ttx, y * scy + tty)
+                                        (
+                                            x * current_transform.scale_x
+                                                + current_transform.translate_x,
+                                            y * current_transform.scale_y
+                                                + current_transform.translate_y,
+                                        )
                                     }
                                 };
-
                                 let tw = current_target_size.0;
                                 let th = current_target_size.1;
-
-                                let fill_vertices = if draws_fill && !fill_cached {
+                                let fill_vertices = if draws_fill && fill_cache.is_none() {
                                     entry.fill_vertices.clone().unwrap_or_default()
                                 } else {
                                     Vec::new()
                                 };
-                                let stroke_vertices = if is_stroke && !stroke_cached {
+                                let stroke_vertices = if stroke_cache.is_none() {
                                     stroke_tess_key
                                         .as_ref()
                                         .and_then(|key| entry.stroke_variants.get(key))
@@ -9099,7 +9113,17 @@ impl WgpuSceneRenderer {
                                 } else {
                                     Vec::new()
                                 };
-                                let mut emit = |verts: Vec<[f32; 2]>, cache_key: SlugDrawKey| {
+                                let mut emit = |verts: &Vec<[f32; 2]>,
+                                                key: &Option<SlugDrawKey>,
+                                                cached: &Option<Arc<[slug::TessVertex]>>,
+                                                vertex_color: [f32; 4]| {
+                                    if let Some(vertices) = cached {
+                                        slug_verts_local.extend_from_slice(vertices);
+                                        return;
+                                    }
+                                    let Some(key) = *key else {
+                                        return;
+                                    };
                                     let transformed: Vec<slug::TessVertex> = verts
                                         .iter()
                                         .map(|v| {
@@ -9109,39 +9133,38 @@ impl WgpuSceneRenderer {
                                                     sx / tw * 2.0 - 1.0,
                                                     -(sy / th) * 2.0 + 1.0,
                                                 ],
-                                                color: color_linear,
+                                                color: vertex_color,
                                             }
                                         })
                                         .collect();
-                                    let vertices =
-                                        self.cached_slug_vertices(cache_key, transformed);
+                                    let vertices = self.cached_slug_vertices(key, transformed);
                                     slug_verts_local.extend_from_slice(&vertices);
                                 };
-                                if draws_fill
-                                    && !fill_cached
-                                    && let Some(key) = fill_key
-                                {
-                                    emit(fill_vertices, key);
-                                }
-                                if is_stroke
-                                    && !stroke_cached
-                                    && let Some(key) = stroke_key
-                                {
-                                    emit(stroke_vertices, key);
-                                }
-
-                                if !draws_fill {
-                                    // Stroke glyphs cannot use atlas fallback...
-                                    continue;
+                                // A contrasting outline reads as a halo and
+                                // goes under the fill; a same-colour stroke is
+                                // faux-bold and stays on top.
+                                if outline_under {
+                                    emit(
+                                        &stroke_vertices,
+                                        &stroke_key,
+                                        &stroke_cache,
+                                        stroke_color_linear,
+                                    );
+                                    emit(&fill_vertices, &fill_key, &fill_cache, color_linear);
+                                } else {
+                                    emit(&fill_vertices, &fill_key, &fill_cache, color_linear);
+                                    emit(
+                                        &stroke_vertices,
+                                        &stroke_key,
+                                        &stroke_cache,
+                                        stroke_color_linear,
+                                    );
                                 }
                                 continue;
                             }
                         }
 
                         if !draws_fill {
-                            continue;
-                        }
-                        if fill_cached {
                             continue;
                         }
                         if legacy_shaped.is_none() {

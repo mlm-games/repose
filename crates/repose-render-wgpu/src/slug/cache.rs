@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::hash::{Hash, Hasher};
 
-use lyon_path::Path;
 use lyon_path::math::Point;
 use lyon_tessellation::{
     FillOptions, FillTessellator, LineCap, LineJoin, StrokeOptions, StrokeTessellator,
@@ -177,117 +176,82 @@ impl GlyphSlugCache {
 
     /// Get or create stroke-tessellated geometry for a glyph.
     /// `commands` are raw swash outline commands at the given `font_size`.
-    /// `width_em` is the stroke width in em-units (fraction of font size).
+    ///
+    /// Fill geometry stays lazy: a stroke-only glyph never pays for it.
     pub fn get_or_insert_stroke(
         &mut self,
         key: CacheKey,
         font_size: f32,
         commands: &[Command],
-        width_em: f32,
+        width: f32,
         cap: repose_core::StrokeCap,
         join: repose_core::StrokeJoin,
         miter: f32,
         path_effect: &Option<repose_core::PathEffect>,
-    ) -> Option<&CachedTessGlyph> {
-        let tess_key = StrokeTessKey::new(width_em, cap, join, miter, path_effect);
-        let lyon_cap = match cap {
-            repose_core::StrokeCap::Butt => LineCap::Butt,
-            repose_core::StrokeCap::Round => LineCap::Round,
-            repose_core::StrokeCap::Square => LineCap::Square,
-        };
-        let lyon_join = match join {
-            repose_core::StrokeJoin::Miter => LineJoin::Miter,
-            repose_core::StrokeJoin::Round => LineJoin::Round,
-            repose_core::StrokeJoin::Bevel => LineJoin::Bevel,
-        };
-        let build_path = |font_size| -> Option<Path> {
-            let path = commands_to_path(commands, font_size)?;
-            if let Some(effect) = path_effect {
-                let tolerance = (0.5 / font_size).max(0.001);
-                Some(apply_path_effect(&path, effect, tolerance))
-            } else {
-                Some(path)
-            }
-        };
-        match self.map.entry(key) {
-            Entry::Occupied(mut e) => {
-                let glyph = e.get_mut();
-                glyph.last_used = self.frame;
-                if let std::collections::hash_map::Entry::Vacant(e) =
-                    glyph.stroke_variants.entry(tess_key)
-                {
-                    let path = build_path(font_size)?;
-                    let mut tess = StrokeTessellator::new();
-                    let tolerance = (0.5 / font_size).max(0.001);
-                    let mut buffers: VertexBuffers<Point, u16> = VertexBuffers::new();
-                    tess.tessellate_path(
-                        &path,
-                        &StrokeOptions::default()
-                            .with_tolerance(tolerance)
-                            .with_line_width(width_em)
-                            .with_line_cap(lyon_cap)
-                            .with_line_join(lyon_join)
-                            .with_miter_limit(miter),
-                        &mut simple_builder(&mut buffers),
-                    )
-                    .ok()?;
-                    if buffers.indices.is_empty() {
-                        return None;
-                    }
-                    let num_verts = buffers.indices.len();
-                    let mut vertices = Vec::with_capacity(num_verts);
-                    for &i in &buffers.indices {
-                        let v = &buffers.vertices[i as usize];
-                        vertices.push([v.x, v.y]);
-                    }
-                    e.insert(vertices);
-                }
-                Some(e.into_mut())
-            }
-            Entry::Vacant(e) => {
-                let path = build_path(font_size)?;
-                let mut tess = StrokeTessellator::new();
-                let tolerance = (0.5 / font_size).max(0.001);
-                let mut buffers: VertexBuffers<Point, u16> = VertexBuffers::new();
-                tess.tessellate_path(
-                    &path,
-                    &StrokeOptions::default()
-                        .with_tolerance(tolerance)
-                        .with_line_width(width_em)
-                        .with_line_cap(lyon_cap)
-                        .with_line_join(lyon_join)
-                        .with_miter_limit(miter),
-                    &mut simple_builder(&mut buffers),
-                )
-                .ok()?;
-                if buffers.indices.is_empty() {
-                    return None;
-                }
-                let num_verts = buffers.indices.len();
-                let mut vertices = Vec::with_capacity(num_verts);
-                for &i in &buffers.indices {
-                    let v = &buffers.vertices[i as usize];
-                    vertices.push([v.x, v.y]);
-                }
-                let mut variants = HashMap::new();
-                variants.insert(tess_key, vertices);
-                Some(e.insert(CachedTessGlyph {
-                    fill_vertices: None,
-                    stroke_variants: variants,
-                    last_used: self.frame,
-                }))
-            }
+    ) {
+        let tess_key = StrokeTessKey::new(width, cap, join, miter, path_effect);
+        let frame = self.frame;
+        // A glyph with no vector outline (space, NBSP) must not leave an empty entry
+        // behind: the renderer keys off its presence and would skip the atlas
+        // fallback it needs.
+        if commands.is_empty() {
+            return;
         }
+        let glyph = match self.map.entry(key) {
+            Entry::Occupied(mut e) => {
+                e.get_mut().last_used = frame;
+                e.into_mut()
+            }
+            Entry::Vacant(e) => e.insert(CachedTessGlyph {
+                fill_vertices: None,
+                stroke_variants: HashMap::new(),
+                last_used: frame,
+            }),
+        };
+        if glyph.stroke_variants.contains_key(&tess_key) {
+            return;
+        }
+        let Some(path) = commands_to_path(commands, font_size) else {
+            return;
+        };
+        let tolerance = (0.5 / font_size).max(0.001);
+        let path = match path_effect {
+            Some(effect) => apply_path_effect(&path, effect, tolerance),
+            None => path,
+        };
+        let options = StrokeOptions::DEFAULT
+            .with_line_width(width)
+            .with_line_cap(match cap {
+                repose_core::StrokeCap::Round => LineCap::Round,
+                repose_core::StrokeCap::Square => LineCap::Square,
+                repose_core::StrokeCap::Butt => LineCap::Butt,
+            })
+            .with_line_join(match join {
+                repose_core::StrokeJoin::Miter => LineJoin::Miter,
+                repose_core::StrokeJoin::Round => LineJoin::Round,
+                repose_core::StrokeJoin::Bevel => LineJoin::Bevel,
+            })
+            .with_miter_limit(miter)
+            .with_tolerance(tolerance);
+        let mut tess = StrokeTessellator::new();
+        let mut buffers: VertexBuffers<Point, u16> = VertexBuffers::new();
+        if tess
+            .tessellate_path(&path, &options, &mut simple_builder(&mut buffers))
+            .is_err()
+            || buffers.indices.is_empty()
+        {
+            return;
+        }
+        let mut vertices = Vec::with_capacity(buffers.indices.len());
+        for &i in &buffers.indices {
+            let v = &buffers.vertices[i as usize];
+            vertices.push([v.x, v.y]);
+        }
+        glyph.stroke_variants.insert(tess_key, vertices);
     }
 
     pub fn get(&self, key: &CacheKey) -> Option<&CachedTessGlyph> {
         self.map.get(key)
-    }
-
-    pub fn touch(&mut self, key: &CacheKey) {
-        if let Some(entry) = self.map.get_mut(key) {
-            entry.last_used = self.frame;
-        }
     }
 
     fn evict_stale(&mut self) {

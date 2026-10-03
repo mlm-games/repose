@@ -423,7 +423,11 @@ impl LayoutEngine {
             ViewKind::Column | ViewKind::OverlayHost => {
                 s.flex_direction = FlexDirection::Column;
             }
-            ViewKind::ZStack => s.display = Display::Grid,
+            ViewKind::ZStack => {
+                s.display = Display::Grid;
+                s.grid_template_columns = vec![GridTemplateComponent::Single(flex(1.0_f32))];
+                s.grid_template_rows = vec![GridTemplateComponent::Single(flex(1.0_f32))];
+            }
             _ => {}
         }
         // Modifier scroll overrides kind-based direction.
@@ -449,6 +453,16 @@ impl LayoutEngine {
         }
         if s.display != Display::Grid {
             s.justify_content = Some(JustifyContent::FLEX_START);
+        }
+        // A `ZStack`'s layers are out-of-flow, so the container's own alignment
+        // positions them; taffy resolves `STRETCH` on an out-of-flow child to its
+        // start corner, which would never centre an auto-sized layer. An
+        // auto-sized `ZStack` is itself 0x0 (out-of-flow children do not contribute
+        // to its size), so the fallback has to be `safe` or the layer lands halfway
+        // outside its own container.
+        if matches!(kind, ViewKind::ZStack) {
+            s.align_items = Some(AlignItems::SAFE_CENTER);
+            s.justify_items = Some(AlignItems::SAFE_CENTER);
         }
 
         if matches!(kind, ViewKind::Image { .. }) {

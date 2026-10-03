@@ -1990,3 +1990,81 @@ fn animated_visibility_overlay_fills_parent_height() {
     scope.dispose();
     set_clock(Box::new(SystemClock));
 }
+
+#[test]
+fn zstack_centers_an_auto_sized_layer() {
+    // A ZStack's children are out-of-flow, so without container-level
+    // alignment every layer resolves to the start corner.
+    use crate::ZStack;
+
+    let root = ZStack(Modifier::new().fill_max_size()).child(RBox(
+        Modifier::new().size(Dp(100.0), Dp(60.0)).background(Color::WHITE),
+    ));
+
+    let mut eng = make_engine();
+    let (scene, _, _) = eng.layout_frame(
+        &root,
+        (400, 300),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
+
+    let rect = scene
+        .nodes
+        .iter()
+        .find_map(|n| match n {
+            SceneNode::Rect { rect, .. } => Some(*rect),
+            _ => None,
+        })
+        .expect("layer is painted");
+
+    assert_eq!(
+        (rect.x, rect.y),
+        (150.0, 120.0),
+        "auto-sized layer must be centred in both axes: {rect:?}"
+    );
+}
+
+#[test]
+fn zstack_without_a_box_pins_layers_to_its_origin() {
+    // Out-of-flow children contribute nothing to the container's own size, so an
+    // auto-sized `ZStack` resolves to 0x0. Unsafe centring would place the layer at
+    // -(size / 2) relative to that box and drag a popup off its anchor.
+    use crate::ZStack;
+
+    let root = Column(Modifier::new().fill_max_size()).child(
+        RBox(
+            Modifier::new()
+                .absolute()
+                .offset(Some(Dp(200.0)), Some(Dp(150.0)), None, None),
+        )
+        .child(ZStack(Modifier::new()).child(RBox(
+            Modifier::new().size(Dp(100.0), Dp(60.0)).background(Color::WHITE),
+        ))),
+    );
+
+    let mut eng = make_engine();
+    let (scene, _, _) = eng.layout_frame(
+        &root,
+        (400, 300),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
+
+    let rect = scene
+        .nodes
+        .iter()
+        .find_map(|n| match n {
+            SceneNode::Rect { rect, .. } => Some(*rect),
+            _ => None,
+        })
+        .expect("layer is painted");
+
+    assert_eq!(
+        (rect.x, rect.y),
+        (200.0, 150.0),
+        "layer must stay pinned to its auto-sized container's origin: {rect:?}"
+    );
+}

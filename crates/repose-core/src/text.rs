@@ -785,6 +785,8 @@ pub enum DrawStyle {
         miter: f32,
         /// Optional path effect (dash, corner rounding, etc.).
         path_effect: Option<PathEffect>,
+        /// Stroke color; `None` reuses the text's fill color.
+        outline_color: Option<crate::Color>,
     },
 }
 
@@ -801,7 +803,7 @@ impl DrawStyle {
     }
 
     /// Create a `FillAndStroke` variant with default cap, join, miter,
-    /// and no path effect.
+    /// and no path effect, stroking in the text's own color.
     pub const fn fill_and_stroke(width: f32) -> Self {
         Self::FillAndStroke {
             width,
@@ -809,6 +811,22 @@ impl DrawStyle {
             join: crate::StrokeJoin::Miter,
             miter: 4.0,
             path_effect: None,
+            outline_color: None,
+        }
+    }
+
+    /// [`fill_and_stroke`](Self::fill_and_stroke) with a contrasting stroke,
+    /// drawn beneath the fill. `width` is em-units and the stroke is
+    /// centred on the glyph outline, so pass `2 * outline_px / font_px` to
+    /// grow `outline_px` outward like Godot's `font_outline_size`.
+    pub const fn fill_and_stroke_with_outline(width: f32, outline_color: crate::Color) -> Self {
+        Self::FillAndStroke {
+            width,
+            cap: crate::StrokeCap::Butt,
+            join: crate::StrokeJoin::Miter,
+            miter: 4.0,
+            path_effect: None,
+            outline_color: Some(outline_color),
         }
     }
 
@@ -836,6 +854,7 @@ impl DrawStyle {
                 join,
                 miter,
                 path_effect,
+                ..
             } => Some((*width, *cap, *join, *miter, path_effect)),
             Self::Fill => None,
         }
