@@ -776,11 +776,21 @@ impl LayoutEngine {
             return;
         }
 
+        // A border's own radius rounds the box too: a background painted
+        // under a rounded border with square corners leaks past the arc.
         let round_clip_px = clamp_radii_px(
-            modifier
-                .clip_rounded
-                .map(|r| r.map(|v| v.to_px().0))
-                .unwrap_or([0.0; 4]),
+            max_radii_px(
+                modifier
+                    .clip_rounded
+                    .map(|r| r.map(|v| v.to_px().0))
+                    .unwrap_or([0.0; 4]),
+                modifier
+                    .border
+                    .as_ref()
+                    .map(|b| b.radius)
+                    .unwrap_or([Dp::ZERO; 4])
+                    .map(|v| v.to_px().0),
+            ),
             rect.w,
             rect.h,
         );
@@ -1045,17 +1055,7 @@ impl LayoutEngine {
                 rect,
                 brush: mul_alpha_brush(b.brush, alpha_accum),
                 width: b.width.to_px(),
-                radius: clamp_radii_px(
-                    max_radii_px(
-                        b.radius.map(|v| v.to_px().0),
-                        modifier
-                            .clip_rounded
-                            .map(|r| r.map(|v| v.to_px().0))
-                            .unwrap_or([0.0; 4]),
-                    ),
-                    rect.w,
-                    rect.h,
-                ),
+                radius: round_clip_px,
             });
         }
         // Native text field painting (Compose-aligned: text_input modifier triggers built-in paint)
