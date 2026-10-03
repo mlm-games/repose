@@ -76,7 +76,7 @@ parley = { version = "0.11", default-features = false, features = ["std"] }
 skrifa = "0.44"
 swash = "0.2"
 
-rlobkit-app-events = { version = "0.5", default-features = false }
+rlobkit-app-events = { version = "0.5.11", default-features = false }
 web-time = "1"
 web-workers = "0.3"
 rustc-hash = "2.1"
@@ -97,7 +97,10 @@ repose-tree = { path = "crates/repose-tree", version = "0.31.5" }
 repose-docking = { path = "crates/repose-docking", version = "0.31.5" }
 repose-macros = { path = "crates/repose-macros", version = "0.31.5" }
 
-# [patch.crates-io]
+# Temporary local override until rlobkit-app-events 0.5.11 (vibrator API)
+# is on crates.io; drop once published.
+[patch.crates-io]
+rlobkit-app-events = { path = "../rlobkit/rlobkit-app-events" }
 # repose-core = { path = "../repose/crates/repose-core" }
 # font-awl = { path = "../font-awl" }
 

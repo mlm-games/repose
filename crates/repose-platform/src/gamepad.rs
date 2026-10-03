@@ -355,6 +355,32 @@ impl GamepadBackend for AndroidBackend {
     fn poll(&mut self) -> Vec<GamepadEvent> {
         Vec::new()
     }
+
+    fn set_rumble(
+        &mut self,
+        _id: GamepadId,
+        low_freq: f32,
+        high_freq: f32,
+        duration_ms: u32,
+    ) -> bool {
+        // Android has ONE device vibrator shared by every pad, so a
+        // per-pad request shakes the whole device; that is why Aurora
+        // exposes this as device-level haptics.
+        if duration_ms == 0 {
+            rlobkit_app_events::vibrator::stop();
+        } else {
+            rlobkit_app_events::vibrator::rumble(low_freq, high_freq, duration_ms);
+        }
+        true
+    }
+
+    fn stop_rumble(&mut self, _id: GamepadId) {
+        rlobkit_app_events::vibrator::stop();
+    }
+
+    fn is_rumble_supported(&self, _id: GamepadId) -> bool {
+        true
+    }
 }
 
 #[cfg(feature = "gamepad")]

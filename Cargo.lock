@@ -3235,10 +3235,10 @@ dependencies = [
 
 [[package]]
 name = "rlobkit-app-events"
-version = "0.5.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0cf2d59e8c1b4bae5859ba6380501d610650e81080b7439757c0e59ec1a6cb12"
+version = "0.5.11"
 dependencies = [
+ "jni",
+ "jni-min-helper",
  "log",
  "paranoid-android",
  "tracing",
