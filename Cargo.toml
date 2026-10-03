@@ -99,8 +99,8 @@ repose-macros = { path = "crates/repose-macros", version = "0.31.5" }
 
 # Temporary local override until rlobkit-app-events 0.5.11 (vibrator API)
 # is on crates.io; drop once published.
-[patch.crates-io]
-rlobkit-app-events = { path = "../rlobkit/rlobkit-app-events" }
+# [patch.crates-io]
+# rlobkit-app-events = { path = "../rlobkit/rlobkit-app-events" }
 # repose-core = { path = "../repose/crates/repose-core" }
 # font-awl = { path = "../font-awl" }
 
