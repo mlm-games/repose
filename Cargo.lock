@@ -3235,9 +3235,9 @@ dependencies = [
 
 [[package]]
 name = "rlobkit-app-events"
-version = "0.5.12"
+version = "0.5.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b813f5cb7e3824309c31c9d491da03e1a2ae8f5dc69a877d1a32b1cac1f9ed1"
+checksum = "c42ed5f997919f2fe4e2eeaac675b9a0054a013051bcfe268ee08337bf0d519b"
 dependencies = [
  "jni",
  "jni-min-helper",
@@ -3250,9 +3250,9 @@ dependencies = [
 
 [[package]]
 name = "rlobkit-core"
-version = "0.5.12"
+version = "0.5.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a848cddba0bf44f95071211195ba532ccc4b7846372df065a6e20099ba013660"
+checksum = "f1c00b67d671791379f4a39d78496f1970fd2f4d1296c58b48c65ea311dfa496"
 dependencies = [
  "bytes",
  "dirs",
@@ -3263,9 +3263,9 @@ dependencies = [
 
 [[package]]
 name = "rlobkit-dialogs"
-version = "0.5.12"
+version = "0.5.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "081e676737519d2f52ed299f04f2506c386cbec82f9fc75cce32f3f4e98240f0"
+checksum = "caeffc3ee0d785fd4b93c8cc308c81fdcefac1f58b6e46a7ac8f2ee50a5a77a2"
 dependencies = [
  "bytes",
  "futures-lite",
