@@ -8969,7 +8969,14 @@ impl WgpuSceneRenderer {
                             *join,
                             *miter,
                             path_effect.clone(),
-                            *outline_color,
+                            // The outline is part of this text's appearance,
+                            // so it fades with the text alpha like the fill.
+                            // Without this a faded label keeps a solid halo.
+                            outline_color.map(|c| {
+                                c.with_alpha_f32(
+                                    f32::from(c.3) * f32::from(color.3) / (255.0 * 255.0),
+                                )
+                            }),
                         ),
                         _ => (
                             true,
