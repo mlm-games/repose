@@ -348,7 +348,11 @@ impl LayoutEngine {
                     new_cs.size.width = Dimension::auto();
                 }
                 ScrollAxis::Both => {
-                    new_cs.size.width = Dimension::auto();
+                    // NOTE: FORCED ASSYMETRY. Cross-axis `auto` resolves to the definite viewport width
+                    // (align_items: STRETCH), so wide content is squeezed to fit
+                    // instead of overflowing; min-width 100% still floors short
+                    // content at the viewport.
+                    new_cs.size.width = Dimension::max_content();
                     new_cs.size.height = Dimension::auto();
                 }
             }
