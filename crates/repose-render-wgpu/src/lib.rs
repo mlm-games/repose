@@ -270,6 +270,10 @@ pub struct WgpuSceneRenderer {
     /// are single-frame by construction).
     flatten_layer_ids: Vec<u32>,
 
+    /// Layer ids handed out to separable-blur scratches, so they survive the
+    /// stale-layer sweep and stay bound across frames.
+    blur_scratch_ids: Vec<u32>,
+
     /// Backdrop snapshots keyed by isolated-blend layer id. Filled during
     /// translation (texture allocated) and populated by a texture copy at
     /// execution time, before the blend composite draws.
@@ -397,6 +401,22 @@ impl std::ops::DerefMut for WgpuSurfaceBackend {
 #[cfg(feature = "winit-surface")]
 pub type WgpuBackend = WgpuSurfaceBackend;
 
+/// Compose/Skia radius -> gaussian sigma (the `1 / sqrt(3)` the high-quality
+/// software mask blur applies).
+fn blur_sigma(radius: f32) -> f32 {
+    (radius.max(0.0) * 0.577_350_3 + 0.5).max(0.0)
+}
+
+/// Padding needed on each side of a layer for a separable blur to fit its
+/// 3-sigma support without clipping the kernel.
+fn blur_pad(radius: f32) -> f32 {
+    (blur_sigma(radius) * 3.0).ceil().max(0.0)
+}
+
+/// First translator-owned blur-scratch layer id. Producer ids start at 1 per
+/// scene and flatten owns `FLATTEN_ID_BASE`, so this range never collides.
+const BLUR_SCRATCH_ID_BASE: u32 = 0xE000_0000;
+
 impl Drop for WgpuSceneRenderer {
     fn drop(&mut self) {
         let _ = self.device.poll(wgpu::PollType::Poll);
@@ -424,6 +444,8 @@ struct LayerTarget {
     rect_px: (f32, f32, f32, f32),
     transient: bool,
 }
+
+
 
 /// Backdrop snapshot for one isolated blend: a copy of the current target
 /// region taken before the source layer is composited, sampled as the
@@ -1111,11 +1133,10 @@ impl Pipelines {
             cache: None,
         });
 
-        // Blur composite pipeline (graphics-layer drop shadow)
         let blur_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("blur_shadow.wgsl"),
+            label: Some("blur_separable.wgsl"),
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
-                "shaders/blur_shadow.wgsl"
+                "shaders/blur_separable.wgsl"
             ))),
         });
         let blur_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -1123,53 +1144,59 @@ impl Pipelines {
             bind_group_layouts: &[Some(globals_layout), Some(text_bind_layout)],
             immediate_size: 0,
         });
+        let blur_layout = wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<BlurInstance>() as u64,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    shader_location: 0,
+                    offset: 0,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    shader_location: 1,
+                    offset: 16,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    shader_location: 2,
+                    offset: 32,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    shader_location: 3,
+                    offset: 48,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+                wgpu::VertexAttribute {
+                    shader_location: 4,
+                    offset: 56,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    shader_location: 5,
+                    offset: 72,
+                    format: wgpu::VertexFormat::Uint32,
+                },
+                wgpu::VertexAttribute {
+                    shader_location: 6,
+                    offset: 76,
+                    format: wgpu::VertexFormat::Uint32,
+                },
+            ],
+        };
         let blur = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("blur pipeline"),
             layout: Some(&blur_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &blur_shader,
                 entry_point: Some("vs_main"),
-                buffers: &[Some(wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<BlurInstance>() as u64,
-                    step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &[
-                        wgpu::VertexAttribute {
-                            shader_location: 0,
-                            offset: 0,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 1,
-                            offset: 16,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 2,
-                            offset: 32,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 3,
-                            offset: 48,
-                            format: wgpu::VertexFormat::Float32x2,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 4,
-                            offset: 56,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 5,
-                            offset: 72,
-                            format: wgpu::VertexFormat::Uint32,
-                        },
-                    ],
-                })],
+                buffers: &[Some(blur_layout.clone())],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &blur_shader,
-                entry_point: Some("fs_main"),
+                entry_point: Some("fs_alpha"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format,
                     blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
@@ -1184,60 +1211,18 @@ impl Pipelines {
             cache: None,
         });
 
-        // Content blur pipeline (full RGBA gaussian blur)
-        let blur_content_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("blur_content.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
-                "shaders/blur_content.wgsl"
-            ))),
-        });
         let blur_content = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("blur content pipeline"),
             layout: Some(&blur_pipeline_layout),
             vertex: wgpu::VertexState {
-                module: &blur_content_shader,
+                module: &blur_shader,
                 entry_point: Some("vs_main"),
-                buffers: &[Some(wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<BlurInstance>() as u64,
-                    step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &[
-                        wgpu::VertexAttribute {
-                            shader_location: 0,
-                            offset: 0,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 1,
-                            offset: 16,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 2,
-                            offset: 32,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 3,
-                            offset: 48,
-                            format: wgpu::VertexFormat::Float32x2,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 4,
-                            offset: 56,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 5,
-                            offset: 72,
-                            format: wgpu::VertexFormat::Uint32,
-                        },
-                    ],
-                })],
+                buffers: &[Some(blur_layout)],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
-                module: &blur_content_shader,
-                entry_point: Some("fs_main"),
+                module: &blur_shader,
+                entry_point: Some("fs_color"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format,
                     blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
@@ -1879,16 +1864,18 @@ enum Cmd {
         cnt: u32,
         layer_id: u32,
     },
-    /// Composite a blurred drop shadow of a previously-rendered graphics
-    /// layer. The quad's vertex buffer lives in `self.blur_ring` (a
-    /// `BlurInstance`).
+    /// Separable gaussian blur, alpha channel only: the horizontal pass into a
+    /// scratch layer, and the vertical pass that tints the result as a drop
+    /// shadow. `layer_id` names the texture to sample, which is the source
+    /// layer for the first pass and the scratch for the second. The quad's
+    /// vertex buffer lives in `self.blur_ring` (a `BlurInstance`).
     CompositeShadow {
         off: u64,
         cnt: u32,
         layer_id: u32,
     },
-    /// Apply gaussian blur to a layer and composite the blurred result.
-    /// Uses the `blur_content` pipeline (full RGBA blur).
+    /// Separable gaussian blur over full RGBA, for `Modifier::blur`. Two
+    /// stages exactly like [`Cmd::CompositeShadow`].
     CompositeBlur {
         off: u64,
         cnt: u32,
@@ -2345,10 +2332,11 @@ struct BlurInstance {
     xywh: [f32; 4],
     uv: [f32; 4],
     color: [f32; 4],
-    blur_uv: [f32; 2],
+    sigma_px: [f32; 2],
     fwd_mat: [f32; 4],
+    axis: u32,
     edge_mode: u32,
-    _pad: [f32; 3],
+    _pad: [f32; 2],
 }
 
 /// Projective layer-composite instance: the four layer-rect corners projected
@@ -3440,6 +3428,7 @@ impl WgpuSceneRenderer {
             projective_ring: ring_projective,
             blend_ring,
             flatten_layer_ids: Vec::new(),
+            blur_scratch_ids: Vec::new(),
             blend_snapshots: std::collections::HashMap::new(),
             blend_snapshot_pool: HashMap::new(),
             blend_copies: Vec::new(),
@@ -5845,22 +5834,7 @@ impl WgpuSceneRenderer {
                 },
             ],
         });
-        let depth_stencil_tex = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("graphics layer depth-stencil"),
-            size: wgpu::Extent3d {
-                width: width.max(1),
-                height: height.max(1),
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Depth24PlusStencil8,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            view_formats: &[],
-        });
-        let depth_stencil_view =
-            depth_stencil_tex.create_view(&wgpu::TextureViewDescriptor::default());
+        let depth_stencil_view = self.create_layer_depth_stencil(width, height);
         self.layer_pool.insert(
             layer_id,
             LayerTarget {
@@ -5883,6 +5857,193 @@ impl WgpuSceneRenderer {
                 self.transient_layer_bytes_total.saturating_add(bytes);
         }
         true
+    }
+
+    /// Allocate (or reuse) the padded scratch layer holding the horizontal half
+    /// of a separable blur for `layer_id`.
+    ///
+    /// Scratch ids are derived from the source layer id under
+    /// [`BLUR_SCRATCH_ID_BASE`] and remembered in [`Self::blur_scratch_ids`], so
+    /// a stable layer reuses its allocation across frames. Allocation goes
+    /// through the layer pool (as a transient layer) and therefore respects the
+    /// layer budget; `None` means the caller should composite unblurred.
+    fn acquire_blur_scratch(&mut self, layer_id: u32, pad: (f32, f32)) -> Option<u32> {
+        let src = self.layer_pool.get(&layer_id)?;
+        let width_f = (src.width as f32 + pad.0 * 2.0).ceil();
+        let height_f = (src.height as f32 + pad.1 * 2.0).ceil();
+        let max_dim = self.device.limits().max_texture_dimension_2d as f32;
+        if !width_f.is_finite()
+            || !height_f.is_finite()
+            || width_f < 1.0
+            || height_f < 1.0
+            || width_f > max_dim
+            || height_f > max_dim
+        {
+            log::warn!("blur scratch size {width_f}x{height_f} is invalid");
+            return None;
+        }
+        let index = layer_id as usize;
+        if self.blur_scratch_ids.len() <= index {
+            self.blur_scratch_ids.resize(index + 1, 0);
+        }
+        let scratch_id = if self.blur_scratch_ids[index] == 0 {
+            let id = BLUR_SCRATCH_ID_BASE | (layer_id << 1) | 1;
+            self.blur_scratch_ids[index] = id;
+            id
+        } else {
+            self.blur_scratch_ids[index]
+        };
+        let allocated = self.get_or_create_layer(
+            scratch_id,
+            width_f as u32,
+            height_f as u32,
+            repose_core::Rect {
+                x: 0.0,
+                y: 0.0,
+                w: width_f,
+                h: height_f,
+            },
+            true,
+        );
+        allocated.then_some(scratch_id)
+    }
+
+    /// Emit the horizontal half of a separable blur for `source_layer` into a
+    /// padded scratch layer, and return that scratch's id so the caller can
+    /// finish the vertical axis when it composites.
+    ///
+    /// The scratch pass is spliced between the pass being built and the pass the
+    /// caller continues in, so ordering stays: everything drawn so far, the
+    /// horizontal blur, then the vertical composite. `None` means no scratch
+    /// could be allocated and the caller should composite without the blur.
+    ///
+    /// `alpha_only` selects the shadow kernel (alpha, tinted by `color`) over
+    /// the full-RGBA kernel used by `Modifier::blur`.
+    #[allow(clippy::too_many_arguments)]
+    fn emit_separable_blur(
+        &mut self,
+        source_layer: u32,
+        sigma: [f32; 2],
+        pad: (f32, f32),
+        edge_mode: u32,
+        alpha_only: bool,
+        color: [f32; 4],
+        passes: &mut Vec<Pass>,
+        current_pass: &mut Pass,
+        next_pass_id: &mut u64,
+        encoder: &mut wgpu::CommandEncoder,
+    ) -> Option<u32> {
+        let scratch_id = self.acquire_blur_scratch(source_layer, pad)?;
+        let (scratch_w, scratch_h, source_w, source_h) = {
+            let scratch = self.layer_pool.get(&scratch_id)?;
+            let source = self.layer_pool.get(&source_layer)?;
+            (
+                scratch.width,
+                scratch.height,
+                source.width as f32,
+                source.height as f32,
+            )
+        };
+        // The quad covers the whole scratch, and scratch texel (x, y) samples
+        // the source at (x - pad_x, y - pad_y). Padding texels therefore land
+        // outside the source's 0..1, and `edge_mode` decides whether that
+        // contributes nothing (decal, correct for a shadow) or clamps to the
+        // edge texel (the `Modifier::blur` clamp edge treatment).
+        let uv = [
+            -pad.0 / source_w,
+            -pad.1 / source_h,
+            1.0 + pad.0 / source_w,
+            1.0 + pad.1 / source_h,
+        ];
+        let ndc = [-1.0, -1.0, 2.0, 2.0];
+        let inst = BlurInstance {
+            xywh: [ndc[0] + ndc[2] * 0.5, ndc[1] + ndc[3] * 0.5, ndc[2], ndc[3]],
+            uv,
+            color: if alpha_only {
+                [1.0, 1.0, 1.0, 1.0]
+            } else {
+                color
+            },
+            sigma_px: sigma,
+            fwd_mat: [1.0, 0.0, 0.0, 1.0],
+            axis: 0,
+            edge_mode,
+            _pad: [0.0; 2],
+        };
+        let cmd = match self.upload_blur_instance(&inst, encoder) {
+            Some(off) if alpha_only => Cmd::CompositeShadow {
+                off,
+                cnt: 1,
+                layer_id: source_layer,
+            },
+            Some(off) => Cmd::CompositeBlur {
+                off,
+                cnt: 1,
+                layer_id: source_layer,
+            },
+            None => return None,
+        };
+        let target = current_pass.target;
+        let scissor = current_pass.active_scissor;
+        let resumed_pass_id = *next_pass_id;
+        *next_pass_id += 1;
+        let saved = std::mem::replace(
+            current_pass,
+            Pass {
+                id: resumed_pass_id,
+                target,
+                initial_scissor: scissor.unwrap_or((0, 0, 1, 1)),
+                active_scissor: scissor,
+                clear_color: None,
+                cmds: Vec::new(),
+            },
+        );
+        passes.push(saved);
+        let scratch_pass_id = *next_pass_id;
+        *next_pass_id += 1;
+        passes.push(Pass {
+            id: scratch_pass_id,
+            target: PassTarget::Layer(scratch_id),
+            initial_scissor: (0, 0, scratch_w, scratch_h),
+            active_scissor: Some((0, 0, scratch_w, scratch_h)),
+            clear_color: Some([0.0, 0.0, 0.0, 0.0]),
+            cmds: vec![cmd],
+        });
+        Some(scratch_id)
+    }
+
+    fn upload_blur_instance(
+        &mut self,
+        inst: &BlurInstance,
+        encoder: &mut wgpu::CommandEncoder,
+    ) -> Option<u64> {
+        self.blur_ring
+            .grow_to_fit(
+                &self.device,
+                encoder,
+                std::mem::size_of::<BlurInstance>() as u64,
+            )
+            .ok()?;
+        self.blur_ring
+            .alloc_write(&self.queue, bytemuck::bytes_of(inst))
+            .ok()
+    }
+    fn create_layer_depth_stencil(&self, width: u32, height: u32) -> wgpu::TextureView {
+        let tex = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("layer depth-stencil"),
+            size: wgpu::Extent3d {
+                width: width.max(1),
+                height: height.max(1),
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Depth24PlusStencil8,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        tex.create_view(&wgpu::TextureViewDescriptor::default())
     }
 
     fn ensure_globals_staging(&mut self, pass_count: usize) -> bool {
@@ -9914,11 +10075,13 @@ impl WgpuSceneRenderer {
                     let (parent_width, parent_height) = state.parent_size;
                     let parent_clip = scissor_stack.last().copied().unwrap_or(root_clip_rect);
                     let composite_rect = if state.blur.0 > 0.0 || state.blur.1 > 0.0 {
+                        let pad_x = blur_pad(state.blur.0);
+                        let pad_y = blur_pad(state.blur.1);
                         repose_core::Rect {
-                            x: local_layer_rect.x - state.blur.0 * 1.5,
-                            y: local_layer_rect.y - state.blur.1 * 1.5,
-                            w: local_layer_rect.w + state.blur.0 * 3.0,
-                            h: local_layer_rect.h + state.blur.1 * 3.0,
+                            x: local_layer_rect.x - pad_x,
+                            y: local_layer_rect.y - pad_y,
+                            w: local_layer_rect.w + pad_x * 2.0,
+                            h: local_layer_rect.h + pad_y * 2.0,
                         }
                     } else {
                         local_layer_rect
@@ -9928,49 +10091,58 @@ impl WgpuSceneRenderer {
                         continue;
                     }
                     if state.blur.0 > 0.0 || state.blur.1 > 0.0 {
-                        let blur_x = state.blur.0 * 1.5;
-                        let blur_y = state.blur.1 * 1.5;
+                        flush_batch!();
+                        let pad_x = blur_pad(state.blur.0);
+                        let pad_y = blur_pad(state.blur.1);
                         let rect = repose_core::Rect {
-                            x: local_layer_rect.x - blur_x,
-                            y: local_layer_rect.y - blur_y,
-                            w: local_layer_rect.w + blur_x * 2.0,
-                            h: local_layer_rect.h + blur_y * 2.0,
+                            x: local_layer_rect.x - pad_x,
+                            y: local_layer_rect.y - pad_y,
+                            w: local_layer_rect.w + pad_x * 2.0,
+                            h: local_layer_rect.h + pad_y * 2.0,
                         };
                         let ndc =
                             to_ndc(rect.x, rect.y, rect.w, rect.h, parent_width, parent_height);
-                        let inst = BlurInstance {
-                            xywh: [ndc[0] + ndc[2] * 0.5, ndc[1] + ndc[3] * 0.5, ndc[2], ndc[3]],
-                            uv: [0.0, 0.0, 1.0, 1.0],
-                            color: [1.0, 1.0, 1.0, state.alpha],
-                            blur_uv: [
-                                (state.blur.0 * 1.5) / layer.width.max(1) as f32,
-                                (state.blur.1 * 1.5) / layer.height.max(1) as f32,
-                            ],
-                            fwd_mat: [1.0, 0.0, 0.0, 1.0],
-                            edge_mode: if state.rectangle_edge { 0 } else { 1 },
-                            _pad: [0.0; 3],
-                        };
-                        if self
-                            .blur_ring
-                            .grow_to_fit(
-                                &self.device,
-                                encoder,
-                                std::mem::size_of::<BlurInstance>() as u64,
-                            )
-                            .is_ok()
-                            && let Ok(off) = self
-                                .blur_ring
-                                .alloc_write(&self.queue, bytemuck::bytes_of(&inst))
-                        {
-                            let command = Cmd::CompositeBlur {
-                                off,
-                                cnt: 1,
-                                layer_id: *layer_id,
+                        let edge_mode = if state.rectangle_edge { 0 } else { 1 };
+                        let sigma = [blur_sigma(state.blur.0), blur_sigma(state.blur.1)];
+                        let vertical = self.emit_separable_blur(
+                            *layer_id,
+                            sigma,
+                            (pad_x, pad_y),
+                            edge_mode,
+                            false,
+                            [1.0, 1.0, 1.0, state.alpha],
+                            &mut passes,
+                            &mut current_pass,
+                            &mut next_pass_id,
+                            encoder,
+                        );
+                        if let Some(scratch_id) = vertical {
+                            let inst = BlurInstance {
+                                xywh: [
+                                    ndc[0] + ndc[2] * 0.5,
+                                    ndc[1] + ndc[3] * 0.5,
+                                    ndc[2],
+                                    ndc[3],
+                                ],
+                                uv: [0.0, 0.0, 1.0, 1.0],
+                                color: [1.0, 1.0, 1.0, state.alpha],
+                                sigma_px: sigma,
+                                fwd_mat: [1.0, 0.0, 0.0, 1.0],
+                                axis: 1,
+                                edge_mode,
+                                _pad: [0.0; 2],
                             };
-                            if shadow_follows {
-                                pending_layer_composite = Some(command);
-                            } else {
-                                current_pass.cmds.push(command);
+                            if let Some(off) = self.upload_blur_instance(&inst, encoder) {
+                                let command = Cmd::CompositeBlur {
+                                    off,
+                                    cnt: 1,
+                                    layer_id: scratch_id,
+                                };
+                                if shadow_follows {
+                                    pending_layer_composite = Some(command);
+                                } else {
+                                    current_pass.cmds.push(command);
+                                }
                             }
                         }
                     } else {
@@ -10011,7 +10183,10 @@ impl WgpuSceneRenderer {
                     offset_px,
                     color,
                 } => {
-                    if let Some(layer) = self.layer_pool.get(layer_id).cloned() {
+                    let sigma = blur_sigma(blur_px.0);
+                    let pad = blur_pad(blur_px.0);
+                    let layer = self.layer_pool.get(layer_id).cloned();
+                    if let Some(layer) = layer {
                         let layer_rect = repose_core::Rect {
                             x: layer.rect_px.0,
                             y: layer.rect_px.1,
@@ -10020,12 +10195,10 @@ impl WgpuSceneRenderer {
                         };
                         let local_layer_rect =
                             affine_aabb(transform_stack.last().unwrap_or(&t_identity), &layer_rect);
-                        let blur_x = blur_px.0.max(0.0) * 1.5;
-                        let blur_y = blur_px.0.max(0.0) * 1.5;
-                        let sx = local_layer_rect.x + offset_px.0.0 - blur_x;
-                        let sy = local_layer_rect.y + offset_px.1.0 - blur_y;
-                        let sw = local_layer_rect.w + blur_x * 2.0;
-                        let sh = local_layer_rect.h + blur_y * 2.0;
+                        let sx = local_layer_rect.x + offset_px.0.0 - pad;
+                        let sy = local_layer_rect.y + offset_px.1.0 - pad;
+                        let sw = local_layer_rect.w + pad * 2.0;
+                        let sh = local_layer_rect.h + pad * 2.0;
                         let clip = scissor_stack.last().copied().unwrap_or(root_clip_rect);
                         if !visible(
                             repose_core::Rect {
@@ -10040,41 +10213,47 @@ impl WgpuSceneRenderer {
                             continue;
                         }
                         flush_batch!();
-                        let bw_uv = blur_x / layer.width.max(1) as f32;
-                        let bh_uv = blur_y / layer.height.max(1) as f32;
-                        let ndc_tl =
-                            to_ndc(sx, sy, sw, sh, current_target_size.0, current_target_size.1);
-                        let inst = BlurInstance {
-                            xywh: [
-                                ndc_tl[0] + ndc_tl[2] * 0.5,
-                                ndc_tl[1] + ndc_tl[3] * 0.5,
-                                ndc_tl[2],
-                                ndc_tl[3],
-                            ],
-                            uv: [0.0, 0.0, 1.0, 1.0],
-                            color: color.to_linear(),
-                            blur_uv: [bw_uv, bh_uv],
-                            fwd_mat: [1.0, 0.0, 0.0, 1.0],
-                            edge_mode: 0,
-                            _pad: [0.0; 3],
-                        };
-                        if self
-                            .blur_ring
-                            .grow_to_fit(
-                                &self.device,
-                                encoder,
-                                std::mem::size_of::<BlurInstance>() as u64,
-                            )
-                            .is_ok()
-                            && let Ok(off) = self
-                                .blur_ring
-                                .alloc_write(&self.queue, bytemuck::bytes_of(&inst))
-                        {
-                            current_pass.cmds.push(Cmd::CompositeShadow {
-                                off,
-                                cnt: 1,
-                                layer_id: *layer_id,
-                            });
+                        let shadow_color = color.to_linear();
+                        // Decal edges: a drop shadow's falloff lives outside the
+                        // source's own bounds, so out-of-range taps must
+                        // contribute nothing rather than clamp to the edge texel.
+                        let scratch_id = self.emit_separable_blur(
+                            *layer_id,
+                            [sigma, sigma],
+                            (pad, pad),
+                            1,
+                            true,
+                            shadow_color,
+                            &mut passes,
+                            &mut current_pass,
+                            &mut next_pass_id,
+                            encoder,
+                        );
+                        if let Some(scratch_id) = scratch_id {
+                            let ndc_tl =
+                                to_ndc(sx, sy, sw, sh, current_target_size.0, current_target_size.1);
+                            let inst = BlurInstance {
+                                xywh: [
+                                    ndc_tl[0] + ndc_tl[2] * 0.5,
+                                    ndc_tl[1] + ndc_tl[3] * 0.5,
+                                    ndc_tl[2],
+                                    ndc_tl[3],
+                                ],
+                                uv: [0.0, 0.0, 1.0, 1.0],
+                                color: shadow_color,
+                                sigma_px: [sigma, sigma],
+                                fwd_mat: [1.0, 0.0, 0.0, 1.0],
+                                axis: 1,
+                                edge_mode: 1,
+                                _pad: [0.0; 2],
+                            };
+                            if let Some(off) = self.upload_blur_instance(&inst, encoder) {
+                                current_pass.cmds.push(Cmd::CompositeShadow {
+                                    off,
+                                    cnt: 1,
+                                    layer_id: scratch_id,
+                                });
+                            }
                         }
                     }
                     flush_pending_layer!();
@@ -10535,6 +10714,9 @@ impl WgpuSceneRenderer {
         let mut clip_depth_stack: Vec<u32> = Vec::new();
 
         let snapshot_source = target_texture.cloned();
+        let last_surface_pass = passes
+            .iter()
+            .rposition(|pass| matches!(pass.target, PassTarget::Surface));
         for (pass_index, pass) in std::mem::take(&mut passes).into_iter().enumerate() {
             // Populate backdrop snapshots for blends composited in this
             // pass: copy the parent target region into the snapshot
@@ -10657,7 +10839,13 @@ impl WgpuSceneRenderer {
                                 (ws_view.clone(), None)
                             }
                         } else if let Some(msaa_view) = &self.msaa_view {
-                            (msaa_view.clone(), Some(swap_view))
+                            // Resolve once per frame. Graphics layers split the
+                            // surface into several passes that all accumulate into
+                            // the same multisampled attachment, so only the last
+                            // one can contribute to the presented image.
+                            let resolve = (Some(pass_index) == last_surface_pass)
+                                .then(|| swap_view.clone());
+                            (msaa_view.clone(), resolve)
                         } else {
                             (swap_view, None)
                         };
@@ -11310,11 +11498,26 @@ impl WgpuSceneRenderer {
 
         let transient_ids: HashSet<u32> = flatten_ids_used.iter().copied().collect();
         let producer_ids = std::mem::take(&mut self.producer_layer_ids);
+        // A blur scratch stays bound while its source layer is live, so a stable
+        // layer reuses its allocation instead of reallocating each frame. Once
+        // the source is swept the scratch id is forgotten and goes with it.
+        let mut live_scratch = HashSet::new();
+        for (source, scratch) in self.blur_scratch_ids.iter_mut().enumerate() {
+            if *scratch != 0 && !producer_ids.contains(&(source as u32)) {
+                *scratch = 0;
+            }
+            if *scratch != 0 {
+                live_scratch.insert(*scratch);
+            }
+        }
         let stale_layers: Vec<u32> = self
             .layer_pool
             .keys()
             .filter_map(|id| {
-                (!producer_ids.contains(id) && !transient_ids.contains(id)).then_some(*id)
+                (!producer_ids.contains(id)
+                    && !transient_ids.contains(id)
+                    && !live_scratch.contains(id))
+                    .then_some(*id)
             })
             .collect();
         for id in stale_layers {

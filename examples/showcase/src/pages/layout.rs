@@ -16,6 +16,8 @@ fn shadow_card(m: Modifier, label: &'static str, fg: Option<Color>) -> View {
     .child(t)
 }
 
+
+
 pub fn screen() -> View {
     let compact = compact_layout();
 
@@ -105,15 +107,17 @@ pub fn screen() -> View {
         Section(
             "Drop Shadow (.elevation / .shadow)",
             Column(Modifier::new().padding(Dp(20.0)).gap(Dp(20.0))).child((
-                Hint("Combine graphics_layer with shadow/elevation to render an offscreen-pass Gaussian drop shadow."),
+                Hint("Combine graphics_layer with shadow/elevation to render an offscreen-pass Gaussian drop shadow. A black shadow needs a lifted surface to read against; M3 reads elevation on a dark scheme through the surface tint."),
                 FlowRow(Modifier::new().fill_max_width().gap(sp::XL), FlowRowConfig::default()).child((
                     shadow_card(
-                        Modifier::new().elevation(Dp(4.0)).background(theme().surface)
+                        Modifier::new().elevation(Dp(4.0))
+                            .background(theme().surface_container_high)
                             .border(Dp(1.0), theme().outline_variant, Dp(12.0)),
                         "elevation(4)", None,
                     ),
                     shadow_card(
-                        Modifier::new().elevation(Dp(8.0)).background(theme().surface)
+                        Modifier::new().elevation(Dp(8.0))
+                            .background(theme().surface_container_high)
                             .border(Dp(1.0), theme().outline_variant, Dp(12.0)),
                         "elevation(8)", None,
                     ),
