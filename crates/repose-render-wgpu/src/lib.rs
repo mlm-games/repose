@@ -270,9 +270,12 @@ pub struct WgpuSceneRenderer {
     /// are single-frame by construction).
     flatten_layer_ids: Vec<u32>,
 
-    /// Layer ids handed out to separable-blur scratches, so they survive the
-    /// stale-layer sweep and stay bound across frames.
-    blur_scratch_ids: Vec<u32>,
+    /// Layer ids handed out to separable-blur scratches, keyed by
+    /// `(source layer, slot)` so they survive the stale-layer sweep and stay
+    /// bound across frames. `blur_scratch_next` is the handout counter for
+    /// those ids; it only ever grows, so a freed slot's id is never reissued.
+    blur_scratch_ids: HashMap<(u32, u32), u32>,
+    blur_scratch_next: u32,
 
     /// Backdrop snapshots keyed by isolated-blend layer id. Filled during
     /// translation (texture allocated) and populated by a texture copy at
@@ -417,6 +420,13 @@ fn blur_pad(radius: f32) -> f32 {
 /// scene and flatten owns `FLATTEN_ID_BASE`, so this range never collides.
 const BLUR_SCRATCH_ID_BASE: u32 = 0xE000_0000;
 
+/// Scratch slot for the `Modifier::blur` half of a layer's content.
+const BLUR_SLOT_CONTENT: u32 = 0;
+/// Scratch slot for the shadow's half-plane kernel, so a layer can carry a
+/// content blur and a shadow without either pass clobbering the other's
+/// scratch.
+const BLUR_SLOT_SHADOW: u32 = 1;
+
 impl Drop for WgpuSceneRenderer {
     fn drop(&mut self) {
         let _ = self.device.poll(wgpu::PollType::Poll);
@@ -444,8 +454,6 @@ struct LayerTarget {
     rect_px: (f32, f32, f32, f32),
     transient: bool,
 }
-
-
 
 /// Backdrop snapshot for one isolated blend: a copy of the current target
 /// region taken before the source layer is composited, sampled as the
@@ -3428,7 +3436,8 @@ impl WgpuSceneRenderer {
             projective_ring: ring_projective,
             blend_ring,
             flatten_layer_ids: Vec::new(),
-            blur_scratch_ids: Vec::new(),
+            blur_scratch_ids: HashMap::new(),
+            blur_scratch_next: 0,
             blend_snapshots: std::collections::HashMap::new(),
             blend_snapshot_pool: HashMap::new(),
             blend_copies: Vec::new(),
@@ -5860,14 +5869,15 @@ impl WgpuSceneRenderer {
     }
 
     /// Allocate (or reuse) the padded scratch layer holding the horizontal half
-    /// of a separable blur for `layer_id`.
+    /// of a separable blur for `layer_id` in `slot`.
     ///
-    /// Scratch ids are derived from the source layer id under
-    /// [`BLUR_SCRATCH_ID_BASE`] and remembered in [`Self::blur_scratch_ids`], so
-    /// a stable layer reuses its allocation across frames. Allocation goes
-    /// through the layer pool (as a transient layer) and therefore respects the
-    /// layer budget; `None` means the caller should composite unblurred.
-    fn acquire_blur_scratch(&mut self, layer_id: u32, pad: (f32, f32)) -> Option<u32> {
+    /// Scratch ids are handed out from [`BLUR_SCRATCH_ID_BASE`] and remembered
+    /// per `(layer_id, slot)` in [`Self::blur_scratch_ids`], so a stable layer
+    /// reuses its allocation across frames while a content blur and a shadow
+    /// on the same layer never share one. Allocation goes through the layer
+    /// pool (as a transient layer) and therefore respects the layer budget;
+    /// `None` means the caller should composite unblurred.
+    fn acquire_blur_scratch(&mut self, layer_id: u32, slot: u32, pad: (f32, f32)) -> Option<u32> {
         let src = self.layer_pool.get(&layer_id)?;
         let width_f = (src.width as f32 + pad.0 * 2.0).ceil();
         let height_f = (src.height as f32 + pad.1 * 2.0).ceil();
@@ -5882,16 +5892,15 @@ impl WgpuSceneRenderer {
             log::warn!("blur scratch size {width_f}x{height_f} is invalid");
             return None;
         }
-        let index = layer_id as usize;
-        if self.blur_scratch_ids.len() <= index {
-            self.blur_scratch_ids.resize(index + 1, 0);
-        }
-        let scratch_id = if self.blur_scratch_ids[index] == 0 {
-            let id = BLUR_SCRATCH_ID_BASE | (layer_id << 1) | 1;
-            self.blur_scratch_ids[index] = id;
-            id
-        } else {
-            self.blur_scratch_ids[index]
+        let next = self.blur_scratch_next;
+        let scratch_id = match self.blur_scratch_ids.get(&(layer_id, slot)) {
+            Some(&id) => id,
+            None => {
+                let id = BLUR_SCRATCH_ID_BASE.wrapping_add(next);
+                self.blur_scratch_next = next.wrapping_add(1);
+                self.blur_scratch_ids.insert((layer_id, slot), id);
+                id
+            }
         };
         let allocated = self.get_or_create_layer(
             scratch_id,
@@ -5917,23 +5926,30 @@ impl WgpuSceneRenderer {
     /// horizontal blur, then the vertical composite. `None` means no scratch
     /// could be allocated and the caller should composite without the blur.
     ///
-    /// `alpha_only` selects the shadow kernel (alpha, tinted by `color`) over
-    /// the full-RGBA kernel used by `Modifier::blur`.
+    /// `slot` picks the scratch this blur owns, so concurrent blurs of one
+    /// layer (content and shadow) get their own texture. The horizontal
+    /// instance carries no tint: the scratch holds the raw blurred signal and
+    /// the caller applies the group alpha / shadow colour on the vertical pass,
+    /// which would otherwise square the alpha across the two axes.
+    ///
+    /// `alpha_only` selects the shadow kernel (alpha, premultiplied by the
+    /// tint the caller applies vertically) over the full-RGBA kernel used by
+    /// `Modifier::blur`.
     #[allow(clippy::too_many_arguments)]
     fn emit_separable_blur(
         &mut self,
         source_layer: u32,
+        slot: u32,
         sigma: [f32; 2],
         pad: (f32, f32),
         edge_mode: u32,
         alpha_only: bool,
-        color: [f32; 4],
         passes: &mut Vec<Pass>,
         current_pass: &mut Pass,
         next_pass_id: &mut u64,
         encoder: &mut wgpu::CommandEncoder,
     ) -> Option<u32> {
-        let scratch_id = self.acquire_blur_scratch(source_layer, pad)?;
+        let scratch_id = self.acquire_blur_scratch(source_layer, slot, pad)?;
         let (scratch_w, scratch_h, source_w, source_h) = {
             let scratch = self.layer_pool.get(&scratch_id)?;
             let source = self.layer_pool.get(&source_layer)?;
@@ -5959,11 +5975,7 @@ impl WgpuSceneRenderer {
         let inst = BlurInstance {
             xywh: [ndc[0] + ndc[2] * 0.5, ndc[1] + ndc[3] * 0.5, ndc[2], ndc[3]],
             uv,
-            color: if alpha_only {
-                [1.0, 1.0, 1.0, 1.0]
-            } else {
-                color
-            },
+            color: [1.0, 1.0, 1.0, 1.0],
             sigma_px: sigma,
             fwd_mat: [1.0, 0.0, 0.0, 1.0],
             axis: 0,
@@ -10090,6 +10102,7 @@ impl WgpuSceneRenderer {
                     if !visible(composite_rect, parent_clip) {
                         continue;
                     }
+                    let mut composite = None;
                     if state.blur.0 > 0.0 || state.blur.1 > 0.0 {
                         flush_batch!();
                         let pad_x = blur_pad(state.blur.0);
@@ -10104,19 +10117,18 @@ impl WgpuSceneRenderer {
                             to_ndc(rect.x, rect.y, rect.w, rect.h, parent_width, parent_height);
                         let edge_mode = if state.rectangle_edge { 0 } else { 1 };
                         let sigma = [blur_sigma(state.blur.0), blur_sigma(state.blur.1)];
-                        let vertical = self.emit_separable_blur(
+                        if let Some(scratch_id) = self.emit_separable_blur(
                             *layer_id,
+                            BLUR_SLOT_CONTENT,
                             sigma,
                             (pad_x, pad_y),
                             edge_mode,
                             false,
-                            [1.0, 1.0, 1.0, state.alpha],
                             &mut passes,
                             &mut current_pass,
                             &mut next_pass_id,
                             encoder,
-                        );
-                        if let Some(scratch_id) = vertical {
+                        ) {
                             let inst = BlurInstance {
                                 xywh: [
                                     ndc[0] + ndc[2] * 0.5,
@@ -10133,19 +10145,17 @@ impl WgpuSceneRenderer {
                                 _pad: [0.0; 2],
                             };
                             if let Some(off) = self.upload_blur_instance(&inst, encoder) {
-                                let command = Cmd::CompositeBlur {
+                                composite = Some(Cmd::CompositeBlur {
                                     off,
                                     cnt: 1,
                                     layer_id: scratch_id,
-                                };
-                                if shadow_follows {
-                                    pending_layer_composite = Some(command);
-                                } else {
-                                    current_pass.cmds.push(command);
-                                }
+                                });
                             }
                         }
-                    } else {
+                    }
+                    // No scratch (transient budget exhausted) leaves the layer
+                    // sharp rather than dropped.
+                    if composite.is_none() {
                         let ndc = to_ndc(
                             local_layer_rect.x,
                             local_layer_rect.y,
@@ -10160,20 +10170,20 @@ impl WgpuSceneRenderer {
                             color: [1.0, 1.0, 1.0, state.alpha],
                             fwd_mat: [1.0, 0.0, 0.0, 1.0],
                         };
-                        if let Some((off, cnt)) =
-                            self.glyph_color
-                                .upload(&self.device, &self.queue, encoder, &[inst])
-                        {
-                            let command = Cmd::CompositeLayer {
+                        composite = self
+                            .glyph_color
+                            .upload(&self.device, &self.queue, encoder, &[inst])
+                            .map(|(off, cnt)| Cmd::CompositeLayer {
                                 off,
                                 cnt,
                                 layer_id: *layer_id,
-                            };
-                            if shadow_follows {
-                                pending_layer_composite = Some(command);
-                            } else {
-                                current_pass.cmds.push(command);
-                            }
+                            });
+                    }
+                    if let Some(command) = composite {
+                        if shadow_follows {
+                            pending_layer_composite = Some(command);
+                        } else {
+                            current_pass.cmds.push(command);
                         }
                     }
                 }
@@ -10219,19 +10229,25 @@ impl WgpuSceneRenderer {
                         // contribute nothing rather than clamp to the edge texel.
                         let scratch_id = self.emit_separable_blur(
                             *layer_id,
+                            BLUR_SLOT_SHADOW,
                             [sigma, sigma],
                             (pad, pad),
                             1,
                             true,
-                            shadow_color,
                             &mut passes,
                             &mut current_pass,
                             &mut next_pass_id,
                             encoder,
                         );
                         if let Some(scratch_id) = scratch_id {
-                            let ndc_tl =
-                                to_ndc(sx, sy, sw, sh, current_target_size.0, current_target_size.1);
+                            let ndc_tl = to_ndc(
+                                sx,
+                                sy,
+                                sw,
+                                sh,
+                                current_target_size.0,
+                                current_target_size.1,
+                            );
                             let inst = BlurInstance {
                                 xywh: [
                                     ndc_tl[0] + ndc_tl[2] * 0.5,
@@ -10843,8 +10859,8 @@ impl WgpuSceneRenderer {
                             // surface into several passes that all accumulate into
                             // the same multisampled attachment, so only the last
                             // one can contribute to the presented image.
-                            let resolve = (Some(pass_index) == last_surface_pass)
-                                .then(|| swap_view.clone());
+                            let resolve =
+                                (Some(pass_index) == last_surface_pass).then(|| swap_view.clone());
                             (msaa_view.clone(), resolve)
                         } else {
                             (swap_view, None)
@@ -11501,15 +11517,9 @@ impl WgpuSceneRenderer {
         // A blur scratch stays bound while its source layer is live, so a stable
         // layer reuses its allocation instead of reallocating each frame. Once
         // the source is swept the scratch id is forgotten and goes with it.
-        let mut live_scratch = HashSet::new();
-        for (source, scratch) in self.blur_scratch_ids.iter_mut().enumerate() {
-            if *scratch != 0 && !producer_ids.contains(&(source as u32)) {
-                *scratch = 0;
-            }
-            if *scratch != 0 {
-                live_scratch.insert(*scratch);
-            }
-        }
+        self.blur_scratch_ids
+            .retain(|&(source, _), _| producer_ids.contains(&source));
+        let live_scratch: HashSet<u32> = self.blur_scratch_ids.values().copied().collect();
         let stale_layers: Vec<u32> = self
             .layer_pool
             .keys()
@@ -11517,7 +11527,7 @@ impl WgpuSceneRenderer {
                 (!producer_ids.contains(id)
                     && !transient_ids.contains(id)
                     && !live_scratch.contains(id))
-                    .then_some(*id)
+                .then_some(*id)
             })
             .collect();
         for id in stale_layers {

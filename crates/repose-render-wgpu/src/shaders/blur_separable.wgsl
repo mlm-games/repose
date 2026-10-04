@@ -55,10 +55,10 @@ fn vs_main(
 @group(1) @binding(0) var src_tex: texture_2d<f32>;
 @group(1) @binding(1) var src_smp: sampler;
 
-// Bilinear pairs, so 2 texels of kernel per fetch. Caps the kernel at
-// 2 * MAX_TAPS - 1 texels, i.e. sigma ~= 43px (blur radius ~= 74px); past
-// that the Gaussian is truncated rather than allowed to grow unbounded.
-const MAX_TAPS: i32 = 65;
+// Kernel half-width cap in texels. Packed pair mode spans 2 * MAX_SUPPORT
+// texels, i.e. sigma ~= 21px (blur radius ~= 37px); past that the Gaussian is
+// truncated rather than allowed to grow unbounded.
+const MAX_SUPPORT: i32 = 64;
 
 fn fetch(uv: vec2<f32>, edge_mode: u32) -> vec4<f32> {
     if (edge_mode != 0u && (any(uv < vec2<f32>(0.0)) || any(uv > vec2<f32>(1.0)))) {
@@ -71,9 +71,9 @@ fn fetch(uv: vec2<f32>, edge_mode: u32) -> vec4<f32> {
 
 /// Separable Gaussian along `axis`. `sigma_px` is in source texels, so the
 /// kernel support is `ceil(3 * sigma)` texels and tap offsets convert to uv by
-/// dividing by the source extent. The kernel is packed into bilinear pairs:
-/// pair `i` sits half a texel off `-support + 2i`, so one filtered fetch
-/// reconstructs two adjacent texels, plus one exact tap at the far edge.
+/// dividing by the source extent. Wide kernels are packed into bilinear pairs
+/// (two texels of kernel per fetch); narrow ones tap texel centres directly,
+/// since a pair is wider than the kernel itself and would alias.
 fn blur_axis(in: VSOut) -> vec4<f32> {
     let dims = vec2<f32>(textureDimensions(src_tex, 0));
     let along_y = in.axis == 1u;
@@ -85,20 +85,30 @@ fn blur_axis(in: VSOut) -> vec4<f32> {
         return fetch(in.uv, in.edge_mode);
     }
 
-    let support = min(i32(ceil(3.0 * sigma)), 2 * MAX_TAPS - 1);
+    let support = min(i32(ceil(3.0 * sigma)), MAX_SUPPORT);
     let inv_sigma = 1.0 / sigma;
     var sum = vec4<f32>(0.0);
     var total = 0.0;
-    for (var i = 0; i < support; i++) {
-        let dist = f32(-support) + 0.5 + f32(2 * i);
-        let w = exp(-0.5 * dist * dist * inv_sigma * inv_sigma);
-        sum += fetch(in.uv + dir * (dist / extent), in.edge_mode) * w;
-        total += w;
+    if (sigma >= 1.5) {
+        // Pair `i` sits half a texel off `-support + 2i`, so one filtered
+        // fetch reconstructs two adjacent texels, plus one exact tap at the
+        // far edge.
+        for (var i = 0; i <= support; i++) {
+            let dist = f32(-support) + 0.5 + f32(2 * i);
+            let w = exp(-0.5 * dist * dist * inv_sigma * inv_sigma);
+            sum += fetch(in.uv + dir * (dist / extent), in.edge_mode) * w;
+            total += w;
+        }
+    } else {
+        for (var i = -support; i <= support; i++) {
+            let dist = f32(i);
+            let w = exp(-0.5 * dist * dist * inv_sigma * inv_sigma);
+            sum += fetch(in.uv + dir * (dist / extent), in.edge_mode) * w;
+            total += w;
+        }
     }
-    let tail = f32(support);
-    let w_tail = exp(-0.5 * tail * tail * inv_sigma * inv_sigma);
-    sum += fetch(in.uv + dir * (tail / extent), in.edge_mode) * w_tail;
-    total += w_tail;
+    // Normalize by the weights actually fetched, so a clamp-edge source whose
+    // taps run off the texture keeps a solid interior instead of darkening.
     return sum / max(total, 1e-6);
 }
 

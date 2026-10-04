@@ -251,6 +251,239 @@ fn graphics_layer_shadow_draws_before_the_layer_composite() {
     assert!(pixels[outside + 3] > 0);
 }
 
+fn erfc(x: f64) -> f64 {
+    let sign = if x < 0.0 { -1.0 } else { 1.0 };
+    let a = x.abs();
+    let t = 1.0 / (1.0 + 0.327_591_1 * a);
+    let y = 1.0
+        - (((((1.061_405_429 * t - 1.453_152_027) * t) + 1.421_413_741) * t - 0.284_496_736) * t
+            + 0.254_829_592)
+            * t
+            * (-a * a).exp();
+    sign * (1.0 - y)
+}
+
+fn alpha_at(px: &[u8], w: usize, x: usize, y: usize) -> f64 {
+    px[(y * w + x) * 4 + 3] as f64 / 255.0
+}
+
+/// Alpha outside a straight-edged layer must decay as a Gaussian: monotone (no
+/// comb from mis-packed taps), 50% at the edge, gone by 3 sigma, and within
+/// texel-quantization tolerance of the half-plane solution `0.5 * erfc(...)`.
+#[test]
+fn shadow_falloff_matches_a_gaussian() {
+    let Some(mut off) = try_offscreen(400, 400) else {
+        return;
+    };
+    for blur in [1.0f32, 2.0, 4.0, 8.0, 16.0, 32.0] {
+        let layer = Rect {
+            x: 150.0,
+            y: 150.0,
+            w: 100.0,
+            h: 100.0,
+        };
+        let scene = Scene {
+            clear_color: Color::from_rgba(0, 0, 0, 0),
+            nodes: vec![
+                SceneNode::BeginLayer {
+                    rect: layer,
+                    layer_id: 0,
+                    alpha: 1.0,
+                    blur_radius_x: Px::ZERO,
+                    blur_radius_y: Px::ZERO,
+                    rectangle_edge: true,
+                },
+                SceneNode::PushTransform {
+                    transform: Transform::translate(-layer.x, -layer.y),
+                },
+                SceneNode::Rect {
+                    rect: layer,
+                    brush: Brush::Solid(Color::from_rgb(255, 255, 255)),
+                    radius: [Px::ZERO; 4],
+                },
+                SceneNode::PopTransform,
+                SceneNode::EndLayer { layer_id: 0 },
+                SceneNode::CompositeShadow {
+                    layer_id: 0,
+                    blur_px: Px(blur),
+                    offset_px: (Px::ZERO, Px(0.0)),
+                    color: Color::from_rgba(0, 0, 0, 255),
+                },
+            ],
+        };
+        let px = off.render_rgba(&scene, None).expect("render");
+        let sigma = (blur * 0.577_350_3 + 0.5) as f64;
+        let profile: Vec<f64> = (1..=(blur as usize * 3))
+            .map(|d| alpha_at(&px, 400, 150 - d, 200))
+            .collect();
+
+        let quant = 1.0 / 255.0;
+        for w in profile.windows(2) {
+            assert!(
+                w[1] - w[0] <= quant * 1.5,
+                "blur {blur} alpha rises outward by {} (comb?)",
+                w[1] - w[0]
+            );
+        }
+
+        let crossing = profile
+            .iter()
+            .position(|a| *a < 0.5)
+            .map(|i| i + 1)
+            .expect("profile never crosses 50%");
+        assert!(
+            crossing.abs_diff(1) <= 1,
+            "blur {blur} 50% crossing at {crossing}, want 1"
+        );
+
+        let tail = *profile.last().expect("non-empty profile");
+        assert!(tail < 0.02, "blur {blur} tail {tail} survives past 3 sigma");
+
+        let probe = (2.0 * sigma).ceil() as usize;
+        if probe <= profile.len() {
+            let want = 0.5 * erfc((probe as f64 - 0.5) / (sigma * std::f64::consts::SQRT_2));
+            let tol = 0.5 / (sigma * (2.0 * std::f64::consts::PI).sqrt());
+            assert!(
+                (profile[probe - 1] - want).abs() <= tol,
+                "blur {blur} at {probe}px: got {}, want {want}, tol {tol}",
+                profile[probe - 1]
+            );
+        }
+    }
+}
+
+/// The group alpha belongs to the composite, not to each separable axis:
+/// applying it in both squares it.
+#[test]
+fn blur_does_not_square_the_group_alpha() {
+    let Some(mut off) = try_offscreen(200, 200) else {
+        return;
+    };
+    let layer = Rect {
+        x: 40.0,
+        y: 40.0,
+        w: 120.0,
+        h: 120.0,
+    };
+    let alpha_of = |off: &mut OffscreenRenderer, blur: f32| {
+        let nodes = vec![
+            SceneNode::BeginLayer {
+                rect: layer,
+                layer_id: 0,
+                alpha: 0.5,
+                blur_radius_x: Px(blur),
+                blur_radius_y: Px(blur),
+                rectangle_edge: true,
+            },
+            SceneNode::PushTransform {
+                transform: Transform::translate(-layer.x, -layer.y),
+            },
+            SceneNode::Rect {
+                rect: layer,
+                brush: Brush::Solid(Color::from_rgb(255, 255, 255)),
+                radius: [Px::ZERO; 4],
+            },
+            SceneNode::PopTransform,
+            SceneNode::EndLayer { layer_id: 0 },
+        ];
+        let px = off
+            .render_rgba(
+                &Scene {
+                    clear_color: Color::from_rgba(0, 0, 0, 0),
+                    nodes,
+                },
+                None,
+            )
+            .expect("render");
+        alpha_at(&px, 200, 100, 100)
+    };
+    let sharp = alpha_of(&mut off, 0.0);
+    let blurred = alpha_of(&mut off, 4.0);
+    assert!(
+        (0.5 - sharp).abs() < 0.02,
+        "group alpha {sharp} is not the requested 0.5"
+    );
+    assert!(
+        (sharp - blurred).abs() < 0.02,
+        "blur changed group alpha: {sharp} sharp vs {blurred} blurred"
+    );
+}
+
+/// A layer with both a content blur and a shadow needs two scratches; sharing
+/// one makes the shadow's alpha-only pass overwrite the content's RGBA pass and
+/// the layer composites as its own silhouette.
+#[test]
+fn blur_and_shadow_on_one_layer_keep_their_content() {
+    let Some(mut off) = try_offscreen(200, 200) else {
+        return;
+    };
+    let layer = Rect {
+        x: 60.0,
+        y: 60.0,
+        w: 80.0,
+        h: 80.0,
+    };
+    let bg = |mut nodes: Vec<SceneNode>| {
+        let mut all = vec![SceneNode::Rect {
+            rect: Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 200.0,
+                h: 200.0,
+            },
+            brush: Brush::Solid(Color::from_rgb(0, 0, 0)),
+            radius: [Px::ZERO; 4],
+        }];
+        all.append(&mut nodes);
+        Scene {
+            clear_color: Color::from_rgba(0, 0, 0, 255),
+            nodes: all,
+        }
+    };
+    let layer_nodes = |blur: f32| {
+        vec![
+            SceneNode::BeginLayer {
+                rect: layer,
+                layer_id: 0,
+                alpha: 1.0,
+                blur_radius_x: Px(blur),
+                blur_radius_y: Px(blur),
+                rectangle_edge: true,
+            },
+            SceneNode::PushTransform {
+                transform: Transform::translate(-layer.x, -layer.y),
+            },
+            SceneNode::Rect {
+                rect: layer,
+                brush: Brush::Solid(Color::from_rgb(255, 0, 0)),
+                radius: [Px::ZERO; 4],
+            },
+            SceneNode::PopTransform,
+            SceneNode::EndLayer { layer_id: 0 },
+        ]
+    };
+
+    let control = off
+        .render_rgba(&bg(layer_nodes(6.0)), None)
+        .expect("render");
+    let control_px = &control[(100 * 200 + 100) * 4..(100 * 200 + 100) * 4 + 4];
+    assert_eq!(control_px, &[255, 0, 0, 255], "blur-only control");
+
+    let mut both = layer_nodes(6.0);
+    both.push(SceneNode::CompositeShadow {
+        layer_id: 0,
+        blur_px: Px(8.0),
+        offset_px: (Px::ZERO, Px(4.0)),
+        color: Color::from_rgba(0, 0, 255, 255),
+    });
+    let px = off.render_rgba(&bg(both), None).expect("render");
+    let centre = &px[(100 * 200 + 100) * 4..(100 * 200 + 100) * 4 + 4];
+    assert_eq!(
+        centre, control_px,
+        "shadow pass clobbered the blurred content"
+    );
+}
+
 #[test]
 fn translucent_content_is_premultiplied() {
     let Some(mut off) = try_offscreen(16, 16) else {
