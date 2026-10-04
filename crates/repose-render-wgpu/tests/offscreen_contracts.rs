@@ -675,3 +675,65 @@ fn image_source_rect_and_filter_select_exact_atlas_frame() {
     let right = render(ImageSourceRect::new(1, 0, 1, 1), ImageFilter::Nearest);
     assert!(right[1] > 200 && right[0] < 20, "got {:?}", &right[..4]);
 }
+
+/// The readback path is 8-bit RGBA, so a renderer built for another format
+/// must be rejected instead of silently mismatching its pipelines.
+#[test]
+fn offscreen_rejects_a_foreign_output_format() {
+    let Some(off) = try_offscreen(16, 16) else {
+        return;
+    };
+    let (adapter, device, queue) = pollster::block_on(async {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions::default())
+            .await
+            .expect("adapter");
+        let (device, queue) = adapter
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("offscreen-format-test"),
+                required_features: wgpu::Features::empty(),
+                required_limits: wgpu::Limits::default(),
+                memory_hints: wgpu::MemoryHints::Performance,
+                experimental_features: wgpu::ExperimentalFeatures::default(),
+                trace: wgpu::Trace::Off,
+            })
+            .await
+            .expect("device");
+        (adapter, device, queue)
+    });
+    let renderer = repose_render_wgpu::WgpuSceneRenderer::try_from_device_with_adapter(
+        &adapter,
+        device,
+        queue,
+        wgpu::TextureFormat::Bgra8UnormSrgb,
+        1,
+    )
+    .expect("bgra renderer");
+    assert_ne!(renderer.output_format, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let error = match OffscreenRenderer::from_renderer(renderer, 16, 16) {
+        Ok(_) => panic!("Bgra renderer must not attach to an RGBA readback target"),
+        Err(error) => error,
+    };
+    assert!(
+        format!("{error:#}").contains("Rgba8UnormSrgb"),
+        "error should name the required format, got {error:#}"
+    );
+    drop(off);
+}
+
+#[test]
+fn oversized_offscreen_sizes_are_rejected() {
+    let Some(mut off) = try_offscreen(16, 16) else {
+        return;
+    };
+    let max = off.renderer().device.limits().max_texture_dimension_2d;
+    let error = off
+        .ensure_size(max + 1, 16)
+        .expect_err("oversized width must be rejected");
+    assert!(format!("{error:#}").contains("exceeds"), "got {error:#}");
+    assert_eq!(off.width(), 16, "a rejected resize leaves the target alone");
+    off.ensure_size(32, 32)
+        .expect("in-range resize still works");
+    assert_eq!((off.width(), off.height()), (32, 32));
+}

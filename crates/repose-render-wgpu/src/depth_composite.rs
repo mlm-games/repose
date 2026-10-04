@@ -8,16 +8,25 @@
 //! target back as a fullscreen triangle in `paint`.
 //!
 //! One [`DepthComposite`] per viewport id (same ownership split as the
-//! sprite batch in `repame-sprite`): each id owns its target + pipelines,
-//! so overlapping viewports never share depth. The blit honors the UI
+//! sprite batch in `repame-sprite`): each id owns its target, so
+//! overlapping viewports never share depth. The blit honors the UI
 //! stencil contract (`LessEqual`) and touches no depth, so clips keep
-//! working while depth stays viewport-local.
+//! working while depth stays viewport-local. The blit composites over the
+//! UI instead of replacing it, so a transparent scene leaves the interface
+//! beneath it visible.
 
 use std::collections::HashMap;
 
 use super::{CallbackRenderPass, CallbackResources, ScreenDescriptor};
 
 const MAX_DEPTH_RESOURCE_BYTES: u64 = 256 * 1024 * 1024;
+const MAX_DEPTH_TARGETS: usize = 64;
+/// Frames a target survives without an `ensure`. Viewports are intermittent
+/// (animation, collapse, occlusion); dropping the textures every frame an
+/// embedder skips one forces a reallocation and a bind-group rebuild on the
+/// next paint, and used to throw away a shared blit pipeline with them.
+const TARGET_IDLE_FRAMES: u64 = 3;
+const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24PlusStencil8;
 
 pub trait BlitRenderPass {
     fn set_blit_pipeline(&mut self, pipeline: &wgpu::RenderPipeline);
@@ -54,6 +63,11 @@ impl BlitRenderPass for CallbackRenderPass<'_, '_> {
 }
 
 /// Fullscreen textured triangle: samples the offscreen scene 1:1.
+///
+/// The scene target holds straight (un-premultiplied) alpha, and the blit
+/// composites over UI already painted this frame, so the fragment stage
+/// premultiplies and the pipeline uses `PREMULTIPLIED_ALPHA_BLENDING`.
+/// Opaque scenes (`a == 1`) pass through unchanged.
 const BLIT_WGSL: &str = r#"
 @group(0) @binding(0) var scene_tex: texture_2d<f32>;
 @group(0) @binding(1) var scene_smp: sampler;
@@ -72,7 +86,8 @@ fn vs_main(@builtin(vertex_index) i: u32) -> VsOut {
 }
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    return textureSample(scene_tex, scene_smp, in.uv);
+    let c = textureSample(scene_tex, scene_smp, in.uv);
+    return vec4<f32>(c.rgb * c.a, c.a);
 }
 "#;
 
@@ -85,9 +100,20 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 #[derive(Default)]
 pub struct DepthComposite {
     targets: HashMap<String, Target>,
+    shared: Option<BlitShared>,
+    /// Blit pipelines depend only on `(target_format, sample_count)`, never
+    /// on the viewport size, so they outlive the textures they sample.
+    pipelines: HashMap<(wgpu::TextureFormat, u32), wgpu::RenderPipeline>,
     next_tick: u64,
     frame_index: u64,
     bytes_total: u64,
+}
+
+struct BlitShared {
+    shader: wgpu::ShaderModule,
+    layout: wgpu::BindGroupLayout,
+    sampler: wgpu::Sampler,
+    pipeline_layout: wgpu::PipelineLayout,
 }
 
 struct Target {
@@ -98,8 +124,6 @@ struct Target {
     #[allow(dead_code)]
     depth: wgpu::Texture,
     depth_view: wgpu::TextureView,
-    depth_format: wgpu::TextureFormat,
-    blit_pipeline: wgpu::RenderPipeline,
     blit_bind: wgpu::BindGroup,
     last_used_tick: u64,
     last_used_frame: u64,
@@ -118,13 +142,10 @@ impl DepthComposite {
     }
 
     pub fn end_frame(&mut self) {
-        if self.frame_index == 0 {
-            return;
-        }
         let frame_index = self.frame_index;
         let mut removed = 0u64;
         self.targets.retain(|_, target| {
-            if target.last_used_frame == frame_index {
+            if frame_index.saturating_sub(target.last_used_frame) <= TARGET_IDLE_FRAMES {
                 true
             } else {
                 removed = removed.saturating_add(target.bytes);
@@ -134,9 +155,133 @@ impl DepthComposite {
         self.bytes_total = self.bytes_total.saturating_sub(removed);
     }
 
+    fn shared(&mut self, device: &wgpu::Device) -> &BlitShared {
+        if self.shared.is_none() {
+            let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("depth_composite_blit"),
+                source: wgpu::ShaderSource::Wgsl(BLIT_WGSL.into()),
+            });
+            let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("depth_composite_blit_bgl"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
+            let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+                label: Some("depth_composite_blit_sampler"),
+                address_mode_u: wgpu::AddressMode::ClampToEdge,
+                address_mode_v: wgpu::AddressMode::ClampToEdge,
+                address_mode_w: wgpu::AddressMode::ClampToEdge,
+                mag_filter: wgpu::FilterMode::Linear,
+                min_filter: wgpu::FilterMode::Linear,
+                mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+                lod_min_clamp: 0.0,
+                lod_max_clamp: 0.0,
+                compare: None,
+                anisotropy_clamp: 1,
+                border_color: None,
+            });
+            let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("depth_composite_blit_pl"),
+                bind_group_layouts: &[Some(&layout)],
+                immediate_size: 0,
+            });
+            self.shared = Some(BlitShared {
+                shader,
+                layout,
+                sampler,
+                pipeline_layout,
+            });
+        }
+        self.shared.as_ref().expect("shared blit resources")
+    }
+
+    fn pipeline(
+        &mut self,
+        device: &wgpu::Device,
+        target_format: wgpu::TextureFormat,
+        sample_count: u32,
+    ) -> &wgpu::RenderPipeline {
+        let pipeline_key = (target_format, sample_count);
+        if !self.pipelines.contains_key(&pipeline_key) {
+            let shared = self.shared(device);
+            let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("depth_composite_blit"),
+                layout: Some(&shared.pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shared.shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shared.shader,
+                    entry_point: Some("fs_main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: target_format,
+                        // Premultiplied source over the existing UI: a
+                        // transparent scene composites instead of erasing
+                        // whatever the UI pass already drew beneath it.
+                        blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    ..Default::default()
+                },
+                // depth ops disabled, so the blit never disturbs UI depth/stencil.
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: DEPTH_FORMAT,
+                    depth_write_enabled: Some(false),
+                    depth_compare: Some(wgpu::CompareFunction::Always),
+                    stencil: wgpu::StencilState {
+                        front: wgpu::StencilFaceState {
+                            compare: wgpu::CompareFunction::LessEqual,
+                            ..Default::default()
+                        },
+                        back: wgpu::StencilFaceState {
+                            compare: wgpu::CompareFunction::LessEqual,
+                            ..Default::default()
+                        },
+                        read_mask: 0xFF,
+                        write_mask: 0,
+                    },
+                    bias: wgpu::DepthBiasState::default(),
+                }),
+                multisample: wgpu::MultisampleState {
+                    count: sample_count,
+                    mask: !0,
+                    alpha_to_coverage_enabled: false,
+                },
+                multiview_mask: None,
+                cache: None,
+            });
+            self.pipelines.insert(pipeline_key, pipeline);
+        }
+        &self.pipelines[&pipeline_key]
+    }
+
     /// Ensure the offscreen target for `id` at `w`x`h` (recreates on
     /// format/sample/size change, like every other viewport-owned target).
-    /// Dimensions clamp to >= 1.
+    /// Dimensions clamp to >= 1. Errors name the reason the target could
+    /// not be allocated; the other viewports are left untouched.
     #[allow(clippy::too_many_arguments)] // (device, screen, id, w, h) — mirrors ensure_resources conventions
     pub fn ensure(
         &mut self,
@@ -145,7 +290,7 @@ impl DepthComposite {
         id: &str,
         w: u32,
         h: u32,
-    ) {
+    ) -> anyhow::Result<()> {
         let w = w.max(1);
         let h = h.max(1);
         let key = (screen.target_format, screen.sample_count, w, h);
@@ -156,9 +301,8 @@ impl DepthComposite {
         {
             target.last_used_tick = tick;
             target.last_used_frame = self.frame_index;
-            return;
+            return Ok(());
         }
-        let depth_format = wgpu::TextureFormat::Depth24PlusStencil8;
         let scene_bytes = screen
             .target_format
             .theoretical_memory_footprint(wgpu::Extent3d {
@@ -166,34 +310,48 @@ impl DepthComposite {
                 height: h,
                 depth_or_array_layers: 1,
             });
-        let depth_bytes = depth_format.theoretical_memory_footprint(wgpu::Extent3d {
+        let depth_bytes = DEPTH_FORMAT.theoretical_memory_footprint(wgpu::Extent3d {
             width: w,
             height: h,
             depth_or_array_layers: 1,
         });
         let bytes = scene_bytes.saturating_add(depth_bytes);
-        if w > device.limits().max_texture_dimension_2d
-            || h > device.limits().max_texture_dimension_2d
-            || bytes > MAX_DEPTH_RESOURCE_BYTES
+        let max_dimension = device.limits().max_texture_dimension_2d;
+        if w > max_dimension || h > max_dimension {
+            anyhow::bail!(
+                "depth composite {id}: {w}x{h} exceeds the device texture limit {max_dimension}"
+            );
+        }
+        if bytes > MAX_DEPTH_RESOURCE_BYTES {
+            anyhow::bail!(
+                "depth composite {id}: {w}x{h} needs {bytes} bytes, over the {MAX_DEPTH_RESOURCE_BYTES} byte limit"
+            );
+        }
+        // `id`'s own bytes are replaced, not added, so the budget only ever
+        // evicts siblings — and never leaves `id` without a target.
+        let replaced = self.targets.get(id).map_or(0, |old| old.bytes);
+        while self
+            .bytes_total
+            .saturating_sub(replaced)
+            .saturating_add(bytes)
+            > MAX_DEPTH_RESOURCE_BYTES
         {
-            return;
-        }
-        if let Some(old) = self.targets.remove(id) {
-            self.bytes_total = self.bytes_total.saturating_sub(old.bytes);
-        }
-        while self.bytes_total.saturating_add(bytes) > MAX_DEPTH_RESOURCE_BYTES {
-            let Some(oldest) = self
+            let Some(victim) = self
                 .targets
                 .iter()
+                .filter(|(key, _)| key.as_str() != id)
                 .min_by_key(|(_, target)| target.last_used_tick)
-                .map(|(id, _)| id.clone())
+                .map(|(key, _)| key.clone())
             else {
-                return;
+                anyhow::bail!(
+                    "depth composite {id}: no room in the {MAX_DEPTH_RESOURCE_BYTES} byte budget"
+                );
             };
-            if let Some(old) = self.targets.remove(&oldest) {
+            if let Some(old) = self.targets.remove(&victim) {
                 self.bytes_total = self.bytes_total.saturating_sub(old.bytes);
             }
         }
+        let shared = self.shared(device);
         let scene = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("depth_composite_scene"),
             size: wgpu::Extent3d {
@@ -219,53 +377,14 @@ impl DepthComposite {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: depth_format,
+            format: DEPTH_FORMAT,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         });
         let depth_view = depth.create_view(&wgpu::TextureViewDescriptor::default());
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("depth_composite_blit"),
-            source: wgpu::ShaderSource::Wgsl(BLIT_WGSL.into()),
-        });
-        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("depth_composite_blit_bgl"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        });
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("depth_composite_blit_sampler"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
-            lod_min_clamp: 0.0,
-            lod_max_clamp: 1.0,
-            compare: None,
-            anisotropy_clamp: 1,
-            border_color: None,
-        });
         let bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("depth_composite_blit_bg"),
-            layout: &layout,
+            layout: &shared.layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
@@ -273,94 +392,41 @@ impl DepthComposite {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
+                    resource: wgpu::BindingResource::Sampler(&shared.sampler),
                 },
             ],
         });
-        let pipe_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("depth_composite_blit_pl"),
-            bind_group_layouts: &[Some(&layout)],
-            immediate_size: 0,
-        });
-        let blit_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("depth_composite_blit"),
-            layout: Some(&pipe_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: screen.target_format,
-                    blend: Some(wgpu::BlendState::REPLACE),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                ..Default::default()
-            },
-            // depth ops disabled, so the blit never disturbs UI depth/stencil.
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: depth_format,
-                depth_write_enabled: Some(false),
-                depth_compare: Some(wgpu::CompareFunction::Always),
-                stencil: wgpu::StencilState {
-                    front: wgpu::StencilFaceState {
-                        compare: wgpu::CompareFunction::LessEqual,
-                        ..Default::default()
-                    },
-                    back: wgpu::StencilFaceState {
-                        compare: wgpu::CompareFunction::LessEqual,
-                        ..Default::default()
-                    },
-                    read_mask: 0xFF,
-                    write_mask: 0,
-                },
-                bias: wgpu::DepthBiasState::default(),
-            }),
-            multisample: wgpu::MultisampleState {
-                count: screen.sample_count,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            multiview_mask: None,
-            cache: None,
-        });
-        self.targets.insert(
-            id.to_string(),
-            Target {
-                key,
-                scene,
-                scene_view,
-                depth,
-                depth_view,
-                depth_format,
-                blit_pipeline,
-                blit_bind: bind,
-                last_used_tick: tick,
-                last_used_frame: self.frame_index,
-                bytes,
-            },
-        );
+        self.pipeline(device, screen.target_format, screen.sample_count);
+        let target = Target {
+            key,
+            scene,
+            scene_view,
+            depth,
+            depth_view,
+            blit_bind: bind,
+            last_used_tick: tick,
+            last_used_frame: self.frame_index,
+            bytes,
+        };
+        if let Some(old) = self.targets.insert(id.to_string(), target) {
+            self.bytes_total = self.bytes_total.saturating_sub(old.bytes);
+        }
         self.bytes_total = self.bytes_total.saturating_add(bytes);
-        if self.targets.len() > 64 {
-            let oldest = self
+        while self.targets.len() > MAX_DEPTH_TARGETS {
+            let Some(victim) = self
                 .targets
                 .iter()
+                .filter(|(key, _)| key.as_str() != id)
                 .min_by_key(|(_, target)| target.last_used_tick)
-                .map(|(id, _)| id.clone());
-            if let Some(id) = oldest
-                && let Some(old) = self.targets.remove(&id)
-            {
+                .map(|(key, _)| key.clone())
+            else {
+                break;
+            };
+            if let Some(old) = self.targets.remove(&victim) {
                 self.bytes_total = self.bytes_total.saturating_sub(old.bytes);
             }
         }
+        Ok(())
     }
 
     /// Begin the offscreen scene pass for `id` (clearing color to `clear`
@@ -393,13 +459,16 @@ impl DepthComposite {
             })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: &t.depth_view,
+                // Nothing reads the offscreen depth/stencil after this pass:
+                // the blit declares `depth_write_enabled: false` /
+                // `depth_compare: Always`.
                 depth_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(1.0),
-                    store: wgpu::StoreOp::Store,
+                    store: wgpu::StoreOp::Discard,
                 }),
                 stencil_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(0),
-                    store: wgpu::StoreOp::Store,
+                    store: wgpu::StoreOp::Discard,
                 }),
             }),
             timestamp_writes: None,
@@ -412,18 +481,23 @@ impl DepthComposite {
 
     /// Depth format backing the scene target (for caller pipelines).
     pub fn depth_format(&self, id: &str) -> Option<wgpu::TextureFormat> {
-        self.targets.get(id).map(|t| t.depth_format)
+        self.targets.get(id).map(|_| DEPTH_FORMAT)
     }
 
     /// Composite the offscreen scene for `id` into the main pass. The
     /// renderer has already set the viewport to the callback rect, which
     /// matches the offscreen texture 1:1 (both come from the painted frame
-    /// geometry). No-op when `id` has no target.
+    /// geometry). Composites over the UI already drawn this frame, so a
+    /// transparent scene keeps it visible. No-op when `id` has no target.
     pub fn blit<P: BlitRenderPass>(&self, id: &str, rpass: &mut P) {
         let Some(t) = self.targets.get(id) else {
             return;
         };
-        rpass.set_blit_pipeline(&t.blit_pipeline);
+        let Some(pipeline) = self.pipelines.get(&(t.key.0, t.key.1)) else {
+            log::warn!("depth composite {id}: blit pipeline missing");
+            return;
+        };
+        rpass.set_blit_pipeline(pipeline);
         rpass.set_blit_bind_group(0, &t.blit_bind, &[]);
         rpass.draw_blit_triangle();
     }

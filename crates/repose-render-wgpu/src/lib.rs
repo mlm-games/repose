@@ -30,6 +30,8 @@ fn align_up(value: u64, alignment: u64) -> anyhow::Result<u64> {
 }
 
 mod commands;
+pub use commands::RenderCommandFailure;
+pub use commands::RenderCommandReport;
 pub use commands::apply_render_commands;
 
 pub mod offscreen;
@@ -497,10 +499,12 @@ enum PassTarget {
     Layer(u32),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct CallbackIdentity {
     type_id: TypeId,
-    value: u64,
+    /// The callback's own key, kept whole: two colliding digests must not
+    /// share a resource bucket.
+    key: Option<Arc<str>>,
     reusable: bool,
 }
 
@@ -515,7 +519,7 @@ struct CallbackIdentity {
 /// count, and is evicted once [`MAX_CALLBACK_SCOPES`] is exceeded, so
 /// anything loaded once in `prepare` has to be rebuildable from
 /// `prepare` alone.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct CallbackScopeKey {
     callback: CallbackIdentity,
     target: PassTarget,
@@ -530,23 +534,18 @@ struct CallbackScopeUse {
 }
 
 fn callback_identity(callback: &Callback, fallback: usize) -> CallbackIdentity {
-    callback
-        .0
-        .resource_key()
-        .map(|key| {
-            let mut hasher = std::collections::hash_map::DefaultHasher::new();
-            key.hash(&mut hasher);
-            CallbackIdentity {
-                type_id: callback.0.resource_type_id(),
-                value: hasher.finish(),
-                reusable: true,
-            }
-        })
-        .unwrap_or(CallbackIdentity {
+    match callback.0.resource_key() {
+        Some(key) => CallbackIdentity {
+            type_id: callback.0.resource_type_id(),
+            key: Some(Arc::from(key)),
+            reusable: true,
+        },
+        None => CallbackIdentity {
             type_id: TypeId::of::<Callback>(),
-            value: fallback as u64,
+            key: Some(Arc::from(fallback.to_string())),
             reusable: false,
-        })
+        },
+    }
 }
 
 fn callback_scope_key(
@@ -2475,7 +2474,7 @@ struct MeshCacheEntry {
     last_touch_frame: u64,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 struct SlugDrawKey {
     cache_key: repose_text::CacheKey,
     fill: bool,
@@ -2515,7 +2514,7 @@ fn evict_atlas_lru(
     let mut victims: Vec<(u64, repose_text::CacheKey)> = map
         .iter()
         .filter(|(_, info)| info.last_used_frame != frame_index)
-        .map(|(key, info)| (info.last_touch, *key))
+        .map(|(key, info)| (info.last_touch, key.clone()))
         .collect();
     if victims.is_empty() {
         return false;
@@ -2605,6 +2604,7 @@ const MAX_SLUG_DRAW_CACHE_ENTRIES: usize = 2048;
 const MAX_SLUG_DRAW_CACHE_BYTES: u64 = 32 * 1024 * 1024;
 const MAX_LEGACY_SHAPED_TEXT_CACHE_ENTRIES: usize = 256;
 const MAX_GLYPH_OUTLINE_CACHE_ENTRIES: usize = 4096;
+const MAX_IMAGE_DECODE_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_CALLBACK_SCOPES: usize = 256;
 const NV12_FOURCC: u32 = 0x3231_564e;
 const P010_FOURCC: u32 = 0x3031_3050;
@@ -2764,12 +2764,23 @@ fn swash_to_a8_coverage(content: repose_text::SwashContent, data: &[u8]) -> Opti
 }
 
 impl WgpuSceneRenderer {
+    /// Construct a renderer for `output_format` with `msaa_samples` samples.
+    ///
+    /// Validates what is checkable without an adapter: `wgpu` only accepts
+    /// sample counts of 1, 2, 4, 8 or 16, and an unrenderable or
+    /// unblendable output format fails later as a validation error rather
+    /// than here. Prefer
+    /// [`try_from_device_with_adapter`](Self::try_from_device_with_adapter)
+    /// whenever an adapter is available — it also checks the format's
+    /// render-attachment, blend and multisample-resolve support and picks a
+    /// supported sample count.
     pub fn from_device(
         device: wgpu::Device,
         queue: wgpu::Queue,
         output_format: wgpu::TextureFormat,
         msaa_samples: u32,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
+        validate_sample_count("msaa_samples", msaa_samples)?;
         Self::from_device_with_working_space_msaa(
             device,
             queue,
@@ -2779,13 +2790,38 @@ impl WgpuSceneRenderer {
         )
     }
 
+    /// Validated constructor with an adapter: rejects an output format that
+    /// cannot back the UI pipelines and clamps `requested_msaa` to the
+    /// largest supported count at or below it.
+    pub fn try_from_device_with_adapter(
+        adapter: &wgpu::Adapter,
+        device: wgpu::Device,
+        queue: wgpu::Queue,
+        output_format: wgpu::TextureFormat,
+        requested_msaa: u32,
+    ) -> anyhow::Result<Self> {
+        validate_render_target_format(adapter, output_format)?;
+        let msaa = pick_surface_msaa(adapter, output_format, requested_msaa);
+        let working_space_msaa =
+            pick_surface_msaa_for_mode(adapter, wgpu::TextureFormat::Rgba16Float, msaa, true);
+        Self::from_device_with_working_space_msaa(
+            device,
+            queue,
+            output_format,
+            msaa,
+            working_space_msaa,
+        )
+    }
+
     pub fn from_device_with_working_space_msaa(
         device: wgpu::Device,
         queue: wgpu::Queue,
         output_format: wgpu::TextureFormat,
         msaa_samples: u32,
         working_space_msaa_samples: u32,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
+        validate_sample_count("msaa_samples", msaa_samples)?;
+        validate_sample_count("working_space_msaa_samples", working_space_msaa_samples)?;
         let msaa_samples = msaa_samples.max(1);
         let working_space_msaa_samples = working_space_msaa_samples.max(1);
         let mesh_uniform_size = std::mem::size_of::<MeshUniform>() as u64;
@@ -3478,7 +3514,7 @@ impl WgpuSceneRenderer {
         };
 
         renderer.recreate_msaa_and_depth_stencil();
-        renderer
+        Ok(renderer)
     }
 }
 
@@ -3600,19 +3636,13 @@ impl WgpuSurfaceBackend {
 
         let render_format = view_format.unwrap_or(format);
         let msaa_samples = pick_surface_msaa(&adapter, render_format, msaa_samples);
-        let working_space_msaa_samples = pick_surface_msaa_for_mode(
+        let mut renderer = WgpuSceneRenderer::try_from_device_with_adapter(
             &adapter,
-            wgpu::TextureFormat::Rgba16Float,
-            msaa_samples,
-            true,
-        );
-        let mut renderer = WgpuSceneRenderer::from_device_with_working_space_msaa(
             device,
             queue,
             render_format,
             msaa_samples,
-            working_space_msaa_samples,
-        );
+        )?;
         renderer.resize(size.width, size.height);
 
         let view_formats = view_format.into_iter().collect::<Vec<_>>();
@@ -3732,6 +3762,59 @@ fn pick_present_mode(caps: &wgpu::SurfaceCapabilities, pref: PresentModePref) ->
     }
 }
 
+/// `wgpu` only accepts these sample counts; anything else (3, 5, 17, 0) is
+/// a hard validation error at pipeline creation.
+const VALID_SAMPLE_COUNTS: [u32; 5] = [1, 2, 4, 8, 16];
+
+fn validate_sample_count(label: &str, samples: u32) -> anyhow::Result<()> {
+    if !VALID_SAMPLE_COUNTS.contains(&samples) {
+        anyhow::bail!(
+            "{label} must be one of {VALID_SAMPLE_COUNTS:?} (wgpu-supported sample counts), got {samples}"
+        );
+    }
+    Ok(())
+}
+
+/// Every UI pipeline writes `output_format` with premultiplied-alpha
+/// blending, and MSAA resolves into it, so all three properties have to hold
+/// before any pipeline is built.
+fn validate_render_target_format(
+    adapter: &wgpu::Adapter,
+    output_format: wgpu::TextureFormat,
+) -> anyhow::Result<()> {
+    let features = adapter.get_texture_format_features(output_format);
+    let flags = features.flags;
+    for (needed, what) in [
+        (wgpu::TextureUsages::RENDER_ATTACHMENT, "render attachment"),
+        (wgpu::TextureUsages::TEXTURE_BINDING, "texture binding"),
+    ] {
+        if !features.allowed_usages.contains(needed) {
+            anyhow::bail!("{output_format:?} cannot be used as a {what}");
+        }
+    }
+    if !flags.contains(wgpu::TextureFormatFeatureFlags::BLENDABLE) {
+        anyhow::bail!("{output_format:?} cannot be blended into");
+    }
+    if !flags.contains(wgpu::TextureFormatFeatureFlags::MULTISAMPLE_RESOLVE) {
+        anyhow::bail!("{output_format:?} cannot resolve a multisampled attachment");
+    }
+    // `set_working_space` renders into Rgba16Float and resolves into it.
+    let ws = adapter.get_texture_format_features(wgpu::TextureFormat::Rgba16Float);
+    if !ws
+        .allowed_usages
+        .contains(wgpu::TextureUsages::RENDER_ATTACHMENT)
+        || !ws
+            .allowed_usages
+            .contains(wgpu::TextureUsages::TEXTURE_BINDING)
+    {
+        anyhow::bail!(
+            "{:?} cannot be used for linear working-space rendering",
+            wgpu::TextureFormat::Rgba16Float
+        );
+    }
+    Ok(())
+}
+
 /// Pick the MSAA sample count for the surface pass, honoring `requested` and
 /// falling back to the largest supported count <= it.
 pub fn pick_surface_msaa(
@@ -3797,13 +3880,14 @@ impl WgpuSceneRenderer {
         data: &[u8],
         srgb: bool,
     ) -> anyhow::Result<()> {
-        let img = image::load_from_memory(data)?;
-        let rgba = img.to_rgba8();
-        let (w, h) = rgba.dimensions();
+        validate_image_handle(handle)?;
+        let max_dimension = self.device.limits().max_texture_dimension_2d;
+        let (w, h, rgba) = decode_image_rgba8(data, max_dimension)?;
+        self.set_image_rgba8(handle, w, h, &rgba, srgb)?;
         // Encoded uploads have no size at the call site, so publish it here for
-        // layout once the decode lands.
+        // layout — only once the pixels are actually on the GPU.
         repose_core::set_image_intrinsic_size(handle, w, h);
-        self.set_image_rgba8(handle, w, h, &rgba, srgb)
+        Ok(())
     }
 
     pub fn set_image_rgba8(
@@ -5967,7 +6051,7 @@ impl WgpuSceneRenderer {
         let survivors: Vec<_> = self.atlas_mask.map.drain().collect();
         self.atlas_mask_deferred.clear();
         for (key, previous) in survivors {
-            let _ = self.upload_glyph_mask(key, f32::from_bits(key.font_size_bits));
+            let _ = self.upload_glyph_mask(key.clone(), f32::from_bits(key.font_size_bits));
             if let Some(info) = self.atlas_mask.map.get_mut(&key) {
                 info.last_touch = previous.last_touch;
                 info.last_used_frame = previous.last_used_frame;
@@ -6018,7 +6102,7 @@ impl WgpuSceneRenderer {
         let survivors: Vec<_> = self.atlas_color.map.drain().collect();
         self.atlas_color_deferred.clear();
         for (key, previous) in survivors {
-            let _ = self.upload_glyph_color(key, f32::from_bits(key.font_size_bits));
+            let _ = self.upload_glyph_color(key.clone(), f32::from_bits(key.font_size_bits));
             if let Some(info) = self.atlas_color.map.get_mut(&key) {
                 info.last_touch = previous.last_touch;
                 info.last_used_frame = previous.last_used_frame;
@@ -6123,7 +6207,7 @@ impl WgpuSceneRenderer {
     }
 
     fn slug_draw_key(
-        cache_key: repose_text::CacheKey,
+        cache_key: &repose_text::CacheKey,
         fill: bool,
         stroke_key: Option<&slug::StrokeTessKey>,
         transform: &Transform,
@@ -6136,7 +6220,7 @@ impl WgpuSceneRenderer {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         stroke_key.hash(&mut hasher);
         SlugDrawKey {
-            cache_key,
+            cache_key: cache_key.clone(),
             fill,
             stroke_hash: hasher.finish(),
             transform: [
@@ -6165,7 +6249,7 @@ impl WgpuSceneRenderer {
             .iter()
             .filter(|(_, entry)| entry.last_used_frame != self.frame_index)
             .min_by_key(|(_, entry)| entry.last_touch_frame)
-            .map(|(key, _)| *key);
+            .map(|(key, _)| key.clone());
         let Some(victim) = victim else {
             return false;
         };
@@ -6229,10 +6313,10 @@ impl WgpuSceneRenderer {
 
     fn cached_glyph_outline(
         &mut self,
-        cache_key: repose_text::CacheKey,
+        cache_key: &repose_text::CacheKey,
     ) -> Option<Arc<[repose_text::Command]>> {
         let touch = self.next_cache_touch();
-        if let Some(entry) = self.glyph_outline_cache.get_mut(&cache_key) {
+        if let Some(entry) = self.glyph_outline_cache.get_mut(cache_key) {
             entry.last_touch = touch;
             return entry.commands.clone();
         }
@@ -6241,7 +6325,7 @@ impl WgpuSceneRenderer {
             self.trim_glyph_outline_cache();
         }
         self.glyph_outline_cache.insert(
-            cache_key,
+            cache_key.clone(),
             GlyphOutlineEntry {
                 commands: commands.clone(),
                 last_touch: touch,
@@ -6258,7 +6342,7 @@ impl WgpuSceneRenderer {
         let mut victims: Vec<(u64, repose_text::CacheKey)> = self
             .glyph_outline_cache
             .iter()
-            .map(|(key, entry)| (entry.last_touch, *key))
+            .map(|(key, entry)| (entry.last_touch, key.clone()))
             .collect();
         victims.sort_unstable_by_key(|victim| victim.0);
         for (_, key) in victims {
@@ -6311,7 +6395,7 @@ impl WgpuSceneRenderer {
             return None;
         }
 
-        let Some(gb) = repose_text::rasterize_cache_key(keyp) else {
+        let Some(gb) = repose_text::rasterize_cache_key(&keyp) else {
             self.mark_atlas_mask_failure(keyp);
             return None;
         };
@@ -6403,7 +6487,7 @@ impl WgpuSceneRenderer {
         if self.atlas_color_failures.contains(&keyp) || self.atlas_color_deferred.contains(&keyp) {
             return None;
         }
-        let Some(gb) = repose_text::rasterize_cache_key(keyp) else {
+        let Some(gb) = repose_text::rasterize_cache_key(&keyp) else {
             self.mark_atlas_color_failure(keyp);
             return None;
         };
@@ -8098,11 +8182,11 @@ impl WgpuSceneRenderer {
             .filter(|scope| !protected.contains(*scope))
             .min_by_key(|scope| {
                 self.callback_scope_uses
-                    .get(*scope)
+                    .get(scope)
                     .map(|usage| usage.tick)
                     .unwrap_or(0)
             })
-            .copied();
+            .cloned();
         let Some(scope) = candidate else {
             return false;
         };
@@ -8120,7 +8204,7 @@ impl WgpuSceneRenderer {
                     .callback_scope_payloads
                     .get(scope)
                     .is_none_or(|weak| weak.upgrade().is_none());
-                (payload_dead && !scope.callback.reusable).then_some((*scope, usage.tick))
+                (payload_dead && !scope.callback.reusable).then(|| (scope.clone(), usage.tick))
             })
             .collect();
         dead.sort_by_key(|(_, tick)| *tick);
@@ -8134,9 +8218,8 @@ impl WgpuSceneRenderer {
         let mut inactive: Vec<(CallbackScopeKey, u64)> = self
             .callback_scope_uses
             .iter()
-            .filter_map(|(scope, usage)| {
-                (usage.frame != current_frame).then_some((*scope, usage.tick))
-            })
+            .filter(|(_, usage)| usage.frame != current_frame)
+            .map(|(scope, usage)| (scope.clone(), usage.tick))
             .collect();
         inactive.sort_by_key(|(_, tick)| *tick);
         for (scope, _) in inactive {
@@ -9008,7 +9091,7 @@ impl WgpuSceneRenderer {
                     let mut legacy_shaped = None;
                     for (glyph_index, sg) in shaped.glyphs.iter().enumerate() {
                         if self.slug_enabled {
-                            let ck = sg.cache_key;
+                            let ck = &sg.cache_key;
                             let color_linear = color.to_linear();
                             let stroke_color_linear = stroke_color.unwrap_or(*color).to_linear();
                             let glyph_pos = (rect.x + sg.x, rect.y + sg.y + baseline_shift_y);
@@ -9071,14 +9154,14 @@ impl WgpuSceneRenderer {
                                 let font_size_px = f32::from_bits(ck.font_size_bits);
                                 if draws_fill {
                                     self.slug_cache.get_or_insert(
-                                        ck,
+                                        ck.clone(),
                                         font_size_px,
                                         commands.as_ref(),
                                     );
                                 }
                                 if is_stroke {
                                     self.slug_cache.get_or_insert_stroke(
-                                        ck,
+                                        ck.clone(),
                                         font_size_px,
                                         commands.as_ref(),
                                         stroke_width,
@@ -9090,7 +9173,7 @@ impl WgpuSceneRenderer {
                                 }
                             }
 
-                            if let Some(entry) = self.slug_cache.get(&ck) {
+                            if let Some(entry) = self.slug_cache.get(ck) {
                                 let ox = rect.x + sg.x;
                                 let oy = rect.y + sg.y + baseline_shift_y;
                                 let tf = |x: f32, y: f32| -> (f32, f32) {
@@ -9119,7 +9202,7 @@ impl WgpuSceneRenderer {
                                     stroke_tess_key
                                         .as_ref()
                                         .and_then(|key| entry.stroke_variants.get(key))
-                                        .cloned()
+                                        .map(|variant| variant.vertices.clone())
                                         .unwrap_or_default()
                                 } else {
                                     Vec::new()
@@ -9133,7 +9216,7 @@ impl WgpuSceneRenderer {
                                             slug_verts_local.extend_from_slice(vertices);
                                             return;
                                         }
-                                        let Some(key) = *key else {
+                                        let Some(key) = key.clone() else {
                                             return;
                                         };
                                         let transformed: Vec<slug::TessVertex> = verts
@@ -9201,7 +9284,7 @@ impl WgpuSceneRenderer {
                         let gy =
                             rect.y + legacy_glyph.y - legacy_glyph.bearing_y + baseline_shift_y;
                         if let Some(info) =
-                            self.upload_glyph_color(legacy_glyph.cache_key, legacy_glyph.px)
+                            self.upload_glyph_color(legacy_glyph.cache_key.clone(), legacy_glyph.px)
                         {
                             let (ndc, fwd_mat) = make_glyph_instance(gx, gy, info.w, info.h);
                             batch.colors.push(GlyphInstance {
@@ -9211,7 +9294,7 @@ impl WgpuSceneRenderer {
                                 fwd_mat,
                             });
                         } else if let Some(info) =
-                            self.upload_glyph_mask(legacy_glyph.cache_key, legacy_glyph.px)
+                            self.upload_glyph_mask(legacy_glyph.cache_key.clone(), legacy_glyph.px)
                         {
                             let (ndc, fwd_mat) = make_glyph_instance(gx, gy, info.w, info.h);
                             batch.masks.push(GlyphInstance {
@@ -10352,7 +10435,7 @@ impl WgpuSceneRenderer {
                         .unwrap_or(&default_descriptors);
                     for &(target, screen_desc) in descriptors {
                         let scope = callback_scope_key(cb, *key, target, &screen_desc);
-                        active_callback_scopes.insert(scope);
+                        active_callback_scopes.insert(scope.clone());
                         if !scope.callback.reusable
                             && self
                                 .callback_scope_payloads
@@ -10374,7 +10457,7 @@ impl WgpuSceneRenderer {
                         .unwrap_or(&default_descriptors);
                     for &(target, screen_desc) in descriptors {
                         let scope = callback_scope_key(cb, *key, target, &screen_desc);
-                        self.touch_callback_scope(scope);
+                        self.touch_callback_scope(scope.clone());
                         if !self.callback_scoped_resources.contains_key(&scope)
                             && self.callback_scoped_resources.len() >= MAX_CALLBACK_SCOPES
                         {
@@ -10397,7 +10480,7 @@ impl WgpuSceneRenderer {
                         .unwrap_or(&default_descriptors);
                     for &(target, screen_desc) in descriptors {
                         let scope = callback_scope_key(cb, *key, target, &screen_desc);
-                        self.touch_callback_scope(scope);
+                        self.touch_callback_scope(scope.clone());
                         if let Some(resources) = self.callback_scoped_resources.get_mut(&scope) {
                             finish_buffers.extend(cb.0.finish_prepare(
                                 &self.device,
@@ -11180,12 +11263,23 @@ impl WgpuSceneRenderer {
                                     .callback_scoped_resources
                                     .get(&scope)
                                     .unwrap_or(&self.callback_resources);
-                                let mut callback_pass = CallbackRenderPass::new(
-                                    &mut rpass,
-                                    descriptor.target_format,
-                                    descriptor.sample_count,
-                                );
-                                cb.0.paint(info, &mut callback_pass, resources);
+                                // A panicking callback must not skip the
+                                // restore below: the viewport/scissor would
+                                // stay clamped to the callback rect and every
+                                // later draw in the frame would be clipped away.
+                                let outcome = {
+                                    let mut callback_pass = CallbackRenderPass::new(
+                                        &mut rpass,
+                                        descriptor.target_format,
+                                        descriptor.sample_count,
+                                    );
+                                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                        cb.0.paint(info, &mut callback_pass, resources)
+                                    }))
+                                };
+                                if outcome.is_err() {
+                                    log::warn!("paint callback panicked; state restored");
+                                }
                                 rpass.set_viewport(0.0, 0.0, tw as f32, th as f32, 0.0, 1.0);
                                 let restore = if restore_scissor.2 > 0 && restore_scissor.3 > 0 {
                                     restore_scissor
@@ -11405,6 +11499,51 @@ fn validate_texture_dimensions(
 fn validate_image_handle(handle: u64) -> anyhow::Result<()> {
     if handle == 0 {
         anyhow::bail!("image handle 0 is reserved");
+    }
+    Ok(())
+}
+
+/// Decoder limits for encoded uploads. `image::Limits::default()` only caps
+/// allocations at 512 MiB, which a few hundred KB of hostile PNG can reach;
+/// the dimension cap plus a decode-sized allocation cap keep the transient
+/// inside the same envelope as the retained image budget.
+fn decode_limits(max_dimension: u32) -> image::Limits {
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(max_dimension);
+    limits.max_image_height = Some(max_dimension);
+    limits.max_alloc = Some(MAX_IMAGE_DECODE_BYTES);
+    limits
+}
+
+/// Decode an encoded image to RGBA8, rejecting oversized input *before* the
+/// decoder allocates. The dimension probe runs against a separate reader
+/// because `into_dimensions` consumes it.
+fn decode_image_rgba8(data: &[u8], max_dimension: u32) -> anyhow::Result<(u32, u32, Vec<u8>)> {
+    let format = image::guess_format(data)?;
+    let (w, h) = {
+        let mut probe = image::ImageReader::with_format(std::io::Cursor::new(data), format);
+        probe.limits(decode_limits(max_dimension));
+        probe.into_dimensions()?
+    };
+    validate_image_decode_budget(w, h, max_dimension)?;
+    let mut reader = image::ImageReader::with_format(std::io::Cursor::new(data), format);
+    reader.limits(decode_limits(max_dimension));
+    let rgba = reader.decode()?.into_rgba8();
+    Ok((w, h, rgba.into_raw()))
+}
+
+fn validate_image_decode_budget(w: u32, h: u32, max_dimension: u32) -> anyhow::Result<()> {
+    if w == 0 || h == 0 {
+        anyhow::bail!("encoded image has zero dimensions");
+    }
+    if w > max_dimension || h > max_dimension {
+        anyhow::bail!("encoded image {w}x{h} exceeds the device texture limit {max_dimension}");
+    }
+    let bytes = checked_image_bytes(w, h, 4)?;
+    if bytes > MAX_IMAGE_DECODE_BYTES {
+        anyhow::bail!(
+            "encoded image {w}x{h} needs {bytes} bytes to decode, over the {MAX_IMAGE_DECODE_BYTES} byte limit"
+        );
     }
     Ok(())
 }
@@ -11657,6 +11796,7 @@ mod tests {
                 font_id: 1,
                 glyph_id,
                 font_size_bits: 16.0f32.to_bits(),
+                variation: None,
             }
         }
         let mut map: HashMap<repose_text::CacheKey, GlyphInfo> = HashMap::new();
@@ -11691,6 +11831,7 @@ mod tests {
             font_id: 1,
             glyph_id: 1,
             font_size_bits: 16.0f32.to_bits(),
+            variation: None,
         };
         let mut map: HashMap<repose_text::CacheKey, GlyphInfo> = HashMap::new();
         map.insert(
@@ -11770,6 +11911,30 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn decode_budget_rejects_oversized_encoded_images() {
+        assert!(validate_image_decode_budget(64, 64, 8192).is_ok());
+        assert!(validate_image_decode_budget(0, 64, 8192).is_err());
+        assert!(validate_image_decode_budget(64, 0, 8192).is_err());
+        assert!(validate_image_decode_budget(8193, 1, 8192).is_err());
+        assert!(validate_image_decode_budget(1, 8193, 8192).is_err());
+        // Fits the device, but not the decode allocation budget.
+        assert!(validate_image_decode_budget(8192, 4096, 8192).is_err());
+    }
+
+    #[test]
+    fn only_wgpu_supported_sample_counts_are_accepted() {
+        for samples in [1, 2, 4, 8, 16] {
+            assert!(validate_sample_count("msaa_samples", samples).is_ok());
+        }
+        for samples in [0, 3, 5, 7, 9, 17, 32, u32::MAX] {
+            assert!(
+                validate_sample_count("msaa_samples", samples).is_err(),
+                "{samples} must be rejected"
+            );
+        }
     }
 
     #[test]

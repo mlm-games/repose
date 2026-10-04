@@ -762,7 +762,15 @@ impl App {
         let Some(backend) = backend_ref.as_mut() else {
             return;
         };
-        repose_render_wgpu::apply_render_commands(backend, cmds);
+        let report = repose_render_wgpu::apply_render_commands(backend, cmds);
+        for failure in &report.failures {
+            log::warn!(
+                "repose-render: {}({}) failed: {}",
+                failure.kind,
+                failure.handle,
+                failure.error
+            );
+        }
     }
     fn dispatch_dropped_files(&mut self, _window: &Window, names: Vec<String>, pos_px: (f32, f32)) {
         let Some(f) = &self.rt.frame_cache else {

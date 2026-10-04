@@ -282,11 +282,80 @@ pub struct GlyphKey(pub u64);
 
 /// Cache key for the renderer's glyph slug cache -> uniquely identifies a
 /// specific glyph in a specific font face.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+/// Cache key for the renderer's glyph slug cache -> uniquely identifies a
+/// specific glyph in a specific font face at a specific variation instance.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct CacheKey {
     pub font_id: u64,
     pub glyph_id: u32,
     pub font_size_bits: u32,
+    pub variation: Option<Arc<str>>,
+}
+
+/// Canonicalize font-variation settings into an axis-sorted, deduplicated
+/// key. Axis order in the source string must not change the key, and a
+/// repeated axis resolves to its last value (matching shaping and
+/// `skrifa`).
+pub fn canonical_variation(settings: Option<&str>) -> Option<Arc<str>> {
+    let settings = settings?;
+    let mut parsed: Vec<(u32, u32)> = parley::setting::FontVariation::parse_css_list(settings)
+        .filter_map(Result::ok)
+        .map(|setting| {
+            (
+                u32::from_be_bytes(setting.tag.to_bytes()),
+                setting.value.to_bits(),
+            )
+        })
+        .collect();
+    if parsed.is_empty() {
+        return None;
+    }
+    parsed.sort_unstable_by_key(|(tag, _)| *tag);
+    let mut merged: Vec<(u32, u32)> = Vec::with_capacity(parsed.len());
+    for entry in parsed {
+        match merged.last_mut() {
+            Some(last) if last.0 == entry.0 => *last = entry,
+            _ => merged.push(entry),
+        }
+    }
+    let mut canonical = String::with_capacity(merged.len() * 16);
+    for (tag, bits) in merged {
+        canonical.push_str(&format!("{tag:08x}{bits:08x}"));
+    }
+    Some(Arc::from(canonical.as_str()))
+}
+
+/// Characters per canonicalized variation axis: 8 for the tag, 8 for the
+/// float bits of the user-space value.
+const VARIATION_ENTRY_CHARS: usize = 16;
+
+/// Identity of one rasterized glyph instance: font, glyph, raster px and the
+/// canonicalized font-variation settings.
+type VariationKey = (u64, u32, u32, Option<Arc<str>>);
+
+/// Identity of one outline instance. Outlines are extracted in em-space, so
+/// unlike [`VariationKey`] they carry no size.
+type OutlineKey = (u64, u32, Option<Arc<str>>);
+
+/// Decode a [`canonical_variation`] key back into `(tag, user value)` pairs
+/// for the shaping and font APIs.
+pub(crate) fn decode_variation(canonical: Option<&str>) -> Vec<(skrifa::Tag, f32)> {
+    let Some(canonical) = canonical else {
+        return Vec::new();
+    };
+    let bytes = canonical.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len() / 16);
+    for chunk in bytes.chunks(VARIATION_ENTRY_CHARS) {
+        let tag = skrifa::Tag::from_be_bytes(chunk[..4].try_into().unwrap_or([0; 4]));
+        let Ok(text) = std::str::from_utf8(&chunk[8..16]) else {
+            continue;
+        };
+        let Ok(bits) = u32::from_str_radix(text, 16) else {
+            continue;
+        };
+        out.push((tag, f32::from_bits(bits)));
+    }
+    out
 }
 
 static GLYPH_ID_WARNED: OnceLock<Mutex<std::collections::HashSet<(u64, u32)>>> = OnceLock::new();
@@ -370,12 +439,12 @@ struct Engine {
     font_registry: Vec<FontRecord>,
     font_registry_index: RapidHashMap<(u64, u32), u64>,
     next_font_id: u64,
-    /// Cache of rendered glyphs keyed by (font_id, glyph_id, font_size_bits).
+    /// Cache of rendered glyphs keyed by [`VariationKey`].
     /// Contains (width, height, left, top, content, data).
     glyph_cache:
-        RapidHashMap<(u64, u32, u32), (u32, u32, i32, i32, swash::scale::image::Content, Vec<u8>)>,
+        RapidHashMap<VariationKey, (u32, u32, i32, i32, swash::scale::image::Content, Vec<u8>)>,
     glyph_cache_bytes: usize,
-    outline_cache: Lru<(u64, u32), Arc<[Command]>>,
+    outline_cache: Lru<OutlineKey, Arc<[Command]>>,
     /// Cache of (ascent, descent) in px keyed by
     /// (family hash, weight, px bits). Used for baseline alignment.
     ascent_cache: RapidHashMap<(Option<Arc<str>>, u16, u32, u64), (f32, f32)>,
@@ -423,7 +492,7 @@ impl Engine {
             let Some((key, value)) = self.glyph_cache.iter().next() else {
                 break;
             };
-            let key = *key;
+            let key = key.clone();
             let bytes = value.5.len();
             self.glyph_cache.remove(&key);
             self.glyph_cache_bytes = self.glyph_cache_bytes.saturating_sub(bytes);
@@ -505,7 +574,7 @@ impl Engine {
     ) -> Option<(f32, f32, f32, f32)> {
         use swash::scale::{Render, Source, StrikeWith};
         let px = normalized_raster_px(px)?;
-        let cache_key = (font_id, glyph_id, px.to_bits());
+        let cache_key = (font_id, glyph_id, px.to_bits(), None);
         if let Some(cached) = self.glyph_cache.get(&cache_key) {
             log::debug!(
                 "[raster_placement] HIT fid={} gid={} px={} => {}x{} {}x{}",
@@ -1160,6 +1229,7 @@ fn collect_shaped_layout(
     layout: parley::Layout<()>,
     px: f32,
     collect_runs: bool,
+    variation: Option<Arc<str>>,
 ) -> (Vec<ShapedGlyph>, Vec<ShapedRun>) {
     use parley::layout::PositionedLayoutItem;
 
@@ -1185,6 +1255,7 @@ fn collect_shaped_layout(
                 font_id: fid,
                 glyph_id: 0,
                 font_size_bits: raster_px.to_bits(),
+                variation: variation.clone(),
             };
             log::debug!(
                 "[shape] run: fid={} font_data_len={}",
@@ -1197,7 +1268,7 @@ fn collect_shaped_layout(
                 eng.key_map.insert(key, (fid, gid));
                 let cache_key = CacheKey {
                     glyph_id: gid,
-                    ..run_cache_key
+                    ..run_cache_key.clone()
                 };
                 glyphs.push(ShapedGlyph {
                     key,
@@ -1560,7 +1631,8 @@ fn shape_vector_inner(
     } else {
         TextDirection::Ltr
     };
-    let (glyphs, runs) = collect_shaped_layout(&mut eng, layout, px, collect_runs);
+    let variation = canonical_variation(options.font_variation_settings);
+    let (glyphs, runs) = collect_shaped_layout(&mut eng, layout, px, collect_runs, variation);
     validate_shape_options(options, resolved_direction, &runs)?;
     let value = Arc::new(SharedShapedText {
         glyphs: Arc::from(glyphs.into_boxed_slice()),
@@ -1802,13 +1874,14 @@ pub fn shape_line_with_options(
 fn rasterize_locked(
     eng: &mut Engine,
     key: GlyphKey,
-    fid: u64,
-    gid: u32,
+    cache_key: &CacheKey,
     px: f32,
 ) -> Option<GlyphBitmap> {
     use swash::scale::{Render, Source, StrikeWith};
-    let cache_key = (fid, gid, px.to_bits());
-    if let Some(cached) = eng.glyph_cache.get(&cache_key) {
+    let fid = cache_key.font_id;
+    let gid = cache_key.glyph_id;
+    let raster_key = (fid, gid, px.to_bits(), cache_key.variation.clone());
+    if let Some(cached) = eng.glyph_cache.get(&raster_key) {
         log::debug!(
             "[rasterize] HIT fid={} gid={} px={} => {}x{}",
             fid,
@@ -1831,7 +1904,19 @@ fn rasterize_locked(
     };
     let face_index = usize::try_from(face_index).ok()?;
     let font = swash::FontRef::from_index(data_bytes.as_ref(), face_index)?;
-    let mut scaler = eng.swash_cx.builder(font).size(px).hint(true).build();
+    let mut builder = eng.swash_cx.builder(font).size(px).hint(true);
+    let settings = decode_variation(cache_key.variation.as_deref());
+    if !settings.is_empty() {
+        let settings: Vec<swash::Setting<f32>> = settings
+            .into_iter()
+            .map(|(tag, value)| swash::Setting {
+                tag: u32::from_be_bytes(tag.to_be_bytes()),
+                value,
+            })
+            .collect();
+        builder = builder.variations(settings);
+    }
+    let mut scaler = builder.build();
     let image = Render::new(&[
         Source::Outline,
         Source::ColorBitmap(StrikeWith::BestFit),
@@ -1861,7 +1946,7 @@ fn rasterize_locked(
     };
     let data_len = bitmap.data.len();
     let previous = eng.glyph_cache.insert(
-        cache_key,
+        raster_key,
         (
             bitmap.w,
             bitmap.h,
@@ -1883,18 +1968,23 @@ pub fn rasterize(key: GlyphKey, px: f32) -> Option<GlyphBitmap> {
     let mut eng = engine().lock().unwrap();
     let &(fid, gid) = eng.key_map.get(&key)?;
     let px = normalized_raster_px(px)?;
-    rasterize_locked(&mut eng, key, fid, gid, px)
+    let cache_key = CacheKey {
+        font_id: fid,
+        glyph_id: gid,
+        font_size_bits: px.to_bits(),
+        variation: None,
+    };
+    rasterize_locked(&mut eng, key, &cache_key, px)
 }
 
-pub fn rasterize_cache_key(cache_key: CacheKey) -> Option<GlyphBitmap> {
+pub fn rasterize_cache_key(cache_key: &CacheKey) -> Option<GlyphBitmap> {
     let px = f32::from_bits(cache_key.font_size_bits);
     let normalized = normalized_raster_px(px)?;
     let mut eng = engine().lock().unwrap();
     rasterize_locked(
         &mut eng,
         key_from_pair(cache_key.font_id, cache_key.glyph_id),
-        cache_key.font_id,
-        cache_key.glyph_id,
+        cache_key,
         normalized,
     )
 }
@@ -1913,6 +2003,7 @@ pub fn lookup_cache_key(key: GlyphKey, px: f32) -> Option<CacheKey> {
         font_id: fid,
         glyph_id: gid,
         font_size_bits: px.to_bits(),
+        variation: None,
     })
 }
 
@@ -1920,18 +2011,37 @@ fn extract_outlines_for(
     data_bytes: &[u8],
     face_index: u32,
     glyph_id: u32,
+    variation: Option<&str>,
 ) -> Option<Box<[Command]>> {
     let font = skrifa::FontRef::from_index(data_bytes, face_index).ok()?;
     let mut pen = OutlinePenCollector(Vec::new());
-    font.outline_glyphs()
-        .get(skrifa::GlyphId::new(glyph_id))?
-        .draw(skrifa::instance::Size::new(1.0), &mut pen)
-        .ok()?;
+    let glyph = font.outline_glyphs().get(skrifa::GlyphId::new(glyph_id))?;
+    let settings = decode_variation(variation);
+    if settings.is_empty() {
+        glyph
+            .draw(skrifa::instance::Size::new(1.0), &mut pen)
+            .ok()?;
+    } else {
+        let location = font.axes().location(settings);
+        glyph
+            .draw(
+                skrifa::outline::DrawSettings::unhinted(
+                    skrifa::instance::Size::new(1.0),
+                    &location,
+                ),
+                &mut pen,
+            )
+            .ok()?;
+    }
     Some(pen.0.into_boxed_slice())
 }
 
-pub fn extract_outline_commands_shared(cache_key: CacheKey) -> Option<Arc<[Command]>> {
-    let cache_identity = (cache_key.font_id, cache_key.glyph_id);
+pub fn extract_outline_commands_shared(cache_key: &CacheKey) -> Option<Arc<[Command]>> {
+    let cache_identity = (
+        cache_key.font_id,
+        cache_key.glyph_id,
+        cache_key.variation.clone(),
+    );
     if let Some(cached) = engine()
         .lock()
         .unwrap()
@@ -1949,7 +2059,12 @@ pub fn extract_outline_commands_shared(cache_key: CacheKey) -> Option<Arc<[Comma
             .find(|record| record.id == cache_key.font_id)?;
         (record.data_bytes.clone(), record.face_index)
     };
-    let commands = extract_outlines_for(data_bytes.as_ref(), face_index, cache_key.glyph_id)?;
+    let commands = extract_outlines_for(
+        data_bytes.as_ref(),
+        face_index,
+        cache_key.glyph_id,
+        cache_key.variation.as_deref(),
+    )?;
     let commands: Arc<[Command]> = Arc::from(commands);
     engine()
         .lock()
@@ -1959,12 +2074,12 @@ pub fn extract_outline_commands_shared(cache_key: CacheKey) -> Option<Arc<[Comma
     Some(commands)
 }
 
-pub fn extract_outline_commands(cache_key: CacheKey) -> Option<Box<[Command]>> {
+pub fn extract_outline_commands(cache_key: &CacheKey) -> Option<Box<[Command]>> {
     extract_outline_commands_shared(cache_key)
         .map(|commands| commands.as_ref().to_vec().into_boxed_slice())
 }
 
-pub fn extract_outline_commands_for(cache_key: CacheKey) -> Option<Box<[Command]>> {
+pub fn extract_outline_commands_for(cache_key: &CacheKey) -> Option<Box<[Command]>> {
     extract_outline_commands(cache_key)
 }
 
@@ -1978,8 +2093,9 @@ pub fn lookup_and_extract_outline(key: GlyphKey, px: f32) -> Option<(CacheKey, B
         font_id: fid,
         glyph_id: gid,
         font_size_bits: px.to_bits(),
+        variation: None,
     };
-    let commands = extract_outline_commands_shared(ck)?;
+    let commands = extract_outline_commands_shared(&ck)?;
     Some((ck, commands.as_ref().to_vec().into_boxed_slice()))
 }
 

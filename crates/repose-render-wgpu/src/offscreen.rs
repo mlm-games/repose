@@ -107,9 +107,6 @@ impl OffscreenRenderer {
             })
             .await?;
         let format = TextureFormat::Rgba8UnormSrgb;
-        let msaa = crate::pick_surface_msaa(&adapter, format, msaa);
-        let working_space_msaa =
-            crate::pick_surface_msaa_for_mode(&adapter, TextureFormat::Rgba16Float, msaa, true);
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("repose-offscreen"),
@@ -120,25 +117,29 @@ impl OffscreenRenderer {
                 trace: wgpu::Trace::Off,
             })
             .await?;
-        let renderer = WgpuSceneRenderer::from_device_with_working_space_msaa(
-            device,
-            queue,
-            format,
-            msaa,
-            working_space_msaa,
-        );
+        let renderer =
+            WgpuSceneRenderer::try_from_device_with_adapter(&adapter, device, queue, format, msaa)?;
         Self::from_renderer(renderer, width, height)
     }
 
     /// Blocking [`new`](Self::new). Must not run on the wasm main thread
     /// without block support (debug-asserted); use `render_rgba_async` there.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn new_blocking(width: u32, height: u32, msaa: u32) -> Result<Self> {
         pollster::block_on(Self::new(width, height, msaa))
     }
 
+    #[cfg(target_arch = "wasm32")]
+    pub fn new_blocking(_width: u32, _height: u32, _msaa: u32) -> Result<Self> {
+        anyhow::bail!(
+            "use OffscreenRenderer::new(...).await on wasm32; a blocking adapter request cannot make progress on the browser main thread"
+        )
+    }
+
     /// Shared-device: reuse Device/Queue, no Adapter. Dimensions clamp to
-    /// ≥ 1; `msaa` clamps to ≥ 1 (no adapter-based picking without one —
-    /// prefer [`from_device_with_adapter`](Self::from_device_with_adapter)
+    /// ≥ 1; `msaa` must be a wgpu-supported sample count (no adapter-based
+    /// picking without one — prefer
+    /// [`from_device_with_adapter`](Self::from_device_with_adapter)
     /// when an adapter is handy).
     pub fn from_device(
         device: wgpu::Device,
@@ -150,7 +151,7 @@ impl OffscreenRenderer {
         let width = width.max(1);
         let height = height.max(1);
         let format = TextureFormat::Rgba8UnormSrgb;
-        let renderer = WgpuSceneRenderer::from_device(device, queue, format, msaa.max(1));
+        let renderer = WgpuSceneRenderer::from_device(device, queue, format, msaa)?;
         Self::from_renderer(renderer, width, height)
     }
 
@@ -167,25 +168,31 @@ impl OffscreenRenderer {
         let width = width.max(1);
         let height = height.max(1);
         let format = TextureFormat::Rgba8UnormSrgb;
-        let msaa = crate::pick_surface_msaa(adapter, format, msaa);
-        let working_space_msaa =
-            crate::pick_surface_msaa_for_mode(adapter, TextureFormat::Rgba16Float, msaa, true);
-        let renderer = WgpuSceneRenderer::from_device_with_working_space_msaa(
-            device,
-            queue,
-            format,
-            msaa,
-            working_space_msaa,
-        );
+        let renderer =
+            WgpuSceneRenderer::try_from_device_with_adapter(adapter, device, queue, format, msaa)?;
         Self::from_renderer(renderer, width, height)
     }
 
     /// Wrap an existing scene renderer with a fresh target + readback
-    /// buffer. Dimensions clamp to ≥ 1.
+    /// buffer. Dimensions clamp to ≥ 1 and error above the device limit.
+    ///
+    /// The readback target is `Rgba8UnormSrgb`, so the renderer must have
+    /// been built for that format: its pipelines target `output_format`, and
+    /// a mismatch (BGRA, HDR) is a render-pass validation error rather than
+    /// a slow path.
     pub fn from_renderer(mut renderer: WgpuSceneRenderer, width: u32, height: u32) -> Result<Self> {
+        anyhow::ensure!(
+            renderer.output_format == TextureFormat::Rgba8UnormSrgb,
+            "offscreen readback needs an Rgba8UnormSrgb renderer, got {:?}",
+            renderer.output_format
+        );
         let max = renderer.device.limits().max_texture_dimension_2d;
-        let width = width.max(1).min(max);
-        let height = height.max(1).min(max);
+        anyhow::ensure!(
+            width.max(1) <= max && height.max(1) <= max,
+            "requested offscreen size {width}x{height} exceeds the device texture limit {max}"
+        );
+        let width = width.max(1);
+        let height = height.max(1);
         renderer.resize(width, height);
         let texture = renderer.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("repose-offscreen-tex"),
@@ -368,12 +375,17 @@ impl OffscreenRenderer {
     }
 
     /// Resize the target + readback buffer. A no-op when the size already
-    /// matches (no reallocation). Dimensions clamp to ≥ 1. After this,
-    /// `render_rgba` returns `width * height * 4` bytes at the new size.
+    /// matches (no reallocation). Dimensions clamp to ≥ 1 and error above
+    /// the device limit, so `render_rgba` always returns
+    /// `width * height * 4` bytes at the requested size.
     pub fn ensure_size(&mut self, width: u32, height: u32) -> Result<()> {
         let max = self.renderer.device.limits().max_texture_dimension_2d;
-        let width = width.max(1).min(max);
-        let height = height.max(1).min(max);
+        anyhow::ensure!(
+            width.max(1) <= max && height.max(1) <= max,
+            "requested offscreen size {width}x{height} exceeds the device texture limit {max}"
+        );
+        let width = width.max(1);
+        let height = height.max(1);
         if self.width == width && self.height == height {
             return Ok(());
         }

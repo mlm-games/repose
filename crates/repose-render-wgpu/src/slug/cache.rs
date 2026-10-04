@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
-use std::hash::{Hash, Hasher};
 
 use lyon_path::math::Point;
 use lyon_tessellation::{
@@ -13,17 +12,53 @@ use crate::slug::outline::commands_to_path;
 use crate::slug::path_effect::apply_path_effect;
 
 const EVICT_FRAMES: u64 = 120;
+/// Stroke variants kept per glyph. A glyph that is on screen while its
+/// width or dash phase animates mints a new variant per frame, and eviction
+/// only ever drops whole glyphs, so without this cap a single visible glyph
+/// grows without bound.
+const MAX_STROKE_VARIANTS_PER_GLYPH: usize = 8;
+/// Total CPU bytes across all tessellated stroke variants.
+const MAX_STROKE_VARIANT_BYTES: u64 = 32 * 1024 * 1024;
+/// Bytes per `[f32; 2]` vertex.
+const VERTEX_BYTES: u64 = 8;
+
+/// Exact, hashable form of a path effect. Storing the float bits rather than
+/// a digest keeps `Eq` faithful: a hash collision would otherwise serve one
+/// effect's tessellation for another.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+enum StrokePathEffect {
+    Corner {
+        radius_bits: u32,
+    },
+    Dash {
+        interval_bits: Vec<u32>,
+        phase_bits: u32,
+    },
+}
+
+fn path_effect_key(effect: &Option<repose_core::PathEffect>) -> Option<StrokePathEffect> {
+    use repose_core::PathEffect;
+    match effect {
+        None => None,
+        Some(PathEffect::Corner { radius }) => Some(StrokePathEffect::Corner {
+            radius_bits: radius.to_bits(),
+        }),
+        Some(PathEffect::Dash { intervals, phase }) => Some(StrokePathEffect::Dash {
+            interval_bits: intervals.iter().map(|v| v.to_bits()).collect(),
+            phase_bits: phase.to_bits(),
+        }),
+    }
+}
 
 /// Distinguishes stroke tessellation variants for the same glyph.
 /// Includes all stroke parameters that affect the tessellated output.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct StrokeTessKey {
     width_bits: u32,
     cap: u8,
     join: u8,
     miter_bits: u32,
-    /// Hash of the path effect (f32 values converted via to_bits).
-    path_effect_hash: u64,
+    path_effect: Option<StrokePathEffect>,
 }
 
 impl StrokeTessKey {
@@ -39,34 +74,7 @@ impl StrokeTessKey {
             cap: cap as u8,
             join: join as u8,
             miter_bits: miter.to_bits(),
-            path_effect_hash: hash_path_effect(path_effect),
-        }
-    }
-}
-
-impl Hash for StrokeTessKey {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.width_bits.hash(state);
-        self.cap.hash(state);
-        self.join.hash(state);
-        self.miter_bits.hash(state);
-        self.path_effect_hash.hash(state);
-    }
-}
-
-fn hash_path_effect(effect: &Option<repose_core::PathEffect>) -> u64 {
-    use repose_core::PathEffect;
-    match effect {
-        None => 0,
-        Some(PathEffect::Corner { radius }) => {
-            1u64.wrapping_mul(31).wrapping_add(radius.to_bits() as u64)
-        }
-        Some(PathEffect::Dash { intervals, phase }) => {
-            let mut h: u64 = 2;
-            for &v in intervals {
-                h = h.wrapping_mul(31).wrapping_add(v.to_bits() as u64);
-            }
-            h.wrapping_mul(31).wrapping_add(phase.to_bits() as u64)
+            path_effect: path_effect_key(path_effect),
         }
     }
 }
@@ -76,14 +84,57 @@ pub struct CachedTessGlyph {
     /// Expanded fill vertices (each triangle has 3 separate entries) in em-space.
     /// Computed lazily on first fill request.
     pub fill_vertices: Option<Vec<[f32; 2]>>,
-    /// Expanded stroke vertices keyed by stroke parameters.
-    pub stroke_variants: HashMap<StrokeTessKey, Vec<[f32; 2]>>,
+    /// Expanded stroke vertices keyed by stroke parameters, with the frame
+    /// each variant was last requested (LRU order under cap pressure).
+    pub stroke_variants: HashMap<StrokeTessKey, StrokeVariant>,
     pub last_used: u64,
+}
+
+#[derive(Clone)]
+pub struct StrokeVariant {
+    pub vertices: Vec<[f32; 2]>,
+    last_used: u64,
+}
+
+impl StrokeVariant {
+    fn bytes(&self) -> u64 {
+        self.vertices.len() as u64 * VERTEX_BYTES
+    }
+}
+
+impl CachedTessGlyph {
+    fn stroke_bytes(&self) -> u64 {
+        self.stroke_variants
+            .values()
+            .map(StrokeVariant::bytes)
+            .sum()
+    }
+
+    /// Drop the least-recently-used variants until at most `max` remain.
+    fn trim_stroke_variants(&mut self, max: usize) -> u64 {
+        let mut freed: u64 = 0;
+        while self.stroke_variants.len() > max {
+            let Some((key, bytes)) = self.least_recently_used_variant() else {
+                break;
+            };
+            self.stroke_variants.remove(&key);
+            freed = freed.saturating_add(bytes);
+        }
+        freed
+    }
+
+    fn least_recently_used_variant(&self) -> Option<(StrokeTessKey, u64)> {
+        self.stroke_variants
+            .iter()
+            .min_by_key(|(_, variant)| variant.last_used)
+            .map(|(key, variant)| (key.clone(), variant.bytes()))
+    }
 }
 
 pub struct GlyphSlugCache {
     map: HashMap<CacheKey, CachedTessGlyph>,
     frame: u64,
+    stroke_bytes: u64,
 }
 
 impl GlyphSlugCache {
@@ -91,6 +142,7 @@ impl GlyphSlugCache {
         Self {
             map: HashMap::new(),
             frame: 0,
+            stroke_bytes: 0,
         }
     }
 
@@ -197,19 +249,12 @@ impl GlyphSlugCache {
         if commands.is_empty() {
             return;
         }
-        let glyph = match self.map.entry(key) {
-            Entry::Occupied(mut e) => {
-                e.get_mut().last_used = frame;
-                e.into_mut()
+        if let Some(glyph) = self.map.get_mut(&key) {
+            glyph.last_used = frame;
+            if let Some(variant) = glyph.stroke_variants.get_mut(&tess_key) {
+                variant.last_used = frame;
+                return;
             }
-            Entry::Vacant(e) => e.insert(CachedTessGlyph {
-                fill_vertices: None,
-                stroke_variants: HashMap::new(),
-                last_used: frame,
-            }),
-        };
-        if glyph.stroke_variants.contains_key(&tess_key) {
-            return;
         }
         let Some(path) = commands_to_path(commands, font_size) else {
             return;
@@ -247,16 +292,200 @@ impl GlyphSlugCache {
             let v = &buffers.vertices[i as usize];
             vertices.push([v.x, v.y]);
         }
-        glyph.stroke_variants.insert(tess_key, vertices);
+        let bytes = vertices.len() as u64 * VERTEX_BYTES;
+        self.evict_stroke_variants(bytes, &key);
+        let glyph = self.map.entry(key).or_insert_with(|| CachedTessGlyph {
+            fill_vertices: None,
+            stroke_variants: HashMap::new(),
+            last_used: frame,
+        });
+        let freed = glyph.trim_stroke_variants(MAX_STROKE_VARIANTS_PER_GLYPH - 1);
+        self.stroke_bytes = self.stroke_bytes.saturating_sub(freed);
+        self.stroke_bytes = self.stroke_bytes.saturating_add(bytes);
+        glyph.last_used = frame;
+        glyph.stroke_variants.insert(
+            tess_key,
+            StrokeVariant {
+                vertices,
+                last_used: frame,
+            },
+        );
     }
 
     pub fn get(&self, key: &CacheKey) -> Option<&CachedTessGlyph> {
         self.map.get(key)
     }
 
+    /// Reserve room for `incoming` bytes of stroke geometry by dropping the
+    /// least-recently-used variants across every glyph except `skip`. A
+    /// variant is always insertable: if the single glyph being filled is
+    /// itself over budget, it is trimmed by the per-glyph cap instead.
+    fn evict_stroke_variants(&mut self, incoming: u64, skip: &CacheKey) {
+        while self.stroke_bytes.saturating_add(incoming) > MAX_STROKE_VARIANT_BYTES {
+            let victim = self
+                .map
+                .iter()
+                .filter(|(key, _)| *key != skip)
+                .flat_map(|(key, glyph)| {
+                    let key = key.clone();
+                    glyph
+                        .stroke_variants
+                        .iter()
+                        .map(move |(variant_key, variant)| {
+                            (
+                                variant.last_used,
+                                key.clone(),
+                                variant_key.clone(),
+                                variant.bytes(),
+                            )
+                        })
+                })
+                .min_by_key(|(last_used, ..)| *last_used)
+                .map(|(_, key, variant_key, bytes)| (key, variant_key, bytes));
+            let Some((key, variant_key, bytes)) = victim else {
+                break;
+            };
+            if let Some(glyph) = self.map.get_mut(&key) {
+                glyph.stroke_variants.remove(&variant_key);
+            }
+            self.stroke_bytes = self.stroke_bytes.saturating_sub(bytes);
+        }
+    }
+
     fn evict_stale(&mut self) {
         let frame = self.frame;
-        self.map
-            .retain(|_, e| frame.wrapping_sub(e.last_used) < EVICT_FRAMES);
+        let mut freed: u64 = 0;
+        self.map.retain(|_, glyph| {
+            let keep = frame.wrapping_sub(glyph.last_used) < EVICT_FRAMES;
+            if !keep {
+                freed = freed.saturating_add(glyph.stroke_bytes());
+            }
+            keep
+        });
+        self.stroke_bytes = self.stroke_bytes.saturating_sub(freed);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn square_commands() -> Vec<Command> {
+        vec![
+            Command::MoveTo(0.0, 0.0),
+            Command::LineTo(0.5, 0.0),
+            Command::LineTo(0.5, 0.5),
+            Command::LineTo(0.0, 0.5),
+            Command::Close,
+        ]
+    }
+
+    fn key(glyph_id: u32) -> CacheKey {
+        CacheKey {
+            font_id: 1,
+            glyph_id,
+            font_size_bits: 16.0f32.to_bits(),
+            variation: None,
+        }
+    }
+
+    fn stroke(
+        cache: &mut GlyphSlugCache,
+        key: CacheKey,
+        width: f32,
+        effect: &Option<repose_core::PathEffect>,
+    ) {
+        cache.get_or_insert_stroke(
+            key.clone(),
+            16.0,
+            &square_commands(),
+            width,
+            repose_core::StrokeCap::Butt,
+            repose_core::StrokeJoin::Miter,
+            4.0,
+            effect,
+        );
+        cache.next_frame();
+    }
+
+    /// An animated stroke width must not grow the cache without bound.
+    #[test]
+    fn animated_stroke_width_keeps_variants_bounded() {
+        let mut cache = GlyphSlugCache::new();
+        let dash = Some(repose_core::PathEffect::Dash {
+            intervals: vec![0.1, 0.1],
+            phase: 0.0,
+        });
+        for step in 0..2000 {
+            let width = 0.01 + (step % 977) as f32 * 0.000_37;
+            stroke(&mut cache, key(1), width, &dash);
+            let variants = cache
+                .get(&key(1))
+                .expect("glyph stays cached")
+                .stroke_variants
+                .len();
+            assert!(
+                variants <= MAX_STROKE_VARIANTS_PER_GLYPH,
+                "{variants} variants after {step} distinct widths"
+            );
+        }
+        assert!(cache.stroke_bytes <= MAX_STROKE_VARIANT_BYTES);
+    }
+
+    /// Every distinct parameter set must get its own variant (no Eq
+    /// collisions between path effects).
+    #[test]
+    fn distinct_path_effects_do_not_share_a_variant() {
+        let mut cache = GlyphSlugCache::new();
+        let effects = [
+            None,
+            Some(repose_core::PathEffect::Corner { radius: 0.02 }),
+            Some(repose_core::PathEffect::Dash {
+                intervals: vec![0.1, 0.1],
+                phase: 0.0,
+            }),
+            Some(repose_core::PathEffect::Dash {
+                intervals: vec![0.1, 0.2],
+                phase: 0.0,
+            }),
+            Some(repose_core::PathEffect::Dash {
+                intervals: vec![0.1, 0.1],
+                phase: 0.05,
+            }),
+        ];
+        for (index, effect) in effects.iter().enumerate() {
+            stroke(&mut cache, key(index as u32 + 1), 0.02, effect);
+        }
+        for (index, effect) in effects.iter().enumerate() {
+            let cached = cache.get(&key(index as u32 + 1)).expect("glyph cached");
+            assert_eq!(
+                cached.stroke_variants.len(),
+                1,
+                "effect {index} should own exactly one variant"
+            );
+            assert_eq!(
+                cached.stroke_variants.keys().next(),
+                Some(&StrokeTessKey::new(
+                    0.02,
+                    repose_core::StrokeCap::Butt,
+                    repose_core::StrokeJoin::Miter,
+                    4.0,
+                    effect
+                ))
+            );
+        }
+    }
+
+    #[test]
+    fn identical_parameters_reuse_one_variant() {
+        let mut cache = GlyphSlugCache::new();
+        let dash = Some(repose_core::PathEffect::Dash {
+            intervals: vec![0.1, 0.1],
+            phase: 0.0,
+        });
+        for _ in 0..10 {
+            stroke(&mut cache, key(7), 0.02, &dash);
+        }
+        assert_eq!(cache.get(&key(7)).unwrap().stroke_variants.len(), 1);
     }
 }

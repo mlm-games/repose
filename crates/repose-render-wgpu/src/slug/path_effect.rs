@@ -1,7 +1,7 @@
 use lyon_path::iterator::PathIterator;
 use lyon_path::math::Point;
 use lyon_path::math::Vector;
-use lyon_path::{Path, PathEvent};
+use lyon_path::{Builder as PathBuilder, Path, PathEvent};
 
 use repose_core::PathEffect;
 
@@ -81,15 +81,17 @@ fn apply_corner_effect(path: &Path, radius: f32, tolerance: f32) -> Path {
         let n = contour.len();
         let last_idx = n - 1;
 
-        // Collect rounded output points for this contour.
-        let mut out_pts: Vec<Point> = Vec::new();
+        // Rounded output for this contour: an endpoint, plus the control
+        // point of the quadratic that rounds into it (`None` for straight
+        // runs). Flattened points alone would only chamfer the corner.
+        let mut out: Vec<(Point, Option<Point>)> = Vec::new();
 
         for i in 0..n {
             let p_curr = contour[i];
 
             // Open contour: first and last points aren't rounded (no adjacent edges).
             if !*closed && (i == 0 || i == last_idx) {
-                out_pts.push(p_curr);
+                out.push((p_curr, None));
                 continue;
             }
 
@@ -114,7 +116,7 @@ fn apply_corner_effect(path: &Path, radius: f32, tolerance: f32) -> Path {
             let len2 = d2.length();
 
             if len1 < 0.0001 || len2 < 0.0001 {
-                out_pts.push(p_curr);
+                out.push((p_curr, None));
                 continue;
             }
 
@@ -125,7 +127,7 @@ fn apply_corner_effect(path: &Path, radius: f32, tolerance: f32) -> Path {
             let half_angle = angle * 0.5;
 
             if angle > std::f32::consts::PI - 0.001 || half_angle.sin().abs() < 0.001 {
-                out_pts.push(p_curr);
+                out.push((p_curr, None));
                 continue;
             }
 
@@ -145,17 +147,24 @@ fn apply_corner_effect(path: &Path, radius: f32, tolerance: f32) -> Path {
                 p_curr.y + u2.y * inset2,
             );
 
-            out_pts.push(start);
-            out_pts.push(end);
+            out.push((start, None));
+            out.push((end, Some(p_curr)));
         }
 
-        if out_pts.is_empty() {
+        if out.is_empty() {
             continue;
         }
 
-        builder.begin(out_pts[0]);
-        for pt in out_pts.iter().skip(1) {
-            builder.line_to(*pt);
+        builder.begin(out[0].0);
+        for (point, control) in out.iter().skip(1) {
+            match control {
+                Some(control) => {
+                    builder.quadratic_bezier_to(*control, *point);
+                }
+                None => {
+                    builder.line_to(*point);
+                }
+            }
         }
         if *closed {
             builder.close();
@@ -167,18 +176,78 @@ fn apply_corner_effect(path: &Path, radius: f32, tolerance: f32) -> Path {
     builder.build()
 }
 
+/// Dash intervals must be an even, strictly positive, finite sequence. The
+/// old `debug_assert!` let odd, zero, negative and NaN intervals reach
+/// release builds, where they silently degraded to a solid or a
+/// non-advancing dash pattern.
+fn dash_intervals_valid(intervals: &[f32]) -> bool {
+    intervals.len() >= 2
+        && intervals.len().is_multiple_of(2)
+        && intervals.iter().all(|len| len.is_finite() && *len > 0.0)
+}
+
+/// Dash state carried across segments and sub-paths (the pattern continues
+/// across contours, as SVG requires).
+struct DashState {
+    interval_idx: usize,
+    dist: f32,
+    emitting: bool,
+}
+
+/// Walk one segment, emitting dash fragments. Shared by `Line` events and
+/// the implicit closing edge of a closed contour, so no edge is left
+/// undashed.
+fn dash_segment(
+    from: Point,
+    to: Point,
+    intervals: &[f32],
+    state: &mut DashState,
+    builder: &mut PathBuilder,
+    in_subpath: &mut bool,
+) {
+    let seg = to - from;
+    let seg_len = seg.length();
+    if seg_len <= 0.0 || seg_len.is_nan() {
+        return;
+    }
+    let dir = seg / seg_len;
+    let mut remaining = seg_len;
+    let mut cur = from;
+    while remaining > 0.0 {
+        let interval = intervals[state.interval_idx];
+        let take = (interval - state.dist).min(remaining);
+        let next = Point::new(cur.x + dir.x * take, cur.y + dir.y * take);
+        if state.emitting {
+            if !*in_subpath {
+                builder.begin(cur);
+                *in_subpath = true;
+            }
+            builder.line_to(next);
+        } else if *in_subpath {
+            builder.end(false);
+            *in_subpath = false;
+        }
+        cur = next;
+        remaining -= take;
+        state.dist += take;
+        if state.dist >= interval {
+            state.dist -= interval;
+            state.interval_idx = (state.interval_idx + 1) % intervals.len();
+            state.emitting = !state.emitting;
+        }
+    }
+}
+
 fn apply_dash_effect(path: &Path, intervals: &[f32], phase: f32, tolerance: f32) -> Path {
-    if intervals.is_empty() || intervals.iter().sum::<f32>() <= 0.0 {
+    if !dash_intervals_valid(intervals) || !phase.is_finite() {
         return path.clone();
     }
-    debug_assert!(
-        intervals.len() >= 2 && intervals.len().is_multiple_of(2),
-        "Dash intervals must have even length (>=2), got {}",
-        intervals.len()
-    );
+    let dash_len: f32 = intervals.iter().sum();
+    if dash_len <= 0.0 || dash_len.is_nan() {
+        return path.clone();
+    }
 
     let events: Vec<PathEvent> = path.iter().flattened(tolerance).collect();
-    let dash_len: f32 = intervals.iter().sum();
 
     let mut builder = Path::builder();
 
@@ -190,23 +259,24 @@ fn apply_dash_effect(path: &Path, intervals: &[f32], phase: f32, tolerance: f32)
         p
     };
 
-    let mut interval_idx = 0;
-    let mut offset_in_interval = 0.0;
-    let mut emitting = true;
+    let mut state = DashState {
+        interval_idx: 0,
+        dist: 0.0,
+        emitting: true,
+    };
     {
         let mut acc = 0.0;
         for (i, &len) in intervals.iter().enumerate() {
             if norm_phase < acc + len {
-                interval_idx = i;
-                offset_in_interval = norm_phase - acc;
-                emitting = i % 2 == 0;
+                state.interval_idx = i;
+                state.dist = norm_phase - acc;
+                state.emitting = i % 2 == 0;
                 break;
             }
             acc += len;
         }
     }
 
-    let mut dash_dist = offset_in_interval;
     let mut in_subpath = false;
 
     for ev in &events {
@@ -216,66 +286,39 @@ fn apply_dash_effect(path: &Path, intervals: &[f32], phase: f32, tolerance: f32)
                     builder.end(false);
                     in_subpath = false;
                 }
-                // Dash continues across sub-paths; don't reset dash_dist.
+                // Dash continues across sub-paths; don't reset the state.
             }
             PathEvent::Line { from, to } => {
-                let seg = *to - *from;
-                let seg_len = seg.length();
-                if seg_len < 0.0001 {
-                    continue;
-                }
-                let dir = seg / seg_len;
-
-                let mut remaining = seg_len;
-                let mut cur = *from;
-
-                while remaining > 0.0 {
-                    let seg_avail = intervals[interval_idx] - dash_dist;
-                    let take = seg_avail.min(remaining);
-
-                    if take > 0.0 {
-                        let next = Point::new(cur.x + dir.x * take, cur.y + dir.y * take);
-                        if emitting {
-                            if !in_subpath {
-                                builder.begin(cur);
-                                in_subpath = true;
-                            }
-                            builder.line_to(next);
-                        } else if in_subpath {
-                            builder.end(false);
-                            in_subpath = false;
-                        }
-                        cur = next;
-                    }
-
-                    remaining -= take;
-                    dash_dist += take;
-
-                    if (dash_dist - intervals[interval_idx]).abs() < 0.0001
-                        || dash_dist >= intervals[interval_idx]
-                    {
-                        dash_dist = 0.0;
-                        interval_idx = (interval_idx + 1) % intervals.len();
-                        emitting = !emitting;
-                    }
-                }
+                dash_segment(
+                    *from,
+                    *to,
+                    intervals,
+                    &mut state,
+                    &mut builder,
+                    &mut in_subpath,
+                );
             }
             PathEvent::End {
-                last: _,
-                first: _,
-                close,
-            } if in_subpath => {
-                if *close {
-                    builder.close();
-                } else {
-                    builder.end(false);
-                }
-                in_subpath = false;
+                last,
+                first,
+                close: true,
+            } => {
+                dash_segment(
+                    *last,
+                    *first,
+                    intervals,
+                    &mut state,
+                    &mut builder,
+                    &mut in_subpath,
+                );
             }
+            PathEvent::End { close: false, .. } => {}
             _ => {}
         }
     }
 
+    // Fragments are open sub-paths: closing one would draw a chord back to
+    // the fragment's own start, which is not an edge of the original path.
     if in_subpath {
         builder.end(false);
     }
@@ -309,5 +352,136 @@ mod tests {
             })
             .collect();
         assert_eq!(closes, vec![false, true]);
+    }
+
+    fn square() -> Path {
+        let mut builder = Path::builder();
+        builder.begin(Point::new(0.0, 0.0));
+        builder.line_to(Point::new(10.0, 0.0));
+        builder.line_to(Point::new(10.0, 10.0));
+        builder.line_to(Point::new(0.0, 10.0));
+        builder.close();
+        builder.build()
+    }
+
+    /// A dashed closed contour must dash its closing edge too, and must not
+    /// close a fragment (which would draw a chord back to the fragment's
+    /// own first point).
+    #[test]
+    fn dash_walks_the_closing_edge_of_a_closed_contour() {
+        let result = apply_path_effect(
+            &square(),
+            &PathEffect::Dash {
+                intervals: vec![1.0, 1.0],
+                phase: 0.0,
+            },
+            0.25,
+        );
+        let mut fragments = 0;
+        let mut closed = 0;
+        let mut longest = 0.0f32;
+        for event in result.iter().flattened(0.25) {
+            match event {
+                PathEvent::Line { from, to } => {
+                    longest = longest.max((to - from).length());
+                }
+                PathEvent::End { close, .. } => {
+                    fragments += 1;
+                    if close {
+                        closed += 1;
+                    }
+                }
+                _ => {}
+            }
+        }
+        assert_eq!(closed, 0, "dash fragments must stay open");
+        assert!(fragments >= 9, "40 units at 1-on/1-off is ~20 fragments");
+        assert!(
+            longest <= 1.0 + 1e-3,
+            "on-length must respect the interval, got {longest}"
+        );
+    }
+
+    #[test]
+    fn dash_phase_shifts_the_whole_contour() {
+        let first_fragment_end = |phase: f32| {
+            let result = apply_path_effect(
+                &square(),
+                &PathEffect::Dash {
+                    intervals: vec![1.0, 1.0],
+                    phase,
+                },
+                0.25,
+            );
+            let mut begun = false;
+            let mut end = None;
+            for event in result.iter().flattened(0.25) {
+                match event {
+                    PathEvent::Begin { .. } => begun = true,
+                    PathEvent::Line { to, .. } if begun => {
+                        end = Some(to);
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+            end.expect("a dash always emits something")
+        };
+        assert_eq!(first_fragment_end(0.0), Point::new(1.0, 0.0));
+        assert_eq!(first_fragment_end(0.5), Point::new(0.5, 0.0));
+    }
+
+    /// Invalid dash input must be rejected in release, not asserted away.
+    #[test]
+    fn invalid_dash_input_returns_the_path_unchanged() {
+        let cases: Vec<Vec<f32>> = vec![
+            vec![],
+            vec![1.0],
+            vec![1.0, 1.0, 1.0],
+            vec![0.0, 5.0],
+            vec![1.0, -1.0],
+            vec![f32::NAN, 1.0],
+            vec![f32::INFINITY, 1.0],
+        ];
+        for intervals in cases {
+            let result = apply_path_effect(
+                &square(),
+                &PathEffect::Dash {
+                    intervals: intervals.clone(),
+                    phase: 0.0,
+                },
+                0.25,
+            );
+            assert_eq!(
+                result.iter().flattened(0.25).count(),
+                square().iter().flattened(0.25).count(),
+                "intervals {intervals:?} should pass through untouched"
+            );
+        }
+        let nan_phase = apply_path_effect(
+            &square(),
+            &PathEffect::Dash {
+                intervals: vec![1.0, 1.0],
+                phase: f32::NAN,
+            },
+            0.25,
+        );
+        assert_eq!(
+            nan_phase.iter().flattened(0.25).count(),
+            square().iter().flattened(0.25).count()
+        );
+    }
+
+    /// The corner effect must round, not chamfer.
+    #[test]
+    fn corner_effect_emits_curves() {
+        let result = apply_path_effect(&square(), &PathEffect::Corner { radius: 1.0 }, 0.25);
+        // Read the verbs unflattened: flattening a quadratic turns it back
+        // into the chamfer this test exists to catch.
+        let curves = result
+            .iter()
+            .filter(|event| matches!(event, PathEvent::Quadratic { .. } | PathEvent::Cubic { .. }))
+            .count();
+        assert_eq!(curves, 4, "a square has four corners to round");
     }
 }

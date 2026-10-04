@@ -1,6 +1,6 @@
 //! Headless probe for [`DepthComposite`](repose_render_wgpu::DepthComposite).
 
-use repose_core::{Color, Rect, Scene, SceneNode};
+use repose_core::{Brush, Color, Px, Rect, Scene, SceneNode};
 use repose_render_wgpu::{
     Callback, CallbackRenderPass, CallbackResources, DepthComposite, ScreenDescriptor,
     WgpuCallback, offscreen::OffscreenRenderer,
@@ -48,7 +48,11 @@ impl WgpuCallback for Probe {
         screen: &ScreenDescriptor,
         resources: &mut CallbackResources,
     ) -> Vec<wgpu::CommandBuffer> {
-        DepthComposite::get(resources).ensure(device, screen, "test.composite", 64, 64);
+        if let Err(e) =
+            DepthComposite::get(resources).ensure(device, screen, "test.composite", 64, 64)
+        {
+            log::warn!("depth composite target unavailable: {e:#}");
+        }
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("test-composite-scene"),
             source: wgpu::ShaderSource::Wgsl(SHADER.into()),
@@ -246,4 +250,223 @@ fn depth_composite_resolves_near_over_far() {
     };
     assert_eq!(at(32, 32), [0, 255, 0, 255], "near quad wins by depth");
     assert_eq!(at(4, 4), [0, 255, 0, 255], "near quad fills the view");
+}
+
+/// Clears the offscreen scene to fully transparent and draws nothing.
+struct TransparentProbe;
+
+impl WgpuCallback for TransparentProbe {
+    fn prepare(
+        &self,
+        device: &wgpu::Device,
+        _queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        screen: &ScreenDescriptor,
+        resources: &mut CallbackResources,
+    ) -> Vec<wgpu::CommandBuffer> {
+        if let Err(e) =
+            DepthComposite::get(resources).ensure(device, screen, "test.transparent", 64, 64)
+        {
+            log::warn!("depth composite target unavailable: {e:#}");
+            return Vec::new();
+        }
+        let composite = DepthComposite::get(resources);
+        if let Some(pass) = composite.begin_scene("test.transparent", encoder, [0.0; 4]) {
+            drop(pass);
+        }
+        Vec::new()
+    }
+
+    fn paint(
+        &self,
+        _info: repose_core::PaintCallbackInfo,
+        rpass: &mut CallbackRenderPass<'_, '_>,
+        resources: &CallbackResources,
+    ) {
+        if let Some(composite) = resources.get::<DepthComposite>() {
+            composite.blit("test.transparent", rpass);
+        }
+    }
+}
+
+/// Clamps the pass to 1x1 and draws nothing, to prove the renderer restores
+/// the dynamic state the UI pass depends on.
+struct ClobberingProbe;
+
+impl WgpuCallback for ClobberingProbe {
+    fn paint(
+        &self,
+        _info: repose_core::PaintCallbackInfo,
+        rpass: &mut CallbackRenderPass<'_, '_>,
+        _resources: &CallbackResources,
+    ) {
+        rpass.set_viewport(0.0, 0.0, 1.0, 1.0, 0.0, 1.0);
+        rpass.set_scissor_rect(0, 0, 1, 1);
+        rpass.set_stencil_reference(3);
+    }
+}
+
+fn full_rect() -> SceneNode {
+    SceneNode::Rect {
+        rect: Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 64.0,
+            h: 64.0,
+        },
+        brush: Brush::Solid(Color::from_rgba(0, 0, 255, 255)),
+        radius: [Px::ZERO; 4],
+    }
+}
+
+fn try_renderer() -> Option<OffscreenRenderer> {
+    match OffscreenRenderer::new_blocking(64, 64, 1) {
+        Ok(r) => Some(r),
+        Err(e) => {
+            eprintln!("SKIP composite test (no GPU): {e}");
+            None
+        }
+    }
+}
+
+fn pixel(px: &[u8], x: u32, y: u32) -> [u8; 4] {
+    let i = ((y * 64 + x) * 4) as usize;
+    [px[i], px[i + 1], px[i + 2], px[i + 3]]
+}
+
+/// A transparent 3D viewport must composite over the UI, not erase it.
+#[test]
+fn transparent_depth_composite_keeps_the_ui_beneath() {
+    let Some(mut renderer) = try_renderer() else {
+        return;
+    };
+    let scene = Scene {
+        clear_color: Color::from_rgba(0, 0, 0, 255),
+        nodes: vec![
+            full_rect(),
+            SceneNode::Callback {
+                rect: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 64.0,
+                    h: 64.0,
+                },
+                payload: Callback::new(TransparentProbe),
+            },
+        ],
+    };
+    let px = renderer
+        .render_rgba(&scene, Some([0.0, 0.0, 0.0, 1.0]))
+        .expect("render");
+    assert_eq!(
+        pixel(&px, 32, 32),
+        [0, 0, 255, 255],
+        "the blue UI under a transparent viewport must survive the blit"
+    );
+}
+
+/// Dynamic state a callback changes must not leak into later UI draws.
+#[test]
+fn callback_state_is_restored_for_later_draws() {
+    let Some(mut renderer) = try_renderer() else {
+        return;
+    };
+    let scene = Scene {
+        clear_color: Color::from_rgba(0, 0, 0, 255),
+        nodes: vec![
+            SceneNode::Callback {
+                rect: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 8.0,
+                    h: 8.0,
+                },
+                payload: Callback::new(ClobberingProbe),
+            },
+            SceneNode::Rect {
+                rect: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 64.0,
+                    h: 64.0,
+                },
+                brush: Brush::Solid(Color::from_rgba(0, 255, 0, 255)),
+                radius: [Px::ZERO; 4],
+            },
+        ],
+    };
+    let px = renderer
+        .render_rgba(&scene, Some([0.0, 0.0, 0.0, 1.0]))
+        .expect("render");
+    // Interior samples only: the outermost row/column is antialiased by the
+    // rect rasterizer. If the callback's 1x1 viewport or scissor leaked, only
+    // (0,0) would be green.
+    for (x, y) in [(0, 0), (16, 16), (32, 32), (48, 48), (56, 8), (8, 56)] {
+        assert_eq!(
+            pixel(&px, x, y),
+            [0, 255, 0, 255],
+            "rect after the callback must fill the frame at ({x},{y})"
+        );
+    }
+}
+
+/// Panics after narrowing the viewport, to prove restoration still runs.
+struct PanickingProbe;
+
+impl WgpuCallback for PanickingProbe {
+    fn paint(
+        &self,
+        _info: repose_core::PaintCallbackInfo,
+        rpass: &mut CallbackRenderPass<'_, '_>,
+        _resources: &CallbackResources,
+    ) {
+        rpass.set_viewport(0.0, 0.0, 1.0, 1.0, 0.0, 1.0);
+        rpass.set_scissor_rect(0, 0, 1, 1);
+        panic!("callback failure");
+    }
+}
+
+#[test]
+fn panicking_callback_does_not_break_the_rest_of_the_frame() {
+    let Some(mut renderer) = try_renderer() else {
+        return;
+    };
+    let previous_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let rendered = renderer.render_rgba(
+        &Scene {
+            clear_color: Color::from_rgba(0, 0, 0, 255),
+            nodes: vec![
+                SceneNode::Callback {
+                    rect: Rect {
+                        x: 0.0,
+                        y: 0.0,
+                        w: 8.0,
+                        h: 8.0,
+                    },
+                    payload: Callback::new(PanickingProbe),
+                },
+                SceneNode::Rect {
+                    rect: Rect {
+                        x: 0.0,
+                        y: 0.0,
+                        w: 64.0,
+                        h: 64.0,
+                    },
+                    brush: Brush::Solid(Color::from_rgba(0, 255, 0, 255)),
+                    radius: [Px::ZERO; 4],
+                },
+            ],
+        },
+        Some([0.0, 0.0, 0.0, 1.0]),
+    );
+    std::panic::set_hook(previous_hook);
+    let px = rendered.expect("render");
+    for (x, y) in [(16, 16), (32, 32), (48, 48)] {
+        assert_eq!(
+            pixel(&px, x, y),
+            [0, 255, 0, 255],
+            "rect after a panicking callback must still fill ({x},{y})"
+        );
+    }
 }
