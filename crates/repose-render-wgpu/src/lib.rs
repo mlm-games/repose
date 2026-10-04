@@ -504,15 +504,23 @@ struct CallbackIdentity {
     reusable: bool,
 }
 
+/// Identifies one callback's `CallbackResources` bucket. Deliberately
+/// excludes the target's size and scale: `prepare` runs every frame with
+/// the current [`ScreenDescriptor`], so any size-dependent resource
+/// belongs in the callback's own `ensure`. Keying the bucket by size
+/// would drop every callback's GPU state on a window resize — atlas
+/// contents, pipeline caches — leaving nothing to rebuild from.
+///
+/// A bucket still changes identity with the target, format or sample
+/// count, and is evicted once [`MAX_CALLBACK_SCOPES`] is exceeded, so
+/// anything loaded once in `prepare` has to be rebuildable from
+/// `prepare` alone.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct CallbackScopeKey {
     callback: CallbackIdentity,
     target: PassTarget,
-    width: u32,
-    height: u32,
     target_format: wgpu::TextureFormat,
     sample_count: u32,
-    pixels_per_point_bits: u32,
 }
 
 #[derive(Clone, Copy)]
@@ -550,11 +558,8 @@ fn callback_scope_key(
     CallbackScopeKey {
         callback: callback_identity(callback, fallback),
         target,
-        width: descriptor.size_in_pixels[0],
-        height: descriptor.size_in_pixels[1],
         target_format: descriptor.target_format,
         sample_count: descriptor.sample_count,
-        pixels_per_point_bits: descriptor.pixels_per_point.to_bits(),
     }
 }
 
@@ -10302,8 +10307,6 @@ impl WgpuSceneRenderer {
                                 .or_default();
                             if !targets.iter().any(|(target, target_desc)| {
                                 *target == pass.target
-                                    && target_desc.size_in_pixels == descriptor.size_in_pixels
-                                    && target_desc.pixels_per_point == descriptor.pixels_per_point
                                     && target_desc.target_format == descriptor.target_format
                                     && target_desc.sample_count == descriptor.sample_count
                             }) {
