@@ -109,6 +109,11 @@ impl TextSelection {
     pub fn set_geometry(&self, geometry: TextLayoutGeometry) {
         *self.geometry.borrow_mut() = geometry;
     }
+
+    /// Stable identity: the pointer of the shared state Rc.
+    pub fn stable_id(&self) -> *const () {
+        Rc::as_ptr(&self.range) as *const ()
+    }
 }
 
 impl Debug for TextSelection {

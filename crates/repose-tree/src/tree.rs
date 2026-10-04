@@ -122,6 +122,17 @@ fn interaction_source_changed(
     }
 }
 
+fn text_selection_changed(
+    old: &Option<repose_core::text::TextSelection>,
+    new: &Option<repose_core::text::TextSelection>,
+) -> bool {
+    match (old, new) {
+        (Some(old), Some(new)) => old.stable_id() != new.stable_id(),
+        (None, None) => false,
+        _ => true,
+    }
+}
+
 fn scroll_axis_identity_changed(
     old: &repose_core::scroll::ScrollAxisBinding,
     new: &repose_core::scroll::ScrollAxisBinding,
@@ -273,6 +284,7 @@ fn modifier_identity_change(old: &Modifier, new: &Modifier) -> IdentityChange {
     }
     if focus_requester_changed(&old.focus_requester, &new.focus_requester)
         || interaction_source_changed(&old.interaction_source, &new.interaction_source)
+        || text_selection_changed(&old.text_selection, &new.text_selection)
     {
         change.paint = true;
     }
@@ -1602,6 +1614,42 @@ mod tests {
         tree.update(&root);
         let second_id = tree.children(tree.root().unwrap()).unwrap()[0];
         assert_eq!(tree.get_by_view_id(42).map(|node| node.id), Some(second_id));
+    }
+
+    #[test]
+    fn replaced_text_selection_is_picked_up() {
+        let mut tree = ViewTree::new();
+        let first = repose_core::text::TextSelection::default();
+        let second = repose_core::text::TextSelection::default();
+        assert_ne!(first.stable_id(), second.stable_id());
+
+        let root = box_view().with_children(vec![
+            text_view("hi").modifier(Modifier::new().text_selection(first.clone()))
+        ]);
+        let node = tree.update(&root);
+        let node = tree.children(node).unwrap()[0];
+        tree.set_layout(
+            node,
+            Rect::default(),
+            Rect::default(),
+            crate::LayoutConstraints::default(),
+        );
+        tree.update(&root);
+        assert!(tree.get(node).unwrap().has_valid_layout());
+
+        let replaced =
+            box_view().with_children(vec![text_view("hi").modifier(
+                Modifier::new().text_selection(second.clone()),
+            )]);
+        tree.update(&replaced);
+
+        let stored = &tree.get(node).unwrap().modifier.text_selection;
+        assert_eq!(
+            stored.as_ref().map(|selection| selection.stable_id()),
+            Some(second.stable_id())
+        );
+        assert!(tree.paint_dirty_nodes().contains(&node));
+        assert!(tree.get(node).unwrap().has_valid_layout());
     }
 
     #[test]
