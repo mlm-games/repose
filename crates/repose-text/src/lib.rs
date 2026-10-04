@@ -310,7 +310,9 @@ pub fn canonical_variation(settings: Option<&str>) -> Option<Arc<str>> {
     if parsed.is_empty() {
         return None;
     }
-    parsed.sort_unstable_by_key(|(tag, _)| *tag);
+    // Stable sort: the merge below keeps the last entry of each equal-tag run,
+    // so equal tags must stay in source order for "last wins" to hold.
+    parsed.sort_by_key(|(tag, _)| *tag);
     let mut merged: Vec<(u32, u32)> = Vec::with_capacity(parsed.len());
     for entry in parsed {
         match merged.last_mut() {
@@ -339,23 +341,51 @@ type OutlineKey = (u64, u32, Option<Arc<str>>);
 
 /// Decode a [`canonical_variation`] key back into `(tag, user value)` pairs
 /// for the shaping and font APIs.
+///
+/// `CacheKey::variation` is a public field, so a hand-built key need not be
+/// canonical: anything that is not a whole number of entries is ignored
+/// rather than indexed into blindly.
 pub(crate) fn decode_variation(canonical: Option<&str>) -> Vec<(skrifa::Tag, f32)> {
     let Some(canonical) = canonical else {
         return Vec::new();
     };
     let bytes = canonical.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len() / 16);
+    let mut out = Vec::with_capacity(bytes.len() / VARIATION_ENTRY_CHARS);
     for chunk in bytes.chunks(VARIATION_ENTRY_CHARS) {
-        let tag = skrifa::Tag::from_be_bytes(chunk[..4].try_into().unwrap_or([0; 4]));
-        let Ok(text) = std::str::from_utf8(&chunk[8..16]) else {
+        if chunk.len() < VARIATION_ENTRY_CHARS {
+            break;
+        }
+        // Both halves are hex text, so both have to be parsed back out: the
+        // raw characters are not the tag bytes.
+        let Ok(tag_text) = std::str::from_utf8(&chunk[..8]) else {
             continue;
         };
-        let Ok(bits) = u32::from_str_radix(text, 16) else {
+        let Ok(tag) = u32::from_str_radix(tag_text, 16) else {
             continue;
         };
-        out.push((tag, f32::from_bits(bits)));
+        let Ok(value_text) = std::str::from_utf8(&chunk[8..VARIATION_ENTRY_CHARS]) else {
+            continue;
+        };
+        let Ok(bits) = u32::from_str_radix(value_text, 16) else {
+            continue;
+        };
+        out.push((
+            skrifa::Tag::from_be_bytes(tag.to_be_bytes()),
+            f32::from_bits(bits),
+        ));
     }
     out
+}
+
+/// User-space variation settings in the shape `swash` wants.
+fn swash_settings(canonical: Option<&str>) -> Vec<swash::Setting<f32>> {
+    decode_variation(canonical)
+        .into_iter()
+        .map(|(tag, value)| swash::Setting {
+            tag: u32::from_be_bytes(tag.to_be_bytes()),
+            value,
+        })
+        .collect()
 }
 
 static GLYPH_ID_WARNED: OnceLock<Mutex<std::collections::HashSet<(u64, u32)>>> = OnceLock::new();
@@ -571,10 +601,11 @@ impl Engine {
         font_id: u64,
         glyph_id: u32,
         px: f32,
+        variation: Option<Arc<str>>,
     ) -> Option<(f32, f32, f32, f32)> {
         use swash::scale::{Render, Source, StrikeWith};
         let px = normalized_raster_px(px)?;
-        let cache_key = (font_id, glyph_id, px.to_bits(), None);
+        let cache_key = (font_id, glyph_id, px.to_bits(), variation.clone());
         if let Some(cached) = self.glyph_cache.get(&cache_key) {
             log::debug!(
                 "[raster_placement] HIT fid={} gid={} px={} => {}x{} {}x{}",
@@ -599,7 +630,12 @@ impl Engine {
         };
         let face_index = usize::try_from(face_index).ok()?;
         let font = swash::FontRef::from_index(data_bytes.as_ref(), face_index)?;
-        let mut scaler = self.swash_cx.builder(font).size(px).hint(true).build();
+        let mut builder = self.swash_cx.builder(font).size(px).hint(true);
+        let settings = swash_settings(variation.as_deref());
+        if !settings.is_empty() {
+            builder = builder.variations(settings);
+        }
+        let mut scaler = builder.build();
         let image = Render::new(&[
             Source::Outline,
             Source::ColorBitmap(StrikeWith::BestFit),
@@ -1669,7 +1705,7 @@ fn materialize_legacy_glyphs(
     let mut eng = engine().lock().unwrap();
     for glyph in &mut glyphs {
         if let Some((width, height, left, top)) =
-            eng.raster_placement(glyph.font_id, glyph.glyph_id, glyph.px)
+            eng.raster_placement(glyph.font_id, glyph.glyph_id, glyph.px, None)
         {
             glyph.w = width;
             glyph.h = height;
@@ -1905,15 +1941,8 @@ fn rasterize_locked(
     let face_index = usize::try_from(face_index).ok()?;
     let font = swash::FontRef::from_index(data_bytes.as_ref(), face_index)?;
     let mut builder = eng.swash_cx.builder(font).size(px).hint(true);
-    let settings = decode_variation(cache_key.variation.as_deref());
+    let settings = swash_settings(cache_key.variation.as_deref());
     if !settings.is_empty() {
-        let settings: Vec<swash::Setting<f32>> = settings
-            .into_iter()
-            .map(|(tag, value)| swash::Setting {
-                tag: u32::from_be_bytes(tag.to_be_bytes()),
-                value,
-            })
-            .collect();
         builder = builder.variations(settings);
     }
     let mut scaler = builder.build();
@@ -1964,6 +1993,11 @@ fn rasterize_locked(
     Some(bitmap)
 }
 
+/// Rasterize through the legacy [`GlyphKey`] handle.
+///
+/// [`GlyphKey`] identifies a font and glyph but not a variation instance, so
+/// this always renders the font's default instance. Callers that need
+/// variations must go through [`CacheKey`], e.g. [`rasterize_cache_key`].
 pub fn rasterize(key: GlyphKey, px: f32) -> Option<GlyphBitmap> {
     let mut eng = engine().lock().unwrap();
     let &(fid, gid) = eng.key_map.get(&key)?;
@@ -1989,12 +2023,22 @@ pub fn rasterize_cache_key(cache_key: &CacheKey) -> Option<GlyphBitmap> {
     )
 }
 
-pub fn raster_placement(cache_key: CacheKey) -> Option<(f32, f32, f32, f32)> {
+pub fn raster_placement(cache_key: &CacheKey) -> Option<(f32, f32, f32, f32)> {
     let px = f32::from_bits(cache_key.font_size_bits);
     let mut eng = engine().lock().unwrap();
-    eng.raster_placement(cache_key.font_id, cache_key.glyph_id, px)
+    eng.raster_placement(
+        cache_key.font_id,
+        cache_key.glyph_id,
+        px,
+        cache_key.variation.clone(),
+    )
 }
 
+/// [`CacheKey`] for a legacy [`GlyphKey`] handle.
+///
+/// The result always has `variation: None`: [`GlyphKey`] does not identify a
+/// variation instance, so it will not match a key produced by shaping a run
+/// that sets font-variation settings.
 pub fn lookup_cache_key(key: GlyphKey, px: f32) -> Option<CacheKey> {
     let eng = engine().lock().unwrap();
     let &(fid, gid) = eng.key_map.get(&key)?;
@@ -2083,6 +2127,8 @@ pub fn extract_outline_commands_for(cache_key: &CacheKey) -> Option<Box<[Command
     extract_outline_commands(cache_key)
 }
 
+/// Outline for a legacy [`GlyphKey`] handle, at the font's default
+/// variation instance (see [`lookup_cache_key`]).
 pub fn lookup_and_extract_outline(key: GlyphKey, px: f32) -> Option<(CacheKey, Box<[Command]>)> {
     let (fid, gid) = {
         let eng = engine().lock().unwrap();
@@ -3552,6 +3598,83 @@ fn ellipsis_width_with_style(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn variation_keys_are_order_independent_and_last_wins() {
+        let a = canonical_variation(Some("\"wght\" 400, \"wdth\" 75")).expect("canonical key");
+        let b = canonical_variation(Some("\"wdth\" 75 , \"wght\" 400")).expect("canonical key");
+        assert_eq!(a, b, "axis order must not change the key");
+        let last = canonical_variation(Some("\"wght\" 400, \"wght\" 700")).expect("canonical key");
+        let single = canonical_variation(Some("\"wght\" 700")).expect("canonical key");
+        assert_eq!(last, single, "a repeated axis resolves to its last value");
+        assert_ne!(
+            canonical_variation(Some("\"wght\" 400")),
+            canonical_variation(Some("\"wght\" 700"))
+        );
+        assert!(canonical_variation(None).is_none());
+        assert!(canonical_variation(Some("")).is_none());
+        assert!(canonical_variation(Some("!!! nonsense")).is_none());
+    }
+
+    #[test]
+    fn variation_keys_round_trip_exactly() {
+        for source in [
+            "\"wght\" 700",
+            "\"wght\" 250, \"wdth\" 75, \"slnt\" -12.5",
+            "\"opsz\" 14.25",
+        ] {
+            let key = canonical_variation(Some(source)).expect("canonical key");
+            let decoded = decode_variation(Some(&key));
+            // Independent expectations: axis names read out of the source
+            // text, values from the same parser shaping uses, paired by
+            // position. Decoding emits tag-sorted order, so sort likewise.
+            let names: Vec<String> = source
+                .split(',')
+                .filter_map(|entry| {
+                    let quoted = entry.trim().strip_prefix('"')?;
+                    quoted.split_once('"').map(|(tag, _)| tag.to_string())
+                })
+                .collect();
+            let values: Vec<u32> = parley::setting::FontVariation::parse_css_list(source)
+                .filter_map(Result::ok)
+                .map(|setting| setting.value.to_bits())
+                .collect();
+            let mut expected: Vec<(String, u32)> = names.into_iter().zip(values).collect();
+            expected.sort_by(|a, b| a.0.cmp(&b.0));
+            let got: Vec<(String, u32)> = decoded
+                .iter()
+                .map(|(tag, value)| {
+                    // `skrifa::Tag`'s Debug prints `Tag(wght)`.
+                    let name = format!("{tag:?}");
+                    let name = name
+                        .trim_start_matches("Tag(")
+                        .trim_end_matches(')')
+                        .to_string();
+                    (name, value.to_bits())
+                })
+                .collect();
+            assert_eq!(got, expected, "{source}");
+        }
+    }
+
+    /// `CacheKey::variation` is a public field, so a hand-built key need not
+    /// be canonical. A malformed one must be ignored, not panic: panicking
+    /// here would poison the global text-engine mutex.
+    #[test]
+    fn malformed_variation_keys_are_ignored_not_fatal() {
+        assert!(decode_variation(None).is_empty());
+        assert!(decode_variation(Some("")).is_empty());
+        for malformed in ["wght", "abc", "0123456789ab", "zzzz", "wght!!", "\"wght\""] {
+            assert!(
+                decode_variation(Some(malformed)).is_empty(),
+                "{malformed:?} must decode to nothing"
+            );
+        }
+        // A valid entry followed by a truncated one keeps the valid part.
+        let valid = canonical_variation(Some("\"wght\" 700")).expect("canonical key");
+        let padded = format!("{valid}abc");
+        assert_eq!(decode_variation(Some(&padded)).len(), 1);
+    }
 
     #[test]
     fn bidi_caret_positions_follow_visual_order() {

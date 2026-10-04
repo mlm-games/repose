@@ -1,7 +1,7 @@
 use std::any::TypeId;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
 use std::num::NonZeroU64;
 #[cfg(feature = "winit-surface")]
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -2478,7 +2478,9 @@ struct MeshCacheEntry {
 struct SlugDrawKey {
     cache_key: repose_text::CacheKey,
     fill: bool,
-    stroke_hash: u64,
+    /// The stroke parameters themselves, not a digest of them: a hash
+    /// collision here would serve another stroke's tessellation.
+    stroke: Option<slug::StrokeTessKey>,
     transform: [u32; 11],
     origin: [u32; 2],
     px_bits: u32,
@@ -2800,8 +2802,8 @@ impl WgpuSceneRenderer {
         output_format: wgpu::TextureFormat,
         requested_msaa: u32,
     ) -> anyhow::Result<Self> {
-        validate_render_target_format(adapter, output_format)?;
         let msaa = pick_surface_msaa(adapter, output_format, requested_msaa);
+        validate_render_target_format(adapter, output_format, msaa)?;
         let working_space_msaa =
             pick_surface_msaa_for_mode(adapter, wgpu::TextureFormat::Rgba16Float, msaa, true);
         Self::from_device_with_working_space_msaa(
@@ -3776,11 +3778,14 @@ fn validate_sample_count(label: &str, samples: u32) -> anyhow::Result<()> {
 }
 
 /// Every UI pipeline writes `output_format` with premultiplied-alpha
-/// blending, and MSAA resolves into it, so all three properties have to hold
-/// before any pipeline is built.
+/// blending, so those two properties have to hold before any pipeline is
+/// built. Multisample resolve is only required when more than one sample is
+/// actually in use: a format that is renderable and blendable but cannot
+/// resolve is fine at x1, which is what [`pick_surface_msaa`] falls back to.
 fn validate_render_target_format(
     adapter: &wgpu::Adapter,
     output_format: wgpu::TextureFormat,
+    samples: u32,
 ) -> anyhow::Result<()> {
     let features = adapter.get_texture_format_features(output_format);
     let flags = features.flags;
@@ -3795,8 +3800,10 @@ fn validate_render_target_format(
     if !flags.contains(wgpu::TextureFormatFeatureFlags::BLENDABLE) {
         anyhow::bail!("{output_format:?} cannot be blended into");
     }
-    if !flags.contains(wgpu::TextureFormatFeatureFlags::MULTISAMPLE_RESOLVE) {
-        anyhow::bail!("{output_format:?} cannot resolve a multisampled attachment");
+    if samples > 1 && !flags.contains(wgpu::TextureFormatFeatureFlags::MULTISAMPLE_RESOLVE) {
+        anyhow::bail!(
+            "{output_format:?} cannot resolve the requested {samples}x multisampled attachment"
+        );
     }
     // `set_working_space` renders into Rgba16Float and resolves into it.
     let ws = adapter.get_texture_format_features(wgpu::TextureFormat::Rgba16Float);
@@ -6217,12 +6224,10 @@ impl WgpuSceneRenderer {
         color: [f32; 4],
     ) -> SlugDrawKey {
         let linear = transform.linear();
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        stroke_key.hash(&mut hasher);
         SlugDrawKey {
             cache_key: cache_key.clone(),
             fill,
-            stroke_hash: hasher.finish(),
+            stroke: stroke_key.cloned(),
             transform: [
                 linear[0].to_bits(),
                 linear[1].to_bits(),
@@ -11263,10 +11268,12 @@ impl WgpuSceneRenderer {
                                     .callback_scoped_resources
                                     .get(&scope)
                                     .unwrap_or(&self.callback_resources);
-                                // A panicking callback must not skip the
-                                // restore below: the viewport/scissor would
-                                // stay clamped to the callback rect and every
-                                // later draw in the frame would be clipped away.
+                                // A panicking callback must not skip the restore below:
+                                // the viewport/scissor would stay clamped to
+                                // the callback rect and every later draw in the
+                                // frame would be clipped away. Requires
+                                // unwinding panics; under `panic = "abort"`
+                                // nothing runs the restore.
                                 let outcome = {
                                     let mut callback_pass = CallbackRenderPass::new(
                                         &mut rpass,

@@ -1186,14 +1186,23 @@ fn apply_canvas_path_effect(path: &lyon_path::Path, effect: &PathEffect) -> lyon
     match effect {
         PathEffect::Corner { radius } => apply_canvas_corner_effect(path, *radius),
         PathEffect::Dash { intervals, phase } => {
-            if intervals.len() < 2 || intervals.len() % 2 != 0 {
+            const TOLERANCE: f32 = 0.25;
+            // Even, finite, strictly positive; each interval is then floored
+            // at the flatten tolerance so the walk below is bounded. A dash
+            // shorter than the tolerance is sub-pixel geometry anyway.
+            if !phase.is_finite() || intervals.len() < 2 || intervals.len() % 2 != 0 {
                 return path.clone();
             }
-            if intervals.iter().sum::<f32>() <= 0.0 {
+            if !intervals.iter().all(|len| len.is_finite() && *len > 0.0) {
                 return path.clone();
             }
-            let events: Vec<PathEvent> = path.iter().flattened(0.25).collect();
+            let floor = TOLERANCE;
+            let intervals: Vec<f32> = intervals.iter().map(|len| len.max(floor)).collect();
             let dash_len: f32 = intervals.iter().sum();
+            if !dash_len.is_finite() || dash_len <= 0.0 {
+                return path.clone();
+            }
+            let events: Vec<PathEvent> = path.iter().flattened(TOLERANCE).collect();
             let mut phase = phase % dash_len;
             if phase < 0.0 {
                 phase += dash_len;
@@ -1213,64 +1222,91 @@ fn apply_canvas_path_effect(path: &lyon_path::Path, effect: &PathEffect) -> lyon
             }
             let mut builder = lyon_path::Path::builder();
             let mut in_subpath = false;
+            let walk = |from: lyon_path::math::Point,
+                        to: lyon_path::math::Point,
+                        idx: &mut usize,
+                        dash_dist: &mut f32,
+                        emitting: &mut bool,
+                        builder: &mut lyon_path::path::Builder,
+                        in_subpath: &mut bool| {
+                let seg = to - from;
+                let seg_len = seg.length();
+                if seg_len <= 0.0 || seg_len.is_nan() {
+                    return;
+                }
+                let dir = seg / seg_len;
+                let mut remaining = seg_len;
+                let mut cur = from;
+                while remaining > 0.0 {
+                    let interval = intervals[*idx];
+                    let take = (interval - *dash_dist).min(remaining);
+                    // Backstop: a step this small cannot move the cursor, so
+                    // continuing would spin forever on a tiny interval.
+                    if take <= remaining * f32::EPSILON {
+                        break;
+                    }
+                    let next =
+                        lyon_path::math::Point::new(cur.x + dir.x * take, cur.y + dir.y * take);
+                    if *emitting {
+                        if !*in_subpath {
+                            builder.begin(cur);
+                            *in_subpath = true;
+                        }
+                        builder.line_to(next);
+                    } else if *in_subpath {
+                        builder.end(false);
+                        *in_subpath = false;
+                    }
+                    cur = next;
+                    remaining -= take;
+                    *dash_dist += take;
+                    if *dash_dist >= interval {
+                        *dash_dist -= interval;
+                        *idx = (*idx + 1) % intervals.len();
+                        *emitting = !*emitting;
+                    }
+                }
+            };
             for ev in events {
                 match ev {
-                    PathEvent::Begin { .. } => {}
-                    PathEvent::Line { from, to } => {
-                        let seg = to - from;
-                        let seg_len = seg.length();
-                        if seg_len < 0.0001 {
-                            continue;
-                        }
-                        let dir = seg / seg_len;
-                        let mut remaining = seg_len;
-                        let mut cur = from;
-                        while remaining > 0.0 {
-                            if intervals[idx] <= 0.0 {
-                                idx = (idx + 1) % intervals.len();
-                                emitting = !emitting;
-                                dash_dist = 0.0;
-                                continue;
-                            }
-                            let avail = intervals[idx] - dash_dist;
-                            let take = avail.min(remaining);
-                            if take > 0.0 {
-                                let next = lyon_path::math::Point::new(
-                                    cur.x + dir.x * take,
-                                    cur.y + dir.y * take,
-                                );
-                                if emitting {
-                                    if !in_subpath {
-                                        builder.begin(cur);
-                                        in_subpath = true;
-                                    }
-                                    builder.line_to(next);
-                                } else if in_subpath {
-                                    builder.end(false);
-                                    in_subpath = false;
-                                }
-                                cur = next;
-                            }
-                            remaining -= take;
-                            dash_dist += take;
-                            if dash_dist >= intervals[idx] {
-                                dash_dist = 0.0;
-                                idx = (idx + 1) % intervals.len();
-                                emitting = !emitting;
-                            }
-                        }
-                    }
-                    PathEvent::End { close, .. } if in_subpath => {
-                        if close {
-                            builder.close();
-                        } else {
+                    PathEvent::Begin { .. } => {
+                        if in_subpath {
                             builder.end(false);
+                            in_subpath = false;
                         }
-                        in_subpath = false;
                     }
+                    PathEvent::Line { from, to } => {
+                        walk(
+                            from,
+                            to,
+                            &mut idx,
+                            &mut dash_dist,
+                            &mut emitting,
+                            &mut builder,
+                            &mut in_subpath,
+                        );
+                    }
+                    PathEvent::End {
+                        last,
+                        first,
+                        close: true,
+                    } => {
+                        walk(
+                            last,
+                            first,
+                            &mut idx,
+                            &mut dash_dist,
+                            &mut emitting,
+                            &mut builder,
+                            &mut in_subpath,
+                        );
+                    }
+                    PathEvent::End { close: false, .. } => {}
                     _ => {}
                 }
             }
+            // Fragments stay open: `close()` would draw a chord back to the
+            // fragment's own first point.
             if in_subpath {
                 builder.end(false);
             }

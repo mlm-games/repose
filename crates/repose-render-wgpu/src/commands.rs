@@ -25,8 +25,17 @@ pub struct RenderCommandReport {
 }
 
 impl RenderCommandReport {
-    pub fn failed(&self) -> usize {
-        self.failures.len()
+    /// Log every failure. Callers sit inside callbacks with no error
+    /// channel, so this is the usual way the report reaches a human.
+    pub fn log_failures(&self) {
+        for failure in &self.failures {
+            log::warn!(
+                "repose-render: {}({}) failed: {}",
+                failure.kind,
+                failure.handle,
+                failure.error
+            );
+        }
     }
 }
 

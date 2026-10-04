@@ -322,29 +322,24 @@ impl GlyphSlugCache {
     /// itself over budget, it is trimmed by the per-glyph cap instead.
     fn evict_stroke_variants(&mut self, incoming: u64, skip: &CacheKey) {
         while self.stroke_bytes.saturating_add(incoming) > MAX_STROKE_VARIANT_BYTES {
-            let victim = self
-                .map
-                .iter()
-                .filter(|(key, _)| *key != skip)
-                .flat_map(|(key, glyph)| {
-                    let key = key.clone();
-                    glyph
-                        .stroke_variants
-                        .iter()
-                        .map(move |(variant_key, variant)| {
-                            (
-                                variant.last_used,
-                                key.clone(),
-                                variant_key.clone(),
-                                variant.bytes(),
-                            )
-                        })
-                })
-                .min_by_key(|(last_used, ..)| *last_used)
-                .map(|(_, key, variant_key, bytes)| (key, variant_key, bytes));
-            let Some((key, variant_key, bytes)) = victim else {
+            // Borrow the victim rather than cloning a key (and a dash
+            // interval vector) for every variant of every glyph, once per
+            // eviction.
+            let mut oldest: Option<(u64, &CacheKey, &StrokeTessKey, u64)> = None;
+            for (key, glyph) in &self.map {
+                if key == skip {
+                    continue;
+                }
+                for (variant_key, variant) in &glyph.stroke_variants {
+                    if oldest.is_none_or(|(seen, ..)| variant.last_used < seen) {
+                        oldest = Some((variant.last_used, key, variant_key, variant.bytes()));
+                    }
+                }
+            }
+            let Some((_, key, variant_key, bytes)) = oldest else {
                 break;
             };
+            let (key, variant_key) = (key.clone(), variant_key.clone());
             if let Some(glyph) = self.map.get_mut(&key) {
                 glyph.stroke_variants.remove(&variant_key);
             }

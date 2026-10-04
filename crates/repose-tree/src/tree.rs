@@ -1247,7 +1247,11 @@ impl ViewTree {
             self.release_view_id(node_id, old_view_id);
         }
 
-        if let Some(existing) = self.view_id_members.get(&view_id).and_then(|m| m.first()).copied()
+        if let Some(existing) = self
+            .view_id_members
+            .get(&view_id)
+            .and_then(|m| m.first())
+            .copied()
             && existing != node_id
         {
             log::error!(
@@ -1624,7 +1628,7 @@ mod tests {
         assert_ne!(first.stable_id(), second.stable_id());
 
         let root = box_view().with_children(vec![
-            text_view("hi").modifier(Modifier::new().text_selection(first.clone()))
+            text_view("hi").modifier(Modifier::new().text_selection(first.clone())),
         ]);
         let node = tree.update(&root);
         let node = tree.children(node).unwrap()[0];
@@ -1637,10 +1641,9 @@ mod tests {
         tree.update(&root);
         assert!(tree.get(node).unwrap().has_valid_layout());
 
-        let replaced =
-            box_view().with_children(vec![text_view("hi").modifier(
-                Modifier::new().text_selection(second.clone()),
-            )]);
+        let replaced = box_view().with_children(vec![
+            text_view("hi").modifier(Modifier::new().text_selection(second.clone())),
+        ]);
         tree.update(&replaced);
 
         let stored = &tree.get(node).unwrap().modifier.text_selection;
@@ -1670,7 +1673,6 @@ mod tests {
         assert_eq!(tree.get_by_view_id(7).map(|node| node.id), None);
         assert_eq!(tree.get_by_view_id(9).map(|node| node.id), Some(child));
     }
-
 
     #[test]
     fn test_keyed_children_stable() {
@@ -1891,12 +1893,7 @@ mod tests {
         })]);
 
         for width in [100.0f32, 200.0, 300.0, 400.0, 500.0, 500.0, 500.0, 500.0] {
-            tree.set_subcompose_scope(SubcomposeScope::new(
-                Dp(0.0),
-                Dp(width),
-                Dp(0.0),
-                Dp(width),
-            ));
+            tree.set_subcompose_scope(SubcomposeScope::new(Dp(0.0), Dp(width), Dp(0.0), Dp(width)));
             tree.update(&root);
         }
 
@@ -1934,12 +1931,7 @@ mod tests {
             w: 120.0,
             h: 40.0,
         };
-        tree.set_layout(
-            sub_id,
-            narrow,
-            narrow,
-            crate::LayoutConstraints::default(),
-        );
+        tree.set_layout(sub_id, narrow, narrow, crate::LayoutConstraints::default());
         tree.update(&root);
 
         assert_eq!(captured.lock().unwrap().max_width, Dp(1000.0));

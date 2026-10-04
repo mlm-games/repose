@@ -433,6 +433,14 @@ impl DepthComposite {
     /// and depth to 1.0). The caller issues its depth-tested draws inside
     /// the returned pass, then ends it; [`blit`](Self::blit) composites in
     /// `paint`. Returns `false` when `id` has no target (call [`ensure`](Self::ensure) first).
+    ///
+    /// The depth and stencil attachments are discarded when the pass ends:
+    /// [`blit`](Self::blit) only samples the color target, so nothing in
+    /// this crate reads them afterwards. A caller that needs the depth
+    /// buffer afterwards must keep its own copy.
+    ///
+    /// `clear` uses straight (un-premultiplied) alpha, which the blit
+    /// premultiplies before compositing.
     pub fn begin_scene<'a>(
         &'a self,
         id: &str,

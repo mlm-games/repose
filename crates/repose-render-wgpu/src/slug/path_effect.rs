@@ -186,6 +186,25 @@ fn dash_intervals_valid(intervals: &[f32]) -> bool {
         && intervals.iter().all(|len| len.is_finite() && *len > 0.0)
 }
 
+/// Validate the requested dash intervals and floor each one at `tolerance`.
+///
+/// A dash shorter than the flattening tolerance is sub-pixel geometry that
+/// the tessellator cannot represent, so raising it to the tolerance costs no
+/// visible detail — and it bounds the dash walk to
+/// `segment_length / tolerance` steps. Returning `None` means "do not dash".
+fn dash_intervals_for(intervals: &[f32], tolerance: f32) -> Option<Vec<f32>> {
+    if !dash_intervals_valid(intervals) {
+        return None;
+    }
+    let floor = tolerance.max(f32::MIN_POSITIVE);
+    let floored: Vec<f32> = intervals.iter().map(|len| len.max(floor)).collect();
+    let total: f32 = floored.iter().sum();
+    if !total.is_finite() || total <= 0.0 {
+        return None;
+    }
+    Some(floored)
+}
+
 /// Dash state carried across segments and sub-paths (the pattern continues
 /// across contours, as SVG requires).
 struct DashState {
@@ -197,6 +216,12 @@ struct DashState {
 /// Walk one segment, emitting dash fragments. Shared by `Line` events and
 /// the implicit closing edge of a closed contour, so no edge is left
 /// undashed.
+///
+/// `intervals` must already be floored by [`dash_intervals_for`], which is
+/// what bounds this loop: every step advances by at least the floor, so the
+/// walk is `segment_length / floor` steps at worst. Without that a
+/// sub-tolerance interval needs `length / interval` steps, which is ~10^10
+/// for a 1e-9 em dash on a glyph outline.
 fn dash_segment(
     from: Point,
     to: Point,
@@ -216,6 +241,11 @@ fn dash_segment(
     while remaining > 0.0 {
         let interval = intervals[state.interval_idx];
         let take = (interval - state.dist).min(remaining);
+        // Backstop for float drift: a step that no longer moves the cursor
+        // cannot make progress.
+        if take <= remaining * f32::EPSILON {
+            break;
+        }
         let next = Point::new(cur.x + dir.x * take, cur.y + dir.y * take);
         if state.emitting {
             if !*in_subpath {
@@ -239,13 +269,14 @@ fn dash_segment(
 }
 
 fn apply_dash_effect(path: &Path, intervals: &[f32], phase: f32, tolerance: f32) -> Path {
-    if !dash_intervals_valid(intervals) || !phase.is_finite() {
+    if !phase.is_finite() {
         return path.clone();
     }
+    let Some(intervals) = dash_intervals_for(intervals, tolerance) else {
+        return path.clone();
+    };
+    let intervals = intervals.as_slice();
     let dash_len: f32 = intervals.iter().sum();
-    if dash_len <= 0.0 || dash_len.is_nan() {
-        return path.clone();
-    }
 
     let events: Vec<PathEvent> = path.iter().flattened(tolerance).collect();
 
@@ -395,7 +426,10 @@ mod tests {
             }
         }
         assert_eq!(closed, 0, "dash fragments must stay open");
-        assert!(fragments >= 9, "40 units at 1-on/1-off is ~20 fragments");
+        assert!(
+            fragments >= 19,
+            "40 units at 1-on/1-off is ~20 fragments, got {fragments}"
+        );
         assert!(
             longest <= 1.0 + 1e-3,
             "on-length must respect the interval, got {longest}"
@@ -429,6 +463,50 @@ mod tests {
         };
         assert_eq!(first_fragment_end(0.0), Point::new(1.0, 0.0));
         assert_eq!(first_fragment_end(0.5), Point::new(0.5, 0.0));
+    }
+
+    /// A dash interval far below the flatten tolerance used to need
+    /// `segment_length / interval` walk steps — around 10^10 for a 1e-9 em
+    /// dash on a glyph outline — which pinned the render thread and grew the
+    /// path buffer until the process died.
+    #[test]
+    fn sub_ulp_dash_intervals_terminate() {
+        for intervals in [
+            vec![1e-9, 1e-9],
+            vec![f32::MIN_POSITIVE, f32::MIN_POSITIVE],
+            vec![1e-30, 1e-30],
+        ] {
+            let result = apply_path_effect(
+                &square(),
+                &PathEffect::Dash {
+                    intervals: intervals.clone(),
+                    phase: 0.0,
+                },
+                0.25,
+            );
+            let count = result.iter().flattened(0.25).count();
+            assert!(
+                count < 10_000,
+                "intervals {intervals:?} produced {count} events"
+            );
+        }
+    }
+
+    /// An interval sum that overflows to infinity would drop the phase.
+    #[test]
+    fn overflowing_dash_length_returns_the_path_unchanged() {
+        let result = apply_path_effect(
+            &square(),
+            &PathEffect::Dash {
+                intervals: vec![3e38, 3e38],
+                phase: 1.0,
+            },
+            0.25,
+        );
+        assert_eq!(
+            result.iter().flattened(0.25).count(),
+            square().iter().flattened(0.25).count()
+        );
     }
 
     /// Invalid dash input must be rejected in release, not asserted away.

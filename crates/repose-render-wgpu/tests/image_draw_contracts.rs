@@ -239,19 +239,19 @@ fn encoded_image_decode_is_bounded() {
             .is_err()
     );
 
-    // Same payload, but the header claims 4096x4096: 64 MiB of RGBA. The
-    // budget check must reject it from the header, before any pixel buffer
-    // is allocated.
+    // Same payload, but the header claims 8192x8192: 256 MiB of RGBA. The
+    // budget check must reject it from the header alone, before any pixel
+    // buffer is allocated.
     let mut huge = small_png.to_vec();
-    huge[16..20].copy_from_slice(&4096u32.to_be_bytes());
-    huge[20..24].copy_from_slice(&4096u32.to_be_bytes());
+    huge[16..20].copy_from_slice(&8192u32.to_be_bytes());
+    huge[20..24].copy_from_slice(&8192u32.to_be_bytes());
     let crc = zlib_crc32(&huge[12..29]);
     huge[29..33].copy_from_slice(&crc.to_be_bytes());
     assert!(
         off.renderer_mut()
             .set_image_from_bytes(handle + 2, &huge, true)
             .is_err(),
-        "4096x4096 must be refused"
+        "8192x8192 must be refused"
     );
 }
 

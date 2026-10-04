@@ -393,15 +393,7 @@ pub fn run_android_app_with_options(
             let Some(backend) = &mut self.backend else {
                 return;
             };
-            let report = repose_render_wgpu::apply_render_commands(backend, self.render.drain());
-            for failure in &report.failures {
-                log::warn!(
-                    "repose-render: {}({}) failed: {}",
-                    failure.kind,
-                    failure.handle,
-                    failure.error
-                );
-            }
+            repose_render_wgpu::apply_render_commands(backend, self.render.drain()).log_failures();
         }
 
         fn current_ime_allowed(&self) -> bool {
