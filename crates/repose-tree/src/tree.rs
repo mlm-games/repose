@@ -34,6 +34,10 @@ pub struct ViewTree {
     /// Map from user-facing ViewId to internal NodeId.
     view_id_map: FxHashMap<ViewId, NodeId>,
 
+    /// Every live node claiming each `ViewId`, in claim order. The first
+    /// entry is the lookup owner.
+    view_id_members: FxHashMap<ViewId, SmallVec<[NodeId; 2]>>,
+
     duplicate_view_ids: FxHashSet<ViewId>,
 
     /// Statistics from the last reconcile operation.
@@ -463,6 +467,7 @@ impl ViewTree {
             paint_dirty_propagated: FxHashSet::default(),
             generation: 0,
             view_id_map: FxHashMap::default(),
+            view_id_members: FxHashMap::default(),
             duplicate_view_ids: FxHashSet::default(),
             stats: TreeStats::default(),
             removed_ids: Vec::new(),
@@ -1158,63 +1163,54 @@ impl ViewTree {
         id
     }
 
-    fn repair_view_id(&mut self, view_id: ViewId) {
-        let previous = self.view_id_map.get(&view_id).copied();
-        let mut owner = None;
-        let mut count = 0usize;
-        for (node_id, node) in self.nodes.iter() {
-            if node.generation != 0 && node.view_id == view_id {
-                count += 1;
-                if owner.is_none() {
-                    owner = Some(node_id);
+    /// Recompute the lookup owner and duplicate flag for one id from its
+    /// member list. The first member owns the id; anything longer is a
+    /// duplicate the user has to fix with unique `View.id`s.
+    fn sync_view_id_owner(&mut self, view_id: ViewId) {
+        let Some(members) = self.view_id_members.get(&view_id) else {
+            self.view_id_map.remove(&view_id);
+            self.duplicate_view_ids.remove(&view_id);
+            return;
+        };
+        match members.split_first() {
+            Some((owner, rest)) => {
+                self.view_id_map.insert(view_id, *owner);
+                if rest.is_empty() {
+                    self.duplicate_view_ids.remove(&view_id);
+                } else {
+                    self.duplicate_view_ids.insert(view_id);
                 }
             }
-        }
-        let owner = previous
-            .filter(|node_id| {
-                self.nodes
-                    .get(*node_id)
-                    .is_some_and(|node| node.generation != 0 && node.view_id == view_id)
-            })
-            .or(owner);
-        if let Some(owner) = owner {
-            self.view_id_map.insert(view_id, owner);
-        } else {
-            self.view_id_map.remove(&view_id);
-        }
-        if count > 1 {
-            self.duplicate_view_ids.insert(view_id);
-        } else {
-            self.duplicate_view_ids.remove(&view_id);
+            None => {
+                self.view_id_members.remove(&view_id);
+                self.view_id_map.remove(&view_id);
+                self.duplicate_view_ids.remove(&view_id);
+            }
         }
     }
 
-    fn rebuild_view_id_map(&mut self) {
-        let previous = std::mem::take(&mut self.view_id_map);
-        self.duplicate_view_ids.clear();
-        let mut counts: FxHashMap<ViewId, (NodeId, usize)> = FxHashMap::default();
-        for (node_id, node) in self.nodes.iter() {
-            if node.generation == 0 {
-                continue;
-            }
-            let entry = counts.entry(node.view_id).or_insert((node_id, 0));
-            entry.1 += 1;
+    fn claim_view_id(&mut self, node_id: NodeId, view_id: ViewId) {
+        let members = self.view_id_members.entry(view_id).or_default();
+        if !members.contains(&node_id) {
+            members.push(node_id);
         }
-        for (view_id, (first_node, count)) in counts {
-            let owner = previous
-                .get(&view_id)
-                .copied()
-                .filter(|node_id| {
-                    self.nodes
-                        .get(*node_id)
-                        .is_some_and(|node| node.generation != 0 && node.view_id == view_id)
-                })
-                .unwrap_or(first_node);
-            self.view_id_map.insert(view_id, owner);
-            if count > 1 {
-                self.duplicate_view_ids.insert(view_id);
+        self.sync_view_id_owner(view_id);
+    }
+
+    fn release_view_id(&mut self, node_id: NodeId, view_id: ViewId) {
+        let empty = match self.view_id_members.get_mut(&view_id) {
+            Some(members) => {
+                if let Some(index) = members.iter().position(|member| *member == node_id) {
+                    members.remove(index);
+                }
+                members.is_empty()
             }
+            None => return,
+        };
+        if empty {
+            self.view_id_members.remove(&view_id);
         }
+        self.sync_view_id_owner(view_id);
     }
 
     fn assign_view_id(
@@ -1231,31 +1227,29 @@ impl ViewTree {
             requested_view_id
         };
 
-        let old_owner =
-            old_view_id != 0 && self.view_id_map.get(&old_view_id).copied() == Some(node_id);
-        if old_owner {
-            self.view_id_map.remove(&old_view_id);
+        if old_view_id == view_id && self.view_id_map.get(&view_id).copied() == Some(node_id) {
+            return;
         }
 
-        if let Some(existing) = self.view_id_map.get(&view_id).copied()
+        if old_view_id != 0 && old_view_id != view_id {
+            self.release_view_id(node_id, old_view_id);
+        }
+
+        if let Some(existing) = self.view_id_members.get(&view_id).and_then(|m| m.first()).copied()
             && existing != node_id
         {
-            self.duplicate_view_ids.insert(view_id);
             log::error!(
                 "{}: duplicate View.id {}; keeping the first node {:?}",
                 phase,
                 view_id,
                 existing
             );
-        } else {
-            self.view_id_map.insert(view_id, node_id);
         }
+
+        self.claim_view_id(node_id, view_id);
 
         if let Some(node) = self.nodes.get_mut(node_id) {
             node.view_id = view_id;
-        }
-        if old_owner {
-            self.repair_view_id(old_view_id);
         }
     }
 
@@ -1297,10 +1291,7 @@ impl ViewTree {
             return;
         };
         self.pending_removals.push(node_id);
-        if self.view_id_map.get(&view_id).copied() == Some(node_id) {
-            self.view_id_map.remove(&view_id);
-            self.repair_view_id(view_id);
-        }
+        self.release_view_id(node_id, view_id);
         self.dirty.remove(&node_id);
         self.dirty_propagated.remove(&node_id);
         self.paint_dirty.remove(&node_id);
@@ -1323,7 +1314,6 @@ impl ViewTree {
             self.removed_ids.push(node_id);
         }
         self.removal_seen.clear();
-        self.rebuild_view_id_map();
     }
 
     /// Set cached layout for a node.
@@ -1613,6 +1603,26 @@ mod tests {
         let second_id = tree.children(tree.root().unwrap()).unwrap()[0];
         assert_eq!(tree.get_by_view_id(42).map(|node| node.id), Some(second_id));
     }
+
+    #[test]
+    fn explicit_id_change_releases_the_old_id() {
+        let mut tree = ViewTree::new();
+        let mut view = text_view("first").modifier(Modifier::new().key(1));
+        view.id = 7;
+        let root = box_view().with_children(vec![view.clone()]);
+        let child = tree.update(&root);
+        let child = tree.children(child).unwrap()[0];
+        assert_eq!(tree.get_by_view_id(7).map(|node| node.id), Some(child));
+
+        let mut renamed = view;
+        renamed.id = 9;
+        tree.update(&box_view().with_children(vec![renamed]));
+        let child = tree.children(tree.root().unwrap()).unwrap()[0];
+
+        assert_eq!(tree.get_by_view_id(7).map(|node| node.id), None);
+        assert_eq!(tree.get_by_view_id(9).map(|node| node.id), Some(child));
+    }
+
 
     #[test]
     fn test_keyed_children_stable() {
