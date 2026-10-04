@@ -241,8 +241,8 @@ mod tests {
         );
         assert_eq!(calls.load(Ordering::SeqCst), 1);
 
-        // Frame 2 with same key=1: layout cache now available from frame 1,
-        // so the visible scope narrows from window-sized to child-sized.
+        // Frame 2 with same key=1: the scope is derived from the window and the
+        // ancestors' measured sizes, so it is unchanged and the cache hits.
         let _ = engine.layout_frame(
             &root_v1,
             (400, 400),
@@ -250,9 +250,9 @@ mod tests {
             &Interactions::default(),
             None,
         );
-        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
 
-        // Frame 3: scope stable (same layout cache), cache hits.
+        // Frame 3: still stable.
         let _ = engine.layout_frame(
             &root_v1,
             (400, 400),
@@ -260,7 +260,7 @@ mod tests {
             &Interactions::default(),
             None,
         );
-        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
 
         // Now switch to key=2 (a different subcompose node) and verify the
         // new closure runs.
@@ -271,7 +271,7 @@ mod tests {
             &Interactions::default(),
             None,
         );
-        assert_eq!(calls.load(Ordering::SeqCst), 3);
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
     }
 
     #[test]
@@ -317,7 +317,7 @@ mod tests {
         );
         assert_eq!(calls.load(Ordering::SeqCst), 1);
 
-        // Frame 2: layout cache narrows scope, cache miss.
+        // Frame 2: scope unchanged (window + ancestor sizes), cache hit.
         let _ = engine.layout_frame(
             &root_v1,
             (400, 400),
@@ -325,9 +325,9 @@ mod tests {
             &Interactions::default(),
             None,
         );
-        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
 
-        // Frame 3: scope stable, cache hits.
+        // Frame 3: still stable.
         let _ = engine.layout_frame(
             &root_v1,
             (400, 400),
@@ -335,7 +335,7 @@ mod tests {
             &Interactions::default(),
             None,
         );
-        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
 
         // New key: closure runs.
         let _ = engine.layout_frame(
@@ -345,6 +345,6 @@ mod tests {
             &Interactions::default(),
             None,
         );
-        assert_eq!(calls.load(Ordering::SeqCst), 3);
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
     }
 }

@@ -55,9 +55,6 @@ pub struct ViewTree {
     /// changes or the node's content changes. Each cached slot view has its
     /// `Modifier::key` overwritten with its slot id.
     subcompose_cache: FxHashMap<NodeId, (SubcomposeScope, Arc<Vec<View>>)>,
-    /// Per-frame re-invocation counts for oscillation damping
-    /// (node -> (generation, count)).
-    subcompose_runs: FxHashMap<NodeId, (u64, u8, SubcomposeScope)>,
 
     scope_invalidation_seen: FxHashSet<NodeId>,
 }
@@ -473,7 +470,6 @@ impl ViewTree {
             removal_seen: FxHashSet::default(),
             subcompose_scope: SubcomposeScope::UNBOUNDED,
             subcompose_cache: FxHashMap::default(),
-            subcompose_runs: FxHashMap::default(),
             scope_invalidation_seen: FxHashSet::default(),
         }
     }
@@ -502,10 +498,16 @@ impl ViewTree {
     /// The caller is responsible for ensuring the cache is invalidated (e.g.
     /// on content change) via [`ViewTree::invalidate_subcompose_cache`].
     ///
+    /// The closure must run whenever the scope differs from the scope the
+    /// cached views were built for: the scope is derived from the previous
+    /// frame's layout, so holding a stale result would keep feeding the tree a
+    /// scope that no longer exists.
+    ///
     /// The scope is computed by walking the node's ancestor chain and
     /// intersecting the root scope with each ancestor's `Modifier` width /
-    /// height / min / max fields. The SubcomposeLayout's own modifier is
-    /// included as the last intersection.
+    /// height / min / max fields, plus the SubcomposeLayout's own modifier.
+    /// Ancestors additionally narrow the scope by their own cached
+    /// Taffy-computed size from the previous frame's layout pass.
     fn run_subcompose(
         &mut self,
         node_id: NodeId,
@@ -518,45 +520,10 @@ impl ViewTree {
             raw_scope.min_height,
             raw_scope.max_height,
         );
-        let cached = self
-            .subcompose_cache
-            .get(&node_id)
-            .map(|(cached_scope, cached_slots)| (*cached_scope, Arc::clone(cached_slots)));
-        if let Some((cached_scope, cached_slots)) = cached {
-            let previous_scope = self
-                .subcompose_runs
-                .get(&node_id)
-                .map(|(_, _, previous_scope)| *previous_scope);
-            let scope_changed =
-                previous_scope.is_some_and(|previous_scope| previous_scope != scope);
-            if cached_scope == scope && !scope_changed {
-                self.subcompose_runs.remove(&node_id);
-                return cached_slots;
-            }
-            let cur_gen = self.generation;
-            let streak = match self.subcompose_runs.get(&node_id) {
-                Some((last_gen, count, _)) if *last_gen == cur_gen => count.saturating_add(1),
-                Some((last_gen, count, _)) if last_gen.wrapping_add(1) == cur_gen => {
-                    count.saturating_add(1)
-                }
-                _ => 1,
-            };
-            self.subcompose_runs
-                .insert(node_id, (cur_gen, streak, scope));
-            if streak >= 4 {
-                if streak == 4 {
-                    log::warn!(
-                        "SubcomposeLayout {:?} oscillating; holding cached result",
-                        node_id
-                    );
-                }
-                return cached_slots;
-            }
-            if cached_scope == scope {
-                return cached_slots;
-            }
-        } else {
-            self.subcompose_runs.remove(&node_id);
+        if let Some((cached_scope, cached_slots)) = self.subcompose_cache.get(&node_id)
+            && *cached_scope == scope
+        {
+            return Arc::clone(cached_slots);
         }
         let slots = content(&scope);
         let scope_key = format!("subcompose_{:?}", node_id);
@@ -578,10 +545,13 @@ impl ViewTree {
     /// Compute the `SubcomposeScope` visible to a `SubcomposeLayout` at
     /// `node_id`. Starts with the user-set root scope and intersects each
     /// ancestor's `Modifier` width / height / min / max / padding fields in
-    /// root-to-leaf order. Then narrows using the SubcomposeLayout's own
-    /// cached Taffy-computed size (from the previous frame's layout pass)
-    /// if available, so `fill_max_width` / `fill_max_height` and other
+    /// root-to-leaf order. Each ancestor also narrows the scope by its cached
+    /// Taffy-computed size from the previous frame's layout pass, so
     /// parent-dependent sizes are reflected in the scope after the first frame.
+    ///
+    /// The SubcomposeLayout's own measured size is deliberately excluded: a
+    /// node's size is an outcome of its content, so feeding it back would let
+    /// subcomposed content ratchet its own scope inward every frame.
     fn compute_scope_for_node(&self, node_id: NodeId) -> SubcomposeScope {
         let mut scope = self.subcompose_scope;
         let mut chain: SmallVec<[NodeId; 16]> = SmallVec::new();
@@ -594,9 +564,12 @@ impl ViewTree {
             }
         }
         chain.reverse();
-        for ancestor_id in chain {
+        for &ancestor_id in &chain {
             if let Some(node) = self.nodes.get(ancestor_id) {
                 scope = intersect_scope_with_modifier(scope, &node.modifier);
+                if ancestor_id == node_id {
+                    continue;
+                }
                 if let Some(cache) = &node.layout_cache {
                     let w = cache.rect.w;
                     if w >= 0.0 && w.is_finite() {
@@ -618,7 +591,6 @@ impl ViewTree {
     pub fn invalidate_subcompose_cache(&mut self, node_id: NodeId) {
         let removed = self.subcompose_cache.remove(&node_id);
         drop(removed);
-        self.subcompose_runs.remove(&node_id);
     }
 
     /// Get the current generation.
@@ -1336,7 +1308,6 @@ impl ViewTree {
         self.scope_invalidation_seen.remove(&node_id);
         let removed_cache = self.subcompose_cache.remove(&node_id);
         drop(removed_cache);
-        self.subcompose_runs.remove(&node_id);
         for child_id in children {
             self.mark_for_removal(child_id);
         }
@@ -1852,6 +1823,68 @@ mod tests {
         tree.set_subcompose_scope(SubcomposeScope::new(Dp(0.0), Dp(200.0), Dp(0.0), Dp(200.0)));
         tree.update(&root);
         assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn test_subcompose_settles_on_final_scope() {
+        let mut tree = ViewTree::new();
+        let root = box_view().with_children(vec![subcompose_view(|scope| {
+            text_view("content").modifier(Modifier::new().width(scope.max_width))
+        })]);
+
+        for width in [100.0f32, 200.0, 300.0, 400.0, 500.0, 500.0, 500.0, 500.0] {
+            tree.set_subcompose_scope(SubcomposeScope::new(
+                Dp(0.0),
+                Dp(width),
+                Dp(0.0),
+                Dp(width),
+            ));
+            tree.update(&root);
+        }
+
+        let sub_id = tree.children(tree.root().unwrap()).unwrap()[0];
+        let child_id = tree.children(sub_id).unwrap()[0];
+        assert_eq!(
+            tree.get(child_id).unwrap().modifier.width,
+            Some(Dp(500.0)),
+            "closure must end up holding the scope that settled"
+        );
+    }
+
+    #[test]
+    fn test_subcompose_scope_ignores_own_measured_size() {
+        let mut tree = ViewTree::new();
+        let captured = Arc::new(std::sync::Mutex::new(SubcomposeScope::UNBOUNDED));
+        let captured2 = captured.clone();
+        let root = box_view().with_children(vec![subcompose_view(move |scope| {
+            *captured2.lock().unwrap() = *scope;
+            text_view("hi")
+        })]);
+
+        tree.set_subcompose_scope(SubcomposeScope::new(
+            Dp(0.0),
+            Dp(1000.0),
+            Dp(0.0),
+            Dp(1000.0),
+        ));
+        let root_id = tree.update(&root);
+        let sub_id = tree.children(root_id).unwrap()[0];
+
+        let narrow = Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 120.0,
+            h: 40.0,
+        };
+        tree.set_layout(
+            sub_id,
+            narrow,
+            narrow,
+            crate::LayoutConstraints::default(),
+        );
+        tree.update(&root);
+
+        assert_eq!(captured.lock().unwrap().max_width, Dp(1000.0));
     }
 
     #[test]
