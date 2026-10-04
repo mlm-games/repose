@@ -561,15 +561,12 @@ impl MutableInteractionSource {
                     changed
                 }
                 Interaction::HoverLeave => {
+                    // Presses end on Release/Cancel only. Compose's hoverExit
+                    // never cancels a press; cancelling here killed the
+                    // ripple as soon as a held pointer drifted off bounds.
                     let changed = s.hovered;
                     s.hovered = false;
-                    // Leaving while pressed cancels all presses (Compose-like).
-                    if !s.active_presses.is_empty() {
-                        s.active_presses.clear();
-                        true
-                    } else {
-                        changed
-                    }
+                    changed
                 }
                 Interaction::Focus => {
                     let changed = !s.focused;

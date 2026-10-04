@@ -947,7 +947,12 @@ impl ReposeRuntime {
     }
 
     /// Touch move with a stable finger id (same pairing as
-    /// [`Self::handle_touch_press`]; hover fallback stays mouse).
+    /// [`Self::handle_touch_press`]).
+    ///
+    /// Touch never hovers: Compose feeds `collectIsHovered` from pointer
+    /// *hover* events only, so finger motion must not raise hover state
+    /// layers or the ripple's hover circle. `pointer_inside` and
+    /// `hover_id` stay mouse-owned (driven by `CursorMoved`/`CursorEnter`).
     pub fn handle_touch_move(&mut self, touch: Option<u64>, pos: Vec2) -> PointerMoveResult {
         let _event_scope = crate::lifecycle::enter_dispatchers(self.event_dispatchers());
         let _dnd_guard = self.dnd_context.enter();
@@ -955,8 +960,9 @@ impl ReposeRuntime {
         if let Some(tid) = touch {
             self.touch_positions.insert(tid, pos);
         }
-        self.pointer_inside = true;
-        if touch.is_none() {
+        let from_mouse = touch.is_none();
+        if from_mouse {
+            self.pointer_inside = true;
             self.sched.pointer_pos_px = Some((pos.x, pos.y));
         }
 
@@ -1046,28 +1052,30 @@ impl ReposeRuntime {
 
         let top = repose_ui::hit_test_enabled_frame(f, pos);
 
-        self.cursor = top
-            .and_then(|h| h.cursor.clone())
-            .or(Some(CursorIcon::Default));
-        if dnd_move_consumed && dnd::is_dragging() {
-            self.cursor = Some(CursorIcon::Grabbing);
-        }
+        if from_mouse {
+            self.cursor = top
+                .and_then(|h| h.cursor.clone())
+                .or(Some(CursorIcon::Default));
+            if dnd_move_consumed && dnd::is_dragging() {
+                self.cursor = Some(CursorIcon::Grabbing);
+            }
 
-        let new_hover = top.map(|h| h.id);
+            let new_hover = top.map(|h| h.id);
 
-        let old_chain = hover_chain_for(Some(f), self.hover_id);
-        let new_chain = hover_chain_for(Some(f), new_hover);
-        if new_chain != old_chain {
-            dispatch_hover_change_bubbled(
-                Some(f),
-                &self.hover_leave,
-                &mut self.hover_id,
-                &mut self.hover_ancestors,
-                new_hover,
-                pos,
-                self.modifiers,
-            );
-            request_frame();
+            let old_chain = hover_chain_for(Some(f), self.hover_id);
+            let new_chain = hover_chain_for(Some(f), new_hover);
+            if new_chain != old_chain {
+                dispatch_hover_change_bubbled(
+                    Some(f),
+                    &self.hover_leave,
+                    &mut self.hover_id,
+                    &mut self.hover_ancestors,
+                    new_hover,
+                    pos,
+                    self.modifiers,
+                );
+                request_frame();
+            }
         }
 
         if let Some(tid) = touch {

@@ -1217,14 +1217,14 @@ impl LayoutEngine {
                     }
                 }));
 
+                // Hover leave drops hover only. A press held while the pointer
+                // slides off the element stays alive until Release/Cancel, so
+                // the ripple runs its full fade-out; out-of-bounds release is
+                // already handled by the runtime's release-time bounds check.
                 let orig_leave = hit.on_pointer_leave.take();
                 let s_leave = msrc.clone();
-                let lpid_leave = last_press_id.clone();
                 hit.on_pointer_leave = Some(Rc::new(move |ev| {
                     s_leave.emit(Interaction::HoverLeave);
-                    if let Some(pid) = lpid_leave.take() {
-                        s_leave.emit(Interaction::Cancel(pid));
-                    }
                     if let Some(ref f) = orig_leave {
                         f(ev);
                     }
@@ -2257,6 +2257,23 @@ impl LayoutEngine {
         // Handle modifier-based scroll containers.
         // This runs before the match on kind, so modifier scroll takes priority.
         if let Some(scroll) = &modifier.scroll {
+            // The scrollport is the padding box, not the border box: overflow
+            // clips at the padding edge (CSS Overflow 3).
+            let border_px = modifier
+                .border
+                .as_ref()
+                .map(|b| b.width.to_px().0.max(0.0))
+                .unwrap_or(0.0);
+            let scrollport = if border_px > 0.0 {
+                repose_core::Rect {
+                    x: content_rect.x + border_px,
+                    y: content_rect.y + border_px,
+                    w: (content_rect.w - border_px * 2.0).max(0.0),
+                    h: (content_rect.h - border_px * 2.0).max(0.0),
+                }
+            } else {
+                content_rect
+            };
             match scroll {
                 ScrollBinding::Vertical(b) => {
                     if let Some(set_parent) = &b.set_nested_scroll_parent
@@ -2276,7 +2293,7 @@ impl LayoutEngine {
                         register_hit(&mut scroll_hit, &node_hit_context, None);
                         hits.push(scroll_hit);
                     }
-                    let vp = content_rect;
+                    let vp = scrollport;
                     if let Some(s) = &b.set_viewport_main {
                         s(vp.h.max(0.0));
                     }
@@ -2386,7 +2403,7 @@ impl LayoutEngine {
                         register_hit(&mut scroll_hit, &node_hit_context, None);
                         hits.push(scroll_hit);
                     }
-                    let vp = content_rect;
+                    let vp = scrollport;
                     if let Some(s) = &b.set_viewport_main {
                         s(vp.w.max(0.0));
                     }
@@ -2494,7 +2511,7 @@ impl LayoutEngine {
                         register_hit(&mut scroll_hit, &node_hit_context, None);
                         hits.push(scroll_hit);
                     }
-                    let vp = content_rect;
+                    let vp = scrollport;
                     if let Some(s) = &b.set_viewport_width {
                         s(vp.w.max(0.0));
                     }
