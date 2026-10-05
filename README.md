@@ -30,10 +30,6 @@ Repose targets straightforward applications first and can grow into larger ones 
 - **Animation** - Runtime animation clock and helpers
 - **Lifecycle and composition** - Scoped effects, timers, reactive state, and host lifecycle listeners
 
-### Non-Goals
-
-- Full feature parity with mature toolkits; Repose prioritizes a small, maintainable toolkit that covers common application needs well
-
 ## Quick Start
 
 ### Prerequisites
