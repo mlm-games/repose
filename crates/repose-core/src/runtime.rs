@@ -623,7 +623,7 @@ pub(crate) fn release_keyed_owner(key: &str, owner: &str) -> (bool, Option<Box<d
 ///
 /// The second condition is the fix. A scope that re-runs but stops reading a
 /// key now drops it, so a slot abandoned inside a permanently mounted scope —
-/// an overlay guard held by a component the host stopped composing — releases
+/// an overlay guard held by a component the host stopped composing, releases
 /// its entry instead of pinning it for the life of the app.
 pub(crate) fn take_dead_keyed_slots(composer: &mut Composer) -> Vec<(String, Box<dyn Any>)> {
     fn owners_of<'a>(composer: &'a Composer, key: &str) -> Vec<&'a String> {
@@ -1497,7 +1497,7 @@ impl Drop for SchedulerScopeGuard<'_> {
 /// Panic-safe scope guard that does NOT hold a borrow across the body.
 ///
 /// The `scope!` macro uses this (not [`SchedulerScopeGuard`]) so the guarded
-/// body — including nested `scope!` invocations — can keep using the
+/// body, including nested `scope!` invocations, can keep using the
 /// `Scheduler` normally. At drop time (normal or unwind) no other borrows of
 /// the scheduler are live, since the body has ended.
 pub struct SchedulerScopeGuardRaw {

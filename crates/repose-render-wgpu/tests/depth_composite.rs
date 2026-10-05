@@ -64,7 +64,7 @@ impl WgpuCallback for Probe {
             mapped_at_creation: false,
         });
         // Identity view-projection: NDC in, NDC out. Far quad at z=0.9,
-        // near quad at z=0.1 — depth must resolve to near regardless of
+        // near quad at z=0.1, depth must resolve to near regardless of
         // push order.
         let ident: [[f32; 4]; 4] = [
             [1.0, 0.0, 0.0, 0.0],

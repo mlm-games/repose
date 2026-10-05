@@ -282,7 +282,7 @@ impl DepthComposite {
     /// format/sample/size change, like every other viewport-owned target).
     /// Dimensions clamp to >= 1. Errors name the reason the target could
     /// not be allocated; the other viewports are left untouched.
-    #[allow(clippy::too_many_arguments)] // (device, screen, id, w, h) — mirrors ensure_resources conventions
+    #[allow(clippy::too_many_arguments)] // (device, screen, id, w, h), mirrors ensure_resources conventions
     pub fn ensure(
         &mut self,
         device: &wgpu::Device,
@@ -328,7 +328,7 @@ impl DepthComposite {
             );
         }
         // `id`'s own bytes are replaced, not added, so the budget only ever
-        // evicts siblings — and never leaves `id` without a target.
+        // evicts siblings, and never leaves `id` without a target.
         let replaced = self.targets.get(id).map_or(0, |old| old.bytes);
         while self
             .bytes_total

@@ -641,7 +641,7 @@ impl DrawScope {
     /// Push a 2D transform for subsequent draws (rotation, mirroring,
     /// extra translation). Composes with the canvas offset and any outer
     /// scene-graph transforms; the GPU backend rotates in-shader
-    /// (`fwd_mat`), so rotated rects stay crisp — no AABB fallback needed.
+    /// (`fwd_mat`), so rotated rects stay crisp, no AABB fallback needed.
     /// Balance with [`pop_transform`](Self::pop_transform).
     pub fn push_transform(&mut self, transform: Transform) {
         self.commands.push(DrawCommand::PushTransform { transform });

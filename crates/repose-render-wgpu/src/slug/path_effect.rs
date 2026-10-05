@@ -190,7 +190,7 @@ fn dash_intervals_valid(intervals: &[f32]) -> bool {
 ///
 /// A dash shorter than the flattening tolerance is sub-pixel geometry that
 /// the tessellator cannot represent, so raising it to the tolerance costs no
-/// visible detail — and it bounds the dash walk to
+/// visible detail, and it bounds the dash walk to
 /// `segment_length / tolerance` steps. Returning `None` means "do not dash".
 fn dash_intervals_for(intervals: &[f32], tolerance: f32) -> Option<Vec<f32>> {
     if !dash_intervals_valid(intervals) {
@@ -466,8 +466,8 @@ mod tests {
     }
 
     /// A dash interval far below the flatten tolerance used to need
-    /// `segment_length / interval` walk steps — around 10^10 for a 1e-9 em
-    /// dash on a glyph outline — which pinned the render thread and grew the
+    /// `segment_length / interval` walk steps, around 10^10 for a 1e-9 em
+    /// dash on a glyph outline, which pinned the render thread and grew the
     /// path buffer until the process died.
     #[test]
     fn sub_ulp_dash_intervals_terminate() {

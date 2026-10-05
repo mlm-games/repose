@@ -138,7 +138,7 @@ impl OffscreenRenderer {
 
     /// Shared-device: reuse Device/Queue, no Adapter. Dimensions clamp to
     /// ≥ 1; `msaa` must be a wgpu-supported sample count (no adapter-based
-    /// picking without one — prefer
+    /// picking without one, prefer
     /// [`from_device_with_adapter`](Self::from_device_with_adapter)
     /// when an adapter is handy).
     pub fn from_device(

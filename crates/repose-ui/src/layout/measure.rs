@@ -37,7 +37,7 @@ impl LayoutEngine {
     ) {
         // Fresh per layout pass (not per recompute: taffy may serve
         // unchanged leaves from cache without re-measuring, in which case
-        // their prior entries are still valid — same text, same width).
+        // their prior entries are still valid, same text, same width).
         // attach_text_baselines only inserts, so entries for removed or
         // kind-changed nodes must not survive across passes.
         baseline_map.clear();

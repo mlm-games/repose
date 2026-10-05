@@ -485,7 +485,7 @@ fn runtime_owner_disposer(key: String, cleanup: Dispose, owner: String) -> Dispo
 
 /// `slot` separates the map and handler registries. They used to share one key,
 /// so installing the handler displaced the map's disposer and ran its cleanup on
-/// the spot — from inside the caller's `runtime_installs` borrow, so the cleanup
+/// the spot, from inside the caller's `runtime_installs` borrow, so the cleanup
 /// re-borrowed a `RefCell` that was already mutably borrowed. The resulting
 /// panic was swallowed by `run_keyed_disposer`, leaving a stale map entry and no
 /// handler. Distinct keys make registration non-destructive.
