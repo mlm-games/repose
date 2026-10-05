@@ -2415,6 +2415,7 @@ impl ReposeRuntime {
         let editable = is_tf_editable(frame, id);
         let metrics = repose_ui::textfield::textfield_metrics(hit);
         let shift = self.modifiers.shift;
+        let word = self.modifiers.command;
         let mut edited = state.borrow().clone();
         let (display, display_caret, mapping) = Self::display_text_for_state(&edited);
         let mut changed = false;
@@ -2436,12 +2437,12 @@ impl ReposeRuntime {
                 true
             }
             Key::ArrowLeft => {
-                edited.move_cursor(-1, shift);
+                edited.move_cursor(-1, shift, word);
                 edited.preferred_x_px = None;
                 true
             }
             Key::ArrowRight => {
-                edited.move_cursor(1, shift);
+                edited.move_cursor(1, shift, word);
                 edited.preferred_x_px = None;
                 true
             }

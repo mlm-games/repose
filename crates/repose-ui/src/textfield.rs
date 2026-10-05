@@ -1124,12 +1124,11 @@ pub(crate) fn next_grapheme_boundary(text: &str, byte: usize) -> usize {
 /// Selects alphanumeric+underscore runs. Falls back to the grapheme cluster.
 pub(crate) fn word_range(text: &str, byte: usize) -> (usize, usize) {
     let byte = byte.min(text.len());
-    let is_word = |g: &str| g.chars().all(|c| c.is_alphanumeric() || c == '_');
 
     let mut start = byte;
     while start > 0 {
         let p = prev_grapheme_boundary(text, start);
-        if is_word(&text[p..start]) {
+        if is_word_grapheme(&text[p..start]) {
             start = p;
         } else {
             break;
@@ -1138,7 +1137,7 @@ pub(crate) fn word_range(text: &str, byte: usize) -> (usize, usize) {
     let mut end = byte;
     while end < text.len() {
         let n = next_grapheme_boundary(text, end);
-        if is_word(&text[end..n]) {
+        if is_word_grapheme(&text[end..n]) {
             end = n;
         } else {
             break;
@@ -1155,6 +1154,60 @@ pub(crate) fn word_range(text: &str, byte: usize) -> (usize, usize) {
     } else {
         (start, end)
     }
+}
+
+fn is_word_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
+
+fn is_word_grapheme(grapheme: &str) -> bool {
+    !grapheme.is_empty() && grapheme.chars().all(is_word_char)
+}
+
+fn step_over(pos: &mut usize, text: &str, want_word: bool) {
+    while *pos < text.len() {
+        let next = next_grapheme_boundary(text, *pos);
+        if is_word_grapheme(&text[*pos..next]) != want_word {
+            return;
+        }
+        *pos = next;
+    }
+}
+
+fn step_back(pos: &mut usize, text: &str, want_word: bool) {
+    while *pos > 0 {
+        let prev = prev_grapheme_boundary(text, *pos);
+        if is_word_grapheme(&text[prev..*pos]) != want_word {
+            return;
+        }
+        *pos = prev;
+    }
+}
+
+/// Where the caret lands for Ctrl+ArrowLeft: the start of the word it is in, or
+/// the start of the word before the one it just finished.
+pub fn prev_word_boundary(text: &str, byte: usize) -> usize {
+    let origin = byte.min(text.len());
+    let mut pos = origin;
+    step_back(&mut pos, text, true);
+    if pos == origin {
+        step_back(&mut pos, text, false);
+        step_back(&mut pos, text, true);
+    }
+    pos
+}
+
+/// Where the caret lands for Ctrl+ArrowRight: the end of the word it is in, or
+/// the end of the word after the one it just finished.
+pub fn next_word_boundary(text: &str, byte: usize) -> usize {
+    let origin = byte.min(text.len());
+    let mut pos = origin;
+    step_over(&mut pos, text, true);
+    if pos == origin {
+        step_over(&mut pos, text, false);
+        step_over(&mut pos, text, true);
+    }
+    pos
 }
 
 pub struct TextFieldState {
@@ -1477,17 +1530,29 @@ impl TextFieldState {
         self.reset_caret_blink();
     }
 
-    pub fn move_cursor(&mut self, delta: isize, extend_selection: bool) {
-        let mut pos = self.selection.end.min(self.text.len());
-        if delta < 0 {
-            for _ in 0..delta.unsigned_abs() {
-                pos = prev_grapheme_boundary(&self.text, pos);
+    /// Move the caret `delta` graphemes, or by word when `by_word` is set, which
+    /// is what the platform's Ctrl+Arrow does (Cmd+Arrow on macOS). With
+    /// `extend_selection` the caret moves and the anchor stays, so
+    /// Ctrl+Shift+Arrow selects a word at a time.
+    pub fn move_cursor(&mut self, delta: isize, extend_selection: bool, by_word: bool) {
+        let origin = self.selection.end.min(self.text.len());
+        let pos = if !by_word {
+            let mut pos = origin;
+            if delta < 0 {
+                for _ in 0..delta.unsigned_abs() {
+                    pos = prev_grapheme_boundary(&self.text, pos);
+                }
+            } else if delta > 0 {
+                for _ in 0..(delta as usize) {
+                    pos = next_grapheme_boundary(&self.text, pos);
+                }
             }
-        } else if delta > 0 {
-            for _ in 0..(delta as usize) {
-                pos = next_grapheme_boundary(&self.text, pos);
-            }
-        }
+            pos
+        } else if delta < 0 {
+            prev_word_boundary(&self.text, origin)
+        } else {
+            next_word_boundary(&self.text, origin)
+        };
         if extend_selection {
             self.selection.end = pos;
         } else {
