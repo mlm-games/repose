@@ -286,6 +286,11 @@ pub fn run_desktop_app_with_config(
         backend_lifecycle: crate::runner_common::BackendLifecycle,
         backend_retry_at: Option<Instant>,
         rt: ReposeRuntime,
+        /// Ratio from host device pixels to layout pixels, from
+        /// `sync_viewport`. 1.0 unless device texture limits clamped the
+        /// framebuffer below the window, but it must be applied to every
+        /// incoming position or hit testing drifts off the drawn output.
+        input_fit: f32,
         inspector: Option<repose_devtools::Inspector>,
         msaa_samples: u32,
         present_mode: PresentModePref,
@@ -379,6 +384,7 @@ pub fn run_desktop_app_with_config(
                 backend_lifecycle: crate::runner_common::BackendLifecycle::new(),
                 backend_retry_at: None,
                 rt: ReposeRuntime::new(),
+                input_fit: 1.0,
                 inspector: if config.enable_inspector {
                     Some(repose_devtools::Inspector::new())
                 } else {
@@ -743,7 +749,7 @@ pub fn run_desktop_app_with_config(
 
                         let size = w.inner_size();
                         let sf = w.scale_factor() as f32;
-                        self.rt.set_viewport_and_scale(size.width, size.height, sf);
+                        self.input_fit = rc::sync_viewport(&mut self.rt, &mut None, size, sf);
 
                         match repose_render_wgpu::WgpuBackend::new_with_options(
                             w.clone(),
@@ -889,7 +895,7 @@ pub fn run_desktop_app_with_config(
                         .as_ref()
                         .map(|w| w.scale_factor() as f32)
                         .unwrap_or(1.0);
-                    rc::sync_viewport(&mut self.rt, &mut self.backend, size, sf);
+                    self.input_fit = rc::sync_viewport(&mut self.rt, &mut self.backend, size, sf);
                     if let Some(w) = &self.window {
                         let sf = w.scale_factor() as f32;
                         let dp_w = size.width as f32 / sf;
@@ -912,7 +918,12 @@ pub fn run_desktop_app_with_config(
                         .as_ref()
                         .map(|w| w.inner_size())
                         .unwrap_or_else(|| PhysicalSize::new(0, 0));
-                    rc::sync_viewport(&mut self.rt, &mut self.backend, size, scale_factor as f32);
+                    self.input_fit = rc::sync_viewport(
+                        &mut self.rt,
+                        &mut self.backend,
+                        size,
+                        scale_factor as f32,
+                    );
                     self.request_redraw();
                 }
 
@@ -920,12 +931,14 @@ pub fn run_desktop_app_with_config(
                     self.rt.pointer_inside = true;
 
                     if self.external_file_drag {
-                        self.pending_drop_pos_px = Some((position.x as f32, position.y as f32));
+                        let k = self.input_fit;
+                        self.pending_drop_pos_px =
+                            Some((position.x as f32 * k, position.y as f32 * k));
                     }
 
                     let pos = Vec2 {
-                        x: position.x as f32,
-                        y: position.y as f32,
+                        x: position.x as f32 * self.input_fit,
+                        y: position.y as f32 * self.input_fit,
                     };
 
                     // Delegate pointer-move to the host runtime
@@ -965,11 +978,16 @@ pub fn run_desktop_app_with_config(
                 }
 
                 WindowEvent::MouseWheel { delta, .. } => {
-                    let scale = self
-                        .window
-                        .as_ref()
-                        .map(|w| w.scale_factor() as f32)
-                        .unwrap_or(1.0);
+                    let scale = self.rt.scale;
+                    let k = self.input_fit;
+                    let delta = match delta {
+                        winit::event::MouseScrollDelta::PixelDelta(p) => {
+                            winit::event::MouseScrollDelta::PixelDelta(
+                                winit::dpi::PhysicalPosition::new(p.x * k as f64, p.y * k as f64),
+                            )
+                        }
+                        other => other,
+                    };
                     if crate::runner_common::on_mouse_wheel(&mut self.rt, delta, scale) {
                         self.request_redraw();
                     }
@@ -1086,12 +1104,11 @@ pub fn run_desktop_app_with_config(
                     }
                 }
 
-                WindowEvent::Touch(t) => {
-                    let scale = self
-                        .window
-                        .as_ref()
-                        .map(|w| w.scale_factor() as f32)
-                        .unwrap_or(1.0);
+                WindowEvent::Touch(mut t) => {
+                    let scale = self.rt.scale;
+                    let k = self.input_fit as f64;
+                    t.location.x *= k;
+                    t.location.y *= k;
                     let r = crate::runner_common::handle_touch_raw(
                         &mut self.rt,
                         &mut self.touch_gestures,
@@ -1281,8 +1298,7 @@ pub fn run_desktop_app_with_config(
                     repose_core::animation_driver::tick();
 
                     let t0 = Instant::now();
-                    let scale = win.scale_factor() as f32;
-                    self.rt.scale = scale;
+                    let scale = self.rt.scale;
 
                     let output = self.rt.frame(&mut self.root, &self.render);
 
@@ -1519,12 +1535,14 @@ pub fn run_desktop_app_with_config(
                     self.msaa_samples,
                     self.present_mode,
                 ) {
-                    Ok(mut b) => {
+                    Ok(b) => {
                         let size = w.inner_size();
                         let scale = w.scale_factor() as f32;
-                        b.set_pixels_per_point(scale);
-                        self.rt
-                            .set_viewport_and_scale(size.width, size.height, scale);
+                        let mut backend = Some(b);
+                        self.input_fit = rc::sync_viewport(&mut self.rt, &mut backend, size, scale);
+                        let Some(b) = backend.take() else {
+                            unreachable!()
+                        };
                         repose_render_wgpu::offscreen::set_shared_device(
                             b.device.clone(),
                             b.queue.clone(),

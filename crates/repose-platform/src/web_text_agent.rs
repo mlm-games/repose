@@ -279,21 +279,27 @@ impl TextAgent {
         if caret != self.caret {
             self.caret = caret;
             if let Some((x, y, w, h)) = caret {
-                // Caret geometry arrives in layout pixels while the editor is
-                // positioned in CSS pixels, and the canvas' device-pixel box is
-                // not necessarily `devicePixelRatio` wide (see
+                // The editor is positioned in CSS pixels and the caret
+                // arrives in them already: `ime_cursor_area` divides the
+                // layout rect by `rt.scale`, which on the web is device pixels
+                // per CSS pixel. Only the clamp needs the canvas box, because
+                // the device-pixel box is not `devicePixelRatio` wide (see
                 // `App::input_scale`).
                 let rect = canvas.get_bounding_client_rect();
-                let scale = if rect.width() > 0.0 && canvas.width() > 0 {
-                    canvas.width() as f64 / rect.width()
+                let (cw, ch) = (rect.width(), rect.height());
+                let x = if cw > 0.0 {
+                    (x + w * 0.5).clamp(0.0, cw)
                 } else {
-                    1.0
+                    x + w * 0.5
+                };
+                let y = if ch > 0.0 {
+                    (y + h * 0.5).clamp(0.0, ch)
+                } else {
+                    y + h * 0.5
                 };
                 let style = self.editor.style();
-                let left = canvas.offset_left() as f64
-                    + ((x + w * 0.5) as f64 / scale).clamp(0.0, rect.width());
-                let top = canvas.offset_top() as f64
-                    + ((y + h * 0.5) as f64 / scale).clamp(0.0, rect.height());
+                let left = canvas.offset_left() as f64 + x;
+                let top = canvas.offset_top() as f64 + y;
                 let _ = style.set_property("left", &format!("{left}px"));
                 let _ = style.set_property("top", &format!("{top}px"));
             }

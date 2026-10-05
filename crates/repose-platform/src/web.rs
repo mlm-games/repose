@@ -286,7 +286,7 @@ struct App {
     deeplink_window: Rc<RefCell<Option<Arc<Window>>>>,
     /// `(window size, backend present)` the viewport was last synced from, so
     /// the CSS box behind `density` is only measured when one of them changed.
-    viewport_key: Option<(u32, u32, bool)>,
+    viewport_key: Option<(u32, u32, bool, u32)>,
 }
 
 impl App {
@@ -676,13 +676,13 @@ Settings &rsaquo; General &rsaquo; Configuration Editor, then set
 
     fn sync_size_from_window(&mut self, window: &Window) {
         let size = window.inner_size();
+        let scale = self.density(window);
         let mut backend = self.backend.borrow_mut();
-        let key = (size.width, size.height, backend.is_some());
+        let key = (size.width, size.height, backend.is_some(), scale.to_bits());
         if self.viewport_key == Some(key) {
             return;
         }
         self.viewport_key = Some(key);
-        let scale = self.density(window);
         rc::sync_viewport(&mut self.rt, &mut *backend, size, scale);
     }
 
@@ -936,6 +936,12 @@ Settings &rsaquo; General &rsaquo; Configuration Editor, then set
             Ok(()) => {
                 let scale = self.density(&window);
                 let mut backend_ref = self.backend.borrow_mut();
+                self.viewport_key = Some((
+                    size.width,
+                    size.height,
+                    backend_ref.is_some(),
+                    scale.to_bits(),
+                ));
                 rc::sync_viewport(&mut self.rt, &mut backend_ref, size, scale);
                 true
             }
@@ -1032,6 +1038,7 @@ Settings &rsaquo; General &rsaquo; Configuration Editor, then set
         self.backend_lifecycle.borrow_mut().begin();
         self.backend_retry_at.set(None);
         *self.backend.borrow_mut() = None;
+        self.viewport_key = None;
         repose_core::request_frame();
         window.request_redraw();
         let backend_cell = self.backend.clone();
@@ -1682,6 +1689,7 @@ impl ApplicationHandler<()> for App {
                     log::error!("GPU device lost, rebuilding backend: {reason}");
                     let window = self.window.clone();
                     *self.backend.borrow_mut() = None;
+                    self.viewport_key = None;
                     self.rt.frame_cache = None;
                     if let Some(window) = window {
                         self.start_backend(window);

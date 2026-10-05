@@ -85,6 +85,11 @@ pub fn run_android_app_with_options(
         window: Option<Arc<Window>>,
         backend: Option<repose_render_wgpu::WgpuBackend>,
         rt: ReposeRuntime,
+        /// Ratio from host device pixels to layout pixels, from
+        /// `sync_viewport`. 1.0 unless device texture limits clamped the
+        /// framebuffer below the window, but it must be applied to every
+        /// incoming position or hit testing drifts off the drawn output.
+        input_fit: f32,
 
         // Shared touch-scroll / pinch / swipe gesture state
         touch_gestures: rc::TouchGestureState,
@@ -123,6 +128,7 @@ pub fn run_android_app_with_options(
                 window: None,
                 backend: None,
                 rt: ReposeRuntime::new(),
+                input_fit: 1.0,
 
                 touch_gestures: rc::TouchGestureState::default(),
 
@@ -384,7 +390,7 @@ pub fn run_android_app_with_options(
         }
 
         fn sync_window_size(&mut self, size: PhysicalSize<u32>, scale: f32) {
-            rc::sync_viewport(&mut self.rt, &mut self.backend, size, scale);
+            self.input_fit = rc::sync_viewport(&mut self.rt, &mut self.backend, size, scale);
             // Recompute IME inset estimate when window size changes
             self.update_ime_inset();
         }
@@ -594,7 +600,10 @@ pub fn run_android_app_with_options(
 
                 // Touch handling (Android primary). Scroll / pinch / swipe
                 // recognition lives in common.rs, shared with web + desktop.
-                WindowEvent::Touch(t) => {
+                WindowEvent::Touch(mut t) => {
+                    let k = self.input_fit as f64;
+                    t.location.x *= k;
+                    t.location.y *= k;
                     if t.phase == winit::event::TouchPhase::Started {
                         let pos_px = (t.location.x as f32, t.location.y as f32);
                         self.touch_gestures.contact_down(t.id, pos_px);

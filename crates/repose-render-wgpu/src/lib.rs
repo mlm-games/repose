@@ -3719,7 +3719,12 @@ impl WgpuSurfaceBackend {
             msaa_samples,
         )?
         .with_surface_format(format)?;
-        renderer.resize(size.width, size.height);
+        let (fw, fh) = clamp_output_size(
+            size.width,
+            size.height,
+            renderer.device.limits().max_texture_dimension_2d,
+        );
+        renderer.resize(fw, fh);
 
         let view_formats = view_format.into_iter().collect::<Vec<_>>();
 
@@ -3742,8 +3747,8 @@ impl WgpuSurfaceBackend {
         let config = wgpu::SurfaceConfiguration {
             usage: surface_usage,
             format,
-            width: size.width.max(1),
-            height: size.height.max(1),
+            width: fw.max(1),
+            height: fh.max(1),
             present_mode,
             alpha_mode,
             color_space: wgpu::SurfaceColorSpace::Auto,

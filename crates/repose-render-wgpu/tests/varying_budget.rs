@@ -9,8 +9,9 @@
 //!
 //! The packing model below is deliberately conservative: it never lets flat and
 //! smoothly interpolated varyings share a vec4 register, and requires each
-//! varying to fit wholly within one register. Real GLSL ES packs purely in
-//! declaration order, so this can only over-count.
+//! varying to fit wholly within one register. Real GLSL ES packs in declaration
+//! order, so locations must be declared ascending and are counted in that same
+//! order.
 use std::path::Path;
 
 /// Lowest `MAX_VARYING_VECTORS` observed on WebGL2 mobile GPUs, and
@@ -42,47 +43,61 @@ fn components_of(module: &naga::Module, ty: naga::Handle<naga::Type>) -> usize {
     }
 }
 
+/// Every entry point of `stage`. Matched on the stage rather than the name
+/// because fragment entries are not all called `fs_main`.
 fn entry_points<'a>(
     module: &'a naga::Module,
     stage: naga::ShaderStage,
-) -> Option<&'a naga::EntryPoint> {
-    module.entry_points.iter().find(|e| {
-        e.name
-            == match stage {
-                naga::ShaderStage::Vertex => "vs_main",
-                _ => "fs_main",
-            }
-    })
+) -> Vec<&'a naga::EntryPoint> {
+    module
+        .entry_points
+        .iter()
+        .filter(|entry| entry.stage == stage)
+        .collect()
 }
 
-/// `(components, is_flat)` for each `@location` input, ordered by location.
-fn location_inputs(module: &naga::Module, stage: naga::ShaderStage) -> Vec<(u32, usize, bool)> {
-    let Some(entry) = entry_points(module, stage) else {
-        return Vec::new();
-    };
-    let Some(arg) = entry.function.arguments.iter().next() else {
-        return Vec::new();
-    };
-    let naga::TypeInner::Struct { members, .. } = &module.types[arg.ty].inner else {
-        return Vec::new();
-    };
-
-    let mut inputs: Vec<(u32, usize, bool)> = members
-        .iter()
-        .filter_map(|member| {
-            let Some(naga::Binding::Location {
+/// `(location, components, flat)` for each `@location` input of one entry
+/// point, in declaration order.
+///
+/// A vertex entry point takes its inputs as individual `@location` arguments
+/// while a fragment one passes the whole `VSOut`, whose bindings sit on the
+/// members. Both shapes are read so a shader cannot quietly fall out of the
+/// budget by switching between them.
+fn location_inputs(module: &naga::Module, entry: &naga::EntryPoint) -> Vec<(u32, usize, bool)> {
+    let mut inputs = Vec::new();
+    for arg in &entry.function.arguments {
+        match arg.binding {
+            Some(naga::Binding::Location {
                 location,
                 interpolation,
                 ..
-            }) = member.binding
-            else {
-                return None;
-            };
-            let flat = matches!(interpolation, Some(naga::Interpolation::Flat));
-            Some((location, components_of(module, member.ty), flat))
-        })
-        .collect();
-    inputs.sort_by_key(|(location, _, _)| *location);
+            }) => inputs.push((
+                location,
+                components_of(module, arg.ty),
+                matches!(interpolation, Some(naga::Interpolation::Flat)),
+            )),
+            _ => {
+                let naga::TypeInner::Struct { members, .. } = &module.types[arg.ty].inner else {
+                    continue;
+                };
+                for member in members {
+                    let Some(naga::Binding::Location {
+                        location,
+                        interpolation,
+                        ..
+                    }) = member.binding
+                    else {
+                        continue;
+                    };
+                    inputs.push((
+                        location,
+                        components_of(module, member.ty),
+                        matches!(interpolation, Some(naga::Interpolation::Flat)),
+                    ));
+                }
+            }
+        }
+    }
     inputs
 }
 
@@ -114,33 +129,47 @@ fn shaders_fit_the_webgl2_varying_budget() {
         let module = naga::front::wgsl::parse_str(&source)
             .unwrap_or_else(|e| panic!("{name}.wgsl: parse failed: {e}"));
 
-        let varyings: Vec<(usize, bool)> = location_inputs(&module, naga::ShaderStage::Fragment)
-            .into_iter()
-            .map(|(_, components, flat)| (components, flat))
-            .collect();
-        let registers = vectors_in_order(&varyings);
-        if registers > VARYING_BUDGET {
-            failures.push(format!(
-                "{name}.wgsl: {registers} varying registers (budget {VARYING_BUDGET})"
-            ));
+        for entry in entry_points(&module, naga::ShaderStage::Fragment) {
+            let inputs = location_inputs(&module, entry);
+            if inputs.windows(2).any(|w| w[0].0 >= w[1].0) {
+                failures.push(format!(
+                    "{name}.wgsl entry `{}`: locations must be declared ascending, got {:?}",
+                    entry.name,
+                    inputs.iter().map(|(l, ..)| *l).collect::<Vec<_>>()
+                ));
+            }
+            let varyings: Vec<(usize, bool)> =
+                inputs.iter().map(|&(_, c, flat)| (c, flat)).collect();
+            let registers = vectors_in_order(&varyings);
+            if registers > VARYING_BUDGET {
+                failures.push(format!(
+                    "{name}.wgsl entry `{}`: {registers} varying registers \
+                     (budget {VARYING_BUDGET})",
+                    entry.name
+                ));
+            }
         }
 
-        let vertex = location_inputs(&module, naga::ShaderStage::Vertex);
-        if vertex.len() > VERTEX_ATTR_BUDGET {
-            failures.push(format!(
-                "{name}.wgsl: {} vertex attributes (budget {VERTEX_ATTR_BUDGET})",
-                vertex.len()
-            ));
-        }
-        if vertex
-            .iter()
-            .enumerate()
-            .any(|(i, (location, ..))| *location as usize != i)
-        {
-            failures.push(format!(
-                "{name}.wgsl: vertex locations must be 0..n-1, got {:?}",
-                vertex.iter().map(|(l, ..)| *l).collect::<Vec<_>>()
-            ));
+        for entry in entry_points(&module, naga::ShaderStage::Vertex) {
+            let inputs = location_inputs(&module, entry);
+            if inputs.len() > VERTEX_ATTR_BUDGET {
+                failures.push(format!(
+                    "{name}.wgsl entry `{}`: {} vertex attributes (budget {VERTEX_ATTR_BUDGET})",
+                    entry.name,
+                    inputs.len()
+                ));
+            }
+            if inputs
+                .iter()
+                .enumerate()
+                .any(|(i, (location, ..))| *location as usize != i)
+            {
+                failures.push(format!(
+                    "{name}.wgsl entry `{}`: vertex locations must be 0..n-1, got {:?}",
+                    entry.name,
+                    inputs.iter().map(|(l, ..)| *l).collect::<Vec<_>>()
+                ));
+            }
         }
     }
 

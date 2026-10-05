@@ -211,12 +211,16 @@ pub fn setup_clipboard() -> Option<clipawl::Clipboard> {
 /// framebuffer actually got, or the scene is projected against one shape while
 /// input is resolved against another. The density is rescaled by the same
 /// factor so the logical (density-independent) viewport is unchanged.
+///
+/// Returns that factor. Input coordinates arrive in the host's device pixels,
+/// which are `size` and not the clamped viewport, so every runner must scale
+/// incoming positions by it. exactly 1.0 unless the clamp actually engaged.
 pub fn sync_viewport(
     rt: &mut repose_app::ReposeRuntime,
     backend: &mut Option<repose_render_wgpu::WgpuBackend>,
     size: winit::dpi::PhysicalSize<u32>,
     scale: f32,
-) {
+) -> f32 {
     let (width, height) = match backend.as_mut() {
         Some(b) => b.configure_surface(size.width, size.height),
         None => (size.width, size.height),
@@ -230,6 +234,7 @@ pub fn sync_viewport(
     if let Some(b) = backend.as_mut() {
         b.set_pixels_per_point(scale * fitted);
     }
+    fitted
 }
 
 /// Shared helper used by native platform runners to sync IME state for focused textfields.
