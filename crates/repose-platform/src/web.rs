@@ -3,7 +3,7 @@
 //! winit's web backend does not provide an editor or an IME input connection;
 //! its `set_ime_allowed` and `set_ime_cursor_area` methods are no-ops, and it
 //! never emits `WindowEvent::Ime`. Soft-keyboard editing therefore runs through
-//! [`crate::web_text_agent`], a hidden `<input>` that owns DOM focus while an
+//! [`crate::web_text_agent`], a hidden `<textarea>` that owns DOM focus while an
 //! editable text field is focused and forwards its composition, input and key
 //! events to the runtime. Canvas attributes alone do not provide that bridge
 //! and are not treated as text-editor support here.
@@ -1169,12 +1169,20 @@ Settings &rsaquo; General &rsaquo; Configuration Editor, then set
             .focused
             .filter(|_| self.rt.sched.window_focused && platform.ime_allowed);
         let action = self.rt.focused_ime_action();
+        let field = focused.and_then(|id| {
+            let key = self.rt.tf_key_of(id);
+            self.rt
+                .textfield_states
+                .get(&key)
+                .map(|state| state.borrow())
+        });
         let Some(agent) = self.text_agent.as_mut() else {
             return;
         };
         agent.sync(
             &canvas,
             focused,
+            field.as_deref(),
             platform.ime_cursor_area,
             platform.ime_purpose,
             platform.ime_auto_correct,
@@ -1198,7 +1206,24 @@ Settings &rsaquo; General &rsaquo; Configuration Editor, then set
                     true
                 }
                 AgentEvent::Insert(text) => {
-                    if self.rt.insert_text_into_focused(&text) {
+                    // Text that arrived through `input` is character input, not
+                    // a shortcut's output. An AltGr chord reports its left half
+                    // as a plain Control keydown before the AltGraph modifier
+                    // exists, so the runtime can still be holding ctrl by the
+                    // time the character lands.
+                    let shift = self.rt.modifiers.shift;
+                    let command = self.rt.modifiers.command;
+                    let held = std::mem::replace(
+                        &mut self.rt.modifiers,
+                        repose_core::input::Modifiers {
+                            shift,
+                            command,
+                            ..Default::default()
+                        },
+                    );
+                    let inserted = self.rt.insert_text_into_focused(&text);
+                    self.rt.modifiers = held;
+                    if inserted {
                         true
                     } else if self
                         .rt
@@ -1214,6 +1239,9 @@ Settings &rsaquo; General &rsaquo; Configuration Editor, then set
                     } else {
                         false
                     }
+                }
+                AgentEvent::DeleteSurrounding { before, after } => {
+                    self.rt.delete_surrounding_into_focused(before, after)
                 }
                 AgentEvent::Key(key) => {
                     crate::common::update_modifiers(&mut self.rt.modifiers, &key.modifiers);

@@ -839,6 +839,25 @@ pub fn delete_forward_with_input_transformation(
     .1
 }
 
+/// Delete surrounding text by byte count, as a soft keyboard reports it. Unlike
+/// repeated [`TextFieldState::delete_backward`] this deletes a selection in one
+/// step, matching the single `deleteContentBackward` the browser fires for one.
+pub fn delete_surrounding_with_input_transformation(
+    hit: &HitRegion,
+    state: &mut TextFieldState,
+    before_bytes: usize,
+    after_bytes: usize,
+) -> bool {
+    perform_input_edit(
+        crate::hit_testing::textfield_transform_id(hit),
+        state,
+        |state| {
+            state.delete_surrounding(before_bytes, after_bytes);
+        },
+    )
+    .1
+}
+
 pub fn cut_with_input_transformation(
     hit: &HitRegion,
     state: &mut TextFieldState,
@@ -1661,28 +1680,41 @@ fn snap_inward_end(text: &str, pos: usize) -> usize {
 }
 
 impl TextFieldState {
+    /// Delete `before_bytes` before the caret and `after_bytes` after it, as a
+    /// soft keyboard reports a surrounding-text deletion. A non-empty selection
+    /// is deleted instead, as one edit however long it is.
     pub fn delete_surrounding(&mut self, before_bytes: usize, after_bytes: usize) {
-        if self.selection.start != self.selection.end {
-            let range = self.selection_range();
-            self.text.replace_range(range.start..range.end, "");
-            self.selection = range.start..range.start;
-            self.preferred_x_px = None;
-            self.reset_caret_blink();
-            return;
-        }
+        let range = if self.selection.start != self.selection.end {
+            self.selection_range()
+        } else {
+            let caret = clamp_to_char_boundary(&self.text, self.selection.end.min(self.text.len()));
+            let start =
+                snap_inward_start(&self.text, caret.saturating_sub(before_bytes)).min(caret);
+            let end =
+                snap_inward_end(&self.text, (caret + after_bytes).min(self.text.len())).max(caret);
+            if start >= end {
+                self.preferred_x_px = None;
+                self.reset_caret_blink();
+                return;
+            }
+            start..end
+        };
 
-        let caret = clamp_to_char_boundary(&self.text, self.selection.end.min(self.text.len()));
-        let start_raw = caret.saturating_sub(before_bytes);
-        let end_raw = (caret + after_bytes).min(self.text.len());
-
-        let start = snap_inward_start(&self.text, start_raw).min(caret);
-        let end = snap_inward_end(&self.text, end_raw).max(caret);
-        if start < end {
-            self.text.replace_range(start..end, "");
-            self.selection = start..start;
-        }
+        let pre_text = self.text[range.clone()].to_string();
+        let pre_selection = self.selection.clone();
+        self.text.replace_range(range.clone(), "");
+        self.selection = range.start..range.start;
         self.preferred_x_px = None;
         self.reset_caret_blink();
+        self.record_edit(TextUndoOp {
+            index: range.start,
+            pre_text,
+            post_text: String::new(),
+            pre_selection,
+            post_selection: self.selection.clone(),
+            time: Instant::now(),
+            can_merge: true,
+        });
     }
 
     pub fn begin_drag(&mut self, idx_byte: usize, extend: bool) {

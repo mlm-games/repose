@@ -34,7 +34,7 @@ web-sys = { version = "0.3", features = [
   "Element",
   "HtmlElement",
   "HtmlCanvasElement",
-  "HtmlInputElement",
+  "HtmlTextAreaElement",
   "InputEvent",
   "CompositionEvent",
   "KeyboardEvent",

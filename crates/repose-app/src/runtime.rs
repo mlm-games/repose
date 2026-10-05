@@ -2987,6 +2987,50 @@ impl ReposeRuntime {
             .unwrap_or_default()
     }
 
+    /// Delete text the soft keyboard removed around the caret, reported as byte
+    /// counts before and after the caret. Counts rather than key chords, because
+    /// deleting a selection is one operation however long the selection is.
+    pub fn delete_surrounding_into_focused(&mut self, before: usize, after: usize) -> bool {
+        if self.ime_preedit {
+            return false;
+        }
+        let Some(fid) = self.sched.focused else {
+            return false;
+        };
+        let Some(f) = self.frame_cache.clone() else {
+            return false;
+        };
+        if !(is_textfield_in_frame(&f, fid) && is_tf_editable(&f, fid)) {
+            return false;
+        }
+        let key = tf_key_of(&f, fid);
+        let Some(state_rc) = self.textfield_states.get(&key).cloned() else {
+            return false;
+        };
+        let Some(hit) = f.hit_regions.iter().find(|hit| hit.id == fid) else {
+            return false;
+        };
+        let mut edited = state_rc.borrow().clone();
+        let changed = repose_ui::textfield::delete_surrounding_with_input_transformation(
+            hit,
+            &mut edited,
+            before,
+            after,
+        );
+        if changed {
+            tf_ensure_caret_visible_for_hit(hit, &mut edited);
+        }
+        let text = changed.then(|| edited.text.clone());
+        *state_rc.borrow_mut() = edited;
+        if let Some(text) = text {
+            notify_text_change(&f, fid, text);
+        }
+        if changed {
+            request_frame();
+        }
+        changed
+    }
+
     /// Insert arbitrary text into the focused text field (composed keyboard
     /// text, clipboard paste, hardware-keyboard fallback, ...).
     /// Returns true if text was inserted.
