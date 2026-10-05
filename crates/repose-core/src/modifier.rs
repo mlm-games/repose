@@ -125,7 +125,7 @@ macro_rules! impl_option_fields {
                     painter,
                     paint_callback,
                     layout,
-                    blur, graphics_layer, shadow,
+                    blur, graphics_layer, shadow, shadow_shape,
                     on_drag_start, on_drag_end, on_drag_enter, on_drag_over, on_drag_leave, on_drop,
                     drag_preview,
                     on_action, cursor, animate_content_size, focus_requester, on_focus_changed,
@@ -792,6 +792,11 @@ pub struct Modifier {
     pub alpha: Option<f32>,
     pub graphics_layer: Option<f32>,
     pub shadow: Option<ShadowSpec>,
+    /// Corner radii the shadow silhouette is shaped to, independent of what the
+    /// layer's own alpha contains. Mirrors Compose's `Modifier.shadow(shape)`,
+    /// so a square card can still cast a rounded shadow. When `None` the
+    /// silhouette follows the layer alpha as-is.
+    pub shadow_shape: Option<[Dp; 4]>,
     pub transform: Option<Transform>,
     pub grid: Option<GridConfig>,
     pub grid_col_span: Option<u16>,
@@ -1755,6 +1760,34 @@ impl Modifier {
             offset_y: Dp(level.0 * 0.5),
             color: Color(0, 0, 0, (level.0 * 8.0).clamp(8.0, 80.0) as u8),
         });
+        self
+    }
+    /// [`Modifier::elevation`] with an explicit shadow color, mirroring Compose's
+    /// `Modifier.shadow(elevation, ambientColor, spotColor)`. Alpha 0..=255.
+    pub fn elevation_with_color(mut self, level: Dp, color: Color) -> Self {
+        if level.0 <= 0.0 {
+            self.shadow = None;
+            return self;
+        }
+        self.shadow = Some(ShadowSpec {
+            blur_radius: Dp(level.0 * 2.0),
+            offset_y: Dp(level.0 * 0.5),
+            color,
+        });
+        self
+    }
+    /// Shape the shadow to a uniform corner radius, independent of the layer's
+    /// own alpha. Mirrors Compose's `Modifier.shadow(shape = RoundedCornerShape)`,
+    /// so unclipped square content still casts a rounded shadow. Requires a
+    /// [`Modifier::shadow`] or [`Modifier::elevation`] to take effect.
+    pub fn shadow_rounded(mut self, radius: Dp) -> Self {
+        self.shadow_shape = Some([radius; 4]);
+        self
+    }
+    /// Per-corner radii for the shadow silhouette, like
+    /// [`Modifier::clip_rounded_radii`].
+    pub fn shadow_rounded_radii(mut self, radii: [Dp; 4]) -> Self {
+        self.shadow_shape = Some(radii);
         self
     }
     pub fn transform(mut self, t: Transform) -> Self {

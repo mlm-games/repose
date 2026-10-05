@@ -535,6 +535,15 @@ fn facet_hash_modifier(modifier: &Modifier, hashers: &mut FacetHashers) {
     } else {
         hashers.hash(FACET_PAINT, |h| 0u8.hash(h));
     }
+    if let Some(radius) = modifier.shadow_shape {
+        hashers.hash(FACET_PAINT, |h| {
+            for value in radius {
+                hash_dp(value, h);
+            }
+        });
+    } else {
+        hashers.hash(FACET_PAINT, |h| 0u8.hash(h));
+    }
     facet_hash_semantics(modifier.semantics.as_ref(), hashers, FACET_SEMANTICS);
     hashers.hash(FACET_PAINT, |h| {
         hash_cursor(&modifier.cursor, h);
@@ -1659,6 +1668,15 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
             hash_dp(shadow.blur_radius, hasher);
             hash_dp(shadow.offset_y, hasher);
             hash_color(&shadow.color, hasher);
+        }
+        None => 0u8.hash(hasher),
+    }
+    match m.shadow_shape {
+        Some(radius) => {
+            1u8.hash(hasher);
+            for value in radius {
+                hash_dp(value, hasher);
+            }
         }
         None => 0u8.hash(hasher),
     }

@@ -2692,6 +2692,10 @@ impl LayoutEngine {
                     blur_px: shadow.blur_radius.to_px(),
                     offset_px: (Px::ZERO, shadow.offset_y.to_px()),
                     color: shadow.color,
+                    shape_px: modifier
+                        .shadow_shape
+                        .map(|r| r.map(|v| v.to_px()))
+                        .unwrap_or([Px::ZERO; 4]),
                 });
             }
             if modifier.transform.is_some() {
@@ -2782,6 +2786,10 @@ impl LayoutEngine {
                 blur_px: shadow.blur_radius.to_px(),
                 offset_px: (Px::ZERO, shadow.offset_y.to_px()),
                 color: shadow.color,
+                shape_px: modifier
+                    .shadow_shape
+                    .map(|r| r.map(|v| v.to_px()))
+                    .unwrap_or([Px::ZERO; 4]),
             });
         }
         if modifier.transform.is_some() {

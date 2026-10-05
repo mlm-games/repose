@@ -1191,6 +1191,11 @@ impl Pipelines {
                     offset: 76,
                     format: wgpu::VertexFormat::Uint32,
                 },
+                wgpu::VertexAttribute {
+                    shader_location: 7,
+                    offset: 80,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
             ],
         };
         let blur = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -2344,7 +2349,10 @@ struct BlurInstance {
     fwd_mat: [f32; 4],
     axis: u32,
     edge_mode: u32,
-    _pad: [f32; 2],
+    /// Corner radii, in source texels, shaping the blurred silhouette. All zero
+    /// leaves it unshaped. Read only by the source-reading axis; the axis that
+    /// samples the scratch must leave this zero.
+    shape: [f32; 4],
 }
 
 /// Projective layer-composite instance: the four layer-rect corners projected
@@ -5944,6 +5952,7 @@ impl WgpuSceneRenderer {
         pad: (f32, f32),
         edge_mode: u32,
         alpha_only: bool,
+        shape: [f32; 4],
         passes: &mut Vec<Pass>,
         current_pass: &mut Pass,
         next_pass_id: &mut u64,
@@ -5980,7 +5989,7 @@ impl WgpuSceneRenderer {
             fwd_mat: [1.0, 0.0, 0.0, 1.0],
             axis: 0,
             edge_mode,
-            _pad: [0.0; 2],
+            shape,
         };
         let cmd = match self.upload_blur_instance(&inst, encoder) {
             Some(off) if alpha_only => Cmd::CompositeShadow {
@@ -10124,6 +10133,7 @@ impl WgpuSceneRenderer {
                             (pad_x, pad_y),
                             edge_mode,
                             false,
+                            [0.0; 4],
                             &mut passes,
                             &mut current_pass,
                             &mut next_pass_id,
@@ -10142,7 +10152,7 @@ impl WgpuSceneRenderer {
                                 fwd_mat: [1.0, 0.0, 0.0, 1.0],
                                 axis: 1,
                                 edge_mode,
-                                _pad: [0.0; 2],
+                                shape: [0.0; 4],
                             };
                             if let Some(off) = self.upload_blur_instance(&inst, encoder) {
                                 composite = Some(Cmd::CompositeBlur {
@@ -10192,6 +10202,7 @@ impl WgpuSceneRenderer {
                     blur_px,
                     offset_px,
                     color,
+                    shape_px,
                 } => {
                     let sigma = blur_sigma(blur_px.0);
                     let pad = blur_pad(blur_px.0);
@@ -10224,6 +10235,8 @@ impl WgpuSceneRenderer {
                         }
                         flush_batch!();
                         let shadow_color = color.to_linear();
+                        let max_r = 0.5 * layer.rect_px.2.min(layer.rect_px.3).max(0.0);
+                        let shape = shape_px.map(|r| r.0.clamp(0.0, max_r));
                         // Decal edges: a drop shadow's falloff lives outside the
                         // source's own bounds, so out-of-range taps must
                         // contribute nothing rather than clamp to the edge texel.
@@ -10234,6 +10247,7 @@ impl WgpuSceneRenderer {
                             (pad, pad),
                             1,
                             true,
+                            shape,
                             &mut passes,
                             &mut current_pass,
                             &mut next_pass_id,
@@ -10261,7 +10275,7 @@ impl WgpuSceneRenderer {
                                 fwd_mat: [1.0, 0.0, 0.0, 1.0],
                                 axis: 1,
                                 edge_mode: 1,
-                                _pad: [0.0; 2],
+                                shape: [0.0; 4],
                             };
                             if let Some(off) = self.upload_blur_instance(&inst, encoder) {
                                 current_pass.cmds.push(Cmd::CompositeShadow {

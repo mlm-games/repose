@@ -1026,6 +1026,29 @@ mod shadow_tests {
     }
 
     #[test]
+    fn test_shadow_shape_reaches_the_scene_node() {
+        let shape_of = |modifier: Modifier| {
+            let view = Column(modifier).child(Text("x"));
+            collect_nodes(&view)
+                .iter()
+                .find_map(|n| match n {
+                    SceneNode::CompositeShadow { shape_px, .. } => Some(*shape_px),
+                    _ => None,
+                })
+                .expect("CompositeShadow present")
+        };
+        let plain = Modifier::new().graphics_layer(1.0).shadow(Dp(8.0), Dp(4.0));
+        // Shaped chained before `shadow` on purpose: the shape is an
+        // independent modifier field, so ordering must not matter.
+        let shaped = Modifier::new()
+            .graphics_layer(1.0)
+            .shadow_rounded(Dp(12.0))
+            .shadow(Dp(8.0), Dp(4.0));
+        assert_eq!(shape_of(plain), [Px::ZERO; 4]);
+        assert_eq!(shape_of(shaped), [Px(12.0); 4]);
+    }
+
+    #[test]
     fn test_zstack_unkeyed_text_reuse_no_stale() {
         use crate::{Column, ZStack};
         let bigname_at = |label: &str, gx: f32, gy: f32| {

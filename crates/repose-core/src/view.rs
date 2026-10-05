@@ -477,6 +477,9 @@ pub enum SceneNode {
         blur_px: Px,
         offset_px: (Px, Px),
         color: Color,
+        /// Corner radii shaping the shadow silhouette, in px. All zero = the
+        /// silhouette follows the layer alpha unchanged.
+        shape_px: [Px; 4],
     },
     /// Arc stroke
     Arc {

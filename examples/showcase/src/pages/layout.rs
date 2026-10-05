@@ -16,8 +16,6 @@ fn shadow_card(m: Modifier, label: &'static str, fg: Option<Color>) -> View {
     .child(t)
 }
 
-
-
 pub fn screen() -> View {
     let compact = compact_layout();
 

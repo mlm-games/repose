@@ -237,6 +237,7 @@ fn graphics_layer_shadow_draws_before_the_layer_composite() {
                 blur_px: Px(8.0),
                 offset_px: (Px::ZERO, Px(4.0)),
                 color: Color::from_rgba(0, 0, 0, 255),
+                shape_px: [Px::ZERO; 4],
             },
             SceneNode::PopTransform,
         ],
@@ -308,6 +309,7 @@ fn shadow_falloff_matches_a_gaussian() {
                     blur_px: Px(blur),
                     offset_px: (Px::ZERO, Px(0.0)),
                     color: Color::from_rgba(0, 0, 0, 255),
+                    shape_px: [Px::ZERO; 4],
                 },
             ],
         };
@@ -349,6 +351,121 @@ fn shadow_falloff_matches_a_gaussian() {
                 profile[probe - 1]
             );
         }
+    }
+}
+
+/// `shape_px` is the shadow's own outline rather than a clip: a square
+/// unclipped layer carrying a rounded `shape_px` must cast the silhouette a
+/// rounded layer already casts, and drop the corner mass the square
+/// silhouette would have put there. Only the top-left corner carries a radius,
+/// so a per-corner mapping that lands anywhere else shows up as mass on a
+/// corner that has to stay square.
+#[test]
+fn shadow_shape_rounds_an_unclipped_layer() {
+    let Some(mut off) = try_offscreen(400, 400) else {
+        return;
+    };
+    let layer = Rect {
+        x: 150.0,
+        y: 150.0,
+        w: 100.0,
+        h: 100.0,
+    };
+    let zero = [0.0; 4];
+    let top_left = [16.0, 0.0, 0.0, 0.0];
+    let scene = |content: [f32; 4], shape: [f32; 4]| Scene {
+        clear_color: Color::from_rgba(0, 0, 0, 0),
+        nodes: vec![
+            SceneNode::BeginLayer {
+                rect: layer,
+                layer_id: 0,
+                alpha: 1.0,
+                blur_radius_x: Px::ZERO,
+                blur_radius_y: Px::ZERO,
+                rectangle_edge: true,
+            },
+            SceneNode::PushTransform {
+                transform: Transform::translate(-layer.x, -layer.y),
+            },
+            SceneNode::Rect {
+                rect: layer,
+                brush: Brush::Solid(Color::from_rgb(255, 255, 255)),
+                radius: content.map(Px),
+            },
+            SceneNode::PopTransform,
+            SceneNode::EndLayer { layer_id: 0 },
+            SceneNode::CompositeShadow {
+                layer_id: 0,
+                blur_px: Px(8.0),
+                offset_px: (Px::ZERO, Px::ZERO),
+                color: Color::from_rgba(0, 0, 0, 255),
+                shape_px: shape.map(Px),
+            },
+        ],
+    };
+    // Just outside each top corner, where a square silhouette still has mass
+    // and an already-rounded one has fallen away.
+    let top_left_probes = [
+        (149usize, 149usize),
+        (147, 147),
+        (145, 145),
+        (143, 143),
+        (141, 141),
+    ];
+    let top_right_probes = [
+        (251usize, 149usize),
+        (253, 147),
+        (255, 145),
+        (257, 143),
+        (259, 141),
+    ];
+    let probes: Vec<_> = top_left_probes
+        .into_iter()
+        .chain(top_right_probes)
+        .collect();
+    let sample = |off: &mut OffscreenRenderer, s: &Scene| {
+        let px = off.render_rgba(s, None).expect("render");
+        probes
+            .iter()
+            .map(|&(x, y)| alpha_at(&px, 400, x, y))
+            .collect::<Vec<_>>()
+    };
+
+    let square = sample(&mut off, &scene(zero, zero));
+    let shaped = sample(&mut off, &scene(zero, top_left));
+    let rounded = sample(&mut off, &scene(top_left, zero));
+
+    for (i, &probe) in probes.iter().enumerate().take(top_left_probes.len()) {
+        assert!(
+            (shaped[i] - rounded[i]).abs() <= 0.04,
+            "probe {probe:?}: shaped {} vs rounded layer {}",
+            shaped[i],
+            rounded[i]
+        );
+        assert!(
+            shaped[i] <= square[i] + 1.0 / 255.0,
+            "probe {probe:?}: shape added mass {} over square {}",
+            shaped[i],
+            square[i]
+        );
+    }
+    for i in 0..2 {
+        assert!(
+            shaped[i] < square[i] * 0.5,
+            "probe {:?}: shape left {}, square {} still drew a corner",
+            probes[i],
+            shaped[i],
+            square[i]
+        );
+    }
+    for i in top_left_probes.len()..probes.len() {
+        assert!(
+            (shaped[i] - square[i]).abs() <= 1.0 / 255.0,
+            "probe {:?}: an unshaped corner moved {} to {}",
+            probes[i],
+            square[i],
+            shaped[i]
+        );
     }
 }
 
@@ -475,6 +592,7 @@ fn blur_and_shadow_on_one_layer_keep_their_content() {
         blur_px: Px(8.0),
         offset_px: (Px::ZERO, Px(4.0)),
         color: Color::from_rgba(0, 0, 255, 255),
+        shape_px: [Px::ZERO; 4],
     });
     let px = off.render_rgba(&bg(both), None).expect("render");
     let centre = &px[(100 * 200 + 100) * 4..(100 * 200 + 100) * 4 + 4];
