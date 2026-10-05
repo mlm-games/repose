@@ -201,6 +201,8 @@ pub struct WgpuSceneRenderer {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
     pub output_format: wgpu::TextureFormat,
+    /// Texture format of the surface the multisampled attachment resolves into.
+    surface_format: wgpu::TextureFormat,
     pub output_width: u32,
     pub output_height: u32,
     /// Pixels per point (DPI scale) for `ScreenDescriptor` / `PaintCallbackInfo`.
@@ -2819,6 +2821,28 @@ impl WgpuSceneRenderer {
         )
     }
 
+    /// Point the renderer at a surface whose texture format differs from
+    /// [`Self::output_format`], as a canvas configured with `viewFormats` does.
+    /// Call this before the first frame.
+    pub fn with_surface_format(
+        mut self,
+        surface_format: wgpu::TextureFormat,
+    ) -> anyhow::Result<Self> {
+        if surface_format != self.output_format
+            && surface_format.add_srgb_suffix() != self.output_format
+        {
+            anyhow::bail!(
+                "surface format {surface_format:?} cannot be reinterpreted as {:?}",
+                self.output_format
+            );
+        }
+        if self.surface_format != surface_format {
+            self.surface_format = surface_format;
+            self.recreate_msaa_and_depth_stencil();
+        }
+        Ok(self)
+    }
+
     pub fn from_device_with_working_space_msaa(
         device: wgpu::Device,
         queue: wgpu::Queue,
@@ -3393,6 +3417,7 @@ impl WgpuSceneRenderer {
             device,
             queue,
             output_format,
+            surface_format: output_format,
             output_width: 0,
             output_height: 0,
             pixels_per_point: 1.0,
@@ -3650,16 +3675,17 @@ impl WgpuSurfaceBackend {
             queue,
             render_format,
             msaa_samples,
-        )?;
+        )?
+        .with_surface_format(format)?;
         renderer.resize(size.width, size.height);
 
         let view_formats = view_format.into_iter().collect::<Vec<_>>();
 
-        let surface_usage = if cfg!(target_arch = "wasm32") {
-            wgpu::TextureUsages::RENDER_ATTACHMENT
-        } else {
-            wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC
-        };
+        // `COPY_SRC` lets an isolated blend snapshot the backdrop straight from
+        // the swapchain when there is no multisample resolve target to copy
+        // from. Canvas textures may not be storage-bound, but copying from them
+        // is allowed.
+        let surface_usage = wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC;
         let config = wgpu::SurfaceConfiguration {
             usage: surface_usage,
             format,
@@ -5594,6 +5620,18 @@ impl WgpuSceneRenderer {
         self.msaa_bytes = 0;
         self.ws_msaa_bytes = 0;
         self.depth_stencil_bytes = 0;
+        let aliased_surface = self.surface_format != self.output_format;
+        let view_format_list = [self.output_format];
+        let surface_view_formats: &[wgpu::TextureFormat] =
+            if aliased_surface { &view_format_list } else { &[] };
+        let surface_view = if aliased_surface {
+            wgpu::TextureViewDescriptor {
+                format: Some(self.output_format),
+                ..Default::default()
+            }
+        } else {
+            wgpu::TextureViewDescriptor::default()
+        };
         if self.msaa_samples > 1 && !self.working_space {
             let tex = self.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("msaa color"),
@@ -5605,13 +5643,13 @@ impl WgpuSceneRenderer {
                 mip_level_count: 1,
                 sample_count: self.msaa_samples,
                 dimension: wgpu::TextureDimension::D2,
-                format: self.output_format,
+                format: self.surface_format,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                view_formats: &[],
+                view_formats: surface_view_formats,
             });
-            let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+            let view = tex.create_view(&surface_view);
             self.msaa_bytes = texture_storage_bytes_with_samples(
-                self.output_format,
+                self.surface_format,
                 self.output_width.max(1),
                 self.output_height.max(1),
                 self.msaa_samples,
@@ -5668,15 +5706,15 @@ impl WgpuSceneRenderer {
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
-                format: self.output_format,
+                format: self.surface_format,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT
                     | wgpu::TextureUsages::TEXTURE_BINDING
                     | wgpu::TextureUsages::COPY_SRC,
-                view_formats: &[],
+                view_formats: surface_view_formats,
             });
-            let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+            let view = tex.create_view(&surface_view);
             self.surface_resolve_bytes =
-                texture_storage_bytes(self.output_format, width, height).unwrap_or(0);
+                texture_storage_bytes(self.surface_format, width, height).unwrap_or(0);
             self.surface_resolve_tex = Some(tex);
             self.surface_resolve_view = Some(view);
         }
