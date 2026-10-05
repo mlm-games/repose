@@ -63,7 +63,15 @@ enum BackendState {
     Pending,
     Ready,
     Failed,
+    /// No GPU backend could be created even after retries. Terminal: the canvas
+    /// stays blank unless the page is reloaded, so say why instead.
+    Unavailable,
 }
+
+/// Adapter/surface creation is retried a few times because a browser may be
+/// still bringing up its GPU process. A capability problem (no WebGPU, WebGL
+/// disabled, blocklisted driver) never resolves, so stop after this many tries.
+const MAX_BACKEND_INIT_ATTEMPTS: u32 = 3;
 
 enum ExternalDropAction {
     DroppedFiles {
@@ -258,6 +266,7 @@ struct App {
     backend_state: Rc<Cell<BackendState>>,
     backend_generation: Rc<Cell<u64>>,
     backend_retry_at: Rc<Cell<Option<web_time::Instant>>>,
+    backend_attempts: Rc<Cell<u32>>,
     surface_retry_pending: bool,
     surface_retry_at: Option<web_time::Instant>,
     present_retry_pending: bool,
@@ -363,6 +372,7 @@ impl App {
             backend_state: Rc::new(Cell::new(BackendState::Pending)),
             backend_generation: Rc::new(Cell::new(0)),
             backend_retry_at: Rc::new(Cell::new(None)),
+            backend_attempts: Rc::new(Cell::new(0)),
             surface_retry_pending: false,
             surface_retry_at: None,
             present_retry_pending: false,
@@ -556,6 +566,45 @@ impl App {
             let _ = style.set_property("display", "block");
             let _ = style.set_property("width", "100%");
             let _ = style.set_property("height", "100%");
+        }
+    }
+
+    /// The canvas can only be painted through WebGPU (with a WebGL2 fallback),
+    /// so when neither is usable the page would otherwise stay blank with the
+    /// reason buried in a console log. Show it instead.
+    fn show_gpu_unavailable_notice(window: &Window, detail: &str) {
+        let Some(canvas) = window.canvas() else {
+            return;
+        };
+        let Some(document) = canvas.owner_document() else {
+            return;
+        };
+        if document.get_element_by_id("repose-gpu-unavailable").is_some() {
+            return;
+        }
+        let Ok(node) = document.create_element("div") else {
+            return;
+        };
+        let _ = node.set_id("repose-gpu-unavailable");
+        let _ = node.set_attribute(
+            "style",
+            "position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;\
+             justify-content:center;padding:28px;box-sizing:border-box;overflow:auto;\
+             background:#141216;color:#e6e1e5;font:15px/1.65 system-ui,-apple-system,sans-serif;\
+             text-align:center;",
+        );
+        let text = format!(
+            r#"<div><strong style="font-size:18px">This browser cannot run this app</strong>
+<div style="margin-top:10px;color:#cac4d0">The app renders with WebGPU, and falls back to WebGL2.
+Neither is available here.</div>
+<div style="margin-top:14px;font:11px/1.5 monospace;color:#8f8a96;white-space:pre-wrap;word-break:break-word">{detail}</div>
+<div style="margin-top:16px;color:#cac4d0">In Firefox, hardware acceleration may be turned off.
+Settings &rsaquo; General &rsaquo; Configuration Editor, then set
+<code>webgl.disabled</code> to <code>false</code> and reload.</div></div>"#
+        );
+        let _ = node.set_inner_html(&text);
+        if let Some(body) = document.body() {
+            let _ = body.append_child(&node);
         }
     }
 
@@ -947,6 +996,7 @@ impl App {
         let backend_state = self.backend_state.clone();
         let backend_generation = self.backend_generation.clone();
         let backend_retry_at = self.backend_retry_at.clone();
+        let backend_attempts = self.backend_attempts.clone();
         let msaa_samples = self.options.common.msaa_samples;
         let present_mode = self.options.common.present_mode;
         spawn_local(async move {
@@ -972,17 +1022,27 @@ impl App {
                     *backend_cell.borrow_mut() = Some(b);
                     backend_state.set(BackendState::Ready);
                     backend_retry_at.set(None);
+                    backend_attempts.set(0);
                     repose_core::request_frame();
                     window.request_redraw();
                     log::info!("WGPU backend initialized");
                 }
                 Err(e) => {
                     *backend_cell.borrow_mut() = None;
-                    backend_state.set(BackendState::Failed);
-                    backend_retry_at.set(Some(
-                        web_time::Instant::now() + web_time::Duration::from_millis(250),
-                    ));
-                    log::error!("WGPU init failed: {e:?}");
+                    let attempts = backend_attempts.get() + 1;
+                    backend_attempts.set(attempts);
+                    log::error!("WGPU init failed ({attempts}): {e:?}");
+                    if attempts >= MAX_BACKEND_INIT_ATTEMPTS {
+                        backend_state.set(BackendState::Unavailable);
+                        backend_retry_at.set(None);
+                        Self::show_gpu_unavailable_notice(&window, &format!("{e}"));
+                    } else {
+                        backend_state.set(BackendState::Failed);
+                        let delay = 250u64 << (attempts - 1).min(4);
+                        backend_retry_at
+                            .set(Some(web_time::Instant::now()
+                                + web_time::Duration::from_millis(delay)));
+                    }
                     window.request_redraw();
                 }
             }
@@ -1426,7 +1486,9 @@ impl ApplicationHandler<()> for App {
                 crate::run_pre_redraw(&self.render);
 
                 match self.backend_state.get() {
-                    BackendState::Pending | BackendState::Failed => return,
+                    BackendState::Pending | BackendState::Failed | BackendState::Unavailable => {
+                        return;
+                    }
                     BackendState::Ready => {}
                 }
 
@@ -1574,6 +1636,10 @@ impl ApplicationHandler<()> for App {
 
         match self.backend_state.get() {
             BackendState::Pending => {
+                el.set_control_flow(winit::event_loop::ControlFlow::Wait);
+                return;
+            }
+            BackendState::Unavailable => {
                 el.set_control_flow(winit::event_loop::ControlFlow::Wait);
                 return;
             }
