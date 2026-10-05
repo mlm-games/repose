@@ -204,16 +204,31 @@ pub fn setup_clipboard() -> Option<clipawl::Clipboard> {
 }
 
 /// Configure wgpu surface and scale for a window size change (shared).
+///
+/// `scale` is the host's pixels-per-point for the requested `size`. The
+/// surface may end up smaller than requested — device texture limits force a
+/// uniform downscale — and the runtime viewport has to adopt the size the
+/// framebuffer actually got, or the scene is projected against one shape while
+/// input is resolved against another. The density is rescaled by the same
+/// factor so the logical (density-independent) viewport is unchanged.
 pub fn sync_viewport(
     rt: &mut repose_app::ReposeRuntime,
     backend: &mut Option<repose_render_wgpu::WgpuBackend>,
     size: winit::dpi::PhysicalSize<u32>,
     scale: f32,
 ) {
-    rt.set_viewport_and_scale(size.width, size.height, scale);
-    if let Some(b) = backend {
-        b.configure_surface(size.width, size.height);
-        b.set_pixels_per_point(scale);
+    let (width, height) = match backend.as_mut() {
+        Some(b) => b.configure_surface(size.width, size.height),
+        None => (size.width, size.height),
+    };
+    let fitted = if width == 0 || size.width == 0 {
+        1.0
+    } else {
+        width as f32 / size.width as f32
+    };
+    rt.set_viewport_and_scale(width, height, scale * fitted);
+    if let Some(b) = backend.as_mut() {
+        b.set_pixels_per_point(scale * fitted);
     }
 }
 

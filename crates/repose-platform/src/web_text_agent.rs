@@ -279,15 +279,21 @@ impl TextAgent {
         if caret != self.caret {
             self.caret = caret;
             if let Some((x, y, w, h)) = caret {
-                let dpr = web_sys::window()
-                    .map(|window| window.device_pixel_ratio())
-                    .filter(|dpr| dpr.is_finite() && *dpr > 0.0)
-                    .unwrap_or(1.0);
-                let max_x = canvas.width() as f64 / dpr;
-                let max_y = canvas.height() as f64 / dpr;
+                // Caret geometry arrives in layout pixels while the editor is
+                // positioned in CSS pixels, and the canvas' device-pixel box is
+                // not necessarily `devicePixelRatio` wide (see
+                // `App::input_scale`).
+                let rect = canvas.get_bounding_client_rect();
+                let scale = if rect.width() > 0.0 && canvas.width() > 0 {
+                    canvas.width() as f64 / rect.width()
+                } else {
+                    1.0
+                };
                 let style = self.editor.style();
-                let left = canvas.offset_left() as f64 + (x + w * 0.5).clamp(0.0, max_x);
-                let top = canvas.offset_top() as f64 + (y + h * 0.5).clamp(0.0, max_y);
+                let left = canvas.offset_left() as f64
+                    + ((x + w * 0.5) as f64 / scale).clamp(0.0, rect.width());
+                let top = canvas.offset_top() as f64
+                    + ((y + h * 0.5) as f64 / scale).clamp(0.0, rect.height());
                 let _ = style.set_property("left", &format!("{left}px"));
                 let _ = style.set_property("top", &format!("{top}px"));
             }

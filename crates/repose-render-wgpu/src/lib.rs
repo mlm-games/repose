@@ -407,6 +407,28 @@ impl std::ops::DerefMut for WgpuSurfaceBackend {
 #[cfg(feature = "winit-surface")]
 pub type WgpuBackend = WgpuSurfaceBackend;
 
+/// Largest `(width, height)` not exceeding `max` on either axis while keeping
+/// the requested aspect ratio.
+///
+/// Clamping the two axes independently rescales them by different factors, so
+/// "CSS pixels to viewport pixels" stops being a single number: the scene is
+/// projected against one shape while input is resolved against another, which
+/// shows up as a touch offset that grows with distance from the origin. One
+/// uniform factor keeps layout, hit testing and the framebuffer on the same
+/// scale, leaving a uniform loss of resolution.
+pub fn clamp_output_size(width: u32, height: u32, max: u32) -> (u32, u32) {
+    if width == 0 || height == 0 {
+        return (0, 0);
+    }
+    let max = max.max(1);
+    if width <= max && height <= max {
+        return (width, height);
+    }
+    let scale = max as f64 / width.max(height) as f64;
+    let clamped = |v: u32| ((v as f64 * scale).round() as u32).clamp(1, max);
+    (clamped(width), clamped(height))
+}
+
 /// Compose/Skia radius -> gaussian sigma (the `1 / sqrt(3)` the high-quality
 /// software mask blur applies).
 fn blur_sigma(radius: f32) -> f32 {
@@ -649,6 +671,27 @@ struct Pipelines {
     projective_layer: wgpu::RenderPipeline,
 }
 
+/// Vertex attributes for an instance buffer, as `(shader_location, byte
+/// offset, format)`. Deriving these by hand let struct field reordering
+/// silently desync the offsets from the layout.
+fn vattrs(spec: &[(u32, u64, wgpu::VertexFormat)]) -> Vec<wgpu::VertexAttribute> {
+    spec.iter()
+        .map(|&(shader_location, offset, format)| wgpu::VertexAttribute {
+            shader_location,
+            offset,
+            format,
+        })
+        .collect()
+}
+
+/// Byte offset of an instance field, so the attribute tables below stay tied
+/// to the struct layout instead of being maintained by hand.
+macro_rules! field_offset {
+    ($ty:ty, $field:ident) => {
+        std::mem::offset_of!($ty, $field) as u64
+    };
+}
+
 impl Pipelines {
     fn create(
         device: &wgpu::Device,
@@ -716,304 +759,224 @@ impl Pipelines {
             };
         }
 
-        let rect_attrs: &[wgpu::VertexAttribute] = &[
-            wgpu::VertexAttribute {
-                shader_location: 0,
-                offset: 0,
-                format: wgpu::VertexFormat::Float32x4,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 1,
-                offset: 16,
-                format: wgpu::VertexFormat::Float32x4,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 2,
-                offset: 32,
-                format: wgpu::VertexFormat::Uint32,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 3,
-                offset: 36,
-                format: wgpu::VertexFormat::Uint32,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 4,
-                offset: 48,
-                format: wgpu::VertexFormat::Float32x4,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 5,
-                offset: 64,
-                format: wgpu::VertexFormat::Float32x4,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 6,
-                offset: 80,
-                format: wgpu::VertexFormat::Float32x2,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 7,
-                offset: 88,
-                format: wgpu::VertexFormat::Float32x2,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 8,
-                offset: 96,
-                format: wgpu::VertexFormat::Uint32,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 9,
-                offset: 112,
-                format: wgpu::VertexFormat::Float32x4,
-            },
-        ];
-        let border_attrs: &[wgpu::VertexAttribute] = &[
-            wgpu::VertexAttribute {
-                shader_location: 0,
-                offset: 0,
-                format: wgpu::VertexFormat::Float32x4,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 1,
-                offset: 16,
-                format: wgpu::VertexFormat::Float32x4,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 2,
-                offset: 32,
-                format: wgpu::VertexFormat::Float32,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 3,
-                offset: 36,
-                format: wgpu::VertexFormat::Uint32,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 4,
-                offset: 48,
-                format: wgpu::VertexFormat::Uint32,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 5,
-                offset: 52,
-                format: wgpu::VertexFormat::Float32x4,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 6,
-                offset: 68,
-                format: wgpu::VertexFormat::Float32x4,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 7,
-                offset: 84,
-                format: wgpu::VertexFormat::Float32x2,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 8,
-                offset: 92,
-                format: wgpu::VertexFormat::Float32x2,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 9,
-                offset: 100,
-                format: wgpu::VertexFormat::Uint32,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 10,
-                offset: 116,
-                format: wgpu::VertexFormat::Float32x4,
-            },
-        ];
-        let ellipse_attrs: &[wgpu::VertexAttribute] = &[
-            wgpu::VertexAttribute {
-                shader_location: 0,
-                offset: 0,
-                format: wgpu::VertexFormat::Float32x4,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 1,
-                offset: 16,
-                format: wgpu::VertexFormat::Uint32,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 2,
-                offset: 20,
-                format: wgpu::VertexFormat::Uint32,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 3,
-                offset: 32,
-                format: wgpu::VertexFormat::Float32x4,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 4,
-                offset: 48,
-                format: wgpu::VertexFormat::Float32x4,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 5,
-                offset: 64,
-                format: wgpu::VertexFormat::Float32x2,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 6,
-                offset: 72,
-                format: wgpu::VertexFormat::Float32x2,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 7,
-                offset: 80,
-                format: wgpu::VertexFormat::Uint32,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 8,
-                offset: 96,
-                format: wgpu::VertexFormat::Float32x4,
-            },
-        ];
-        let ellipse_border_attrs: &[wgpu::VertexAttribute] = &[
-            wgpu::VertexAttribute {
-                shader_location: 0,
-                offset: 0,
-                format: wgpu::VertexFormat::Float32x4,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 1,
-                offset: 16,
-                format: wgpu::VertexFormat::Float32,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 2,
-                offset: 20,
-                format: wgpu::VertexFormat::Float32,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 3,
-                offset: 24,
-                format: wgpu::VertexFormat::Uint32,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 4,
-                offset: 28,
-                format: wgpu::VertexFormat::Uint32,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 5,
-                offset: 32,
-                format: wgpu::VertexFormat::Float32x4,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 6,
-                offset: 48,
-                format: wgpu::VertexFormat::Float32x4,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 7,
-                offset: 64,
-                format: wgpu::VertexFormat::Float32x2,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 8,
-                offset: 72,
-                format: wgpu::VertexFormat::Float32x2,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 9,
-                offset: 80,
-                format: wgpu::VertexFormat::Uint32,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 10,
-                offset: 96,
-                format: wgpu::VertexFormat::Float32x4,
-            },
-        ];
+        let rect_attrs = vattrs(&[
+            (
+                0,
+                field_offset!(RectInstance, xywh),
+                wgpu::VertexFormat::Float32x4,
+            ),
+            (
+                1,
+                field_offset!(RectInstance, radii),
+                wgpu::VertexFormat::Float32x4,
+            ),
+            (
+                2,
+                field_offset!(RectInstance, color0),
+                wgpu::VertexFormat::Float32x4,
+            ),
+            (
+                3,
+                field_offset!(RectInstance, color1),
+                wgpu::VertexFormat::Float32x4,
+            ),
+            (
+                4,
+                field_offset!(RectInstance, fwd_mat),
+                wgpu::VertexFormat::Float32x4,
+            ),
+            (
+                5,
+                field_offset!(RectInstance, grad),
+                wgpu::VertexFormat::Float32x4,
+            ),
+            (
+                6,
+                field_offset!(RectInstance, bits),
+                wgpu::VertexFormat::Uint32,
+            ),
+        ]);
+        let border_attrs = vattrs(&[
+            (
+                0,
+                field_offset!(BorderInstance, xywh),
+                wgpu::VertexFormat::Float32x4,
+            ),
+            (
+                1,
+                field_offset!(BorderInstance, radii),
+                wgpu::VertexFormat::Float32x4,
+            ),
+            (
+                2,
+                field_offset!(BorderInstance, color0),
+                wgpu::VertexFormat::Float32x4,
+            ),
+            (
+                3,
+                field_offset!(BorderInstance, color1),
+                wgpu::VertexFormat::Float32x4,
+            ),
+            (
+                4,
+                field_offset!(BorderInstance, fwd_mat),
+                wgpu::VertexFormat::Float32x4,
+            ),
+            (
+                5,
+                field_offset!(BorderInstance, grad),
+                wgpu::VertexFormat::Float32x4,
+            ),
+            (
+                6,
+                field_offset!(BorderInstance, bits),
+                wgpu::VertexFormat::Uint32,
+            ),
+            (
+                7,
+                field_offset!(BorderInstance, stroke),
+                wgpu::VertexFormat::Float32,
+            ),
+        ]);
+        let ellipse_attrs = vattrs(&[
+            (
+                0,
+                field_offset!(EllipseInstance, xywh),
+                wgpu::VertexFormat::Float32x4,
+            ),
+            (
+                1,
+                field_offset!(EllipseInstance, color0),
+                wgpu::VertexFormat::Float32x4,
+            ),
+            (
+                2,
+                field_offset!(EllipseInstance, color1),
+                wgpu::VertexFormat::Float32x4,
+            ),
+            (
+                3,
+                field_offset!(EllipseInstance, fwd_mat),
+                wgpu::VertexFormat::Float32x4,
+            ),
+            (
+                4,
+                field_offset!(EllipseInstance, grad),
+                wgpu::VertexFormat::Float32x4,
+            ),
+            (
+                5,
+                field_offset!(EllipseInstance, bits),
+                wgpu::VertexFormat::Uint32,
+            ),
+        ]);
+        let ellipse_border_attrs = vattrs(&[
+            (
+                0,
+                field_offset!(EllipseBorderInstance, xywh),
+                wgpu::VertexFormat::Float32x4,
+            ),
+            (
+                1,
+                field_offset!(EllipseBorderInstance, color0),
+                wgpu::VertexFormat::Float32x4,
+            ),
+            (
+                2,
+                field_offset!(EllipseBorderInstance, color1),
+                wgpu::VertexFormat::Float32x4,
+            ),
+            (
+                3,
+                field_offset!(EllipseBorderInstance, fwd_mat),
+                wgpu::VertexFormat::Float32x4,
+            ),
+            (
+                4,
+                field_offset!(EllipseBorderInstance, grad),
+                wgpu::VertexFormat::Float32x4,
+            ),
+            (
+                5,
+                field_offset!(EllipseBorderInstance, bits),
+                wgpu::VertexFormat::Uint32,
+            ),
+            (
+                6,
+                field_offset!(EllipseBorderInstance, stroke),
+                wgpu::VertexFormat::Float32,
+            ),
+            (
+                7,
+                field_offset!(EllipseBorderInstance, pad),
+                wgpu::VertexFormat::Float32,
+            ),
+        ]);
 
-        make_content_pipeline!(rects, "rect", RectInstance, rect_attrs);
-        make_content_pipeline!(borders, "border", BorderInstance, border_attrs);
-        make_content_pipeline!(ellipses, "ellipse", EllipseInstance, ellipse_attrs);
+        make_content_pipeline!(rects, "rect", RectInstance, &rect_attrs);
+        make_content_pipeline!(borders, "border", BorderInstance, &border_attrs);
+        make_content_pipeline!(ellipses, "ellipse", EllipseInstance, &ellipse_attrs);
         make_content_pipeline!(
             ellipse_borders,
             "ellipse_border",
             EllipseBorderInstance,
-            ellipse_border_attrs
+            &ellipse_border_attrs
         );
 
-        let arc_attrs: &[wgpu::VertexAttribute] = &[
-            wgpu::VertexAttribute {
-                shader_location: 0,
-                offset: 0,
-                format: wgpu::VertexFormat::Float32x4,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 1,
-                offset: 16,
-                format: wgpu::VertexFormat::Float32,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 2,
-                offset: 20,
-                format: wgpu::VertexFormat::Float32,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 3,
-                offset: 24,
-                format: wgpu::VertexFormat::Float32,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 4,
-                offset: 28,
-                format: wgpu::VertexFormat::Float32,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 5,
-                offset: 32,
-                format: wgpu::VertexFormat::Uint32,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 6,
-                offset: 36,
-                format: wgpu::VertexFormat::Uint32,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 7,
-                offset: 48,
-                format: wgpu::VertexFormat::Float32x4,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 8,
-                offset: 64,
-                format: wgpu::VertexFormat::Float32x4,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 9,
-                offset: 80,
-                format: wgpu::VertexFormat::Float32x2,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 10,
-                offset: 88,
-                format: wgpu::VertexFormat::Float32x2,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 11,
-                offset: 96,
-                format: wgpu::VertexFormat::Uint32,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 12,
-                offset: 100,
-                format: wgpu::VertexFormat::Float32,
-            },
-            wgpu::VertexAttribute {
-                shader_location: 13,
-                offset: 112,
-                format: wgpu::VertexFormat::Float32x4,
-            },
-        ];
+        let arc_attrs = vattrs(&[
+            (
+                0,
+                field_offset!(ArcInstance, xywh),
+                wgpu::VertexFormat::Float32x4,
+            ),
+            (
+                1,
+                field_offset!(ArcInstance, color0),
+                wgpu::VertexFormat::Float32x4,
+            ),
+            (
+                2,
+                field_offset!(ArcInstance, color1),
+                wgpu::VertexFormat::Float32x4,
+            ),
+            (
+                3,
+                field_offset!(ArcInstance, fwd_mat),
+                wgpu::VertexFormat::Float32x4,
+            ),
+            (
+                4,
+                field_offset!(ArcInstance, grad),
+                wgpu::VertexFormat::Float32x4,
+            ),
+            (
+                5,
+                field_offset!(ArcInstance, bits),
+                wgpu::VertexFormat::Uint32,
+            ),
+            (
+                6,
+                field_offset!(ArcInstance, start_angle),
+                wgpu::VertexFormat::Float32,
+            ),
+            (
+                7,
+                field_offset!(ArcInstance, sweep_angle),
+                wgpu::VertexFormat::Float32,
+            ),
+            (
+                8,
+                field_offset!(ArcInstance, stroke),
+                wgpu::VertexFormat::Float32,
+            ),
+            (
+                9,
+                field_offset!(ArcInstance, pad),
+                wgpu::VertexFormat::Float32,
+            ),
+        ]);
 
-        make_content_pipeline!(arcs, "arc", ArcInstance, arc_attrs);
+        make_content_pipeline!(arcs, "arc", ArcInstance, &arc_attrs);
 
         // Text (mask)
         let text_mask_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -2244,21 +2207,21 @@ struct TextShapeCacheEntry {
     last_used_frame: u64,
 }
 
+/// Instance data for one shape. The brush enums share `bits` rather than
+/// taking a varying each, and `grad_p0`/`grad_p1` merge into one `grad`
+/// vector, to keep the fragment stage inside the varying budget that
+/// `field_offset!` in `Pipelines::create` derives the attribute table from.
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct RectInstance {
     xywh: [f32; 4],
     radii: [f32; 4],
-    brush_type: u32,
-    grad_kind: u32,
-    _pad: [f32; 2],
     color0: [f32; 4],
     color1: [f32; 4],
-    grad_p0: [f32; 2],
-    grad_p1: [f32; 2],
-    tile_mode: u32,
-    _pad2: [f32; 3],
     fwd_mat: [f32; 4],
+    grad: [f32; 4],
+    bits: u32,
+    _pad: [f32; 3],
 }
 
 #[repr(C)]
@@ -2266,71 +2229,55 @@ struct RectInstance {
 struct BorderInstance {
     xywh: [f32; 4],
     radii: [f32; 4],
-    stroke: f32,
-    brush_type: u32,
-    _pad: [f32; 2],
-    grad_kind: u32,
     color0: [f32; 4],
     color1: [f32; 4],
-    grad_p0: [f32; 2],
-    grad_p1: [f32; 2],
-    tile_mode: u32,
-    _pad2: [f32; 3],
     fwd_mat: [f32; 4],
+    grad: [f32; 4],
+    bits: u32,
+    stroke: f32,
+    _pad: [f32; 2],
 }
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct EllipseInstance {
     xywh: [f32; 4],
-    brush_type: u32,
-    grad_kind: u32,
-    _pad: [f32; 2],
     color0: [f32; 4],
     color1: [f32; 4],
-    grad_p0: [f32; 2],
-    grad_p1: [f32; 2],
-    tile_mode: u32,
-    _pad2: [f32; 3],
     fwd_mat: [f32; 4],
+    grad: [f32; 4],
+    bits: u32,
+    _pad: [f32; 1],
 }
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct EllipseBorderInstance {
     xywh: [f32; 4],
-    stroke: f32,
-    pad: f32,
-    brush_type: u32,
-    grad_kind: u32,
     color0: [f32; 4],
     color1: [f32; 4],
-    grad_p0: [f32; 2],
-    grad_p1: [f32; 2],
-    tile_mode: u32,
-    _pad2: [f32; 3],
     fwd_mat: [f32; 4],
+    grad: [f32; 4],
+    bits: u32,
+    stroke: f32,
+    pad: f32,
+    _pad: f32,
 }
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct ArcInstance {
     xywh: [f32; 4],
+    color0: [f32; 4],
+    color1: [f32; 4],
+    fwd_mat: [f32; 4],
+    grad: [f32; 4],
+    bits: u32,
     start_angle: f32,
     sweep_angle: f32,
     stroke: f32,
     pad: f32,
-    brush_type: u32,
-    grad_kind: u32,
-    _pad0: [f32; 2],
-    color0: [f32; 4],
-    color1: [f32; 4],
-    grad_p0: [f32; 2],
-    grad_p1: [f32; 2],
-    tile_mode: u32,
-    cap: f32, // 0=Butt, 1=Round, 2=Square
-    _pad1: [f32; 2],
-    fwd_mat: [f32; 4],
+    _pad: f32,
 }
 
 #[repr(C)]
@@ -5638,9 +5585,8 @@ impl WgpuSceneRenderer {
     /// Recreates MSAA, depth-stencil, and working-space textures to match the
     /// new size..
     pub fn resize(&mut self, width: u32, height: u32) {
-        let max = self.device.limits().max_texture_dimension_2d;
-        let width = if width == 0 { 0 } else { width.min(max) };
-        let height = if height == 0 { 0 } else { height.min(max) };
+        let (width, height) =
+            clamp_output_size(width, height, self.device.limits().max_texture_dimension_2d);
         if self.output_width == width && self.output_height == height {
             return;
         }
@@ -7017,6 +6963,13 @@ impl WgpuSceneRenderer {
     }
 }
 
+/// Pack the shape brush enums into the single `bits` word the shaders read, so
+/// they cost one flat varying instead of three locations.
+fn pack_shape_bits(brush_type: u32, grad_kind: u32, tile_mode: u32, cap: u32) -> u32 {
+    debug_assert!(brush_type < 4 && grad_kind < 4 && tile_mode < 4 && cap < 4);
+    (brush_type & 3) | ((grad_kind & 3) << 2) | ((tile_mode & 3) << 4) | ((cap & 3) << 6)
+}
+
 /// Packed brush fields shared by the shape instances (border, ellipse,
 /// ellipse border, arc). Gradient endpoints are shape-local px; the shaders
 /// recenter `(0,0)` at the shape top-left. Radial packs `center` into
@@ -7293,9 +7246,11 @@ impl WgpuSurfaceBackend {
         let Some(config) = self.surface_config.as_mut() else {
             anyhow::bail!("no surface config retained; cannot recreate surface")
         };
-        let max = self.renderer.device.limits().max_texture_dimension_2d;
-        let width = size.width.min(max);
-        let height = size.height.min(max);
+        let (width, height) = clamp_output_size(
+            size.width,
+            size.height,
+            self.renderer.device.limits().max_texture_dimension_2d,
+        );
         config.width = width;
         config.height = height;
         let surface = instance.create_surface(window.clone())?;
@@ -7309,21 +7264,23 @@ impl WgpuSurfaceBackend {
 
 #[cfg(feature = "winit-surface")]
 impl RenderBackend for WgpuSurfaceBackend {
-    fn configure_surface(&mut self, width: u32, height: u32) {
+    fn configure_surface(&mut self, width: u32, height: u32) -> (u32, u32) {
         if width == 0 || height == 0 {
             self.renderer.resize(0, 0);
             self.pending_reconfigure = true;
-            return;
+            return (0, 0);
         }
-        let max = self.renderer.device.limits().max_texture_dimension_2d;
-        let width = width.min(max);
-        let height = height.min(max);
+        let (width, height) = clamp_output_size(
+            width,
+            height,
+            self.renderer.device.limits().max_texture_dimension_2d,
+        );
         if self.renderer.output_width == width && self.renderer.output_height == height {
             if let Some(ref mut config) = self.surface_config {
                 config.width = width;
                 config.height = height;
             }
-            return;
+            return (width, height);
         }
         if let Some(ref mut config) = self.surface_config {
             config.width = width;
@@ -7334,6 +7291,7 @@ impl RenderBackend for WgpuSurfaceBackend {
         {
             surface.configure(&self.renderer.device, config);
         }
+        (width, height)
     }
 
     fn frame(&mut self, scene: &Scene, _glyph_cfg: GlyphRasterConfig) -> bool {
@@ -9055,16 +9013,12 @@ impl WgpuSceneRenderer {
                     batch.rects.push(RectInstance {
                         xywh: ndc,
                         radii: radius.map(|r| r.0),
-                        brush_type,
-                        grad_kind,
-                        _pad: [0.0; 2],
                         color0,
                         color1,
-                        grad_p0,
-                        grad_p1,
-                        tile_mode,
-                        _pad2: [0.0; 3],
                         fwd_mat,
+                        grad: [grad_p0[0], grad_p0[1], grad_p1[0], grad_p1[1]],
+                        bits: pack_shape_bits(brush_type, grad_kind, tile_mode, 0),
+                        _pad: [0.0; 3],
                     });
                 }
                 SceneNode::Border {
@@ -9089,17 +9043,13 @@ impl WgpuSceneRenderer {
                     batch.borders.push(BorderInstance {
                         xywh: ndc,
                         radii: radius.map(|r| r.0),
-                        stroke: width.0,
-                        brush_type,
-                        _pad: [0.0; 2],
-                        grad_kind,
                         color0,
                         color1,
-                        grad_p0,
-                        grad_p1,
-                        tile_mode,
-                        _pad2: [0.0; 3],
                         fwd_mat,
+                        grad: [grad_p0[0], grad_p0[1], grad_p1[0], grad_p1[1]],
+                        bits: pack_shape_bits(brush_type, grad_kind, tile_mode, 0),
+                        stroke: width.0,
+                        _pad: [0.0; 2],
                     });
                 }
                 SceneNode::Ellipse { rect, brush } => {
@@ -9118,16 +9068,12 @@ impl WgpuSceneRenderer {
                         brush_to_shape_fields(brush, rect, current_transform);
                     batch.ellipses.push(EllipseInstance {
                         xywh: ndc,
-                        brush_type,
-                        grad_kind,
-                        _pad: [0.0; 2],
                         color0,
                         color1,
-                        grad_p0,
-                        grad_p1,
-                        tile_mode,
-                        _pad2: [0.0; 3],
                         fwd_mat,
+                        grad: [grad_p0[0], grad_p0[1], grad_p1[0], grad_p1[1]],
+                        bits: pack_shape_bits(brush_type, grad_kind, tile_mode, 0),
+                        _pad: [0.0; 1],
                     });
                 }
                 SceneNode::EllipseBorder { rect, brush, width } => {
@@ -9155,17 +9101,14 @@ impl WgpuSceneRenderer {
                         brush_to_shape_fields(brush, rect, current_transform);
                     batch.e_borders.push(EllipseBorderInstance {
                         xywh: ndc,
-                        stroke: width.0,
-                        pad,
-                        brush_type,
-                        grad_kind,
                         color0,
                         color1,
-                        grad_p0,
-                        grad_p1,
-                        tile_mode,
-                        _pad2: [0.0; 3],
                         fwd_mat,
+                        grad: [grad_p0[0], grad_p0[1], grad_p1[0], grad_p1[1]],
+                        bits: pack_shape_bits(brush_type, grad_kind, tile_mode, 0),
+                        stroke: width.0,
+                        pad,
+                        _pad: 0.0,
                     });
                 }
                 SceneNode::Arc {
@@ -9224,21 +9167,16 @@ impl WgpuSceneRenderer {
                     };
                     batch.arcs.push(ArcInstance {
                         xywh: ndc,
+                        color0,
+                        color1,
+                        fwd_mat,
+                        grad: [grad_p0[0], grad_p0[1], grad_p1[0], grad_p1[1]],
+                        bits: pack_shape_bits(brush_type, grad_kind, tile_mode, cap_val as u32),
                         start_angle: start,
                         sweep_angle: sweep,
                         stroke: stroke_width.0,
                         pad,
-                        brush_type,
-                        grad_kind,
-                        _pad0: [0.0; 2],
-                        color0,
-                        color1,
-                        grad_p0,
-                        grad_p1,
-                        tile_mode,
-                        cap: cap_val,
-                        _pad1: [0.0; 2],
-                        fwd_mat,
+                        _pad: 0.0,
                     });
                 }
                 SceneNode::Text {
@@ -9699,16 +9637,12 @@ impl WgpuSceneRenderer {
                             batch.rects.push(RectInstance {
                                 xywh: ndc,
                                 radii: [0.0; 4],
-                                brush_type: 0,
-                                grad_kind: 0,
-                                _pad: [0.0; 2],
                                 color0: deco_color.to_linear(),
                                 color1: [0.0; 4],
-                                grad_p0: [0.0; 2],
-                                grad_p1: [0.0; 2],
-                                tile_mode: 0,
-                                _pad2: [0.0; 3],
                                 fwd_mat,
+                                grad: [0.0; 4],
+                                bits: 0,
+                                _pad: [0.0; 3],
                             });
                         }
                         if text_decoration.strikethrough {
@@ -9727,16 +9661,12 @@ impl WgpuSceneRenderer {
                             batch.rects.push(RectInstance {
                                 xywh: ndc,
                                 radii: [0.0; 4],
-                                brush_type: 0,
-                                grad_kind: 0,
-                                _pad: [0.0; 2],
                                 color0: deco_color.to_linear(),
                                 color1: [0.0; 4],
-                                grad_p0: [0.0; 2],
-                                grad_p1: [0.0; 2],
-                                tile_mode: 0,
-                                _pad2: [0.0; 3],
                                 fwd_mat,
+                                grad: [0.0; 4],
+                                bits: 0,
+                                _pad: [0.0; 3],
                             });
                         }
                     }
@@ -10062,21 +9992,17 @@ impl WgpuSceneRenderer {
                         current_target_size.0,
                         current_target_size.1,
                     );
-                    let (brush_type, color0, _color1, _grad_p0, _grad_p1) =
+                    let (_brush_type, color0, _color1, _grad_p0, _grad_p1) =
                         brush_to_instance_fields(&Brush::Solid(*color));
                     batch.rects.push(RectInstance {
                         xywh: ndc,
                         radii: radius.map(|r| r.0),
-                        brush_type,
-                        grad_kind: 0,
-                        _pad: [0.0; 2],
                         color0,
                         color1: [0.0; 4],
-                        grad_p0: [0.0; 2],
-                        grad_p1: [0.0; 2],
-                        tile_mode: 0,
-                        _pad2: [0.0; 3],
                         fwd_mat,
+                        grad: [0.0; 4],
+                        bits: 0,
+                        _pad: [0.0; 3],
                     });
                 }
                 SceneNode::PushTransform { transform } => {

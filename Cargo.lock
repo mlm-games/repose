@@ -3152,6 +3152,7 @@ dependencies = [
  "log",
  "lyon_path",
  "lyon_tessellation",
+ "naga",
  "pollster 1.0.1",
  "repose-core",
  "repose-text",

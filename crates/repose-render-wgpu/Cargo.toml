@@ -32,3 +32,4 @@ lyon_path = { workspace = true }
 
 [dev-dependencies]
 repose-ui.workspace = true
+naga = { version = "30", features = ["wgsl-in"] }

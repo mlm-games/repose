@@ -284,6 +284,9 @@ struct App {
     frame_pacer: rc::FramePacer,
     redraw_deferred: bool,
     deeplink_window: Rc<RefCell<Option<Arc<Window>>>>,
+    /// `(window size, backend present)` the viewport was last synced from, so
+    /// the CSS box behind `density` is only measured when one of them changed.
+    viewport_key: Option<(u32, u32, bool)>,
 }
 
 impl App {
@@ -390,6 +393,7 @@ impl App {
             frame_pacer,
             redraw_deferred: false,
             deeplink_window: Rc::new(RefCell::new(None)),
+            viewport_key: None,
         }
     }
 
@@ -397,8 +401,44 @@ impl App {
         repose_core::request_frame();
     }
 
-    fn scale(&self, window: &Window) -> f32 {
-        window.scale_factor() as f32
+    /// Canvas box in CSS pixels — the space DOM `offsetX`/`clientX` report.
+    fn canvas_css_box(&self, window: &Window) -> Option<(f32, f32)> {
+        let rect = window.canvas()?.get_bounding_client_rect();
+        (rect.width() > 0.0 && rect.height() > 0.0)
+            .then_some((rect.width() as f32, rect.height() as f32))
+    }
+
+    /// Device pixels per CSS pixel for this canvas.
+    ///
+    /// `devicePixelRatio` and the device-pixel content box behind
+    /// `inner_size()` come from different DOM queries and browsers disagree:
+    /// Gecko on Android answers 2 while `devicePixelContentBoxSize` scales by
+    /// 2.727. `inner_size()` decides where the framebuffer and therefore the
+    /// scene lands, so the density is measured from it and `devicePixelRatio`
+    /// is only a fallback for when no canvas box can be read.
+    fn density(&self, window: &Window) -> f32 {
+        let reported = window.scale_factor() as f32;
+        let size = window.inner_size();
+        match self.canvas_css_box(window) {
+            Some((css_width, _)) if size.width > 0 => size.width as f32 / css_width,
+            _ => reported,
+        }
+    }
+
+    /// Factor converting winit pointer coordinates into layout pixels.
+    ///
+    /// winit scales DOM offsets by `devicePixelRatio`, which is not the scale
+    /// the viewport was laid out at, so the correction the density already
+    /// encodes is applied to every incoming position. Exactly 1.0 wherever the
+    /// two sources agree, and equal to `canvas.width / canvas CSS width` —
+    /// the same ratio measured without the layout density.
+    fn input_scale(&self, window: &Window) -> f32 {
+        let reported = window.scale_factor() as f32;
+        if reported > 0.0 && self.rt.scale > 0.0 && self.rt.sched.size.0 > 0 {
+            self.rt.scale / reported
+        } else {
+            1.0
+        }
     }
 
     /// Mirror the desktop runner's cursor handling onto the web canvas:
@@ -616,23 +656,34 @@ Settings &rsaquo; General &rsaquo; Configuration Editor, then set
         let Some(desired) = self.desired_physical_size_from_browser() else {
             return;
         };
-        let current = window.inner_size();
-        if current.width != desired.width || current.height != desired.height {
+        let Some((canvas_w, canvas_h)) = self.canvas_css_box(window) else {
+            return;
+        };
+        // `desired` is CSS × `devicePixelRatio`, the space winit's
+        // `request_inner_size` converts back to CSS. Comparing it against
+        // `inner_size()` would compare two different device-pixel boxes and
+        // re-request the canvas every frame, so the comparison is made in CSS.
+        let dpr = web_sys::window()
+            .map(|w| w.device_pixel_ratio())
+            .unwrap_or(1.0);
+        let matches = dpr > 0.0
+            && ((desired.width as f64 / dpr - canvas_w as f64).abs() < 0.5
+                && (desired.height as f64 / dpr - canvas_h as f64).abs() < 0.5);
+        if !matches {
             let _ = window.request_inner_size(desired);
         }
     }
 
-    fn sync_size_from_window_at_scale(&mut self, window: &Window, scale: f32) {
-        let size = window.inner_size();
-        if (size.width, size.height) != self.rt.sched.size || self.rt.scale != scale {
-            let mut backend = self.backend.borrow_mut();
-            rc::sync_viewport(&mut self.rt, &mut *backend, size, scale);
-        }
-    }
-
     fn sync_size_from_window(&mut self, window: &Window) {
-        let scale = window.scale_factor() as f32;
-        self.sync_size_from_window_at_scale(window, scale);
+        let size = window.inner_size();
+        let mut backend = self.backend.borrow_mut();
+        let key = (size.width, size.height, backend.is_some());
+        if self.viewport_key == Some(key) {
+            return;
+        }
+        self.viewport_key = Some(key);
+        let scale = self.density(window);
+        rc::sync_viewport(&mut self.rt, &mut *backend, size, scale);
     }
 
     fn handle_size_change(&mut self, window: &Window) {
@@ -883,7 +934,7 @@ Settings &rsaquo; General &rsaquo; Configuration Editor, then set
         };
         match result {
             Ok(()) => {
-                let scale = window.scale_factor() as f32;
+                let scale = self.density(&window);
                 let mut backend_ref = self.backend.borrow_mut();
                 rc::sync_viewport(&mut self.rt, &mut backend_ref, size, scale);
                 true
@@ -1001,11 +1052,7 @@ Settings &rsaquo; General &rsaquo; Configuration Editor, then set
                 return;
             }
             match result {
-                Ok(mut b) => {
-                    let size = window.inner_size();
-                    let scale = window.scale_factor() as f32;
-                    b.configure_surface(size.width, size.height);
-                    b.set_pixels_per_point(scale);
+                Ok(b) => {
                     repose_render_wgpu::offscreen::set_shared_device(
                         b.device.clone(),
                         b.queue.clone(),
@@ -1075,10 +1122,15 @@ Settings &rsaquo; General &rsaquo; Configuration Editor, then set
                 let rect = target.get_bounding_client_rect();
                 let x_css = e.client_x() as f64 - rect.left();
                 let y_css = e.client_y() as f64 - rect.top();
-                let dpr = web_sys::window()
-                    .map(|w| w.device_pixel_ratio())
-                    .unwrap_or(1.0);
-                pos_px = ((x_css * dpr) as f32, (y_css * dpr) as f32);
+                // `devicePixelRatio` need not match the canvas device-pixel box
+                // (see `App::input_scale`), so use the configured framebuffer
+                // width over the CSS box instead.
+                let k = if rect.width() > 0.0 {
+                    target.width() as f64 / rect.width()
+                } else {
+                    1.0
+                };
+                pos_px = ((x_css * k) as f32, (y_css * k) as f32);
             }
 
             actions2
@@ -1337,9 +1389,9 @@ impl ApplicationHandler<()> for App {
                 self.handle_size_change(&window);
             }
 
-            WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+            WindowEvent::ScaleFactorChanged { .. } => {
                 self.ensure_fullscreen_size(&window);
-                self.sync_size_from_window_at_scale(&window, scale_factor as f32);
+                self.sync_size_from_window(&window);
                 let size = window.inner_size();
                 if size.width == 0 || size.height == 0 {
                     if let Some(backend) = self.backend.borrow_mut().as_mut() {
@@ -1387,9 +1439,10 @@ impl ApplicationHandler<()> for App {
 
             WindowEvent::CursorMoved { position, .. } => {
                 self.rt.pointer_inside = true;
+                let k = self.input_scale(&window);
                 let pos = Vec2 {
-                    x: position.x as f32,
-                    y: position.y as f32,
+                    x: position.x as f32 * k,
+                    y: position.y as f32 * k,
                 };
                 crate::runner_common::on_cursor_moved(&mut self.rt, pos, &mut self.inspector);
                 self.request_redraw();
@@ -1402,7 +1455,14 @@ impl ApplicationHandler<()> for App {
             }
 
             WindowEvent::MouseWheel { delta, .. } => {
-                let scale = self.scale(&window);
+                let k = self.input_scale(&window);
+                let delta = match delta {
+                    MouseScrollDelta::PixelDelta(p) => MouseScrollDelta::PixelDelta(
+                        winit::dpi::PhysicalPosition::new(p.x * k as f64, p.y * k as f64),
+                    ),
+                    other => other,
+                };
+                let scale = self.rt.scale;
                 if crate::runner_common::on_mouse_wheel(&mut self.rt, delta, scale) {
                     self.request_redraw();
                 }
@@ -1466,9 +1526,12 @@ impl ApplicationHandler<()> for App {
                 }
             }
 
-            WindowEvent::Touch(t) => {
-                let scale = self.scale(&window);
-                if t.phase == winit::event::TouchPhase::Started {
+            WindowEvent::Touch(mut t) => {
+                let scale = self.rt.scale;
+                let k = self.input_scale(&window) as f64;
+                t.location.x *= k;
+                t.location.y *= k;
+                if t.phase == TouchPhase::Started {
                     let pos_px = (t.location.x as f32, t.location.y as f32);
                     self.touch_gestures.contact_down(t.id, pos_px);
                     self.touch_gestures
@@ -1648,7 +1711,7 @@ impl ApplicationHandler<()> for App {
                         self.backend.borrow_mut().as_mut(),
                         self.rt.frame_cache.as_ref(),
                     ) {
-                        let scale = self.scale(&window);
+                        let scale = self.rt.scale;
                         let inspector_active = self
                             .inspector
                             .as_ref()
@@ -1696,7 +1759,7 @@ impl ApplicationHandler<()> for App {
                     return;
                 }
 
-                let scale = self.scale(&window);
+                let scale = self.rt.scale;
                 let output = self.rt.frame(&mut self.root, &self.render);
                 self.drain_render_commands();
                 self.apply_frame_cursor(&window, &output.platform.cursor);

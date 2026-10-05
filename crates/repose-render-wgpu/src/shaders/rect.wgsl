@@ -6,31 +6,37 @@ struct Globals {
 
 struct VSOut {
     @builtin(position) pos: vec4<f32>,
-    @location(0) @interpolate(flat) brush_type: u32,
-    @location(1) @interpolate(flat) grad_kind: u32,
-    @location(2) color0: vec4<f32>,
-    @location(3) color1: vec4<f32>,
-    @location(4) xywh: vec4<f32>,
-    @location(5) radii: vec4<f32>,
-    @location(6) grad_p0: vec2<f32>,
-    @location(7) grad_p1: vec2<f32>,
-    @location(8) @interpolate(flat) tile_mode: u32,
-    @location(9) pos_ndc: vec2<f32>,
-    @location(10) fwd_mat: vec4<f32>,
+    @location(0) color0: vec4<f32>,
+    @location(1) color1: vec4<f32>,
+    @location(2) xywh: vec4<f32>,
+    @location(3) radii: vec4<f32>,
+    @location(4) fwd_mat: vec4<f32>,
+    @location(5) grad: vec4<f32>,
+    @location(6) pos_ndc: vec2<f32>,
+    @location(7) @interpolate(flat) bits: u32,
 };
+
+fn brush_type_of(bits: u32) -> u32 {
+    return bits & 3u;
+}
+
+fn grad_kind_of(bits: u32) -> u32 {
+    return (bits >> 2u) & 3u;
+}
+
+fn tile_mode_of(bits: u32) -> u32 {
+    return (bits >> 4u) & 3u;
+}
 
 @vertex
 fn vs_main(
     @location(0) xywh: vec4<f32>,
     @location(1) radii: vec4<f32>,
-    @location(2) @interpolate(flat) brush_type: u32,
-    @location(3) @interpolate(flat) grad_kind: u32,
-    @location(4) color0: vec4<f32>,
-    @location(5) color1: vec4<f32>,
-    @location(6) grad_p0: vec2<f32>,
-    @location(7) grad_p1: vec2<f32>,
-    @location(8) @interpolate(flat) tile_mode: u32,
-    @location(9) fwd_mat: vec4<f32>,
+    @location(2) color0: vec4<f32>,
+    @location(3) color1: vec4<f32>,
+    @location(4) fwd_mat: vec4<f32>,
+    @location(5) grad: vec4<f32>,
+    @location(6) bits: u32,
     @builtin(vertex_index) v: u32,
 ) -> VSOut {
     var positions = array<vec2<f32>, 6>(
@@ -48,17 +54,14 @@ fn vs_main(
 
     var out: VSOut;
     out.pos = vec4(pos_ndc, 0.0, 1.0);
-    out.xywh = xywh;
-    out.radii = radii;
-    out.brush_type = brush_type;
-    out.grad_kind = grad_kind;
     out.color0 = color0;
     out.color1 = color1;
-    out.grad_p0 = grad_p0;
-    out.grad_p1 = grad_p1;
-    out.tile_mode = tile_mode;
-    out.pos_ndc = pos_ndc;
+    out.xywh = xywh;
+    out.radii = radii;
     out.fwd_mat = fwd_mat;
+    out.grad = grad;
+    out.pos_ndc = pos_ndc;
+    out.bits = bits;
     return out;
 }
 
@@ -91,25 +94,28 @@ fn apply_tile(t: f32, tile_mode: u32) -> f32 {
 }
 
 fn eval_brush(in: VSOut, local_px: vec2<f32>) -> vec4<f32> {
-    if (in.brush_type == 0u) {
+    let grad_p0 = in.grad.xy;
+    let grad_p1 = in.grad.zw;
+    let tile_mode = tile_mode_of(in.bits);
+    if brush_type_of(in.bits) == 0u {
         return in.color0;
     }
-    if (in.grad_kind == 1u) {
-        let d = distance(local_px, in.grad_p0);
-        let radius = max(in.grad_p1.x, 1e-3);
-        return mix(in.color0, in.color1, apply_tile(d / radius, in.tile_mode));
+    if grad_kind_of(in.bits) == 1u {
+        let d = distance(local_px, grad_p0);
+        let radius = max(grad_p1.x, 1e-3);
+        return mix(in.color0, in.color1, apply_tile(d / radius, tile_mode));
     }
-    if (in.grad_kind == 2u) {
-        let rel = local_px - in.grad_p0;
+    if grad_kind_of(in.bits) == 2u {
+        let rel = local_px - grad_p0;
         var frac = atan2(rel.y, rel.x) / 6.2831853;
         if (frac < 0.0) {
             frac += 1.0;
         }
-        return mix(in.color0, in.color1, apply_tile(frac, in.tile_mode));
+        return mix(in.color0, in.color1, apply_tile(frac, tile_mode));
     }
-    let dir = in.grad_p1 - in.grad_p0;
+    let dir = grad_p1 - grad_p0;
     let len2 = max(dot(dir, dir), 1e-6);
-    let t = apply_tile(dot(local_px - in.grad_p0, dir) / len2, in.tile_mode);
+    let t = apply_tile(dot(local_px - grad_p0, dir) / len2, tile_mode);
     return mix(in.color0, in.color1, t);
 }
 
