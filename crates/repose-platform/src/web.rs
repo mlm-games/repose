@@ -1,17 +1,17 @@
 //! Web runner (wasm32) using winit + repose-render-wgpu (async init).
 //!
 //! winit's web backend does not provide an editor or an IME input connection;
-//! its `set_ime_allowed` and `set_ime_cursor_area` methods are no-ops. Mobile
-//! and soft-keyboard editing therefore requires an application-owned hidden
-//! `<input>`/`<textarea>` (or `contenteditable`) bridge. The bridge must mirror
-//! the focused Repose field's value and selection, focus it on the canvas tap,
-//! and forward `beforeinput`/`input`/composition events (or the resulting text
-//! and selection) to the runtime; winit does not synthesize those editor events
-//! for a canvas. Canvas attributes alone do not provide that bridge and are
-//! not treated as text-editor support here.
+//! its `set_ime_allowed` and `set_ime_cursor_area` methods are no-ops, and it
+//! never emits `WindowEvent::Ime`. Soft-keyboard editing therefore runs through
+//! [`crate::web_text_agent`], a hidden `<input>` that owns DOM focus while an
+//! editable text field is focused and forwards its composition, input and key
+//! events to the runtime. Canvas attributes alone do not provide that bridge
+//! and are not treated as text-editor support here.
 use crate::common as rc;
+use crate::web_text_agent::{AgentEvent, TextAgent};
 
 use crate::render::RenderContext;
+use crate::runner_common::{BackendLifecycle, BackendRetry, BackendState};
 use crate::*;
 
 use std::cell::{Cell, RefCell};
@@ -57,21 +57,6 @@ struct ClipboardPasteRequest {
     target: ClipboardPasteTarget,
     state: ClipboardPasteState,
 }
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum BackendState {
-    Pending,
-    Ready,
-    Failed,
-    /// No GPU backend could be created even after retries. Terminal: the canvas
-    /// stays blank unless the page is reloaded, so say why instead.
-    Unavailable,
-}
-
-/// Adapter/surface creation is retried a few times because a browser may be
-/// still bringing up its GPU process. A capability problem (no WebGPU, WebGL
-/// disabled, blocklisted driver) never resolves, so stop after this many tries.
-const MAX_BACKEND_INIT_ATTEMPTS: u32 = 3;
 
 enum ExternalDropAction {
     DroppedFiles {
@@ -263,10 +248,9 @@ struct App {
 
     window: Option<Arc<Window>>,
     backend: Rc<RefCell<Option<repose_render_wgpu::WgpuBackend>>>,
-    backend_state: Rc<Cell<BackendState>>,
     backend_generation: Rc<Cell<u64>>,
     backend_retry_at: Rc<Cell<Option<web_time::Instant>>>,
-    backend_attempts: Rc<Cell<u32>>,
+    backend_lifecycle: Rc<RefCell<BackendLifecycle>>,
     surface_retry_pending: bool,
     surface_retry_at: Option<web_time::Instant>,
     present_retry_pending: bool,
@@ -283,6 +267,7 @@ struct App {
     paste_requests: Rc<RefCell<Vec<ClipboardPasteRequest>>>,
     paste_apply_index: usize,
     paste_request_generation: u64,
+    text_agent: Option<TextAgent>,
     focus_generation: u64,
     focused_id: Option<u64>,
     last_window_focused: bool,
@@ -342,6 +327,9 @@ impl App {
         self.paste_apply_index = 0;
         self.paste_request_generation = self.paste_request_generation.wrapping_add(1);
         self.external_drop_actions.borrow_mut().clear();
+        if let Some(agent) = self.text_agent.as_mut() {
+            agent.hide();
+        }
     }
 
     fn poll_visibility_lifecycle(&mut self) {
@@ -369,10 +357,9 @@ impl App {
             options,
             window: None,
             backend: Rc::new(RefCell::new(None)),
-            backend_state: Rc::new(Cell::new(BackendState::Pending)),
             backend_generation: Rc::new(Cell::new(0)),
             backend_retry_at: Rc::new(Cell::new(None)),
-            backend_attempts: Rc::new(Cell::new(0)),
+            backend_lifecycle: Rc::new(RefCell::new(BackendLifecycle::new())),
             surface_retry_pending: false,
             surface_retry_at: None,
             present_retry_pending: false,
@@ -388,6 +375,7 @@ impl App {
             paste_requests: Rc::new(RefCell::new(Vec::new())),
             paste_apply_index: 0,
             paste_request_generation: 0,
+            text_agent: None,
             focus_generation: 0,
             focused_id: None,
             last_window_focused: true,
@@ -456,7 +444,7 @@ impl App {
     /// value with the GML hotspot. Browsers cap cursors ~128px, so art
     /// bigger than that scales down (hotspot scales with it). Returns
     /// `None` when the pixels are malformed or PNG/base64 encoding is
-    /// unavailable — callers fall back to the default arrow.
+    /// unavailable - callers fall back to the default arrow.
     fn custom_cursor_css(img: &repose_core::CustomCursorImage) -> Option<String> {
         const MAX: u32 = 128;
         let (w, h) = (img.size[0] as u32, img.size[1] as u32);
@@ -990,21 +978,21 @@ Settings &rsaquo; General &rsaquo; Configuration Editor, then set
         self.backend_generation
             .set(self.backend_generation.get().wrapping_add(1));
         let request_generation = self.backend_generation.get();
-        self.backend_state.set(BackendState::Pending);
+        self.backend_lifecycle.borrow_mut().begin();
         self.backend_retry_at.set(None);
         *self.backend.borrow_mut() = None;
         repose_core::request_frame();
         window.request_redraw();
         let backend_cell = self.backend.clone();
-        let backend_state = self.backend_state.clone();
         let backend_generation = self.backend_generation.clone();
         let backend_retry_at = self.backend_retry_at.clone();
-        let backend_attempts = self.backend_attempts.clone();
+        let backend_lifecycle = self.backend_lifecycle.clone();
         let msaa_samples = self.options.common.msaa_samples;
         let present_mode = self.options.common.present_mode;
         spawn_local(async move {
             let result = repose_render_wgpu::WgpuBackend::new_async_with_options(
                 window.clone(),
+                None,
                 msaa_samples,
                 present_mode,
             )
@@ -1023,28 +1011,25 @@ Settings &rsaquo; General &rsaquo; Configuration Editor, then set
                         b.queue.clone(),
                     );
                     *backend_cell.borrow_mut() = Some(b);
-                    backend_state.set(BackendState::Ready);
+                    backend_lifecycle.borrow_mut().ready();
                     backend_retry_at.set(None);
-                    backend_attempts.set(0);
                     repose_core::request_frame();
                     window.request_redraw();
                     log::info!("WGPU backend initialized");
                 }
                 Err(e) => {
                     *backend_cell.borrow_mut() = None;
-                    let attempts = backend_attempts.get() + 1;
-                    backend_attempts.set(attempts);
-                    log::error!("WGPU init failed ({attempts}): {e:?}");
-                    if attempts >= MAX_BACKEND_INIT_ATTEMPTS {
-                        backend_state.set(BackendState::Unavailable);
-                        backend_retry_at.set(None);
-                        Self::show_gpu_unavailable_notice(&window, &format!("{e}"));
-                    } else {
-                        backend_state.set(BackendState::Failed);
-                        let delay = 250u64 << (attempts - 1).min(4);
-                        backend_retry_at.set(Some(
-                            web_time::Instant::now() + web_time::Duration::from_millis(delay),
-                        ));
+                    match backend_lifecycle.borrow_mut().failed() {
+                        BackendRetry::RetryAfter(delay) => {
+                            log::error!("WGPU init failed, retrying in {delay:?}: {e:?}");
+                            backend_retry_at.set(Some(web_time::Instant::now() + delay));
+                        }
+                        BackendRetry::Unavailable => {
+                            log::error!("WGPU init failed: {e:?}");
+                            backend_retry_at.set(None);
+                            Self::show_gpu_unavailable_notice(&window, &format!("{e}"));
+                        }
+                        BackendRetry::Ready => unreachable!(),
                     }
                     window.request_redraw();
                 }
@@ -1153,6 +1138,12 @@ Settings &rsaquo; General &rsaquo; Configuration Editor, then set
     fn finish_window_setup(&mut self, window: Arc<Window>) {
         self.inject_fullscreen_css_if_needed(&window);
         if let Some(canvas) = window.canvas() {
+            match TextAgent::attach(&window, &canvas) {
+                Ok(agent) => self.text_agent = Some(agent),
+                Err(error) => {
+                    log::warn!("soft-keyboard input agent unavailable: {error:?}");
+                }
+            }
             let _ = canvas.focus();
         }
         self.ensure_fullscreen_size(&window);
@@ -1163,6 +1154,88 @@ Settings &rsaquo; General &rsaquo; Configuration Editor, then set
         self.start_backend(window);
         Self::setup_web_clipboard();
         self.request_redraw();
+    }
+
+    /// Hand the soft keyboard's editor, and the runtime's focus verdict, over
+    /// to the hidden input agent. Runs right after compose so the agent sits on
+    /// the field the current frame actually focused.
+    fn sync_text_agent(&mut self, window: &Window, platform: &repose_app::PlatformOutput) {
+        let Some(canvas) = window.canvas() else {
+            return;
+        };
+        let focused = self
+            .rt
+            .sched
+            .focused
+            .filter(|_| self.rt.sched.window_focused && platform.ime_allowed);
+        let action = self.rt.focused_ime_action();
+        let Some(agent) = self.text_agent.as_mut() else {
+            return;
+        };
+        agent.sync(
+            &canvas,
+            focused,
+            platform.ime_cursor_area,
+            platform.ime_purpose,
+            platform.ime_auto_correct,
+            platform.ime_capitalization,
+            platform.keyboard_type,
+            action,
+        );
+    }
+
+    /// Dispatch what the DOM queued since the last tick. Keys arrive here
+    /// instead of through winit whenever the agent holds focus, since winit
+    /// listens on the canvas.
+    fn apply_text_agent_events(&mut self) {
+        let Some(agent) = self.text_agent.as_ref() else {
+            return;
+        };
+        for event in agent.drain_events() {
+            let changed = match event {
+                AgentEvent::Ime(ime) => {
+                    self.rt.handle_ime(&ime);
+                    true
+                }
+                AgentEvent::Insert(text) => {
+                    if self.rt.insert_text_into_focused(&text) {
+                        true
+                    } else if self
+                        .rt
+                        .sched
+                        .focused
+                        .is_some_and(|id| !self.is_editable_textfield(id))
+                    {
+                        // Focus target with an `on_ime` handler instead of a
+                        // text field: the runtime routes commits to its callback.
+                        self.rt
+                            .handle_ime(&repose_core::input::ImeEvent::Commit(text));
+                        true
+                    } else {
+                        false
+                    }
+                }
+                AgentEvent::Key(key) => {
+                    crate::common::update_modifiers(&mut self.rt.modifiers, &key.modifiers);
+                    crate::runner_common::on_key_parts(
+                        &mut self.rt,
+                        key.physical,
+                        key.pressed,
+                        key.repeat,
+                        // Printable characters already went through `input`.
+                        None,
+                        &mut self.inspector,
+                    )
+                }
+            };
+            if changed {
+                self.request_redraw();
+            }
+        }
+    }
+
+    fn text_agent_owns_focus(&self) -> bool {
+        self.text_agent.as_ref().is_some_and(TextAgent::has_focus)
     }
 }
 
@@ -1226,6 +1299,7 @@ impl ApplicationHandler<()> for App {
         ) {
             self.apply_clipboard_actions();
         }
+        self.apply_text_agent_events();
         self.apply_external_drop_actions(&window);
 
         match event {
@@ -1250,6 +1324,12 @@ impl ApplicationHandler<()> for App {
             }
 
             WindowEvent::Focused(focused) => {
+                // winit tracks canvas focus, so handing DOM focus to the soft
+                // keyboard's input agent reads as a window blur. The window is
+                // still the focused one; only the editor moved.
+                if !focused && self.text_agent_owns_focus() {
+                    return;
+                }
                 self.os_focused = focused;
                 let focused = focused && !self.occluded;
                 self.rt.sched.window_focused = focused;
@@ -1488,11 +1568,8 @@ impl ApplicationHandler<()> for App {
             WindowEvent::RedrawRequested => {
                 crate::run_pre_redraw(&self.render);
 
-                match self.backend_state.get() {
-                    BackendState::Pending | BackendState::Failed | BackendState::Unavailable => {
-                        return;
-                    }
-                    BackendState::Ready => {}
+                if self.backend_lifecycle.borrow().state() != BackendState::Ready {
+                    return;
                 }
 
                 let surface_missing = self
@@ -1502,6 +1579,22 @@ impl ApplicationHandler<()> for App {
                     .is_some_and(|backend| backend.surface.is_none());
                 if surface_missing {
                     self.recover_missing_surface();
+                    return;
+                }
+
+                let device_lost = self
+                    .backend
+                    .borrow()
+                    .as_ref()
+                    .and_then(|b| b.take_device_lost());
+                if let Some(reason) = device_lost {
+                    log::error!("GPU device lost, rebuilding backend: {reason}");
+                    let window = self.window.clone();
+                    *self.backend.borrow_mut() = None;
+                    self.rt.frame_cache = None;
+                    if let Some(window) = window {
+                        self.start_backend(window);
+                    }
                     return;
                 }
 
@@ -1579,6 +1672,7 @@ impl ApplicationHandler<()> for App {
                 let output = self.rt.frame(&mut self.root, &self.render);
                 self.drain_render_commands();
                 self.apply_frame_cursor(&window, &output.platform.cursor);
+                self.sync_text_agent(&window, &output.platform);
 
                 let frame = output.into_shared_frame();
                 self.rt.after_compose_shared(frame.clone(), scale);
@@ -1637,12 +1731,9 @@ impl ApplicationHandler<()> for App {
         }
         let redraw_deferred = self.redraw_deferred;
 
-        match self.backend_state.get() {
-            BackendState::Pending => {
-                el.set_control_flow(winit::event_loop::ControlFlow::Wait);
-                return;
-            }
-            BackendState::Unavailable => {
+        let backend_state = self.backend_lifecycle.borrow().state();
+        match backend_state {
+            BackendState::Pending | BackendState::Unavailable => {
                 el.set_control_flow(winit::event_loop::ControlFlow::Wait);
                 return;
             }

@@ -67,7 +67,7 @@ fn tap_with_finger_jitter_fires_click() {
     let pos = (100.0, 100.0);
     g.touch_started(&mut rt, 0, pos);
     // A real finger dwells before it lifts; the OS streams jitter moves.
-    std::thread::sleep(std::time::Duration::from_millis(60));
+    std::thread::sleep(web_time::Duration::from_millis(60));
     g.touch_moved(&mut rt, 0, (pos.0 + 1.0, pos.1), SCALE);
     g.touch_ended(&mut rt, 0, (pos.0 + 1.0, pos.1), false);
 

@@ -12,6 +12,8 @@ pub mod android;
 
 #[cfg(target_arch = "wasm32")]
 pub mod web;
+#[cfg(target_arch = "wasm32")]
+mod web_text_agent;
 
 mod common;
 pub mod gamepad;
@@ -21,6 +23,9 @@ pub mod sensor;
 pub mod window_v2;
 
 use common as rc;
+
+#[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
+use crate::runner_common::{BackendRetry, BackendState, MAX_BACKEND_INIT_ATTEMPTS};
 
 pub use render::{ImageHandleGuard, RenderCommand, RenderContext};
 
@@ -278,6 +283,8 @@ pub fn run_desktop_app_with_config(
         render: RenderContext,
         window: Option<Arc<Window>>,
         backend: Option<repose_render_wgpu::WgpuBackend>,
+        backend_lifecycle: crate::runner_common::BackendLifecycle,
+        backend_retry_at: Option<Instant>,
         rt: ReposeRuntime,
         inspector: Option<repose_devtools::Inspector>,
         msaa_samples: u32,
@@ -369,6 +376,8 @@ pub fn run_desktop_app_with_config(
                 render: RenderContext::new(),
                 window: None,
                 backend: None,
+                backend_lifecycle: crate::runner_common::BackendLifecycle::new(),
+                backend_retry_at: None,
                 rt: ReposeRuntime::new(),
                 inspector: if config.enable_inspector {
                     Some(repose_devtools::Inspector::new())
@@ -738,6 +747,7 @@ pub fn run_desktop_app_with_config(
 
                         match repose_render_wgpu::WgpuBackend::new_with_options(
                             w.clone(),
+                            Some(el.owned_display_handle()),
                             self.msaa_samples,
                             self.present_mode,
                         ) {
@@ -1478,14 +1488,34 @@ pub fn run_desktop_app_with_config(
             }
 
             #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
+            if let Some(reason) = self.backend.as_ref().and_then(|b| b.take_device_lost()) {
+                log::error!("GPU device lost, rebuilding backend: {reason}");
+                self.backend = None;
+                self.backend_retry_at = None;
+                self.backend_lifecycle.begin();
+                self.rt.frame_cache = None;
+                self.request_redraw();
+            }
+
+            #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
             if WINDOW_VISIBLE.load(Ordering::Relaxed)
                 && !WINDOW_OCCLUDED.load(Ordering::Relaxed)
                 && self.backend.is_none()
+                && self.backend_lifecycle.state() != BackendState::Unavailable
                 && let Some(w) = &self.window
             {
+                let now = Instant::now();
+                if let Some(retry_at) = self.backend_retry_at
+                    && now < retry_at
+                {
+                    el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(retry_at));
+                    return;
+                }
+                self.backend_retry_at = None;
                 log::info!("about_to_wait: recreating GPU backend");
                 match repose_render_wgpu::WgpuBackend::new_with_options(
                     w.clone(),
+                    Some(el.owned_display_handle()),
                     self.msaa_samples,
                     self.present_mode,
                 ) {
@@ -1500,9 +1530,24 @@ pub fn run_desktop_app_with_config(
                             b.queue.clone(),
                         );
                         self.backend = Some(b);
+                        self.backend_lifecycle.ready();
                         self.request_redraw();
                     }
-                    Err(e) => log::error!("about_to_wait: failed to recreate backend: {e:?}"),
+                    Err(e) => match self.backend_lifecycle.failed() {
+                        BackendRetry::RetryAfter(delay) => {
+                            self.backend_retry_at = Some(now + delay);
+                            log::error!(
+                                "about_to_wait: failed to recreate backend, retrying in \
+                                 {delay:?}: {e:?}"
+                            );
+                        }
+                        BackendRetry::Unavailable => log::error!(
+                            "about_to_wait: GPU backend permanently unavailable after {} \
+                             attempts, giving up: {e:?}",
+                            MAX_BACKEND_INIT_ATTEMPTS
+                        ),
+                        BackendRetry::Ready => unreachable!(),
+                    },
                 }
             }
 

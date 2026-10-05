@@ -1321,7 +1321,7 @@ pub fn run_post_scroll(conn: &RefCell<Option<NestedScrollConnection>>, leftover:
 mod fling_tests {
     use super::*;
 
-    const FRAME: std::time::Duration = std::time::Duration::from_millis(16);
+    const FRAME: web_time::Duration = web_time::Duration::from_millis(16);
 
     fn seeded() -> ScrollState {
         let st = ScrollState::new();

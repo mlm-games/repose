@@ -24,6 +24,7 @@ log = { workspace = true }
 anyhow = { workspace = true }
 bytemuck = { workspace = true }
 pollster = { workspace = true }
+web-time.workspace = true
 web-workers.workspace = true
 image = { workspace = true }
 lyon_tessellation = { workspace = true }

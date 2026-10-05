@@ -372,17 +372,20 @@ pub(crate) fn hit_index_by_id(frame: &Frame, id: u64) -> Option<usize> {
 }
 
 pub(crate) fn is_back_key(event: &winit::event::KeyEvent) -> bool {
-    if event.logical_key == winit::keyboard::Key::Named(winit::keyboard::NamedKey::BrowserBack)
-        || matches!(
-            event.physical_key,
-            winit::keyboard::PhysicalKey::Code(winit::keyboard::KeyCode::BrowserBack)
-        )
-    {
+    event.logical_key == winit::keyboard::Key::Named(winit::keyboard::NamedKey::BrowserBack)
+        || is_back_key_physical(event.physical_key)
+}
+
+pub(crate) fn is_back_key_physical(key: winit::keyboard::PhysicalKey) -> bool {
+    if matches!(
+        key,
+        winit::keyboard::PhysicalKey::Code(winit::keyboard::KeyCode::BrowserBack)
+    ) {
         return true;
     }
     #[cfg(target_os = "android")]
     if matches!(
-        event.physical_key,
+        key,
         winit::keyboard::PhysicalKey::Unidentified(winit::keyboard::NativeKeyCode::Android(4))
     ) {
         return true;
@@ -399,7 +402,9 @@ pub(crate) fn is_escape_key(event: &winit::event::KeyEvent) -> bool {
 }
 
 pub(crate) fn winit_key_to_repose(
-    ev: &winit::event::KeyEvent,
+    physical_key: winit::keyboard::PhysicalKey,
+    pressed: bool,
+    repeat: bool,
     mapped_key: &repose_core::input::Key,
     mods: &repose_core::input::Modifiers,
 ) -> repose_core::input::KeyEvent {
@@ -411,14 +416,14 @@ pub(crate) fn winit_key_to_repose(
     repose_core::input::KeyEvent {
         key: mapped_key.clone(),
         modifiers: *mods,
-        is_repeat: ev.repeat,
-        event_type: if ev.state == winit::event::ElementState::Pressed {
+        is_repeat: repeat,
+        event_type: if pressed {
             repose_core::input::KeyEventType::Down
         } else {
             repose_core::input::KeyEventType::Up
         },
         utf16_code_point: utf16,
-        physical: Some(crate::runner_common::map_physical_key(ev.physical_key)),
+        physical: Some(crate::runner_common::map_physical_key(physical_key)),
     }
 }
 

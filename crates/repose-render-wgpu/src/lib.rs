@@ -5,7 +5,7 @@ use std::hash::Hash;
 use std::num::NonZeroU64;
 #[cfg(feature = "winit-surface")]
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, Mutex, Weak};
 
 use repose_core::color::{ChromaSiting, ColorInfo, PixelFormat};
 use repose_core::{
@@ -341,7 +341,7 @@ pub struct WgpuSceneRenderer {
     retained_bytes_total: u64,
 
     // A8 coverage-tile management (host-rasterized masks composited tinted;
-    // no retained CPU copies — tiles are immutable and re-registered).
+    // no retained CPU copies - tiles are immutable and re-registered).
     next_coverage_handle: u64,
     coverages: HashMap<u64, CoverageTex>,
 
@@ -389,6 +389,7 @@ pub struct WgpuSurfaceBackend {
     #[cfg_attr(not(feature = "winit-surface"), allow(dead_code))]
     pending_reconfigure: bool,
     pub renderer: WgpuSceneRenderer,
+    device_lost: Arc<Mutex<Option<(wgpu::DeviceLostReason, String)>>>,
 }
 
 impl std::ops::Deref for WgpuSurfaceBackend {
@@ -436,7 +437,7 @@ impl Drop for WgpuSceneRenderer {
         {
             let _ = self.device.poll(wgpu::PollType::Wait {
                 submission_index: None,
-                timeout: Some(std::time::Duration::from_millis(100)),
+                timeout: Some(web_time::Duration::from_millis(100)),
             });
         }
     }
@@ -544,8 +545,8 @@ struct CallbackIdentity {
 /// excludes the target's size and scale: `prepare` runs every frame with
 /// the current [`ScreenDescriptor`], so any size-dependent resource
 /// belongs in the callback's own `ensure`. Keying the bucket by size
-/// would drop every callback's GPU state on a window resize — atlas
-/// contents, pipeline caches — leaving nothing to rebuild from.
+/// would drop every callback's GPU state on a window resize - atlas
+/// contents, pipeline caches - leaving nothing to rebuild from.
 ///
 /// A bucket still changes identity with the target, format or sample
 /// count, and is evicted once [`MAX_CALLBACK_SCOPES`] is exceeded, so
@@ -2779,7 +2780,7 @@ impl WgpuSceneRenderer {
     /// unblendable output format fails later as a validation error rather
     /// than here. Prefer
     /// [`try_from_device_with_adapter`](Self::try_from_device_with_adapter)
-    /// whenever an adapter is available — it also checks the format's
+    /// whenever an adapter is available - it also checks the format's
     /// render-attachment, blend and multisample-resolve support and picks a
     /// supported sample count.
     pub fn from_device(
@@ -3551,12 +3552,77 @@ impl WgpuSceneRenderer {
     }
 }
 
+/// wgpu backend names accepted by [`parse_backends`], mapped from the
+/// canonical [`wgpu::Backend::to_str`] spelling plus the aliases people
+/// actually type.
+#[cfg(not(target_arch = "wasm32"))]
+fn backend_by_name(name: &str) -> Option<wgpu::Backend> {
+    match name {
+        "gl" | "opengl" | "opengles" | "webgl" => Some(wgpu::Backend::Gl),
+        "webgpu" | "browser-webgpu" => Some(wgpu::Backend::BrowserWebGpu),
+        "metal" => Some(wgpu::Backend::Metal),
+        "vulkan" => Some(wgpu::Backend::Vulkan),
+        "dx12" | "d3d12" => Some(wgpu::Backend::Dx12),
+        _ => None,
+    }
+}
+
+/// Parse a comma/space separated wgpu backend list such as `gl` or
+/// `vulkan,gl`. Unknown names are dropped with a warning rather than
+/// failing the whole spec, and `None` means "nothing valid was requested".
+#[cfg(not(target_arch = "wasm32"))]
+pub fn parse_backends(spec: &str) -> Option<wgpu::Backends> {
+    let mut bits = wgpu::Backends::empty();
+    for name in spec.split([',', ' ', '+']).filter(|n| !n.is_empty()) {
+        match backend_by_name(&name.to_ascii_lowercase()) {
+            Some(backend) => bits |= wgpu::Backends::from(backend),
+            None => log::warn!(
+                "REPOSE_WGPU_BACKENDS: ignoring unknown backend {name:?}; \
+                 expected one of noop, vulkan, metal, dx12, gl, webgpu"
+            ),
+        }
+    }
+    (!bits.is_empty()).then_some(bits)
+}
+
+#[cfg(feature = "winit-surface")]
+pub(crate) async fn surface_instance(
+    display: Option<winit::event_loop::OwnedDisplayHandle>,
+) -> (Instance, wgpu::Backends) {
+    // The display handle is what lets wgpu's GLES backend reach a real
+    // platform surface. Without it wgpu falls back to a surfaceless/legacy-EGL
+    // display, and on Wayland the GL adapter is then rejected outright as
+    // surface-incompatible, which kills the OpenGL fallback entirely.
+    let mut desc = match display {
+        Some(handle) => wgpu::InstanceDescriptor::new_with_display_handle(Box::new(handle)),
+        None => wgpu::InstanceDescriptor::new_without_display_handle(),
+    };
+    if cfg!(target_arch = "wasm32") {
+        desc.backends = wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL;
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Ok(spec) = std::env::var("REPOSE_WGPU_BACKENDS")
+        && let Some(bits) = parse_backends(&spec)
+    {
+        log::info!("REPOSE_WGPU_BACKENDS={spec} -> {bits:?}");
+        desc.backends = bits;
+    }
+
+    let backends = desc.backends;
+    let instance = if cfg!(target_arch = "wasm32") {
+        wgpu::util::new_instance_with_webgpu_detection(desc).await
+    } else {
+        wgpu::Instance::new(desc)
+    };
+    (instance, backends)
+}
+
 impl WgpuSurfaceBackend {
     #[cfg(feature = "winit-surface")]
     pub async fn new_async(
         window: Arc<winit::window::Window>,
     ) -> anyhow::Result<WgpuSurfaceBackend> {
-        Self::new_async_with_options(window, 4, PresentModePref::Auto).await
+        Self::new_async_with_options(window, None, 4, PresentModePref::Auto).await
     }
 
     /// Create a windowed surface backend, honoring the requested MSAA sample
@@ -3566,24 +3632,23 @@ impl WgpuSurfaceBackend {
         window: Arc<winit::window::Window>,
         msaa_samples: u32,
     ) -> anyhow::Result<WgpuSurfaceBackend> {
-        Self::new_async_with_options(window, msaa_samples, PresentModePref::Auto).await
+        Self::new_async_with_options(window, None, msaa_samples, PresentModePref::Auto).await
     }
 
     /// Create a windowed surface backend, honoring the requested MSAA sample
     /// count and present-mode preference.
+    ///
+    /// `display` must be the event loop's owned display handle on native
+    /// platforms, otherwise the GL backend cannot present (see
+    /// [`surface_instance`]).
     #[cfg(feature = "winit-surface")]
     pub async fn new_async_with_options(
         window: Arc<winit::window::Window>,
+        display: Option<winit::event_loop::OwnedDisplayHandle>,
         msaa_samples: u32,
         present_mode: PresentModePref,
     ) -> anyhow::Result<WgpuSurfaceBackend> {
-        let instance: Instance = if cfg!(target_arch = "wasm32") {
-            let mut desc = wgpu::InstanceDescriptor::new_without_display_handle();
-            desc.backends = wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL;
-            wgpu::util::new_instance_with_webgpu_detection(desc).await
-        } else {
-            wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle())
-        };
+        let (instance, backends) = surface_instance(display).await;
 
         let surface = instance.create_surface(window.clone())?;
 
@@ -3595,7 +3660,16 @@ impl WgpuSurfaceBackend {
                 apply_limit_buckets: false,
             })
             .await
-            .map_err(|e| anyhow::anyhow!("No suitable adapter: {e:?}"))?;
+            .map_err(|e| {
+                anyhow::anyhow!("no adapter for this window (enabled backends {backends:?}): {e:?}")
+            })?;
+        log::info!(
+            "wgpu adapter: {} backend={:?} driver={:?} type={:?}",
+            adapter.get_info().name,
+            adapter.get_info().backend,
+            adapter.get_info().driver,
+            adapter.get_info().device_type,
+        );
 
         let limits = adapter.limits();
 
@@ -3629,9 +3703,27 @@ impl WgpuSurfaceBackend {
             .await
             .map_err(|e| anyhow::anyhow!("request_device failed: {e:?}"))?;
 
+        let device_lost = Arc::new(Mutex::new(None));
+        {
+            let device_lost = device_lost.clone();
+            device.set_device_lost_callback(move |reason, message| {
+                log::error!("wgpu device lost ({reason:?}): {message}");
+                if let Ok(mut slot) = device_lost.lock() {
+                    *slot = Some((reason, message));
+                }
+            });
+        }
+
         let size = window.inner_size();
 
         let caps = surface.get_capabilities(&adapter);
+
+        let Some(format) = caps.formats.first().copied() else {
+            anyhow::bail!(
+                "surface exposes no presentable formats (adapter {})",
+                adapter.get_info().name
+            );
+        };
 
         let (format, view_format) = if cfg!(target_arch = "wasm32")
             && adapter
@@ -3644,7 +3736,7 @@ impl WgpuSurfaceBackend {
                 .iter()
                 .copied()
                 .find(|f| !f.is_srgb())
-                .unwrap_or(caps.formats[0]);
+                .unwrap_or(format);
             (non_srgb, Some(non_srgb.add_srgb_suffix()))
         } else if cfg!(target_arch = "wasm32") {
             let fmt = caps
@@ -3652,7 +3744,7 @@ impl WgpuSurfaceBackend {
                 .iter()
                 .copied()
                 .find(|f| f.is_srgb())
-                .unwrap_or(caps.formats[0]);
+                .unwrap_or(format);
             (fmt, None)
         } else {
             let fmt = caps
@@ -3660,12 +3752,15 @@ impl WgpuSurfaceBackend {
                 .iter()
                 .copied()
                 .find(|f| f.is_srgb())
-                .unwrap_or(caps.formats[0]);
+                .unwrap_or(format);
             (fmt, None)
         };
 
         let present_mode = pick_present_mode(&caps, present_mode);
-        let alpha_mode = caps.alpha_modes[0];
+        let alpha_mode = *caps
+            .alpha_modes
+            .first()
+            .ok_or_else(|| anyhow::anyhow!("surface exposes no alpha modes"))?;
 
         let render_format = view_format.unwrap_or(format);
         let msaa_samples = pick_surface_msaa(&adapter, render_format, msaa_samples);
@@ -3684,8 +3779,19 @@ impl WgpuSurfaceBackend {
         // `COPY_SRC` lets an isolated blend snapshot the backdrop straight from
         // the swapchain when there is no multisample resolve target to copy
         // from. Canvas textures may not be storage-bound, but copying from them
-        // is allowed.
-        let surface_usage = wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC;
+        // is allowed. Not every backend grants it - GL surfaces are
+        // render-target only - and the snapshot path already skips a source
+        // without `COPY_SRC`, so request the intersection rather than making
+        // `configure` fail and taking down every backend that lacks the usage.
+        let wanted_usage = wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC;
+        let surface_usage = wanted_usage & caps.usages;
+        if surface_usage != wanted_usage {
+            log::warn!(
+                "surface {format:?} cannot be used as {:?}; swapchain-sourced blend snapshots \
+                 are skipped on this backend",
+                wanted_usage - surface_usage
+            );
+        }
         let config = wgpu::SurfaceConfiguration {
             usage: surface_usage,
             format,
@@ -3708,6 +3814,7 @@ impl WgpuSurfaceBackend {
             surface_config: Some(config),
             pending_reconfigure: false,
             renderer,
+            device_lost,
         })
     }
 
@@ -3727,11 +3834,13 @@ impl WgpuSurfaceBackend {
     #[cfg(all(feature = "winit-surface", not(target_arch = "wasm32")))]
     pub fn new_with_options(
         window: Arc<winit::window::Window>,
+        display: Option<winit::event_loop::OwnedDisplayHandle>,
         msaa_samples: u32,
         present_mode: PresentModePref,
     ) -> anyhow::Result<WgpuSurfaceBackend> {
         pollster::block_on(Self::new_async_with_options(
             window,
+            display,
             msaa_samples,
             present_mode,
         ))
@@ -3753,12 +3862,22 @@ impl WgpuSurfaceBackend {
     #[cfg(all(feature = "winit-surface", target_arch = "wasm32"))]
     pub fn new_with_options(
         _window: Arc<winit::window::Window>,
+        _display: Option<winit::event_loop::OwnedDisplayHandle>,
         _msaa_samples: u32,
         _present_mode: PresentModePref,
     ) -> anyhow::Result<WgpuSurfaceBackend> {
         anyhow::bail!(
-            "Use WgpuSurfaceBackend::new_async_with_options(window, msaa, mode).await on wasm32"
+            "Use WgpuSurfaceBackend::new_async_with_options(window, display, msaa, mode).await on wasm32"
         )
+    }
+
+    /// Reason the device was lost, consumed once. `None` while healthy and
+    /// after an ordinary `Destroyed`, which is what dropping this backend
+    /// produces; runners use this to tell a crash/reset apart from teardown
+    /// and rebuild the backend.
+    pub fn take_device_lost(&self) -> Option<String> {
+        let (reason, message) = self.device_lost.lock().ok()?.take()?;
+        (reason != wgpu::DeviceLostReason::Destroyed).then_some(message)
     }
 }
 
@@ -3924,7 +4043,7 @@ impl WgpuSceneRenderer {
         let (w, h, rgba) = decode_image_rgba8(data, max_dimension)?;
         self.set_image_rgba8(handle, w, h, &rgba, srgb)?;
         // Encoded uploads have no size at the call site, so publish it here for
-        // layout — only once the pixels are actually on the GPU.
+        // layout - only once the pixels are actually on the GPU.
         repose_core::set_image_intrinsic_size(handle, w, h);
         Ok(())
     }
@@ -7381,7 +7500,7 @@ impl WgpuSceneRenderer {
     /// it is invisible in the parent, so clipping it in the layer changes
     /// nothing. Children keep the node's affine part on the stack (so
     /// `combine` stays affine-only) plus a layer-local shift, exactly like
-    /// producer-owned blur layers — which is exact under rigid ancestors
+    /// producer-owned blur layers - which is exact under rigid ancestors
     /// (translations commute) and the documented layer contract otherwise.
     #[allow(clippy::too_many_arguments)]
     fn replay_active_clips(

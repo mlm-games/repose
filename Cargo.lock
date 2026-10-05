@@ -3156,6 +3156,7 @@ dependencies = [
  "repose-core",
  "repose-text",
  "repose-ui",
+ "web-time",
  "web-workers",
  "wgpu",
  "winit",

@@ -199,7 +199,7 @@ fn combined_clickable_delays_single_click_when_double_configured() {
     rt.handle_pointer_press(pos, PointerButton::Primary);
     rt.handle_pointer_release(pos, PointerButton::Primary);
     assert_eq!(*clicks.borrow(), 0);
-    std::thread::sleep(std::time::Duration::from_millis(350));
+    std::thread::sleep(web_time::Duration::from_millis(350));
     rt.poll_gesture_timers();
     assert_eq!(*clicks.borrow(), 1);
     assert_eq!(*doubles.borrow(), 0);
@@ -221,7 +221,7 @@ fn combined_clickable_double_tap_skips_on_click() {
     let pos = Vec2 { x: 10.0, y: 10.0 };
     rt.handle_pointer_press(pos, PointerButton::Primary);
     rt.handle_pointer_release(pos, PointerButton::Primary);
-    std::thread::sleep(std::time::Duration::from_millis(50));
+    std::thread::sleep(web_time::Duration::from_millis(50));
     rt.handle_pointer_press(pos, PointerButton::Primary);
     rt.handle_pointer_release(pos, PointerButton::Primary);
     assert_eq!(*doubles.borrow(), 1);
@@ -243,7 +243,7 @@ fn long_press_fires_while_held_and_suppresses_click() {
     ));
     let pos = Vec2 { x: 10.0, y: 10.0 };
     rt.handle_pointer_press(pos, PointerButton::Primary);
-    std::thread::sleep(std::time::Duration::from_millis(550));
+    std::thread::sleep(web_time::Duration::from_millis(550));
     rt.poll_gesture_timers();
     assert_eq!(*longs.borrow(), 1);
     rt.handle_pointer_release(pos, PointerButton::Primary);
@@ -280,12 +280,12 @@ fn pending_click_survives_press_on_another_id() {
     let pos_b = Vec2 { x: 210.0, y: 10.0 };
     rt.handle_pointer_press(pos_a, PointerButton::Primary);
     rt.handle_pointer_release(pos_a, PointerButton::Primary);
-    std::thread::sleep(std::time::Duration::from_millis(50));
+    std::thread::sleep(web_time::Duration::from_millis(50));
     rt.handle_pointer_press(pos_b, PointerButton::Primary);
     rt.handle_pointer_release(pos_b, PointerButton::Primary);
     assert_eq!(*b_clicks.borrow(), 1);
     assert_eq!(*a_clicks.borrow(), 0);
-    std::thread::sleep(std::time::Duration::from_millis(350));
+    std::thread::sleep(web_time::Duration::from_millis(350));
     rt.poll_gesture_timers();
     assert_eq!(*a_clicks.borrow(), 1);
 }
@@ -316,7 +316,7 @@ fn drag_past_slop_does_not_fire_click() {
         }
         let result = rt.handle_pointer_release(end, PointerButton::Primary);
         rt.poll_gesture_timers();
-        std::thread::sleep(std::time::Duration::from_millis(350));
+        std::thread::sleep(web_time::Duration::from_millis(350));
         rt.poll_gesture_timers();
         assert_eq!(
             *clicks.borrow(),
@@ -349,7 +349,7 @@ fn drag_past_slop_cancels_click() {
         rt.handle_pointer_move(end);
         let result = rt.handle_pointer_release(end, PointerButton::Primary);
         rt.poll_gesture_timers();
-        std::thread::sleep(std::time::Duration::from_millis(350));
+        std::thread::sleep(web_time::Duration::from_millis(350));
         rt.poll_gesture_timers();
         assert_eq!(*clicks.borrow(), 0, "a {drag}px drag must not click");
         assert_eq!(result.clicked_id, None);
@@ -376,11 +376,11 @@ fn double_tap_beyond_slop_is_not_a_double_tap() {
     let far = Vec2 { x: 90.0, y: 10.0 };
     rt.handle_pointer_press(near, PointerButton::Primary);
     rt.handle_pointer_release(near, PointerButton::Primary);
-    std::thread::sleep(std::time::Duration::from_millis(60));
+    std::thread::sleep(web_time::Duration::from_millis(60));
     rt.handle_pointer_press(far, PointerButton::Primary);
     rt.handle_pointer_release(far, PointerButton::Primary);
     rt.poll_gesture_timers();
-    std::thread::sleep(std::time::Duration::from_millis(350));
+    std::thread::sleep(web_time::Duration::from_millis(350));
     rt.poll_gesture_timers();
     assert_eq!(*doubles.borrow(), 0, "taps 80px apart are not a double tap");
     assert_eq!(*clicks.borrow(), 2, "each distant tap is its own click");
@@ -406,10 +406,10 @@ fn dragging_twice_is_not_a_double_tap() {
         rt.handle_pointer_press(start, PointerButton::Primary);
         rt.handle_pointer_move(moved);
         rt.handle_pointer_release(moved, PointerButton::Primary);
-        std::thread::sleep(std::time::Duration::from_millis(60));
+        std::thread::sleep(web_time::Duration::from_millis(60));
     }
     rt.poll_gesture_timers();
-    std::thread::sleep(std::time::Duration::from_millis(350));
+    std::thread::sleep(web_time::Duration::from_millis(350));
     rt.poll_gesture_timers();
     assert_eq!(
         *doubles.borrow(),
@@ -445,7 +445,7 @@ fn keyboard_hold_long_press_fires_and_suppresses_click() {
     let mut up = up;
     up.event_type = KeyEventType::Up;
     assert!(rt.handle_key(&down));
-    std::thread::sleep(std::time::Duration::from_millis(550));
+    std::thread::sleep(web_time::Duration::from_millis(550));
     rt.poll_gesture_timers();
     assert_eq!(*longs.borrow(), 1);
     assert!(rt.handle_key(&up));

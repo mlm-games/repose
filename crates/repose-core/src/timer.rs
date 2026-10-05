@@ -498,7 +498,7 @@ pub fn scoped_delay_with_key<K: PartialEq + Clone + 'static>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration as StdDuration;
+    use web_time::Duration as StdDuration;
 
     fn sleep_ms(ms: u64) {
         std::thread::sleep(StdDuration::from_millis(ms));

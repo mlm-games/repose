@@ -469,19 +469,8 @@ pub fn run_android_app_with_options(
                     let sf = w.scale_factor() as f32;
                     self.sync_window_size(sz, sf);
 
-                    match repose_render_wgpu::WgpuBackend::new_with_options(
-                        w.clone(),
-                        self.options.common.msaa_samples,
-                        self.options.common.present_mode,
-                    ) {
-                        Ok(mut b) => {
-                            b.set_pixels_per_point(sf);
-                            repose_render_wgpu::offscreen::set_shared_device(
-                                b.device.clone(),
-                                b.queue.clone(),
-                            );
-                            self.backend = Some(b);
-                            self.window = Some(w);
+                    match self.try_create_backend(el, w.clone(), sf) {
+                        Ok(()) => {
                             let _ = rc::setup_clipboard();
                         }
                         Err(e) => {
@@ -499,6 +488,27 @@ pub fn run_android_app_with_options(
             if self.backend.is_some() {
                 self.activate_surface();
             }
+        }
+
+        /// Build a backend for `window` on the event loop's display handle and
+        /// publish it (plus the shared offscreen device).
+        fn try_create_backend(
+            &mut self,
+            el: &winit::event_loop::ActiveEventLoop,
+            window: Arc<Window>,
+            scale_factor: f32,
+        ) -> anyhow::Result<()> {
+            let mut b = repose_render_wgpu::WgpuBackend::new_with_options(
+                window.clone(),
+                Some(el.owned_display_handle()),
+                self.options.common.msaa_samples,
+                self.options.common.present_mode,
+            )?;
+            b.set_pixels_per_point(scale_factor);
+            repose_render_wgpu::offscreen::set_shared_device(b.device.clone(), b.queue.clone());
+            self.backend = Some(b);
+            self.window = Some(window);
+            Ok(())
         }
 
         fn window_event(
@@ -879,6 +889,19 @@ pub fn run_android_app_with_options(
                         el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(retry_at));
                     }
                     return;
+                }
+            }
+
+            if let Some(reason) = self.backend.as_ref().and_then(|b| b.take_device_lost()) {
+                log::error!("GPU device lost, rebuilding backend: {reason}");
+                self.backend = None;
+                self.rt.frame_cache = None;
+                if let Some(window) = self.window.clone() {
+                    let scale = window.scale_factor() as f32;
+                    match self.try_create_backend(el, window, scale) {
+                        Ok(()) => self.activate_surface(),
+                        Err(e) => log::error!("GPU backend rebuild failed: {e:?}"),
+                    }
                 }
             }
 

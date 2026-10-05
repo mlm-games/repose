@@ -851,7 +851,7 @@ impl LazyVerticalStaggeredGridState {
 mod tests {
     use super::*;
 
-    const FRAME: std::time::Duration = std::time::Duration::from_millis(16);
+    const FRAME: web_time::Duration = web_time::Duration::from_millis(16);
 
     fn frame() {
         std::thread::sleep(FRAME);

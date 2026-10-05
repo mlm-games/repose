@@ -1,5 +1,7 @@
 //! Shared runner helpers extracted from duplicated desktop/web/android `App` impls.
 
+use web_time::Duration;
+
 use repose_app::{ReposeRuntime, TouchGestureState};
 use repose_core::Vec2;
 use repose_core::input::PointerButton;
@@ -8,6 +10,70 @@ use winit::event::{ElementState, MouseScrollDelta, Touch};
 use winit::keyboard::{KeyCode, PhysicalKey};
 
 use crate::common::{map_key, winit_key_to_repose};
+
+/// Adapter creation is retried a few times because a platform may still be
+/// bringing up its GPU process. A capability problem (no supported backend,
+/// blocklisted driver) never resolves, so stop after this many tries.
+pub const MAX_BACKEND_INIT_ATTEMPTS: u32 = 3;
+
+const BASE_BACKEND_RETRY_DELAY: Duration = Duration::from_millis(250);
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum BackendState {
+    Pending,
+    Ready,
+    Failed,
+    /// Nothing left to try: the canvas/window stays blank until reload.
+    Unavailable,
+}
+
+pub enum BackendRetry {
+    Ready,
+    RetryAfter(Duration),
+    Unavailable,
+}
+
+/// Retry policy for GPU backend construction, shared by every runner so the
+/// attempt cap and backoff curve stay identical across platforms. Callers keep
+/// their own clock and absolute retry deadline, since `Instant` differs on
+/// wasm.
+#[derive(Default)]
+pub struct BackendLifecycle {
+    state: Option<BackendState>,
+    attempts: u32,
+}
+
+impl BackendLifecycle {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn state(&self) -> BackendState {
+        self.state.unwrap_or(BackendState::Pending)
+    }
+
+    /// Mark an in-flight construction so a stale result cannot look ready.
+    pub fn begin(&mut self) {
+        self.state = Some(BackendState::Pending);
+    }
+
+    pub fn ready(&mut self) {
+        self.state = Some(BackendState::Ready);
+        self.attempts = 0;
+    }
+
+    /// Record a failure and say what to do next.
+    pub fn failed(&mut self) -> BackendRetry {
+        self.attempts += 1;
+        if self.attempts >= MAX_BACKEND_INIT_ATTEMPTS {
+            self.state = Some(BackendState::Unavailable);
+            BackendRetry::Unavailable
+        } else {
+            self.state = Some(BackendState::Failed);
+            BackendRetry::RetryAfter(BASE_BACKEND_RETRY_DELAY * (1 << (self.attempts - 1).min(4)))
+        }
+    }
+}
 
 /// Update `Modifiers` from winit state - shared.
 pub fn on_modifiers_changed(rt: &mut ReposeRuntime, state: &winit::keyboard::ModifiersState) {
@@ -245,9 +311,35 @@ pub fn on_keyboard_input(
     key_event: &winit::event::KeyEvent,
     inspector: &mut Option<repose_devtools::Inspector>,
 ) -> bool {
+    on_key_parts(
+        rt,
+        key_event.physical_key,
+        key_event.state == ElementState::Pressed,
+        key_event.repeat,
+        key_event.text.as_deref(),
+        inspector,
+    )
+}
+
+/// Same dispatch as [`on_keyboard_input`], for runners that cannot hand over a
+/// [`winit::event::KeyEvent`] (it has no public constructor): synthetic keys
+/// and keys forwarded from a DOM element.
+pub fn on_key_parts(
+    rt: &mut ReposeRuntime,
+    physical_key: PhysicalKey,
+    pressed: bool,
+    repeat: bool,
+    text: Option<&str>,
+    inspector: &mut Option<repose_devtools::Inspector>,
+) -> bool {
+    let key_event = KeyParts {
+        physical_key,
+        pressed,
+        repeat,
+    };
     rt.set_physical_key(
         &physical_key_name(key_event.physical_key),
-        key_event.state == ElementState::Pressed,
+        key_event.pressed,
     );
     // Mirror into the scheduler's polled snapshot too: games read
     // `sched.held_keys` + mouse levels directly (no runtime handle),
@@ -256,13 +348,13 @@ pub fn on_keyboard_input(
     {
         let key = map_physical_key(key_event.physical_key);
         let sched = &mut rt.sched;
-        if key_event.state == ElementState::Pressed {
+        if key_event.pressed {
             sched.held_keys.insert(key);
         } else {
             sched.held_keys.remove(&key);
         }
     }
-    if key_event.state == ElementState::Pressed
+    if key_event.pressed
         && !key_event.repeat
         && rt.modifiers.ctrl
         && rt.modifiers.shift
@@ -272,13 +364,25 @@ pub fn on_keyboard_input(
         inspector.hud.toggle_inspector();
         return true;
     }
-    let mapped = if crate::common::is_back_key(key_event) {
+    let mapped = if crate::common::is_back_key_physical(key_event.physical_key) {
         repose_core::input::Key::Escape
     } else {
         map_key(key_event.physical_key, &rt.modifiers)
     };
-    let ke = winit_key_to_repose(key_event, &mapped, &rt.modifiers);
-    rt.handle_key_with_text(&ke, key_event.text.as_deref())
+    let ke = winit_key_to_repose(
+        key_event.physical_key,
+        key_event.pressed,
+        key_event.repeat,
+        &mapped,
+        &rt.modifiers,
+    );
+    rt.handle_key_with_text(&ke, text)
+}
+
+struct KeyParts {
+    physical_key: PhysicalKey,
+    pressed: bool,
+    repeat: bool,
 }
 
 /// Stable debug name for a physical key (`KeyW`, `Digit1`, `Space`,

@@ -12,7 +12,7 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::time::Duration;
+use web_time::Duration;
 
 use repose_core::animation::{AnimatedValue, AnimationSpec, Easing};
 use repose_core::animation_driver;

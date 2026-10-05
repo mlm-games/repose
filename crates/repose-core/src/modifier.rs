@@ -689,7 +689,7 @@ pub struct Modifier {
     pub flex_grow: Option<f32>,
     pub flex_shrink: Option<f32>,
     pub flex_basis: Option<Dp>,
-    /// `flex-basis: content` — size from content, ignoring [`flex_basis`](Self::flex_basis).
+    /// `flex-basis: content` - size from content, ignoring [`flex_basis`](Self::flex_basis).
     /// Maps to taffy's `content` keyword (taffy 0.14+).
     pub flex_basis_content: bool,
     pub flex_wrap: Option<FlexWrap>,
@@ -1309,7 +1309,7 @@ impl Modifier {
         self.flex_wrap = Some(w);
         self
     }
-    /// `flex-basis: content` — size from content, ignoring any
+    /// `flex-basis: content` - size from content, ignoring any
     /// [`flex_basis`](Self::flex_basis) value.
     pub fn flex_basis_content(mut self) -> Self {
         self.flex_basis_content = true;
@@ -1890,12 +1890,12 @@ impl Modifier {
         self.contain = Some(c);
         self
     }
-    /// `contain: layout` — independent formatting context, no baseline.
+    /// `contain: layout` - independent formatting context, no baseline.
     pub fn contain_layout(mut self) -> Self {
         self.contain = Some(Contain::LAYOUT);
         self
     }
-    /// `contain: paint` — independent formatting context.
+    /// `contain: paint` - independent formatting context.
     pub fn contain_paint(mut self) -> Self {
         self.contain = Some(Contain::PAINT);
         self

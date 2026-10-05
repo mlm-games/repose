@@ -1932,7 +1932,7 @@ fn animated_visibility_overlay_fills_parent_height() {
     use repose_core::prelude::JustifyContent;
     use repose_core::runtime::ComposeGuard;
     use repose_core::scope::Scope;
-    use std::time::Duration;
+    use web_time::Duration;
     use web_time::Instant;
 
     let mut clock = TestClock { t: Instant::now() };

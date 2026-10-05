@@ -70,7 +70,7 @@ const MAX_SUPPORT: i32 = 64;
 ///
 /// Only a corner arc ever cuts. The box edge is the layer's own edge, which
 /// the layer alpha already defines, so ramping there would fade content the
-/// source has already accounted for — and would make an unrounded corner
+/// source has already accounted for - and would make an unrounded corner
 /// depend on this mask at all. The one-texel edge is fixed rather than
 /// `fwidth` so it stays well-defined inside the blur's loop; the convolution
 /// smooths it further regardless.
