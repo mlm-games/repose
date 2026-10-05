@@ -863,3 +863,31 @@ fn pointer_move_cursor_follows_frame_override() {
     let moved = rt.handle_pointer_move(Vec2 { x: 12.0, y: 10.0 });
     assert_eq!(moved.cursor, Some(CursorIcon::Text));
 }
+
+/// A single-line field paints as one unwrapped line, so Home and End must span
+/// the whole value rather than the soft-wrap chunks of a multiline layout.
+#[test]
+fn single_line_home_and_end_span_the_whole_value() {
+    let mut rt = ReposeRuntime::new();
+    rt.sched.focused = Some(TF_ID);
+    let mut frame = textfield_frame(TF_ID);
+    frame.hit_regions[0].rect.w = 60.0;
+    rt.cache_frame(frame);
+    {
+        let st = rt.ensure_textfield_state(TF_ID);
+        let mut st = st.borrow_mut();
+        st.insert_text_atomic("0123456789abcdefghijklmnopqrstuvwxyzABCDEF");
+        st.set_inner_width(60.0);
+        st.selection = 0..0;
+    }
+
+    let press = |rt: &mut ReposeRuntime, key: Key| {
+        let _ = rt.handle_key(&key_down(key, Modifiers::default(), false));
+        rt.ensure_textfield_state(TF_ID).borrow().selection.end
+    };
+
+    let end = press(&mut rt, Key::End);
+    let home = press(&mut rt, Key::Home);
+    assert_eq!(end, 42);
+    assert_eq!(home, 0);
+}

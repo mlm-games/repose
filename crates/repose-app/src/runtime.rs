@@ -2481,13 +2481,17 @@ impl ReposeRuntime {
                 true
             }
             Key::Home => {
-                let next_display = repose_ui::textfield::line_home_end_with_metrics(
-                    &display,
-                    edited.inner_width.max(1.0),
-                    display_caret,
-                    false,
-                    &metrics,
-                );
+                let next_display = if hit.tf_multiline {
+                    repose_ui::textfield::line_home_end_with_metrics(
+                        &display,
+                        edited.inner_width.max(1.0),
+                        display_caret,
+                        false,
+                        &metrics,
+                    )
+                } else {
+                    0
+                };
                 let next = mapping.as_ref().map_or(next_display, |mapping| {
                     mapping.transformed_to_original(next_display)
                 });
@@ -2496,13 +2500,17 @@ impl ReposeRuntime {
                 true
             }
             Key::End => {
-                let next_display = repose_ui::textfield::line_home_end_with_metrics(
-                    &display,
-                    edited.inner_width.max(1.0),
-                    display_caret,
-                    true,
-                    &metrics,
-                );
+                let next_display = if hit.tf_multiline {
+                    repose_ui::textfield::line_home_end_with_metrics(
+                        &display,
+                        edited.inner_width.max(1.0),
+                        display_caret,
+                        true,
+                        &metrics,
+                    )
+                } else {
+                    display.len()
+                };
                 let next = mapping.as_ref().map_or(next_display, |mapping| {
                     mapping.transformed_to_original(next_display)
                 });

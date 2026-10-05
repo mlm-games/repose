@@ -2388,10 +2388,7 @@ fn locate_byte_in_ranges(ranges: &[(usize, usize)], b: usize) -> (usize, usize, 
     if ranges.is_empty() {
         return (0, 0, b);
     }
-    let next = ranges.partition_point(|(_, start)| *start <= b);
-    if next < ranges.len() && ranges[next].0 == b {
-        return (next, 0, b);
-    }
+    let next = ranges.partition_point(|(start, _)| *start <= b);
     if next == 0 {
         return (0, 0, b);
     }
@@ -2569,6 +2566,12 @@ pub fn line_home_end_with_metrics(
     let layout = layout_text_area_with_metrics(text, wrap_w_px, metrics);
     let (line, _, _) = locate_byte_in_ranges(&layout.ranges, cur_byte);
     let (start, end) = layout.ranges.get(line).copied().unwrap_or((0, 0));
+    // Wrapping trims line-edge whitespace, so a byte can sit in no range at all
+    // (the space before a newline, or leading indentation). It has no line to go
+    // to, so leave the caret alone rather than pulling it across the byte.
+    if cur_byte < start || cur_byte > end {
+        return cur_byte;
+    }
     if to_end { end } else { start }
 }
 
@@ -3470,5 +3473,69 @@ mod tests {
         let selection = delete_op(2, "de", 2..4, 2..2);
         assert_eq!(selection.deletion_type(), TextDeleteType::Inner);
         assert!(backspace.try_merge(&selection).is_none());
+    }
+
+    /// Tapping a line must land on the byte under the finger, and putting the
+    /// caret on a byte must report that byte's own line. Both directions share
+    /// `locate_byte_in_ranges`, so a mistake there shows the caret snapping to
+    /// a line's first or last letter.
+    ///
+    /// Asserts the raw line index from `caret_xy_for_byte_with_metrics` rather
+    /// than re-deriving it from the y coordinate, so an off-by-one line or a
+    /// caret drawn on the neighbouring line cannot pass.
+    #[test]
+    fn multiline_tap_and_caret_round_trip() {
+        let m = TextFieldMetrics::default();
+        let lh = m.line_height_px;
+        for (text, wrap) in [
+            ("hello world\nsecond line here\nthird", 1000.0),
+            ("hello world\nsecond line here\nthird", 60.0),
+            ("a\n\nb", 1000.0),
+            ("one\n", 1000.0),
+            ("日本語テスト二行目", 30.0),
+            ("héllo wörld\nünicode", 1000.0),
+        ] {
+            let layout = layout_text_area_with_metrics(text, wrap, &m);
+            for b in 0..=text.len() {
+                if !text.is_char_boundary(b) {
+                    continue;
+                }
+                let (x, y, line) = caret_xy_for_byte_with_metrics(text, wrap, b, &m);
+                let Some(&(line_start, line_end)) = layout.ranges.get(line) else {
+                    panic!("byte {b} of {text:?} reported absent line {line}");
+                };
+                assert!(
+                    line_start <= b && b <= line_end,
+                    "byte {b} of {text:?} reported line {line} [{line_start}..{line_end}]"
+                );
+                let got = index_for_xy_bytes_with_metrics(text, wrap, x + 0.5, y + lh * 0.5, &m);
+                assert_eq!(got, b, "byte {b} of {text:?} at ({x}, {y}) tapped to {got}");
+            }
+        }
+    }
+
+    /// Wrapping drops line-edge whitespace, so those bytes belong to no line.
+    /// Home and End must not drag the caret across them.
+    #[test]
+    fn home_end_never_move_caret_against_the_user() {
+        let m = TextFieldMetrics::default();
+        for text in ["ab \ncd", "ab  \ncd", "   indented line\nnext", "one\n"] {
+            for wrap in [1000.0f32, 30.0] {
+                let ranges = layout_text_area_with_metrics(text, wrap, &m).ranges;
+                for b in 0..=text.len() {
+                    let (line, _, _) = locate_byte_in_ranges(&ranges, b);
+                    let (start, end) = ranges.get(line).copied().unwrap_or((b, b));
+                    let to_end = line_home_end_with_metrics(text, wrap, b, true, &m);
+                    let to_home = line_home_end_with_metrics(text, wrap, b, false, &m);
+                    if start <= b && b <= end {
+                        assert_eq!(to_end, end, "End from {b} in {text:?} wrap {wrap}");
+                        assert_eq!(to_home, start, "Home from {b} in {text:?} wrap {wrap}");
+                    } else {
+                        assert_eq!(to_end, b, "End from gap byte {b} in {text:?} wrap {wrap}");
+                        assert_eq!(to_home, b, "Home from gap byte {b} in {text:?} wrap {wrap}");
+                    }
+                }
+            }
+        }
     }
 }
