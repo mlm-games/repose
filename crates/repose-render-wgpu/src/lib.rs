@@ -5622,8 +5622,11 @@ impl WgpuSceneRenderer {
         self.depth_stencil_bytes = 0;
         let aliased_surface = self.surface_format != self.output_format;
         let view_format_list = [self.output_format];
-        let surface_view_formats: &[wgpu::TextureFormat] =
-            if aliased_surface { &view_format_list } else { &[] };
+        let surface_view_formats: &[wgpu::TextureFormat] = if aliased_surface {
+            &view_format_list
+        } else {
+            &[]
+        };
         let surface_view = if aliased_surface {
             wgpu::TextureViewDescriptor {
                 format: Some(self.output_format),

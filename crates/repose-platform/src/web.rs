@@ -579,7 +579,10 @@ impl App {
         let Some(document) = canvas.owner_document() else {
             return;
         };
-        if document.get_element_by_id("repose-gpu-unavailable").is_some() {
+        if document
+            .get_element_by_id("repose-gpu-unavailable")
+            .is_some()
+        {
             return;
         }
         let Ok(node) = document.create_element("div") else {
@@ -1039,9 +1042,9 @@ Settings &rsaquo; General &rsaquo; Configuration Editor, then set
                     } else {
                         backend_state.set(BackendState::Failed);
                         let delay = 250u64 << (attempts - 1).min(4);
-                        backend_retry_at
-                            .set(Some(web_time::Instant::now()
-                                + web_time::Duration::from_millis(delay)));
+                        backend_retry_at.set(Some(
+                            web_time::Instant::now() + web_time::Duration::from_millis(delay),
+                        ));
                     }
                     window.request_redraw();
                 }
