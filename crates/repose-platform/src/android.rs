@@ -424,6 +424,27 @@ pub fn run_android_app_with_options(
         fn overlay_drag_indicator_static(scene: &mut Scene, pos: (f32, f32)) {
             repose_core::dnd::overlay_drag_indicator(scene, pos, false);
         }
+
+        /// Build a backend for `window` on the event loop's display handle and
+        /// publish it (plus the shared offscreen device).
+        fn try_create_backend(
+            &mut self,
+            el: &winit::event_loop::ActiveEventLoop,
+            window: Arc<Window>,
+            scale_factor: f32,
+        ) -> anyhow::Result<()> {
+            let mut b = repose_render_wgpu::WgpuBackend::new_with_options(
+                window.clone(),
+                Some(el.owned_display_handle()),
+                self.options.common.msaa_samples,
+                self.options.common.present_mode,
+            )?;
+            b.set_pixels_per_point(scale_factor);
+            repose_render_wgpu::offscreen::set_shared_device(b.device.clone(), b.queue.clone());
+            self.backend = Some(b);
+            self.window = Some(window);
+            Ok(())
+        }
     }
 
     impl ApplicationHandler<()> for AppState {
@@ -488,27 +509,6 @@ pub fn run_android_app_with_options(
             if self.backend.is_some() {
                 self.activate_surface();
             }
-        }
-
-        /// Build a backend for `window` on the event loop's display handle and
-        /// publish it (plus the shared offscreen device).
-        fn try_create_backend(
-            &mut self,
-            el: &winit::event_loop::ActiveEventLoop,
-            window: Arc<Window>,
-            scale_factor: f32,
-        ) -> anyhow::Result<()> {
-            let mut b = repose_render_wgpu::WgpuBackend::new_with_options(
-                window.clone(),
-                Some(el.owned_display_handle()),
-                self.options.common.msaa_samples,
-                self.options.common.present_mode,
-            )?;
-            b.set_pixels_per_point(scale_factor);
-            repose_render_wgpu::offscreen::set_shared_device(b.device.clone(), b.queue.clone());
-            self.backend = Some(b);
-            self.window = Some(window);
-            Ok(())
         }
 
         fn window_event(
