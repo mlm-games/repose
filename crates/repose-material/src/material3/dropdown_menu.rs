@@ -494,29 +494,28 @@ fn place_submenu_popup(
     horizontal_margin: f32,
 ) -> (f32, f32, f32) {
     let vertical_margin = config.vertical_margin.0;
-    let est_h = est_h.max(DDM_MIN_OPEN_HEIGHT.0);
     let menu_w = menu_w.min((win_w - horizontal_margin * 2.0).max(1.0));
     let mut x = anchor.x + anchor.w + config.offset_x.0;
     if x + menu_w > win_w - horizontal_margin {
         x = (anchor.x - menu_w - config.offset_x.0).max(horizontal_margin);
     }
+    let header_bottom = anchor.y + anchor.h + config.offset_y.0;
+    let card_bottom = header_bottom.min(win_h);
     let space_below = (win_h - vertical_margin) - (anchor.y + config.offset_y.0);
-    let space_above = anchor.y + anchor.h + config.offset_y.0 - vertical_margin;
-    let place_above = space_below < est_h && (space_above >= est_h || space_above > space_below);
+    let space_above = header_bottom - vertical_margin;
+    let est_h = est_h
+        .min(space_below.max(space_above))
+        .max(DDM_MIN_OPEN_HEIGHT.0);
+    let place_above =
+        space_below < est_h && (space_above >= est_h || space_above > space_below);
+    let available_height =
+        (if place_above { card_bottom - vertical_margin } else { space_below })
+            .max(DDM_MIN_OPEN_HEIGHT.0);
     let y = if place_above {
-        let top = (anchor.y + anchor.h + config.offset_y.0 - est_h).max(vertical_margin);
-        let card = est_h.min(top - vertical_margin);
-        top.min(win_h - card).max(vertical_margin)
+        (card_bottom - est_h.min(available_height)).max(vertical_margin)
     } else {
         (anchor.y + config.offset_y.0).max(vertical_margin)
     };
-    let available_height = (if place_above {
-        y - vertical_margin
-    } else {
-        win_h - vertical_margin - y
-    })
-    .max(DDM_MIN_OPEN_HEIGHT.0)
-    .min((win_h - vertical_margin * 2.0).max(DDM_MIN_OPEN_HEIGHT.0));
     (x, y, available_height)
 }
 
@@ -1282,11 +1281,16 @@ mod submenu_placement_tests {
 
     #[test]
     fn submenu_opens_above_its_header_row_when_it_does_not_fit_below() {
-        assert_eq!(place(600.0, 760.0, &entries(6)), (440.0, 344.0, 296.0));
+        assert_eq!(place(600.0, 760.0, &entries(6)), (440.0, 344.0, 600.0));
     }
 
     #[test]
     fn submenu_stays_inside_the_window_when_its_header_row_overhangs_the_bottom() {
-        assert_eq!(place(716.0, 760.0, &entries(1)), (440.0, 696.0, 648.0));
+        assert_eq!(place(716.0, 760.0, &entries(1)), (440.0, 696.0, 712.0));
+    }
+
+    #[test]
+    fn submenu_opens_above_when_neither_side_fits() {
+        assert_eq!(place(380.0, 760.0, &entries(8)), (440.0, 48.0, 380.0));
     }
 }
