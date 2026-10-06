@@ -8,13 +8,13 @@ repository.workspace = true
 description = "Text handling (parley + swash based font & layout engine)"
 
 [features]
-default = ["basic"]
+default = ["basic", "system-fonts"]
 basic = ["font-awl/basic"]
+system-fonts = ["font-awl/system"]
 emoji = ["font-awl/emoji"]
 cjk = ["font-awl/cjk"]
 monospace = ["font-awl/monospace"]
 local-fonts = ["font-awl/local-fonts"]
-system-fonts = ["font-awl/system"]
 
 [dependencies]
 font-awl = { workspace = true }
