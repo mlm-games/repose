@@ -588,11 +588,15 @@ impl InputState {
             return;
         }
 
+        // An Android soft keyboard reports a real `keyCode` with an empty `code`,
+        // which is physical-keyboard-only.
+        let Some(key) = dom_key_code(&code) else {
+            return;
+        };
         // The runtime acts on this key, so the element must not also act on it:
         // letting the browser delete a character would land a second deletion
         // on the field once the key chord has already run.
-        let key = dom_key_code(&code);
-        if !key.is_some_and(|key| browser_owned(key, modifiers)) {
+        if !browser_owned(key, modifiers) {
             event.prevent_default();
         }
         self.served = match code.as_str() {
