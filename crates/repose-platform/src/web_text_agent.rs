@@ -533,10 +533,10 @@ impl InputState {
         let code = event.code();
         if !pressed {
             self.special = KeydownSpecialCase::None;
-            self.served = None;
-            if event.is_composing() || key_code == 229 {
+            if event.is_composing() || key_code == 229 || key_code == 0 {
                 return;
             }
+            self.served = None;
             out.push(AgentEvent::Key(DomKey {
                 physical: dom_physical_key(&code),
                 pressed: false,
@@ -546,16 +546,20 @@ impl InputState {
             return;
         }
 
-        // Only meaningful for the keydown immediately below: a later soft
-        // keyboard backspace must not be mistaken for this key's own input
-        // event, which `prevent_default` normally suppresses altogether.
-        self.served = None;
-
         self.special = match key_code {
             229 => KeydownSpecialCase::AndroidKeycode229,
             0 => KeydownSpecialCase::IosKeycode0,
             _ => KeydownSpecialCase::None,
         };
+        // NOTE: Chromium posts nameless keydowns around IME composition changes, so
+        // one can land between a real key's keydown and the `input` event it
+        // served.
+        if self.special == KeydownSpecialCase::None {
+            // Only meaningful for the keydown below: a later soft keyboard
+            // backspace must not be mistaken for this key's own input event,
+            // which `prevent_default` normally suppresses altogether.
+            self.served = None;
+        }
         if event.is_composing() || self.special != KeydownSpecialCase::None {
             return;
         }
