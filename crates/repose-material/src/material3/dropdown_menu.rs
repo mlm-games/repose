@@ -506,11 +506,13 @@ fn place_submenu_popup(
     let est_h = est_h
         .min(space_below.max(space_above))
         .max(DDM_MIN_OPEN_HEIGHT.0);
-    let place_above =
-        space_below < est_h && (space_above >= est_h || space_above > space_below);
-    let available_height =
-        (if place_above { card_bottom - vertical_margin } else { space_below })
-            .max(DDM_MIN_OPEN_HEIGHT.0);
+    let place_above = space_below < est_h && (space_above >= est_h || space_above > space_below);
+    let available_height = (if place_above {
+        card_bottom - vertical_margin
+    } else {
+        space_below
+    })
+    .max(DDM_MIN_OPEN_HEIGHT.0);
     let y = if place_above {
         (card_bottom - est_h.min(available_height)).max(vertical_margin)
     } else {
