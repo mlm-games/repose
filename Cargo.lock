@@ -1097,9 +1097,9 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "font-awl"
-version = "0.2.6"
+version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca3e5abb74d89e70f478589d04661f950399dcb1302574092d8e87714f942888"
+checksum = "5432bd32e6afe485fe80cfa5ffa4991c9549422cb6c7211cfbfcd74491a0a01b"
 dependencies = [
  "fontique",
  "js-sys",

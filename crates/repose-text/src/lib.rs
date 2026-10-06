@@ -756,7 +756,7 @@ fn init_provider_sync() -> font_awl::Provider {
         static NOTO_EMOJI_TTF: &[u8] = include_bytes!("assets/NotoColorEmoji-Regular.ttf");
         register_asset_if_missing(&mut provider, NOTO_EMOJI_TTF);
     }
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(not(target_arch = "wasm32"), feature = "system-fonts"))]
     if let Err(e) = provider.load_system_fonts_best_effort() {
         log::warn!("font-awl: failed to load system fonts: {e}");
     }

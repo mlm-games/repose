@@ -13,6 +13,7 @@ gamepad = ["dep:gilrs"]
 # Motion sensor polling (gyroscope / accelerometer).
 sensors = ["dep:evdev"]
 local-fonts = ["repose-text/local-fonts"]
+system-fonts = ["repose-text/system-fonts"]
 
 [dependencies]
 repose-app.workspace = true
