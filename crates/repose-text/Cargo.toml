@@ -13,6 +13,7 @@ basic = ["font-awl/basic"]
 emoji = ["font-awl/emoji"]
 cjk = ["font-awl/cjk"]
 monospace = ["font-awl/monospace"]
+local-fonts = ["font-awl/local-fonts"]
 
 [dependencies]
 font-awl = { workspace = true }

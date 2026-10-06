@@ -157,6 +157,7 @@ pub fn run_web_app(
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
     let _ = console_log::init_with_level(log::Level::Info);
     repose_text::ensure_web_fallback_initialized();
+    #[cfg(feature = "local-fonts")]
     wasm_bindgen_futures::spawn_local(async {
         repose_text::init_fonts_wasm().await;
         if !repose_text::web_fonts_loaded() {
@@ -206,6 +207,7 @@ pub fn run_web_app(
 /// `queryLocalFonts()` rejects unless the document has transient activation,
 /// which the startup call above never has. Retry it once from the first
 /// pointer/key event, while activation is still live.
+#[cfg(feature = "local-fonts")]
 fn install_local_font_retry() {
     let Some(window) = web_sys::window() else {
         return;

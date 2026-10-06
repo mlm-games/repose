@@ -679,17 +679,17 @@ impl Engine {
 static ENGINE: OnceLock<Mutex<Engine>> = OnceLock::new();
 
 pub static FONT_PROVIDER: OnceLock<Mutex<font_awl::Provider>> = OnceLock::new();
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", feature = "local-fonts"))]
 static RETAINED_FONT_DATA: OnceLock<Mutex<Vec<Arc<[u8]>>>> = OnceLock::new();
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", feature = "local-fonts"))]
 static WASM_FONT_CONTEXT_READY: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", feature = "local-fonts"))]
 static WASM_FONT_INIT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", feature = "local-fonts"))]
 static WEB_FONTS_LOADED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 fn append_generic_family_once(
@@ -791,12 +791,12 @@ fn init_engine_sync() -> Engine {
 /// provider. [`init_fonts_wasm`] keeps retrying until this is true:
 /// `queryLocalFonts()` rejects unless the document has transient user
 /// activation, so the startup call can never succeed on its own.
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", feature = "local-fonts"))]
 pub fn web_fonts_loaded() -> bool {
     WEB_FONTS_LOADED.load(Ordering::Acquire)
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", feature = "local-fonts"))]
 pub async fn init_fonts_wasm() {
     if WEB_FONTS_LOADED.load(Ordering::Acquire) {
         return;
@@ -896,7 +896,7 @@ fn append_registered_families(
     }
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", feature = "local-fonts"))]
 fn retain_font_data(bytes: Arc<[u8]>) {
     let retained = RETAINED_FONT_DATA.get_or_init(|| Mutex::new(Vec::new()));
     let Ok(mut retained) = retained.lock() else {
@@ -910,7 +910,7 @@ fn retain_font_data(bytes: Arc<[u8]>) {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", feature = "local-fonts"))]
 fn restore_retained_font_data(collection: &mut parley::fontique::Collection) {
     let retained = RETAINED_FONT_DATA.get().and_then(|retained| {
         retained
@@ -931,7 +931,7 @@ fn restore_retained_font_data(collection: &mut parley::fontique::Collection) {
 }
 
 pub(crate) fn register_font_data_if_usable(bytes: &[u8]) -> bool {
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", feature = "local-fonts"))]
     let mut retained_bytes = None;
     let (font_cx, newly_registered) = {
         let mut p = provider().lock().unwrap();
@@ -957,7 +957,7 @@ pub(crate) fn register_font_data_if_usable(bytes: &[u8]) -> bool {
             if families.is_empty() {
                 return false;
             }
-            #[cfg(target_arch = "wasm32")]
+            #[cfg(all(target_arch = "wasm32", feature = "local-fonts"))]
             {
                 retained_bytes = Some(shared_bytes);
             }
@@ -968,7 +968,7 @@ pub(crate) fn register_font_data_if_usable(bytes: &[u8]) -> bool {
     };
 
     if newly_registered {
-        #[cfg(target_arch = "wasm32")]
+        #[cfg(all(target_arch = "wasm32", feature = "local-fonts"))]
         if let Some(bytes) = retained_bytes {
             retain_font_data(bytes);
         }

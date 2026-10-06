@@ -12,6 +12,7 @@ description = "Platform runners (winit Desktop, Android and Web)"
 gamepad = ["dep:gilrs"]
 # Motion sensor polling (gyroscope / accelerometer).
 sensors = ["dep:evdev"]
+local-fonts = ["repose-text/local-fonts"]
 
 [dependencies]
 repose-app.workspace = true
