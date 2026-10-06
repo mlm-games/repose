@@ -219,9 +219,9 @@ pub fn DropdownMenu(
         format!("ddm_subanchor_{ddm_id}"),
         HashMap::<String, Rect>::new,
     );
-    let submenu_popup_sizes = remember_state_with_key(
+    let submenu_popup_widths = remember_state_with_key(
         format!("ddm_subpopup_{ddm_id}"),
-        HashMap::<String, repose_core::Vec2>::new,
+        HashMap::<String, f32>::new,
     );
     let submenu_guards = remember_state_with_key(
         format!("ddm_subguards_{ddm_id}"),
@@ -280,7 +280,7 @@ pub fn DropdownMenu(
         submenu_open.borrow_mut().take();
         submenu_anchor_rects.borrow_mut().clear();
         *root_popup_size.borrow_mut() = repose_core::Vec2 { x: 0.0, y: 0.0 };
-        submenu_popup_sizes.borrow_mut().clear();
+        submenu_popup_widths.borrow_mut().clear();
         submenu_guards.borrow_mut().clear();
         submenu_hovered.borrow_mut().take();
         submenu_latched.borrow_mut().take();
@@ -301,7 +301,7 @@ pub fn DropdownMenu(
             let root_popup_size = root_popup_size.clone();
             let submenu_open = submenu_open.clone();
             let submenu_anchor_rects = submenu_anchor_rects.clone();
-            let submenu_popup_sizes = submenu_popup_sizes.clone();
+            let submenu_popup_widths = submenu_popup_widths.clone();
             let submenu_guards = submenu_guards.clone();
             let submenu_hovered = submenu_hovered.clone();
             let submenu_popup_hovered = submenu_popup_hovered.clone();
@@ -376,7 +376,7 @@ pub fn DropdownMenu(
                         scroll_state.clone(),
                         submenu_open.clone(),
                         submenu_anchor_rects.clone(),
-                        submenu_popup_sizes.clone(),
+                        submenu_popup_widths.clone(),
                         submenu_guards.clone(),
                         submenu_hovered.clone(),
                         submenu_popup_hovered.clone(),
@@ -480,6 +480,46 @@ fn estimate_dropdown_height(items: &[DropdownMenuEntry], config: &DropdownMenuCo
     h
 }
 
+/// Window-space placement of a cascading submenu: its top-left corner and the
+/// card height budget it gets. `est_h` must be the content's natural height: a
+/// measured height feeds the budget back into the fit test and the card
+/// oscillates between two sizes every frame.
+fn place_submenu_popup(
+    anchor: Rect,
+    config: &DropdownMenuConfig,
+    win_w: f32,
+    win_h: f32,
+    menu_w: f32,
+    est_h: f32,
+    horizontal_margin: f32,
+) -> (f32, f32, f32) {
+    let vertical_margin = config.vertical_margin.0;
+    let est_h = est_h.max(DDM_MIN_OPEN_HEIGHT.0);
+    let menu_w = menu_w.min((win_w - horizontal_margin * 2.0).max(1.0));
+    let mut x = anchor.x + anchor.w + config.offset_x.0;
+    if x + menu_w > win_w - horizontal_margin {
+        x = (anchor.x - menu_w - config.offset_x.0).max(horizontal_margin);
+    }
+    let space_below = (win_h - vertical_margin) - (anchor.y + config.offset_y.0);
+    let space_above = anchor.y + anchor.h + config.offset_y.0 - vertical_margin;
+    let place_above = space_below < est_h && (space_above >= est_h || space_above > space_below);
+    let y = if place_above {
+        let top = (anchor.y + anchor.h + config.offset_y.0 - est_h).max(vertical_margin);
+        let card = est_h.min(top - vertical_margin);
+        top.min(win_h - card).max(vertical_margin)
+    } else {
+        (anchor.y + config.offset_y.0).max(vertical_margin)
+    };
+    let available_height = (if place_above {
+        y - vertical_margin
+    } else {
+        win_h - vertical_margin - y
+    })
+    .max(DDM_MIN_OPEN_HEIGHT.0)
+    .min((win_h - vertical_margin * 2.0).max(DDM_MIN_OPEN_HEIGHT.0));
+    (x, y, available_height)
+}
+
 fn render_dropdown_item(
     th: &Theme,
     item: &DropdownMenuItem,
@@ -556,7 +596,7 @@ struct DropdownSubmenuHost {
     parent_state: Rc<MenuState>,
     open_child: Rc<RefCell<Option<String>>>,
     anchor_rects: Rc<RefCell<HashMap<String, Rect>>>,
-    popup_sizes: Rc<RefCell<HashMap<String, repose_core::Vec2>>>,
+    popup_widths: Rc<RefCell<HashMap<String, f32>>>,
     hovered_child: Rc<RefCell<Option<String>>>,
     popup_hovered: Rc<Cell<bool>>,
     hover_timer: Rc<RefCell<Option<TimerHandle>>>,
@@ -780,22 +820,19 @@ fn render_dropdown_submenu(
                 let win_w = get_window_container_width();
                 let win_h = get_window_container_height();
                 let horizontal_margin = DropdownMenuDefaults::HORIZONTAL_MARGIN.0;
-                let vertical_margin = config.vertical_margin.0;
-                let measured = parent
-                    .popup_sizes
+                // Unlike the height, this may be a measurement: the card is laid
+                // out by taffy against the whole overlay, so its width never
+                // depends on the x it is placed at.
+                let measured_w = parent
+                    .popup_widths
                     .borrow()
                     .get(&text)
                     .copied()
-                    .unwrap_or(repose_core::Vec2 { x: 0.0, y: 0.0 });
-                let menu_w = if measured.x > 0.0 {
-                    measured.x
+                    .unwrap_or(0.0);
+                let menu_w = if measured_w > 0.0 {
+                    measured_w
                 } else {
                     config.min_width.0.max(1.0)
-                };
-                let est_h = if measured.y > 0.0 {
-                    measured.y
-                } else {
-                    estimate_dropdown_height(&children, &config).max(48.0)
                 };
                 let anchor = parent
                     .anchor_rects
@@ -803,24 +840,15 @@ fn render_dropdown_submenu(
                     .get(&text)
                     .copied()
                     .unwrap_or(initial_anchor);
-                let mut x = anchor.x + anchor.w + config.offset_x.0;
-                if x + menu_w > win_w - horizontal_margin {
-                    x = (anchor.x - menu_w - config.offset_x.0).max(horizontal_margin);
-                }
-                let preferred_y = (anchor.y + config.offset_y.0).max(vertical_margin);
-                let place_above = preferred_y + est_h > win_h - vertical_margin
-                    && anchor.y + anchor.h + config.offset_y.0 - est_h >= vertical_margin;
-                let y = if place_above {
-                    anchor.y + anchor.h + config.offset_y.0 - est_h
-                } else {
-                    preferred_y
-                };
-                let available_height = if place_above {
-                    (y - vertical_margin).max(48.0)
-                } else {
-                    (win_h - vertical_margin - y).max(48.0)
-                }
-                .min((win_h - vertical_margin * 2.0).max(48.0));
+                let (x, y, available_height) = place_submenu_popup(
+                    anchor,
+                    &config,
+                    win_w,
+                    win_h,
+                    menu_w,
+                    estimate_dropdown_height(&children, &config),
+                    horizontal_margin,
+                );
                 let items: Vec<View> = children
                     .iter()
                     .map(|entry| match entry {
@@ -856,8 +884,8 @@ fn render_dropdown_submenu(
                     .z_index(DDM_CONTENT_Z)
                     .vertical_scroll(axis_binding))
                 .child(Column(Modifier::new().fill_max_width()).with_children(items));
-                let popup_sizes = parent.popup_sizes.clone();
-                let popup_size_text = text.clone();
+                let popup_widths = parent.popup_widths.clone();
+                let popup_width_text = text.clone();
                 let card_modifier = render_dropdown_card_modifier(&th, &config)
                     .z_index(DDM_SUBMENU_CARD_Z)
                     .on_pointer_enter(move |event| {
@@ -882,10 +910,10 @@ fn render_dropdown_submenu(
                         );
                     })
                     .on_size_changed(move |size| {
-                        let mut sizes = popup_sizes.borrow_mut();
-                        if sizes.get(&popup_size_text) != Some(&size) {
-                            sizes.insert(popup_size_text.clone(), size);
-                            drop(sizes);
+                        let mut widths = popup_widths.borrow_mut();
+                        if widths.get(&popup_width_text) != Some(&size.x) {
+                            widths.insert(popup_width_text.clone(), size.x);
+                            drop(widths);
                             request_frame();
                         }
                     });
@@ -974,7 +1002,7 @@ fn render_dropdown_menu_content(
     scroll_state: Rc<ScrollState>,
     submenu_open: Rc<RefCell<Option<String>>>,
     submenu_anchor_rects: Rc<RefCell<HashMap<String, Rect>>>,
-    submenu_popup_sizes: Rc<RefCell<HashMap<String, repose_core::Vec2>>>,
+    submenu_popup_widths: Rc<RefCell<HashMap<String, f32>>>,
     submenu_guards: Rc<RefCell<HashMap<String, OverlayGuard>>>,
     submenu_hovered: Rc<RefCell<Option<String>>>,
     submenu_popup_hovered: Rc<Cell<bool>>,
@@ -987,7 +1015,7 @@ fn render_dropdown_menu_content(
         parent_state: state,
         open_child: submenu_open,
         anchor_rects: submenu_anchor_rects,
-        popup_sizes: submenu_popup_sizes,
+        popup_widths: submenu_popup_widths,
         hovered_child: submenu_hovered,
         popup_hovered: submenu_popup_hovered,
         hover_timer: submenu_hover_timer,
@@ -1208,5 +1236,57 @@ mod cached_scope_overlay_tests {
             1,
             "an open menu must survive its scope being served from cache"
         );
+    }
+}
+
+#[cfg(test)]
+mod submenu_placement_tests {
+    use super::*;
+
+    fn config() -> DropdownMenuConfig {
+        DropdownMenuConfig {
+            min_width: Dp(220.0),
+            max_width: Dp(280.0),
+            ..Default::default()
+        }
+    }
+
+    fn entries(count: usize) -> Vec<DropdownMenuEntry> {
+        (0..count)
+            .map(|_| DropdownMenuEntry::Item(DropdownMenuItem::new("A", || {})))
+            .collect()
+    }
+
+    fn place(anchor_y: f32, win_h: f32, entries: &[DropdownMenuEntry]) -> (f32, f32, f32) {
+        let config = config();
+        place_submenu_popup(
+            Rect {
+                x: 220.0,
+                y: anchor_y,
+                w: 220.0,
+                h: 48.0,
+            },
+            &config,
+            1200.0,
+            win_h,
+            220.0,
+            estimate_dropdown_height(entries, &config),
+            DropdownMenuDefaults::HORIZONTAL_MARGIN.0,
+        )
+    }
+
+    #[test]
+    fn submenu_opens_below_its_header_row_when_it_fits() {
+        assert_eq!(place(200.0, 760.0, &entries(6)), (440.0, 200.0, 512.0));
+    }
+
+    #[test]
+    fn submenu_opens_above_its_header_row_when_it_does_not_fit_below() {
+        assert_eq!(place(600.0, 760.0, &entries(6)), (440.0, 344.0, 296.0));
+    }
+
+    #[test]
+    fn submenu_stays_inside_the_window_when_its_header_row_overhangs_the_bottom() {
+        assert_eq!(place(716.0, 760.0, &entries(1)), (440.0, 696.0, 648.0));
     }
 }
