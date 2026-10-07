@@ -2117,7 +2117,13 @@ impl ReposeRuntime {
             x: self.mouse_pos_px.0,
             y: self.mouse_pos_px.1,
         };
-        let (consumed, cap) = dispatch_scroll(f, pos, delta, self.scroll_capture_id);
+        let (consumed, cap) = dispatch_scroll(
+            f,
+            pos,
+            delta,
+            self.scroll_capture_id,
+            repose_core::input::ScrollSource::Wheel,
+        );
         self.scroll_capture_id = cap;
         if consumed {
             request_frame();
@@ -3388,7 +3394,15 @@ impl ReposeRuntime {
         let Some(f) = &self.frame_cache else {
             return (false, scroll_capture);
         };
-        let (consumed, cap) = dispatch_scroll(f, pos, delta, scroll_capture);
+        // Only the one-finger drag path calls this; the wheel goes through
+        // `handle_scroll`. Two-finger pan/pinch never becomes a scroll at all.
+        let (consumed, cap) = dispatch_scroll(
+            f,
+            pos,
+            delta,
+            scroll_capture,
+            repose_core::input::ScrollSource::Touch,
+        );
         if consumed {
             request_frame();
         }
@@ -3885,17 +3899,14 @@ fn dispatch_scroll(
     pos: Vec2,
     delta: Vec2,
     scroll_capture: Option<u64>,
+    source: repose_core::input::ScrollSource,
 ) -> (bool, Option<u64>) {
     let mut remaining = delta;
     let mut first_consumer: Option<u64> = None;
     if let Some(cid) = scroll_capture
-        && let Some(cb) = frame
-            .hit_regions
-            .iter()
-            .find(|h| h.id == cid)
-            .and_then(|h| h.on_scroll.as_ref())
+        && let Some(hit) = frame.hit_regions.iter().find(|h| h.id == cid)
+        && let Some(leftover) = run_scroll_handler(hit, delta, source)
     {
-        let leftover = cb(delta);
         if (delta.x - leftover.x).abs() > 0.001 || (delta.y - leftover.y).abs() > 0.001 {
             first_consumer = Some(cid);
         }
@@ -3916,9 +3927,8 @@ fn dispatch_scroll(
         if remaining.x.abs() <= 0.001 && remaining.y.abs() <= 0.001 {
             break;
         }
-        if let Some(cb) = &hit.on_scroll {
+        if let Some(leftover) = run_scroll_handler(hit, remaining, source) {
             let before = remaining;
-            let leftover = cb(before);
             if (before.x - leftover.x).abs() > 0.001 || (before.y - leftover.y).abs() > 0.001 {
                 consumed_any = true;
                 if first_consumer.is_none() {
@@ -3932,6 +3942,117 @@ fn dispatch_scroll(
         (true, first_consumer)
     } else {
         (false, None)
+    }
+}
+
+/// Invoke whichever scroll handler a hit region installed, returning the
+/// unconsumed remainder. `on_scroll_with_source` wins when both are present.
+fn run_scroll_handler(
+    hit: &HitRegion,
+    delta: Vec2,
+    source: repose_core::input::ScrollSource,
+) -> Option<Vec2> {
+    if let Some(cb) = &hit.on_scroll_with_source {
+        return Some(cb(delta, source));
+    }
+    hit.on_scroll.as_ref().map(|cb| cb(delta))
+}
+
+#[cfg(test)]
+mod scroll_source_tests {
+    use super::*;
+    use repose_core::input::ScrollSource;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    /// A frame with one source-aware region that records every source it sees
+    /// and swallows the whole delta.
+    fn recording_frame(id: u64) -> (Frame, Rc<RefCell<Vec<ScrollSource>>>) {
+        let seen: Rc<RefCell<Vec<ScrollSource>>> = Rc::new(RefCell::new(Vec::new()));
+        let recorder = seen.clone();
+        let frame = Frame {
+            scene: Default::default(),
+            hit_regions: vec![HitRegion {
+                id,
+                rect: repose_core::Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 200.0,
+                    h: 200.0,
+                },
+                on_scroll_with_source: Some(Rc::new(move |_d: Vec2, s: ScrollSource| {
+                    recorder.borrow_mut().push(s);
+                    // Consume everything, so dispatch reports the region as hit.
+                    Vec2 { x: 0.0, y: 0.0 }
+                })),
+                ..Default::default()
+            }],
+            semantics_nodes: vec![],
+            focus_chain: vec![id],
+        };
+        (frame, seen)
+    }
+
+    #[test]
+    fn dispatch_passes_the_source_through_to_the_handler() {
+        let (frame, seen) = recording_frame(1);
+        let pos = Vec2 { x: 50.0, y: 50.0 };
+        let delta = Vec2 { x: 0.0, y: 4.0 };
+
+        let (consumed, _) = dispatch_scroll(&frame, pos, delta, None, ScrollSource::Wheel);
+        assert!(consumed, "handler consumed the delta");
+        let (consumed, _) = dispatch_scroll(&frame, pos, delta, None, ScrollSource::Touch);
+        assert!(consumed);
+
+        assert_eq!(
+            *seen.borrow(),
+            vec![ScrollSource::Wheel, ScrollSource::Touch]
+        );
+    }
+
+    #[test]
+    fn legacy_on_scroll_still_runs_and_reports_its_leftover() {
+        let hit = HitRegion {
+            id: 3,
+            on_scroll: Some(Rc::new(|d: Vec2| Vec2 { x: 0.0, y: d.y })),
+            ..Default::default()
+        };
+        let leftover = run_scroll_handler(&hit, Vec2 { x: 7.0, y: 5.0 }, ScrollSource::Touch);
+        assert_eq!(leftover, Some(Vec2 { x: 0.0, y: 5.0 }));
+    }
+
+    #[test]
+    fn source_aware_handler_takes_precedence_over_legacy() {
+        let legacy = Rc::new(RefCell::new(0u32));
+        let aware = Rc::new(RefCell::new(0u32));
+        let (legacy_cb, aware_cb) = (legacy.clone(), aware.clone());
+        let hit = HitRegion {
+            id: 4,
+            on_scroll: Some(Rc::new(move |d: Vec2| {
+                *legacy_cb.borrow_mut() += 1;
+                d
+            })),
+            on_scroll_with_source: Some(Rc::new(move |d: Vec2, _s: ScrollSource| {
+                *aware_cb.borrow_mut() += 1;
+                d
+            })),
+            ..Default::default()
+        };
+        run_scroll_handler(&hit, Vec2 { x: 1.0, y: 1.0 }, ScrollSource::Wheel);
+        assert_eq!(*aware.borrow(), 1, "source-aware handler runs");
+        assert_eq!(*legacy.borrow(), 0, "legacy handler is not also run");
+    }
+
+    #[test]
+    fn region_without_any_scroll_handler_is_skipped() {
+        let hit = HitRegion {
+            id: 5,
+            ..Default::default()
+        };
+        assert_eq!(
+            run_scroll_handler(&hit, Vec2 { x: 1.0, y: 1.0 }, ScrollSource::Wheel),
+            None
+        );
     }
 }
 

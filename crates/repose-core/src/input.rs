@@ -12,6 +12,20 @@ pub enum PointerKind {
     Pen,
 }
 
+/// What produced a scroll delta.
+///
+/// A wheel notch and a one-finger drag are the same `Vec2` by the time they
+/// reach a handler, which is why a canvas cannot decide "zoom" from the value
+/// alone. Two-finger pan and pinch are *not* scrolls: they arrive as
+/// [`crate::shortcuts::Gesture`] actions instead.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ScrollSource {
+    /// A mouse wheel or trackpad.
+    Wheel,
+    /// A single-finger drag across a surface.
+    Touch,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PointerButton {
     Primary,   // Left mouse, touch

@@ -104,7 +104,7 @@ macro_rules! impl_option_fields {
                     align_self, justify_content, align_items_container, align_content,
                     baseline_align,
                     clip_rounded, clip_rect, overflow, render_z_index,
-                    on_scroll,
+                    on_scroll, on_scroll_with_source,
                     scrollbar_style,
                     nested_scroll_connection,
                     scroll,
@@ -735,6 +735,9 @@ pub struct Modifier {
     /// the group before moving outside it.
     pub focus_group: bool,
     pub on_scroll: Option<Rc<dyn Fn(Vec2) -> Vec2>>,
+    /// Scroll handler that receives the input source alongside the delta.
+    /// Takes precedence over `on_scroll` when both are set.
+    pub on_scroll_with_source: Option<Rc<dyn Fn(Vec2, crate::input::ScrollSource) -> Vec2>>,
     /// Scroll modifier binding. When set, the layout engine treats this view as
     /// a scroll container, applying clipping and offset to children.
     ///
@@ -1506,6 +1509,19 @@ impl Modifier {
     }
     pub fn on_scroll(mut self, f: impl Fn(Vec2) -> Vec2 + 'static) -> Self {
         self.on_scroll = Some(Rc::new(f));
+        self
+    }
+    /// Scroll handler that also learns what produced the delta.
+    ///
+    /// A wheel and a one-finger drag both arrive as a bare `Vec2`, so a surface
+    /// that zooms on one and pans on the other cannot tell them apart. Prefer
+    /// this over [`Modifier::on_scroll`] where the difference matters; a node
+    /// may set either, never both.
+    pub fn on_scroll_with_source(
+        mut self,
+        f: impl Fn(Vec2, crate::input::ScrollSource) -> Vec2 + 'static,
+    ) -> Self {
+        self.on_scroll_with_source = Some(Rc::new(f));
         self
     }
     /// Attach a vertical scroll binding to this modifier.

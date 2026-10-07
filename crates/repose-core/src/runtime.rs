@@ -1141,6 +1141,8 @@ pub struct HitRegion {
     pub on_double_click: Option<Rc<dyn Fn()>>,
     pub on_long_click: Option<Rc<dyn Fn()>>,
     pub on_scroll: Option<Rc<dyn Fn(crate::Vec2) -> crate::Vec2>>,
+    pub on_scroll_with_source:
+        Option<Rc<dyn Fn(crate::Vec2, crate::input::ScrollSource) -> crate::Vec2>>,
     pub focusable: bool,
     pub on_pointer_down: Option<Rc<dyn Fn(crate::input::PointerEvent)>>,
     pub on_pointer_move: Option<Rc<dyn Fn(crate::input::PointerEvent)>>,
@@ -1255,6 +1257,7 @@ impl HitRegion {
             on_drag_over: m.on_drag_over.clone(),
             on_drag_leave: m.on_drag_leave.clone(),
             on_scroll: m.on_scroll.clone(),
+            on_scroll_with_source: m.on_scroll_with_source.clone(),
             on_drop: m.on_drop.clone(),
             drag_preview: m.drag_preview.clone(),
             disabled: m.disabled,
