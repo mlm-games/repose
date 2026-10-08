@@ -196,7 +196,7 @@ checksum = "fc7eb209b1518d6bb87b283c20095f5228ecda460da70b44f0802523dea6da04"
 
 [[package]]
 name = "android_counter"
-version = "0.31.9"
+version = "0.31.10"
 dependencies = [
  "anyhow",
  "log",
@@ -219,7 +219,7 @@ dependencies = [
 
 [[package]]
 name = "animation_demo"
-version = "0.31.9"
+version = "0.31.10"
 dependencies = [
  "anyhow",
  "env_logger",
@@ -3026,7 +3026,7 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
 name = "repose-app"
-version = "0.31.9"
+version = "0.31.10"
 dependencies = [
  "log",
  "repose-core",
@@ -3037,7 +3037,7 @@ dependencies = [
 
 [[package]]
 name = "repose-canvas"
-version = "0.31.9"
+version = "0.31.10"
 dependencies = [
  "lyon_path",
  "lyon_tessellation",
@@ -3047,7 +3047,7 @@ dependencies = [
 
 [[package]]
 name = "repose-core"
-version = "0.31.9"
+version = "0.31.10"
 dependencies = [
  "accesskit",
  "log",
@@ -3061,7 +3061,7 @@ dependencies = [
 
 [[package]]
 name = "repose-devtools"
-version = "0.31.9"
+version = "0.31.10"
 dependencies = [
  "repose-core",
  "web-time",
@@ -3070,7 +3070,7 @@ dependencies = [
 
 [[package]]
 name = "repose-docking"
-version = "0.31.9"
+version = "0.31.10"
 dependencies = [
  "repose-core",
  "repose-ui",
@@ -3079,7 +3079,7 @@ dependencies = [
 
 [[package]]
 name = "repose-macros"
-version = "0.31.9"
+version = "0.31.10"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3088,7 +3088,7 @@ dependencies = [
 
 [[package]]
 name = "repose-material"
-version = "0.31.9"
+version = "0.31.10"
 dependencies = [
  "repose-canvas",
  "repose-core",
@@ -3100,7 +3100,7 @@ dependencies = [
 
 [[package]]
 name = "repose-navigation"
-version = "0.31.9"
+version = "0.31.10"
 dependencies = [
  "log",
  "repose-core",
@@ -3111,7 +3111,7 @@ dependencies = [
 
 [[package]]
 name = "repose-platform"
-version = "0.31.9"
+version = "0.31.10"
 dependencies = [
  "accesskit",
  "accesskit_winit",
@@ -3145,7 +3145,7 @@ dependencies = [
 
 [[package]]
 name = "repose-render-wgpu"
-version = "0.31.9"
+version = "0.31.10"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -3167,7 +3167,7 @@ dependencies = [
 
 [[package]]
 name = "repose-text"
-version = "0.31.9"
+version = "0.31.10"
 dependencies = [
  "font-awl",
  "js-sys",
@@ -3184,7 +3184,7 @@ dependencies = [
 
 [[package]]
 name = "repose-tree"
-version = "0.31.9"
+version = "0.31.10"
 dependencies = [
  "log",
  "rapidhash",
@@ -3197,7 +3197,7 @@ dependencies = [
 
 [[package]]
 name = "repose-ui"
-version = "0.31.9"
+version = "0.31.10"
 dependencies = [
  "log",
  "repose-core",
@@ -3239,14 +3239,15 @@ dependencies = [
 
 [[package]]
 name = "rlobkit-app-events"
-version = "0.5.13"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c42ed5f997919f2fe4e2eeaac675b9a0054a013051bcfe268ee08337bf0d519b"
+checksum = "598be9318d3d9206b46b8d2a28dec3005e2223095e5de28265ecc788378bf98c"
 dependencies = [
  "jni",
  "jni-min-helper",
  "log",
  "paranoid-android",
+ "rlobkit-core 0.6.1",
  "tracing",
  "tracing-log",
  "tracing-subscriber",
@@ -3257,6 +3258,19 @@ name = "rlobkit-core"
 version = "0.5.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f1c00b67d671791379f4a39d78496f1970fd2f4d1296c58b48c65ea311dfa496"
+dependencies = [
+ "bytes",
+ "dirs",
+ "mime_guess",
+ "thiserror 2.0.21",
+ "tokio",
+]
+
+[[package]]
+name = "rlobkit-core"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "29dfed1a049590467a35cccd5d6bc65c3733f2c7f22da9f620c9a4f84278efc5"
 dependencies = [
  "bytes",
  "dirs",
@@ -3280,7 +3294,7 @@ dependencies = [
  "mime_guess",
  "ndk-context",
  "rfd",
- "rlobkit-core",
+ "rlobkit-core 0.5.13",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
@@ -3459,7 +3473,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "showcase"
-version = "0.31.9"
+version = "0.31.10"
 dependencies = [
  "anyhow",
  "bytemuck",
