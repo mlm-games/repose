@@ -9,8 +9,9 @@ use std::sync::{Arc, Mutex, Weak};
 
 use repose_core::color::{ChromaSiting, ColorInfo, PixelFormat};
 use repose_core::{
-    Brush, FontStyle, ImageAlignment, ImageFilter, ImageFit, ImagePaintStyle, ImageSourceRect,
-    Scene, SceneNode, StrokeCap, TextPaintStyle, Transform, Vec2,
+    Brush, FontStyle, GradientStops, ImageAlignment, ImageFilter, ImageFit, ImagePaintStyle,
+    ImageSourceRect, MAX_GRADIENT_STOPS, Scene, SceneNode, StrokeCap, TextPaintStyle, Transform,
+    Vec2,
 };
 #[cfg(feature = "winit-surface")]
 use repose_core::{GlyphRasterConfig, PresentModePref, RenderBackend, request_frame};
@@ -617,6 +618,69 @@ fn callback_scope_key(
     }
 }
 
+/// Blend modes the GPU can express with fixed-function blending (plus
+/// [`Alpha`](repose_core::BlendMode::Alpha), the premultiplied default). Every
+/// other mode isolates into a graphics layer and composites with the
+/// `blend_layer` shader.
+const FIXED_FUNCTION_BLENDS: [repose_core::BlendMode; 5] = [
+    repose_core::BlendMode::Add,
+    repose_core::BlendMode::Multiply,
+    repose_core::BlendMode::Screen,
+    repose_core::BlendMode::Darken,
+    repose_core::BlendMode::Lighten,
+];
+
+/// Hardware blend state for a [`FIXED_FUNCTION_BLENDS`] mode, or `None` for
+/// `Alpha` and every mode that needs an isolated backdrop pass. Shared by the
+/// mesh and image pipelines so both composite identically.
+fn fixed_function_blend(mode: repose_core::BlendMode) -> Option<wgpu::BlendState> {
+    let premult_alpha = wgpu::BlendComponent::OVER;
+    let additive = wgpu::BlendComponent {
+        src_factor: wgpu::BlendFactor::One,
+        dst_factor: wgpu::BlendFactor::One,
+        operation: wgpu::BlendOperation::Add,
+    };
+    Some(match mode {
+        repose_core::BlendMode::Add => wgpu::BlendState {
+            color: additive,
+            alpha: additive,
+        },
+        repose_core::BlendMode::Multiply => wgpu::BlendState {
+            color: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::Dst,
+                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                operation: wgpu::BlendOperation::Add,
+            },
+            alpha: premult_alpha,
+        },
+        repose_core::BlendMode::Screen => wgpu::BlendState {
+            color: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::OneMinusSrc,
+                operation: wgpu::BlendOperation::Add,
+            },
+            alpha: premult_alpha,
+        },
+        repose_core::BlendMode::Darken => wgpu::BlendState {
+            color: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::One,
+                operation: wgpu::BlendOperation::Min,
+            },
+            alpha: premult_alpha,
+        },
+        repose_core::BlendMode::Lighten => wgpu::BlendState {
+            color: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::One,
+                operation: wgpu::BlendOperation::Max,
+            },
+            alpha: premult_alpha,
+        },
+        _ => return None,
+    })
+}
+
 /// A bundle of render pipelines for a single sample-count target. Created
 /// twice: once with `sample_count = msaa_samples` for the surface pass, and
 /// once with `sample_count = 1` for graphics-layer render-to-texture passes
@@ -631,11 +695,18 @@ struct Pipelines {
     text_mask: wgpu::RenderPipeline,
     text_color: wgpu::RenderPipeline,
     image_rgba: wgpu::RenderPipeline,
+    /// Fixed-function blend variants of `image_rgba`, indexed like
+    /// `FIXED_FUNCTION_BLENDS`. `SceneNode::ImageBlended` with a separable
+    /// mode picks one here; the rest go through isolation.
+    image_blends: [wgpu::RenderPipeline; FIXED_FUNCTION_BLENDS.len()],
     /// Tinted A8 coverage composite (`coverage.wgsl`): same vertex
     /// attributes and bind groups as the text/color path, sampling a
     /// single-channel tile registered with `register_coverage_a8`.
     coverage: wgpu::RenderPipeline,
     image_nv12: wgpu::RenderPipeline,
+    /// Fixed-function blend variants of `image_nv12`, indexed like
+    /// `FIXED_FUNCTION_BLENDS`.
+    image_nv12_blends: [wgpu::RenderPipeline; FIXED_FUNCTION_BLENDS.len()],
     blur: wgpu::RenderPipeline,
     blur_content: wgpu::RenderPipeline,
     clip_bin: wgpu::RenderPipeline,
@@ -652,11 +723,7 @@ struct Pipelines {
     /// `BlendMode`. Backdrop-dependent modes (overlay, color-dodge/burn,
     /// hard/soft-light, exclusion, hue/saturation/color/luminosity) use the
     /// `blend_layer` shader instead.
-    mesh_add: wgpu::RenderPipeline,
-    mesh_multiply: wgpu::RenderPipeline,
-    mesh_screen: wgpu::RenderPipeline,
-    mesh_darken: wgpu::RenderPipeline,
-    mesh_lighten: wgpu::RenderPipeline,
+    mesh_blends: [wgpu::RenderPipeline; FIXED_FUNCTION_BLENDS.len()],
     /// Backdrop-blend composite: samples an isolated source layer and the
     /// current target, applies the CSS blend formula selected by a uniform,
     /// and composites premultiplied source-over.
@@ -1046,33 +1113,48 @@ impl Pipelines {
             multiview_mask: None,
             cache: None,
         });
-        let text_color = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("text pipeline (color)"),
-            layout: Some(&text_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &text_color_shader,
-                entry_point: Some("vs_main"),
-                buffers: &[Some(glyph_vertex.clone())],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &text_color_shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: Some(stencil_for_content.clone()),
-            multisample: msaa_state,
-            multiview_mask: None,
-            cache: None,
-        });
+        let text_color_pipeline =
+            |label: &'static str, blend: wgpu::BlendState| -> wgpu::RenderPipeline {
+                device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some(label),
+                    layout: Some(&text_pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        module: &text_color_shader,
+                        entry_point: Some("vs_main"),
+                        buffers: &[Some(glyph_vertex.clone())],
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        module: &text_color_shader,
+                        entry_point: Some("fs_main"),
+                        targets: &[Some(wgpu::ColorTargetState {
+                            format,
+                            blend: Some(blend),
+                            write_mask: wgpu::ColorWrites::ALL,
+                        })],
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    }),
+                    primitive: wgpu::PrimitiveState::default(),
+                    depth_stencil: Some(stencil_for_content.clone()),
+                    multisample: msaa_state,
+                    multiview_mask: None,
+                    cache: None,
+                })
+            };
+        let text_color = text_color_pipeline(
+            "text pipeline (color)",
+            wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING,
+        );
         // image_rgba reuses the text color pipeline (same vertex/bindings).
         let image_rgba = text_color.clone();
+        // Fixed-function blend variants for `ImageBlended`, indexed like
+        // `FIXED_FUNCTION_BLENDS`.
+        let image_blends: [wgpu::RenderPipeline; FIXED_FUNCTION_BLENDS.len()] =
+            std::array::from_fn(|index| {
+                let blend = fixed_function_blend(FIXED_FUNCTION_BLENDS[index])
+                    .unwrap_or(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING);
+                text_color_pipeline("image pipeline (blend)", blend)
+            });
 
         // Tinted A8 coverage composite. Same vertex attributes (GlyphInstance)
         // and bind groups (globals + texture/sampler) as the text color path,
@@ -1228,66 +1310,80 @@ impl Pipelines {
             bind_group_layouts: &[Some(globals_layout), Some(image_bind_layout_nv12)],
             immediate_size: 0,
         });
-        let image_nv12 = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("image nv12 pipeline"),
-            layout: Some(&image_nv12_layout),
-            vertex: wgpu::VertexState {
-                module: &image_nv12_shader,
-                entry_point: Some("vs_main"),
-                buffers: &[Some(wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<Nv12Instance>() as u64,
-                    step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &[
-                        wgpu::VertexAttribute {
-                            shader_location: 0,
-                            offset: 0,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 1,
-                            offset: 16,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 2,
-                            offset: 32,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 3,
-                            offset: 48,
-                            format: wgpu::VertexFormat::Float32,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 4,
-                            offset: 52,
-                            format: wgpu::VertexFormat::Float32,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 5,
-                            offset: 56,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                    ],
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &image_nv12_shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: Some(stencil_for_content.clone()),
-            multisample: msaa_state,
-            multiview_mask: None,
-            cache: None,
-        });
+        let nv12_vertex_layout = wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<Nv12Instance>() as u64,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    shader_location: 0,
+                    offset: 0,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    shader_location: 1,
+                    offset: 16,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    shader_location: 2,
+                    offset: 32,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    shader_location: 3,
+                    offset: 48,
+                    format: wgpu::VertexFormat::Float32,
+                },
+                wgpu::VertexAttribute {
+                    shader_location: 4,
+                    offset: 52,
+                    format: wgpu::VertexFormat::Float32,
+                },
+                wgpu::VertexAttribute {
+                    shader_location: 5,
+                    offset: 56,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+            ],
+        };
+        let nv12_pipeline =
+            |label: &'static str, blend: wgpu::BlendState| -> wgpu::RenderPipeline {
+                device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some(label),
+                    layout: Some(&image_nv12_layout),
+                    vertex: wgpu::VertexState {
+                        module: &image_nv12_shader,
+                        entry_point: Some("vs_main"),
+                        buffers: &[Some(nv12_vertex_layout.clone())],
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        module: &image_nv12_shader,
+                        entry_point: Some("fs_main"),
+                        targets: &[Some(wgpu::ColorTargetState {
+                            format,
+                            blend: Some(blend),
+                            write_mask: wgpu::ColorWrites::ALL,
+                        })],
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    }),
+                    primitive: wgpu::PrimitiveState::default(),
+                    depth_stencil: Some(stencil_for_content.clone()),
+                    multisample: msaa_state,
+                    multiview_mask: None,
+                    cache: None,
+                })
+            };
+        let image_nv12 = nv12_pipeline(
+            "image nv12 pipeline",
+            wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING,
+        );
+        let image_nv12_blends: [wgpu::RenderPipeline; FIXED_FUNCTION_BLENDS.len()] =
+            std::array::from_fn(|index| {
+                let blend = fixed_function_blend(FIXED_FUNCTION_BLENDS[index])
+                    .unwrap_or(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING);
+                nv12_pipeline("image nv12 pipeline (blend)", blend)
+            });
 
         let clip_color_target = wgpu::ColorTargetState {
             format,
@@ -1450,71 +1546,22 @@ impl Pipelines {
             blend: Some(blend),
             write_mask: wgpu::ColorWrites::ALL,
         };
-        let premult_alpha = wgpu::BlendComponent::OVER;
-        let mesh_add = make_mesh_pipeline(
-            "mesh pipeline (add)",
-            &stencil_for_mesh,
-            &mesh_blend_target(wgpu::BlendState {
-                color: wgpu::BlendComponent {
-                    src_factor: wgpu::BlendFactor::One,
-                    dst_factor: wgpu::BlendFactor::One,
-                    operation: wgpu::BlendOperation::Add,
-                },
-                alpha: wgpu::BlendComponent {
-                    src_factor: wgpu::BlendFactor::One,
-                    dst_factor: wgpu::BlendFactor::One,
-                    operation: wgpu::BlendOperation::Add,
-                },
-            }),
-        );
-        let mesh_multiply = make_mesh_pipeline(
-            "mesh pipeline (multiply)",
-            &stencil_for_mesh,
-            &mesh_blend_target(wgpu::BlendState {
-                color: wgpu::BlendComponent {
-                    src_factor: wgpu::BlendFactor::Dst,
-                    dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                    operation: wgpu::BlendOperation::Add,
-                },
-                alpha: premult_alpha,
-            }),
-        );
-        let mesh_screen = make_mesh_pipeline(
-            "mesh pipeline (screen)",
-            &stencil_for_mesh,
-            &mesh_blend_target(wgpu::BlendState {
-                color: wgpu::BlendComponent {
-                    src_factor: wgpu::BlendFactor::One,
-                    dst_factor: wgpu::BlendFactor::OneMinusSrc,
-                    operation: wgpu::BlendOperation::Add,
-                },
-                alpha: premult_alpha,
-            }),
-        );
-        let mesh_darken = make_mesh_pipeline(
-            "mesh pipeline (darken)",
-            &stencil_for_mesh,
-            &mesh_blend_target(wgpu::BlendState {
-                color: wgpu::BlendComponent {
-                    src_factor: wgpu::BlendFactor::One,
-                    dst_factor: wgpu::BlendFactor::One,
-                    operation: wgpu::BlendOperation::Min,
-                },
-                alpha: premult_alpha,
-            }),
-        );
-        let mesh_lighten = make_mesh_pipeline(
-            "mesh pipeline (lighten)",
-            &stencil_for_mesh,
-            &mesh_blend_target(wgpu::BlendState {
-                color: wgpu::BlendComponent {
-                    src_factor: wgpu::BlendFactor::One,
-                    dst_factor: wgpu::BlendFactor::One,
-                    operation: wgpu::BlendOperation::Max,
-                },
-                alpha: premult_alpha,
-            }),
-        );
+        let mesh_blends: [wgpu::RenderPipeline; FIXED_FUNCTION_BLENDS.len()] =
+            std::array::from_fn(|index| {
+                let mode = FIXED_FUNCTION_BLENDS[index];
+                let blend = fixed_function_blend(mode).unwrap_or(wgpu::BlendState::REPLACE);
+                make_mesh_pipeline(
+                    match mode {
+                        repose_core::BlendMode::Add => "mesh pipeline (add)",
+                        repose_core::BlendMode::Multiply => "mesh pipeline (multiply)",
+                        repose_core::BlendMode::Screen => "mesh pipeline (screen)",
+                        repose_core::BlendMode::Darken => "mesh pipeline (darken)",
+                        _ => "mesh pipeline (lighten)",
+                    },
+                    &stencil_for_mesh,
+                    &mesh_blend_target(blend),
+                )
+            });
         // Projective layer composite (perspective flattening). Same
         // bind groups as the text/image path (globals + layer texture), with
         // per-instance projected corners. Like `image_rgba` it draws into the
@@ -1679,7 +1726,9 @@ impl Pipelines {
             text_mask,
             text_color,
             image_rgba,
+            image_blends,
             image_nv12,
+            image_nv12_blends,
             coverage,
             blur,
             blur_content,
@@ -1687,11 +1736,7 @@ impl Pipelines {
             clip_dec,
             slug,
             mesh,
-            mesh_add,
-            mesh_multiply,
-            mesh_screen,
-            mesh_darken,
-            mesh_lighten,
+            mesh_blends,
             blend_layer,
             mesh_overlay,
             mesh_clip_inc,
@@ -1699,6 +1744,77 @@ impl Pipelines {
             projective_layer,
         }
     }
+}
+
+/// AABB of a rect under the *plain affine* part of a transform (linear +
+/// translation, no origin re-pivot).
+fn affine_aabb(transform: &Transform, rect: &repose_core::Rect) -> repose_core::Rect {
+    let m = transform.linear();
+    let (tx, ty) = (transform.translate_x, transform.translate_y);
+    let corners = [
+        (rect.x, rect.y),
+        (rect.x + rect.w, rect.y),
+        (rect.x, rect.y + rect.h),
+        (rect.x + rect.w, rect.y + rect.h),
+    ];
+    let mut min_x = f32::INFINITY;
+    let mut min_y = f32::INFINITY;
+    let mut max_x = f32::NEG_INFINITY;
+    let mut max_y = f32::NEG_INFINITY;
+    for (x, y) in corners {
+        let wx = m[0] * x + m[1] * y + tx;
+        let wy = m[2] * x + m[3] * y + ty;
+        min_x = min_x.min(wx);
+        min_y = min_y.min(wy);
+        max_x = max_x.max(wx);
+        max_y = max_y.max(wy);
+    }
+    repose_core::Rect {
+        x: min_x,
+        y: min_y,
+        w: (max_x - min_x).max(0.0),
+        h: (max_y - min_y).max(0.0),
+    }
+}
+
+/// Convert a local-space rect + transform to NDC center-based position+size
+/// plus the forward rotation/shear 2x2 (row-major `[m00, m01, m10, m11]`,
+/// scale-free: scale rides in the NDC size). Shaders apply it to quad corners
+/// and its adjugate/determinant inverse to sample positions.
+fn rect_to_instance_ndc(
+    rect: repose_core::Rect,
+    transform: &Transform,
+    fb_w: f32,
+    fb_h: f32,
+) -> ([f32; 4], [f32; 4]) {
+    let cx = rect.x + rect.w * 0.5;
+    let cy = rect.y + rect.h * 0.5;
+
+    let m = transform.linear();
+    let tx = m[0] * cx + m[1] * cy + transform.translate_x;
+    let ty = m[2] * cx + m[3] * cy + transform.translate_y;
+
+    let ndc_cx = (tx / fb_w) * 2.0 - 1.0;
+    let ndc_cy = 1.0 - (ty / fb_h) * 2.0;
+    // NDC size (after scale only, no rotation - rotation is done in shader)
+    let ndc_w = (rect.w * transform.scale_x / fb_w) * 2.0;
+    let ndc_h = (rect.h * transform.scale_y / fb_h) * 2.0;
+
+    ([ndc_cx, ndc_cy, ndc_w, ndc_h], forward_rs_mat(transform))
+}
+
+/// Forward rotation+shear 2x2 (row-major, scale-free) for instance
+/// attributes. Identity for untransformed content; degenerate shear (only
+/// from absurd inputs) falls back to identity.
+fn forward_rs_mat(transform: &Transform) -> [f32; 4] {
+    let c = transform.rotate.cos();
+    let s = transform.rotate.sin();
+    let (hx, hy) = (transform.shear_x, transform.shear_y);
+    let m = [c - s * hy, c * hx - s, s + c * hy, s * hx + c];
+    if (m[0] * m[3] - m[1] * m[2]).abs() < 1e-6 {
+        return [1.0, 0.0, 0.0, 1.0];
+    }
+    m
 }
 
 /// A segment of the frame that draws into a single render target.
@@ -1820,6 +1936,8 @@ enum Cmd {
         filter: ImageFilter,
         /// Bind to the repeating samplers so `ImageFit::Tile` UVs wrap.
         tile: bool,
+        /// Fixed-function blend mode; `Alpha` uses `image_rgba`.
+        blend: repose_core::BlendMode,
     },
     /// Composite a tinted A8 coverage tile (`SceneNode::Coverage`). The
     /// instance lives in `self.glyph_color.ring` (a `GlyphInstance`); the
@@ -1834,6 +1952,8 @@ enum Cmd {
         cnt: u32,
         handle: u64,
         filter: ImageFilter,
+        /// Fixed-function blend mode; `Alpha` uses `image_nv12`.
+        blend: repose_core::BlendMode,
     },
     /// Composite a previously-rendered graphics layer back into the
     /// current target as a textured quad. The quad's vertex buffer
@@ -2520,6 +2640,12 @@ fn slug_draw_cache_entry_bytes(vertices: usize) -> u64 {
         .unwrap_or(u64::MAX)
 }
 
+/// Per-draw vector mesh uniform. Field order and every member width are
+/// load-bearing: the WGSL `MeshUniform` in `shaders/mesh.wgsl` must match it
+/// member for member, and uniform address space forces 16-byte alignment, so
+/// the two-point gradient endpoints are padded out to `vec4`s and the stop
+/// table is one `vec4` per colour plus four offsets per `vec4` (never a bare
+/// `array<f32>`). `paint.z` carries the live stop count (0..=8).
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct MeshUniform {
@@ -2532,7 +2658,15 @@ struct MeshUniform {
     _p3: [f32; 2],
     grad_end: [f32; 2],
     _p4: [f32; 2],
+    stop_colors: [[f32; 4]; MAX_GRADIENT_STOPS],
+    stop_offsets: [[f32; 4]; MAX_GRADIENT_STOPS / 4],
 }
+
+/// Bytes `MeshUniform` occupies. `tests::mesh_uniform_matches_the_wgsl_member_layout`
+/// parses `shaders/mesh.wgsl` and checks every member offset and the total
+/// size against the struct, so the two halves cannot drift apart.
+const MESH_UNIFORM_BYTES: usize = 272;
+const _: () = assert!(std::mem::size_of::<MeshUniform>() == MESH_UNIFORM_BYTES);
 
 const MESH_UNIFORM_CAP: u64 = 4 * 1024 * 1024;
 const MAX_RETAINED_IMAGE_BYTES: u64 = 256 * 1024 * 1024;
@@ -2584,13 +2718,53 @@ impl MeshUniform {
             _p3: [0.0; 2],
             grad_end: [0.0; 2],
             _p4: [0.0; 2],
+            stop_colors: [[0.0; 4]; MAX_GRADIENT_STOPS],
+            stop_offsets: [[0.0; 4]; MAX_GRADIENT_STOPS / 4],
         }
     }
 }
 
+/// Colours, packed offsets and the live count, ready for `MeshUniform`.
+type PackedStops = (
+    [[f32; 4]; MAX_GRADIENT_STOPS],
+    [[f32; 4]; MAX_GRADIENT_STOPS / 4],
+    u32,
+);
+
+/// Packs a stop table for the uniform: one `vec4` per colour, four offsets per
+/// `vec4`, plus the live count (0..=8). Offsets are clamped to `0..=1` and
+/// forced non-decreasing so the shader can scan them in order without sorting;
+/// a NaN offset folds to the previous stop's (`f32::max` drops NaN). Order is
+/// otherwise preserved, so repeated offsets stay a hard stop at that position.
+fn pack_gradient_stops(stops: &GradientStops) -> PackedStops {
+    let mut stop_colors = [[0.0f32; 4]; MAX_GRADIENT_STOPS];
+    let mut flat = [0.0f32; MAX_GRADIENT_STOPS];
+    let mut count = 0u32;
+    let mut prev = 0.0f32;
+    for ((color, offset), stop) in stop_colors
+        .iter_mut()
+        .zip(flat.iter_mut())
+        .zip(stops.as_slice())
+    {
+        let clamped = stop.offset.clamp(0.0, 1.0).max(prev);
+        prev = clamped;
+        *color = stop.color.to_linear();
+        *offset = clamped;
+        count += 1;
+    }
+    let mut stop_offsets = [[0.0f32; 4]; MAX_GRADIENT_STOPS / 4];
+    for (dst, src) in stop_offsets.iter_mut().zip(flat.as_chunks::<4>().0) {
+        *dst = *src;
+    }
+    (stop_colors, stop_offsets, count)
+}
+
 fn mesh_uniform_from_paint(affine: [f32; 6], paint: &repose_core::PaintDesc) -> MeshUniform {
-    let (paint_type, paint_kind, color0, color1, grad_start, grad_end) = match paint {
-        repose_core::PaintDesc::Solid => (0u32, 0u32, [0.0; 4], [0.0; 4], [0.0; 2], [0.0; 2]),
+    let no_stops = GradientStops::default();
+    let (paint_type, paint_kind, stops, color0, color1, grad_start, grad_end) = match paint {
+        repose_core::PaintDesc::Solid => {
+            (0u32, 0u32, no_stops, [0.0; 4], [0.0; 4], [0.0; 2], [0.0; 2])
+        }
         repose_core::PaintDesc::Linear {
             start,
             end,
@@ -2599,6 +2773,7 @@ fn mesh_uniform_from_paint(affine: [f32; 6], paint: &repose_core::PaintDesc) -> 
         } => (
             1u32,
             0u32,
+            no_stops,
             start_color.to_linear(),
             end_color.to_linear(),
             [start.x, start.y],
@@ -2612,6 +2787,7 @@ fn mesh_uniform_from_paint(affine: [f32; 6], paint: &repose_core::PaintDesc) -> 
         } => (
             1u32,
             1u32,
+            no_stops,
             start_color.to_linear(),
             end_color.to_linear(),
             [center.x, center.y],
@@ -2624,23 +2800,49 @@ fn mesh_uniform_from_paint(affine: [f32; 6], paint: &repose_core::PaintDesc) -> 
         } => (
             1u32,
             2u32,
+            no_stops,
             start_color.to_linear(),
             end_color.to_linear(),
             [center.x, center.y],
             [0.0, 0.0],
         ),
-        _ => (0u32, 0u32, [0.0; 4], [0.0; 4], [0.0; 2], [0.0; 2]),
+        repose_core::PaintDesc::LinearStops { start, end, stops } => (
+            1u32,
+            3u32,
+            *stops,
+            [0.0; 4],
+            [0.0; 4],
+            [start.x, start.y],
+            [end.x, end.y],
+        ),
+        repose_core::PaintDesc::RadialStops {
+            center,
+            radius,
+            stops,
+        } => (
+            1u32,
+            4u32,
+            *stops,
+            [0.0; 4],
+            [0.0; 4],
+            [center.x, center.y],
+            [radius.max(0.0), 0.0],
+        ),
+        _ => (0u32, 0u32, no_stops, [0.0; 4], [0.0; 4], [0.0; 2], [0.0; 2]),
     };
+    let (stop_colors, stop_offsets, count) = pack_gradient_stops(&stops);
     MeshUniform {
         m0: [affine[0], affine[1], affine[2], 0.0],
         m1: [affine[3], affine[4], affine[5], 0.0],
-        paint: [paint_type, paint_kind, 0, 0],
+        paint: [paint_type, paint_kind, count, 0],
         color0,
         color1,
         grad_start,
         _p3: [0.0; 2],
         grad_end,
         _p4: [0.0; 2],
+        stop_colors,
+        stop_offsets,
     }
 }
 
@@ -8125,23 +8327,26 @@ impl WgpuSceneRenderer {
         Some(slot)
     }
 
-    /// Render one backdrop-dependent blend mesh: isolate the mesh into a
-    /// translator-owned graphics layer, then composite it over the current
-    /// target with the backdrop-blend shader. Works for surface parents and
-    /// layer parents alike: the snapshot copy, isolation layer, and
-    /// composite quad are all expressed in the parent target's pixel space.
-    /// Callers must invoke this while the current pass targets the recorded
-    /// parent: the translator never splits passes between here and the
-    /// appended composite (only `BeginLayer`/perspective push new passes,
-    /// and neither can intervene mid-call). The executor re-checks this
-    /// (`BlendLayer.parent`) and skips a misplaced composite rather than
+    /// Shared isolation + backdrop composite for a source that needs the
+    /// backdrop: snapshot the parent's region, render the source alone into a
+    /// translator-owned graphics layer via `emit_source`, then composite that
+    /// layer over the snapshot with the backdrop-blend shader. Works for
+    /// surface parents and layer parents alike: the snapshot copy, isolation
+    /// layer, and composite quad are all expressed in the parent target's
+    /// pixel space. Callers must invoke this while the current pass targets
+    /// the recorded parent: the translator never splits passes between here
+    /// and the appended composite (only `BeginLayer`/perspective push new
+    /// passes, and neither can intervene mid-call). The executor re-checks
+    /// this (`BlendLayer.parent`) and skips a misplaced composite rather than
     /// drawing over the wrong target.
+    ///
+    /// `bounds` is the source's AABB in parent-target pixels; `emit_source`
+    /// receives the isolation pass, the source-shifted transform, and the
+    /// layer size in pixels.
     #[allow(clippy::too_many_arguments)]
-    fn emit_isolated_blend(
+    fn emit_isolated_blend_source(
         &mut self,
-        mesh: std::sync::Arc<repose_core::VectorMeshData>,
-        transform: [f32; 6],
-        paint: repose_core::PaintDesc,
+        bounds: repose_core::Rect,
         blend: repose_core::BlendMode,
         current_transform: &repose_core::Transform,
         current_pass: &mut Pass,
@@ -8154,6 +8359,14 @@ impl WgpuSceneRenderer {
         encoder: &mut wgpu::CommandEncoder,
         fb_w: f32,
         fb_h: f32,
+        emit_source: impl FnOnce(
+            &mut Self,
+            &mut Pass,
+            &repose_core::Transform,
+            f32,
+            f32,
+            &mut wgpu::CommandEncoder,
+        ),
     ) {
         if scissor.2 == 0 || scissor.3 == 0 || active_clips.iter().any(ActiveClip::blocked) {
             return;
@@ -8166,9 +8379,8 @@ impl WgpuSceneRenderer {
                 None => return,
             },
         };
-        let affine = combine_mesh_affine(current_transform, transform);
         let local_rect = intersect(
-            mesh_aabb(&mesh, affine),
+            bounds,
             repose_core::Rect {
                 x: 0.0,
                 y: 0.0,
@@ -8248,14 +8460,7 @@ impl WgpuSceneRenderer {
         self.get_or_create_layer(layer_id, w as u32, h as u32, layer_rect, true);
         let shift = repose_core::Transform::translate(-local_rect.x, -local_rect.y);
         let local = current_transform.combine(&shift);
-        self.emit_vector_mesh(
-            &local,
-            &mesh,
-            transform,
-            &paint,
-            repose_core::BlendMode::Alpha,
-            &mut layer_pass.cmds,
-        );
+        emit_source(self, &mut layer_pass, &local, w, h, encoder);
         let saved = std::mem::replace(
             current_pass,
             Pass {
@@ -8313,6 +8518,124 @@ impl WgpuSceneRenderer {
             parent: parent_target,
             scissor,
         });
+    }
+
+    /// [`Self::emit_isolated_blend_source`] for a `VectorMesh`: the isolation
+    /// layer owns exactly the mesh bbox, shifted so the mesh lands at its
+    /// world position inside the layer.
+    #[allow(clippy::too_many_arguments)]
+    fn emit_isolated_blend(
+        &mut self,
+        mesh: std::sync::Arc<repose_core::VectorMeshData>,
+        transform: [f32; 6],
+        paint: repose_core::PaintDesc,
+        blend: repose_core::BlendMode,
+        current_transform: &repose_core::Transform,
+        current_pass: &mut Pass,
+        active_clips: &[ActiveClip],
+        passes: &mut Vec<Pass>,
+        id_head: &mut u32,
+        pass_id_head: &mut u64,
+        ids_used: &mut Vec<u32>,
+        scissor: (u32, u32, u32, u32),
+        encoder: &mut wgpu::CommandEncoder,
+        fb_w: f32,
+        fb_h: f32,
+    ) {
+        let affine = combine_mesh_affine(current_transform, transform);
+        let bounds = mesh_aabb(&mesh, affine);
+        self.emit_isolated_blend_source(
+            bounds,
+            blend,
+            current_transform,
+            current_pass,
+            active_clips,
+            passes,
+            id_head,
+            pass_id_head,
+            ids_used,
+            scissor,
+            encoder,
+            fb_w,
+            fb_h,
+            |slf, pass, local, _w, _h, _encoder| {
+                slf.emit_vector_mesh(
+                    local,
+                    &mesh,
+                    transform,
+                    &paint,
+                    repose_core::BlendMode::Alpha,
+                    &mut pass.cmds,
+                );
+            },
+        );
+    }
+
+    /// [`Self::emit_isolated_blend_source`] for an `ImageBlended` quad. The
+    /// isolation layer is sized to the fitted draw rect and the image is
+    /// sampled with its own UVs, so `fit`/`filter`/`source_rect` survive the
+    /// round trip; the source layer composites with `Alpha` and the blend
+    /// itself happens in the backdrop pass.
+    #[allow(clippy::too_many_arguments)]
+    fn emit_isolated_image(
+        &mut self,
+        draw_rect: repose_core::Rect,
+        handle: u64,
+        uv_rect: [f32; 4],
+        tint: repose_core::Color,
+        tile: bool,
+        filter: ImageFilter,
+        blend: repose_core::BlendMode,
+        current_transform: &repose_core::Transform,
+        current_pass: &mut Pass,
+        active_clips: &[ActiveClip],
+        passes: &mut Vec<Pass>,
+        id_head: &mut u32,
+        pass_id_head: &mut u64,
+        ids_used: &mut Vec<u32>,
+        scissor: (u32, u32, u32, u32),
+        encoder: &mut wgpu::CommandEncoder,
+        fb_w: f32,
+        fb_h: f32,
+    ) {
+        let bounds = affine_aabb(current_transform, &draw_rect);
+        self.emit_isolated_blend_source(
+            bounds,
+            blend,
+            current_transform,
+            current_pass,
+            active_clips,
+            passes,
+            id_head,
+            pass_id_head,
+            ids_used,
+            scissor,
+            encoder,
+            fb_w,
+            fb_h,
+            |slf, pass, local, w, h, encoder| {
+                let (ndc_center, fwd_mat) = rect_to_instance_ndc(draw_rect, local, w, h);
+                let inst = GlyphInstance {
+                    xywh: ndc_center,
+                    uv: uv_rect,
+                    color: tint.to_linear(),
+                    fwd_mat,
+                };
+                if let Some((off, _)) =
+                    slf.glyph_color
+                        .upload(&slf.device, &slf.queue, encoder, &[inst])
+                {
+                    pass.cmds.push(Cmd::ImageRgba {
+                        off,
+                        cnt: 1,
+                        handle,
+                        filter,
+                        tile,
+                        blend: repose_core::BlendMode::Alpha,
+                    });
+                }
+            },
+        );
     }
 
     fn recycle_blend_snapshot(&mut self, snapshot: BlendSnapshot) {
@@ -8615,37 +8938,6 @@ impl WgpuSceneRenderer {
             return;
         }
         self.sync_text_caches();
-        /// AABB of a rect under the *plain affine* part of a transform
-        /// (linear + translation, no origin re-pivot).
-        fn affine_aabb(transform: &Transform, rect: &repose_core::Rect) -> repose_core::Rect {
-            let m = transform.linear();
-            let (tx, ty) = (transform.translate_x, transform.translate_y);
-            let corners = [
-                (rect.x, rect.y),
-                (rect.x + rect.w, rect.y),
-                (rect.x, rect.y + rect.h),
-                (rect.x + rect.w, rect.y + rect.h),
-            ];
-            let mut min_x = f32::INFINITY;
-            let mut min_y = f32::INFINITY;
-            let mut max_x = f32::NEG_INFINITY;
-            let mut max_y = f32::NEG_INFINITY;
-            for (x, y) in corners {
-                let wx = m[0] * x + m[1] * y + tx;
-                let wy = m[2] * x + m[3] * y + ty;
-                min_x = min_x.min(wx);
-                min_y = min_y.min(wy);
-                max_x = max_x.max(wx);
-                max_y = max_y.max(wy);
-            }
-            repose_core::Rect {
-                x: min_x,
-                y: min_y,
-                w: (max_x - min_x).max(0.0),
-                h: (max_y - min_y).max(0.0),
-            }
-        }
-
         fn visible(aabb: repose_core::Rect, clip: repose_core::Rect) -> bool {
             if !aabb.x.is_finite()
                 || !aabb.y.is_finite()
@@ -8681,46 +8973,6 @@ impl WgpuSceneRenderer {
             let w_ndc = (x1 - x0).abs();
             let h_ndc = (y1 - y0).abs();
             [min_x, min_y, w_ndc, h_ndc]
-        }
-
-        /// Convert a local-space rect + transform to NDC center-based position+size
-        /// plus the forward rotation/shear 2x2 (row-major `[m00, m01, m10, m11]`,
-        /// scale-free: scale rides in the NDC size). Shaders apply it to quad
-        /// corners and its adjugate/determinant inverse to sample positions.
-        fn rect_to_instance_ndc(
-            rect: repose_core::Rect,
-            transform: &Transform,
-            fb_w: f32,
-            fb_h: f32,
-        ) -> ([f32; 4], [f32; 4]) {
-            let cx = rect.x + rect.w * 0.5;
-            let cy = rect.y + rect.h * 0.5;
-
-            let m = transform.linear();
-            let tx = m[0] * cx + m[1] * cy + transform.translate_x;
-            let ty = m[2] * cx + m[3] * cy + transform.translate_y;
-
-            let ndc_cx = (tx / fb_w) * 2.0 - 1.0;
-            let ndc_cy = 1.0 - (ty / fb_h) * 2.0;
-            // NDC size (after scale only, no rotation - rotation is done in shader)
-            let ndc_w = (rect.w * transform.scale_x / fb_w) * 2.0;
-            let ndc_h = (rect.h * transform.scale_y / fb_h) * 2.0;
-
-            ([ndc_cx, ndc_cy, ndc_w, ndc_h], forward_rs_mat(transform))
-        }
-
-        /// Forward rotation+shear 2x2 (row-major, scale-free) for instance
-        /// attributes. Identity for untransformed content; degenerate shear
-        /// (only from absurd inputs) falls back to identity.
-        fn forward_rs_mat(transform: &Transform) -> [f32; 4] {
-            let c = transform.rotate.cos();
-            let s = transform.rotate.sin();
-            let (hx, hy) = (transform.shear_x, transform.shear_y);
-            let m = [c - s * hy, c * hx - s, s + c * hy, s * hx + c];
-            if (m[0] * m[3] - m[1] * m[2]).abs() < 1e-6 {
-                return [1.0, 0.0, 0.0, 1.0];
-            }
-            m
         }
 
         fn to_scissor(r: &repose_core::Rect, fb_w: u32, fb_h: u32) -> (u32, u32, u32, u32) {
@@ -8892,8 +9144,17 @@ impl WgpuSceneRenderer {
         self.recycle_blend_snapshots();
         self.blend_copies.clear();
         let mut batch = Batch::new();
-        let mut image_run: Option<(u64, ImageFilter, bool, Vec<GlyphInstance>)> = None;
-        let mut nv12_run: Option<(u64, ImageFilter, Vec<Nv12Instance>)> = None;
+        // The blend mode is part of the run key: instances only batch together when
+        // they resolve to the same pipeline.
+        let mut image_run: Option<(
+            u64,
+            ImageFilter,
+            bool,
+            repose_core::BlendMode,
+            Vec<GlyphInstance>,
+        )> = None;
+        let mut nv12_run: Option<(u64, ImageFilter, repose_core::BlendMode, Vec<Nv12Instance>)> =
+            None;
         let mut slug_verts_local: Vec<slug::TessVertex> = Vec::new();
         let mut transform_stack: Vec<Transform> = vec![Transform::identity()];
         let mut flatten_stack: Vec<FlattenRecord> = Vec::new();
@@ -8921,7 +9182,7 @@ impl WgpuSceneRenderer {
 
         macro_rules! flush_image_runs {
             () => {{
-                if let Some((handle, filter, tile, instances)) = image_run.take()
+                if let Some((handle, filter, tile, blend, instances)) = image_run.take()
                     && let Some((off, cnt)) =
                         self.glyph_color
                             .upload(&self.device, &self.queue, encoder, &instances)
@@ -8932,9 +9193,10 @@ impl WgpuSceneRenderer {
                         handle,
                         filter,
                         tile,
+                        blend,
                     });
                 }
-                if let Some((handle, filter, instances)) = nv12_run.take()
+                if let Some((handle, filter, blend, instances)) = nv12_run.take()
                     && let Some((off, cnt)) =
                         self.nv12
                             .upload(&self.device, &self.queue, encoder, &instances)
@@ -8944,6 +9206,7 @@ impl WgpuSceneRenderer {
                         cnt,
                         handle,
                         filter,
+                        blend,
                     });
                 }
             }};
@@ -8995,6 +9258,188 @@ impl WgpuSceneRenderer {
         for node in &scene.nodes {
             let t_identity = Transform::identity();
             let current_transform = transform_stack.last().unwrap_or(&t_identity);
+
+            // `Image` and `ImageBlended` differ only in the blend mode, and
+            // or-patterns cannot bind a field one variant lacks, so lift both
+            // out of the match and share the whole image path below.
+            let image_spec = match node {
+                SceneNode::Image {
+                    rect,
+                    handle,
+                    tint,
+                    style,
+                } => Some((*rect, *handle, *tint, *style, repose_core::BlendMode::Alpha)),
+                SceneNode::ImageBlended {
+                    rect,
+                    handle,
+                    tint,
+                    style,
+                    blend,
+                } => Some((*rect, *handle, *tint, *style, *blend)),
+                _ => None,
+            };
+            if let Some((rect, handle, tint, style, blend)) = image_spec {
+                let ImagePaintStyle {
+                    fit,
+                    filter,
+                    source_rect,
+                    alignment,
+                } = style;
+                let clip = scissor_stack.last().copied().unwrap_or(root_clip_rect);
+                if !visible(affine_aabb(current_transform, &rect), clip) {
+                    continue;
+                }
+                flush_batch!();
+                let (img_w, img_h, is_nv12) = match self.resolve_image_for_draw(handle) {
+                    Some(wh) => wh,
+                    None => {
+                        log::warn!("Image handle {} not found", handle);
+                        continue;
+                    }
+                };
+                let Some(source) = resolve_image_source(source_rect, img_w, img_h) else {
+                    log::warn!(
+                        "Image handle {} has invalid source rect {:?}",
+                        handle,
+                        source_rect
+                    );
+                    continue;
+                };
+                let Some((draw_rect, uv_rect)) = image_fit_geometry(rect, fit, alignment, &source)
+                else {
+                    continue;
+                };
+                let tile = matches!(fit, ImageFit::Tile);
+                // Mirror the mesh path: backdrop-dependent modes isolate,
+                // and so do the fixed-function ones when the source is
+                // translucent (their blend states assume opaque source).
+                let translucent_fixed_blend = matches!(
+                    blend,
+                    repose_core::BlendMode::Add
+                        | repose_core::BlendMode::Multiply
+                        | repose_core::BlendMode::Screen
+                        | repose_core::BlendMode::Darken
+                        | repose_core::BlendMode::Lighten
+                ) && tint.3 < 255;
+                if blend.needs_isolation() || translucent_fixed_blend {
+                    if is_nv12 {
+                        // NV12 sampling is only wired into the image
+                        // pipeline; isolating would need an RGBA layer.
+                        log::warn!("blend on an NV12 image is not supported");
+                    } else {
+                        let blend_scissor = to_scissor(
+                            &scissor_stack.last().copied().unwrap_or(root_clip_rect),
+                            current_target_size.0 as u32,
+                            current_target_size.1 as u32,
+                        );
+                        self.emit_isolated_image(
+                            draw_rect,
+                            handle,
+                            uv_rect,
+                            tint,
+                            tile,
+                            filter,
+                            blend,
+                            current_transform,
+                            &mut current_pass,
+                            &active_clips,
+                            &mut passes,
+                            &mut flatten_id_head,
+                            &mut next_pass_id,
+                            &mut flatten_ids_used,
+                            blend_scissor,
+                            encoder,
+                            fb_w,
+                            fb_h,
+                        );
+                    }
+                    continue;
+                }
+                let (ndc_center, fwd_mat) = rect_to_instance_ndc(
+                    draw_rect,
+                    current_transform,
+                    current_target_size.0,
+                    current_target_size.1,
+                );
+                if is_nv12 {
+                    if image_run.is_some() {
+                        flush_image_runs!();
+                    }
+                    let (uv_x_offset, uv_y_offset) =
+                        if let Some(ImageTex::Nv12 {
+                            w, h, color_info, ..
+                        }) = self.images.get(&handle)
+                        {
+                            let chroma_w = w.div_ceil(2).max(1) as f32;
+                            let chroma_h = h.div_ceil(2).max(1) as f32;
+                            match color_info.chroma_siting {
+                                ChromaSiting::Center => (0.0, 0.0),
+                                ChromaSiting::Left => (-0.5 / chroma_w, 0.0),
+                                ChromaSiting::TopLeft => (-0.5 / chroma_w, -0.5 / chroma_h),
+                            }
+                        } else {
+                            (0.0, 0.0)
+                        };
+                    let inst = Nv12Instance {
+                        xywh: ndc_center,
+                        uv: uv_rect,
+                        color: tint.to_linear(),
+                        uv_x_offset,
+                        uv_y_offset,
+                        fwd_mat,
+                    };
+                    if nv12_run
+                        .as_ref()
+                        .is_some_and(|(run_handle, run_filter, run_blend, _)| {
+                            *run_handle != handle || *run_filter != filter || *run_blend != blend
+                        })
+                    {
+                        flush_image_runs!();
+                    }
+                    match &mut nv12_run {
+                        Some((run_handle, run_filter, run_blend, instances))
+                            if *run_handle == handle
+                                && *run_filter == filter
+                                && *run_blend == blend =>
+                        {
+                            instances.push(inst)
+                        }
+                        _ => nv12_run = Some((handle, filter, blend, vec![inst])),
+                    }
+                } else {
+                    if nv12_run.is_some() {
+                        flush_image_runs!();
+                    }
+                    let inst = GlyphInstance {
+                        xywh: ndc_center,
+                        uv: uv_rect,
+                        color: tint.to_linear(),
+                        fwd_mat,
+                    };
+                    if image_run.as_ref().is_some_and(
+                        |(run_handle, run_filter, run_tile, run_blend, _)| {
+                            *run_handle != handle
+                                || *run_filter != filter
+                                || *run_tile != tile
+                                || *run_blend != blend
+                        },
+                    ) {
+                        flush_image_runs!();
+                    }
+                    match &mut image_run {
+                        Some((run_handle, run_filter, run_tile, run_blend, instances))
+                            if *run_handle == handle
+                                && *run_filter == filter
+                                && *run_tile == tile
+                                && *run_blend == blend =>
+                        {
+                            instances.push(inst)
+                        }
+                        _ => image_run = Some((handle, filter, tile, blend, vec![inst])),
+                    }
+                }
+                continue;
+            }
 
             match node {
                 SceneNode::Rect {
@@ -9676,124 +10121,6 @@ impl WgpuSceneRenderer {
                         }
                     }
                 }
-                SceneNode::Image {
-                    rect,
-                    handle,
-                    tint,
-                    style,
-                } => {
-                    let ImagePaintStyle {
-                        fit,
-                        filter,
-                        source_rect,
-                        alignment,
-                    } = style;
-                    let clip = scissor_stack.last().copied().unwrap_or(root_clip_rect);
-                    if !visible(affine_aabb(current_transform, rect), clip) {
-                        continue;
-                    }
-                    flush_batch!();
-                    let (img_w, img_h, is_nv12) = match self.resolve_image_for_draw(*handle) {
-                        Some(wh) => wh,
-                        None => {
-                            log::warn!("Image handle {} not found", handle);
-                            continue;
-                        }
-                    };
-                    let Some(source) = resolve_image_source(*source_rect, img_w, img_h) else {
-                        log::warn!(
-                            "Image handle {} has invalid source rect {:?}",
-                            handle,
-                            source_rect
-                        );
-                        continue;
-                    };
-                    let Some((draw_rect, uv_rect)) =
-                        image_fit_geometry(*rect, *fit, *alignment, &source)
-                    else {
-                        continue;
-                    };
-                    let (ndc_center, fwd_mat) = rect_to_instance_ndc(
-                        draw_rect,
-                        current_transform,
-                        current_target_size.0,
-                        current_target_size.1,
-                    );
-                    if is_nv12 {
-                        if image_run.is_some() {
-                            flush_image_runs!();
-                        }
-                        let (uv_x_offset, uv_y_offset) =
-                            if let Some(ImageTex::Nv12 {
-                                w, h, color_info, ..
-                            }) = self.images.get(handle)
-                            {
-                                let chroma_w = w.div_ceil(2).max(1) as f32;
-                                let chroma_h = h.div_ceil(2).max(1) as f32;
-                                match color_info.chroma_siting {
-                                    ChromaSiting::Center => (0.0, 0.0),
-                                    ChromaSiting::Left => (-0.5 / chroma_w, 0.0),
-                                    ChromaSiting::TopLeft => (-0.5 / chroma_w, -0.5 / chroma_h),
-                                }
-                            } else {
-                                (0.0, 0.0)
-                            };
-                        let inst = Nv12Instance {
-                            xywh: ndc_center,
-                            uv: uv_rect,
-                            color: tint.to_linear(),
-                            uv_x_offset,
-                            uv_y_offset,
-                            fwd_mat,
-                        };
-                        if nv12_run
-                            .as_ref()
-                            .is_some_and(|(run_handle, run_filter, _)| {
-                                *run_handle != *handle || *run_filter != *filter
-                            })
-                        {
-                            flush_image_runs!();
-                        }
-                        match &mut nv12_run {
-                            Some((run_handle, run_filter, instances))
-                                if *run_handle == *handle && *run_filter == *filter =>
-                            {
-                                instances.push(inst)
-                            }
-                            _ => nv12_run = Some((*handle, *filter, vec![inst])),
-                        }
-                    } else {
-                        if nv12_run.is_some() {
-                            flush_image_runs!();
-                        }
-                        let tile = matches!(fit, ImageFit::Tile);
-                        let inst = GlyphInstance {
-                            xywh: ndc_center,
-                            uv: uv_rect,
-                            color: tint.to_linear(),
-                            fwd_mat,
-                        };
-                        if image_run.as_ref().is_some_and(
-                            |(run_handle, run_filter, run_tile, _)| {
-                                *run_handle != *handle
-                                    || *run_filter != *filter
-                                    || *run_tile != tile
-                            },
-                        ) {
-                            flush_image_runs!();
-                        }
-                        match &mut image_run {
-                            Some((run_handle, run_filter, run_tile, instances))
-                                if *run_handle == *handle
-                                    && *run_filter == *filter
-                                    && *run_tile == tile =>
-                            {
-                                instances.push(inst)
-                            }
-                            _ => image_run = Some((*handle, *filter, tile, vec![inst])),
-                        }
-                    }
-                }
                 SceneNode::Coverage {
                     rect,
                     handle,
@@ -10408,6 +10735,10 @@ impl WgpuSceneRenderer {
                             end_color,
                             ..
                         } => Some(start_color.3.min(end_color.3) as f32 / 255.0),
+                        repose_core::PaintDesc::LinearStops { stops, .. }
+                        | repose_core::PaintDesc::RadialStops { stops, .. } => {
+                            Some(stops.min_alpha())
+                        }
                         _ => None,
                     };
                     let translucent_fixed_blend =
@@ -11260,6 +11591,7 @@ impl WgpuSceneRenderer {
                         handle,
                         filter,
                         tile,
+                        blend,
                     } => {
                         let bind_opt = match self.images.get(&handle) {
                             Some(ImageTex::Rgba { binds, .. }) => Some(binds.get(filter, tile)),
@@ -11267,8 +11599,13 @@ impl WgpuSceneRenderer {
                             _ => None,
                         };
                         if let Some(bind) = bind_opt {
+                            let pipe = match FIXED_FUNCTION_BLENDS.iter().position(|m| *m == blend)
+                            {
+                                Some(index) => &pipes.image_blends[index],
+                                None => &pipes.image_rgba,
+                            };
                             draw_with_bind!(
-                                &pipes.image_rgba,
+                                pipe,
                                 self.glyph_color.ring,
                                 GlyphInstance,
                                 bind,
@@ -11299,10 +11636,16 @@ impl WgpuSceneRenderer {
                         cnt: n,
                         handle,
                         filter,
+                        blend,
                     } => {
                         if let Some(ImageTex::Nv12 { binds, .. }) = self.images.get(&handle) {
+                            let pipe = match FIXED_FUNCTION_BLENDS.iter().position(|m| *m == blend)
+                            {
+                                Some(index) => &pipes.image_nv12_blends[index],
+                                None => &pipes.image_nv12,
+                            };
                             draw_with_bind!(
-                                &pipes.image_nv12,
+                                pipe,
                                 self.nv12.ring,
                                 Nv12Instance,
                                 binds.get(filter, false),
@@ -11442,13 +11785,9 @@ impl WgpuSceneRenderer {
                     }
 
                     Cmd::VectorMesh { mesh, uoff, blend } => {
-                        let pipe = match blend {
-                            repose_core::BlendMode::Add => &pipes.mesh_add,
-                            repose_core::BlendMode::Multiply => &pipes.mesh_multiply,
-                            repose_core::BlendMode::Screen => &pipes.mesh_screen,
-                            repose_core::BlendMode::Darken => &pipes.mesh_darken,
-                            repose_core::BlendMode::Lighten => &pipes.mesh_lighten,
-                            _ => &pipes.mesh,
+                        let pipe = match FIXED_FUNCTION_BLENDS.iter().position(|m| *m == blend) {
+                            Some(index) => &pipes.mesh_blends[index],
+                            None => &pipes.mesh,
                         };
                         draw_indexed_mesh!(pipe, uoff, mesh);
                     }
@@ -12108,6 +12447,103 @@ mod tests {
         assert_eq!(align_up(1, 4).unwrap(), 4);
         assert!(align_up(1, 3).is_err());
         assert!(align_up(u64::MAX, 4).is_err());
+    }
+
+    /// Byte layout of one `MeshUniform`, as the shader sees it.
+    fn wgsl_type_size(module: &naga::Module, ty: naga::Handle<naga::Type>) -> u32 {
+        match &module.types[ty].inner {
+            naga::TypeInner::Scalar(_) | naga::TypeInner::Atomic(_) => 4,
+            naga::TypeInner::Vector { size, .. } => 4 * *size as u32,
+            naga::TypeInner::Array {
+                size: naga::ArraySize::Constant(count),
+                stride,
+                ..
+            } => stride * count.get(),
+            _ => 0,
+        }
+    }
+
+    /// `shaders/mesh.wgsl` and `MeshUniform` are two halves of one contract:
+    /// the shader reads the struct by byte offset, so any member added,
+    /// dropped, resized or reordered on one side only shows up as scrambled
+    /// gradient uniforms. Compare member offsets (and the total size) directly.
+    #[test]
+    fn mesh_uniform_matches_the_wgsl_member_layout() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/shaders/mesh.wgsl");
+        let module = naga::front::wgsl::parse_str(&std::fs::read_to_string(path).expect("read"))
+            .expect("mesh.wgsl parses");
+        let wgsl = module
+            .types
+            .iter()
+            .filter(|(_, ty)| ty.name.as_deref() == Some("MeshUniform"))
+            .find_map(|(_, ty)| match &ty.inner {
+                naga::TypeInner::Struct { members, .. } => Some(members.as_slice()),
+                _ => None,
+            })
+            .expect("mesh.wgsl declares MeshUniform");
+        let rust = [
+            ("m0", std::mem::offset_of!(MeshUniform, m0)),
+            ("m1", std::mem::offset_of!(MeshUniform, m1)),
+            ("paint", std::mem::offset_of!(MeshUniform, paint)),
+            ("color0", std::mem::offset_of!(MeshUniform, color0)),
+            ("color1", std::mem::offset_of!(MeshUniform, color1)),
+            ("grad_start", std::mem::offset_of!(MeshUniform, grad_start)),
+            ("grad_end", std::mem::offset_of!(MeshUniform, grad_end)),
+            (
+                "stop_colors",
+                std::mem::offset_of!(MeshUniform, stop_colors),
+            ),
+            (
+                "stop_offsets",
+                std::mem::offset_of!(MeshUniform, stop_offsets),
+            ),
+        ];
+        assert_eq!(wgsl.len(), rust.len(), "MeshUniform member count");
+        for (member, (name, offset)) in wgsl.iter().zip(rust) {
+            assert_eq!(member.name.as_deref(), Some(name), "member order");
+            assert_eq!(member.offset as usize, offset, "offset of {name}");
+        }
+        let last = wgsl.last().expect("non-empty");
+        let wgsl_size = last.offset as usize + wgsl_type_size(&module, last.ty) as usize;
+        assert_eq!(wgsl_size, std::mem::size_of::<MeshUniform>());
+        assert_eq!(wgsl_size, MESH_UNIFORM_BYTES);
+    }
+
+    /// The stop table rides in the same uniform as the two-point ramps, so the
+    /// packing invariants the shader relies on (count, clamped non-decreasing
+    /// offsets, colours left in linear space) are checked where they are built.
+    #[test]
+    fn gradient_stops_pack_clamped_and_monotonic() {
+        let stops = GradientStops::from_slice(&[
+            repose_core::GradientStop {
+                offset: 0.25,
+                color: repose_core::Color::from_rgba(255, 0, 0, 255),
+            },
+            repose_core::GradientStop {
+                offset: f32::NAN,
+                color: repose_core::Color::from_rgba(0, 255, 0, 255),
+            },
+            repose_core::GradientStop {
+                offset: -2.0,
+                color: repose_core::Color::from_rgba(0, 0, 255, 255),
+            },
+            repose_core::GradientStop {
+                offset: 9.0,
+                color: repose_core::Color::from_rgba(255, 255, 255, 255),
+            },
+        ]);
+        let (colors, offsets, count) = pack_gradient_stops(&stops);
+        assert_eq!(count, 4);
+        assert_eq!(offsets, [[0.25, 0.25, 0.25, 1.0], [0.0, 0.0, 0.0, 0.0]]);
+        assert_eq!(colors[0], [1.0, 0.0, 0.0, 1.0]);
+        assert_eq!(colors[1], [0.0, 1.0, 0.0, 1.0]);
+        assert_eq!(colors[2], [0.0, 0.0, 1.0, 1.0]);
+        assert_eq!(colors[3], [1.0, 1.0, 1.0, 1.0]);
+        assert_eq!(
+            pack_gradient_stops(&GradientStops::default()).2,
+            0,
+            "an empty table paints nothing"
+        );
     }
 
     /// A repack moves every surviving glyph, so eviction must never touch one

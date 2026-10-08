@@ -431,6 +431,19 @@ pub enum SceneNode {
         tint: Color,
         style: ImagePaintStyle,
     },
+    /// [`Image`](Self::Image) composited with an explicit blend mode. Kept
+    /// additive so the existing `Image` constructors keep meaning Normal
+    /// source-over. Separable modes (`Add`, `Multiply`, `Screen`, `Darken`,
+    /// `Lighten`) use fixed-function blending; the rest isolate the image
+    /// into a graphics layer and composite it with the backdrop-blend shader,
+    /// exactly like [`VectorMesh`](Self::VectorMesh).
+    ImageBlended {
+        rect: Rect,
+        handle: ImageHandle,
+        tint: Color,
+        style: ImagePaintStyle,
+        blend: BlendMode,
+    },
     /// Tinted A8 coverage mask: samples `handle` (registered with
     /// `register_coverage_a8`) as coverage and composites `color` with
     /// source-over. Lets hosts rasterize geometry once (e.g. cached glyph
@@ -533,6 +546,14 @@ pub enum SceneNode {
     },
 }
 
+/// Graphics-layer ids live in non-overlapping bands because a single `Scene`
+/// routinely mixes layers from several producers. `1..` counts up from the
+/// producer side (`repose-ui`), the wgpu translator owns `0xE000_0000..` for
+/// separable-blur scratch textures and `0xF000_0000..` for perspective
+/// flattening, and canvas hosts own
+/// `CANVAS_LAYER_ID_BASE..0xE000_0000`.
+pub const CANVAS_LAYER_ID_BASE: u32 = 0x8000_0000;
+
 /// Shared vertex/index buffers for a tessellated vector mesh.
 #[derive(Clone, Debug, Default)]
 pub struct VectorMeshData {
@@ -549,6 +570,107 @@ pub struct VectorVertex {
     pub pos: [f32; 2],
     pub color: [f32; 4],
     pub uv: [f32; 2],
+}
+
+/// Ceiling on the stops a multi-stop paint may carry. The renderer packs the
+/// table into the per-mesh uniform, so this is a hard structural limit rather
+/// than a soft recommendation; hosts should split longer ramps themselves.
+pub const MAX_GRADIENT_STOPS: usize = 8;
+
+/// One gradient stop. `offset` is parametric along the gradient axis (0 at the
+/// start, 1 at the end). A stored offset is unconstrained; packing clamps it to
+/// `0..=1` and forces it non-decreasing for the GPU, so a caller may set it
+/// freely through [`GradientStops::as_mut_slice`].
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub struct GradientStop {
+    pub offset: f32,
+    pub color: Color,
+}
+
+/// Inline stop table for [`PaintDesc::LinearStops`] / [`PaintDesc::RadialStops`].
+///
+/// Stored by value (no heap, no lifetime) so `PaintDesc` stays `Copy` and
+/// `SceneNode` stays lifetime-free. Longer input is truncated to the first
+/// [`MAX_GRADIENT_STOPS`]: [`from_slice`](Self::from_slice) logs the overflow,
+/// [`try_from_slice`](Self::try_from_slice) reports it instead.
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub struct GradientStops {
+    stops: [GradientStop; MAX_GRADIENT_STOPS],
+    len: u8,
+}
+
+impl GradientStops {
+    /// The first [`MAX_GRADIENT_STOPS`] of `slice`; logs how many were dropped.
+    pub fn from_slice(slice: &[GradientStop]) -> Self {
+        let mut stops = Self::default();
+        for stop in slice {
+            if !stops.push(*stop) {
+                log::warn!(
+                    "gradient has {} stops; keeping the first {MAX_GRADIENT_STOPS}",
+                    slice.len()
+                );
+                break;
+            }
+        }
+        stops
+    }
+
+    /// Like [`from_slice`](Self::from_slice) but `None` when `slice` does not
+    /// fit, so hosts can validate before submitting a draw.
+    pub fn try_from_slice(slice: &[GradientStop]) -> Option<Self> {
+        if slice.len() > MAX_GRADIENT_STOPS {
+            return None;
+        }
+        let mut stops = Self::default();
+        for stop in slice {
+            if !stops.push(*stop) {
+                return None;
+            }
+        }
+        Some(stops)
+    }
+
+    /// Append a stop; `false` when the table is already full.
+    pub fn push(&mut self, stop: GradientStop) -> bool {
+        let len = self.len as usize;
+        if len >= MAX_GRADIENT_STOPS {
+            return false;
+        }
+        self.stops[len] = stop;
+        self.len = (len + 1) as u8;
+        true
+    }
+
+    pub fn as_slice(&self) -> &[GradientStop] {
+        &self.stops[..self.len as usize]
+    }
+
+    pub fn as_mut_slice(&mut self) -> &mut [GradientStop] {
+        &mut self.stops[..self.len as usize]
+    }
+
+    pub fn len(&self) -> usize {
+        self.len as usize
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    /// Lowest stop alpha in `0..=1`; `1.0` when empty (nothing is painted, so
+    /// the translucency fast path may treat it as opaque).
+    pub fn min_alpha(&self) -> f32 {
+        self.as_slice()
+            .iter()
+            .map(|stop| stop.color.3 as f32 / 255.0)
+            .fold(1.0, f32::min)
+    }
+}
+
+impl<'a> From<&'a [GradientStop]> for GradientStops {
+    fn from(slice: &'a [GradientStop]) -> Self {
+        Self::from_slice(slice)
+    }
 }
 
 /// How a `VectorMesh` is painted. Mirrors the [`Brush`] variants;
@@ -578,6 +700,51 @@ pub enum PaintDesc {
         start_color: Color,
         end_color: Color,
     },
+    /// Multi-stop linear gradient from `start` to `end` (mesh-local), evaluated
+    /// per fragment. With two stops at offsets 0 and 1 this renders identically
+    /// to [`Linear`](Self::Linear); beyond the end stops the color clamps
+    /// (`TileMode::Clamp`).
+    LinearStops {
+        start: Vec2,
+        end: Vec2,
+        stops: GradientStops,
+    },
+    /// Multi-stop radial gradient around `center` with `radius` (mesh-local),
+    /// evaluated per fragment. Two stops at offsets 0 and 1 render identically
+    /// to [`Radial`](Self::Radial).
+    RadialStops {
+        center: Vec2,
+        radius: f32,
+        stops: GradientStops,
+    },
+}
+
+impl PaintDesc {
+    /// Lowest alpha this paint can produce, for the renderer's translucency
+    /// fast path. `None` when translucency comes from per-vertex colors alone.
+    pub fn min_alpha(self) -> Option<f32> {
+        match self {
+            PaintDesc::Solid => None,
+            PaintDesc::Linear {
+                start_color,
+                end_color,
+                ..
+            }
+            | PaintDesc::Radial {
+                start_color,
+                end_color,
+                ..
+            }
+            | PaintDesc::Sweep {
+                start_color,
+                end_color,
+                ..
+            } => Some((start_color.3.min(end_color.3) as f32 / 255.0).clamp(0.0, 1.0)),
+            PaintDesc::LinearStops { stops, .. } | PaintDesc::RadialStops { stops, .. } => {
+                Some(stops.min_alpha())
+            }
+        }
+    }
 }
 
 /// Blend mode for a `VectorMesh`, following the CSS `mix-blend-mode`

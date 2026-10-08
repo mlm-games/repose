@@ -3155,6 +3155,7 @@ dependencies = [
  "lyon_tessellation",
  "naga",
  "pollster 1.0.1",
+ "repose-canvas",
  "repose-core",
  "repose-text",
  "repose-ui",

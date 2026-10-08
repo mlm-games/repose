@@ -246,6 +246,7 @@ impl ShapeStyle {
 /// Paint-space draw commands. `Rect`/`Vec2` compounds carry px magnitudes
 /// (like Compose `Offset`/`Size`/`Rect`); scalar lengths use [`Px`].
 #[derive(Clone)]
+#[non_exhaustive]
 pub enum DrawCommand {
     Rect {
         rect: Rect,
@@ -325,6 +326,41 @@ pub enum DrawCommand {
         filter: ImageFilter,
         source_rect: Option<ImageSourceRect>,
     },
+    /// [`Image`](Self::Image) composited with an explicit blend mode; `Image`
+    /// stays the Normal source-over case.
+    ImageBlended {
+        rect: Rect,
+        handle: ImageHandle,
+        tint: Color,
+        fit: ImageFit,
+        filter: ImageFilter,
+        source_rect: Option<ImageSourceRect>,
+        blend: BlendMode,
+    },
+    /// Render the following commands into an offscreen layer and composite
+    /// them back with `alpha` and the blur radii. `rect` is canvas-local and
+    /// gets pixel-snapped to the layer texture; the translation emits the
+    /// matching `-rect` content shift, so content between the begin and the
+    /// end is still expressed in canvas coordinates.
+    BeginLayer {
+        rect: Rect,
+        alpha: f32,
+        blur_radius_x: Px,
+        blur_radius_y: Px,
+        rectangle_edge: bool,
+    },
+    /// Close the layer opened by the matching
+    /// [`BeginLayer`](Self::BeginLayer). An unbalanced `EndLayer` is dropped.
+    EndLayer,
+    /// Blurred drop shadow drawn from the layer closed by the preceding
+    /// [`EndLayer`](Self::EndLayer). `shape_px` rounds the silhouette; all
+    /// zero keeps the layer alpha as-is.
+    CompositeShadow {
+        blur_px: Px,
+        offset_px: (Px, Px),
+        color: Color,
+        shape_px: [Px; 4],
+    },
 }
 
 impl DrawScope {
@@ -366,6 +402,32 @@ impl DrawScope {
             fit,
             filter,
             source_rect,
+        });
+    }
+
+    /// [`draw_image_filtered`](Self::draw_image_filtered) with an explicit
+    /// blend mode. Separable modes composite with fixed-function blending;
+    /// the rest need a GPU backend with isolation support (the wgpu renderer
+    /// implements all of [`BlendMode`]).
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_image_blended(
+        &mut self,
+        rect: Rect,
+        handle: ImageHandle,
+        source_rect: Option<ImageSourceRect>,
+        tint: Color,
+        fit: ImageFit,
+        filter: ImageFilter,
+        blend: BlendMode,
+    ) {
+        self.commands.push(DrawCommand::ImageBlended {
+            rect,
+            handle,
+            tint,
+            fit,
+            filter,
+            source_rect,
+            blend,
         });
     }
 
@@ -652,6 +714,73 @@ impl DrawScope {
         self.commands.push(DrawCommand::PopTransform);
     }
 
+    /// Composite the following draws through an offscreen layer at group
+    /// `alpha` (1.0 = opaque). No blur, edge pixels clamped.
+    /// Balance with [`pop_layer`](Self::pop_layer).
+    pub fn push_layer(&mut self, rect: Rect, alpha: f32) {
+        self.push_layer_edge(rect, alpha, Px::ZERO, Px::ZERO, true);
+    }
+
+    /// [`push_layer`](Self::push_layer) with a gaussian blur applied to the
+    /// layer before it composites. Zero radius on an axis disables that axis.
+    pub fn push_layer_blurred(
+        &mut self,
+        rect: Rect,
+        alpha: f32,
+        blur_radius_x: Px,
+        blur_radius_y: Px,
+    ) {
+        self.push_layer_edge(rect, alpha, blur_radius_x, blur_radius_y, true);
+    }
+
+    /// Full form of [`push_layer`](Self::push_layer). `rectangle_edge` true
+    /// clamps the blurred edge pixels, false leaves out-of-bounds transparent.
+    pub fn push_layer_edge(
+        &mut self,
+        rect: Rect,
+        alpha: f32,
+        blur_radius_x: Px,
+        blur_radius_y: Px,
+        rectangle_edge: bool,
+    ) {
+        self.commands.push(DrawCommand::BeginLayer {
+            rect,
+            alpha: alpha.clamp(0.0, 1.0),
+            blur_radius_x,
+            blur_radius_y,
+            rectangle_edge,
+        });
+    }
+
+    /// Close the layer opened by the matching [`push_layer`](Self::push_layer).
+    /// An unbalanced pop is dropped rather than aborting the frame.
+    pub fn pop_layer(&mut self) {
+        self.commands.push(DrawCommand::EndLayer);
+    }
+
+    /// Blurred drop shadow under the layer closed by the most recent
+    /// [`pop_layer`](Self::pop_layer). `offset_px` is `(dx, dy)`.
+    pub fn draw_layer_shadow(&mut self, blur_px: Px, offset_px: (Px, Px), color: Color) {
+        self.draw_layer_shadow_rounded(blur_px, offset_px, color, [Px::ZERO; 4]);
+    }
+
+    /// [`draw_layer_shadow`](Self::draw_layer_shadow) with per-corner radii
+    /// shaping the shadow silhouette. All zero follows the layer alpha.
+    pub fn draw_layer_shadow_rounded(
+        &mut self,
+        blur_px: Px,
+        offset_px: (Px, Px),
+        color: Color,
+        shape_px: [Px; 4],
+    ) {
+        self.commands.push(DrawCommand::CompositeShadow {
+            blur_px,
+            offset_px,
+            color,
+            shape_px,
+        });
+    }
+
     /// Draw a rect rotated `rotation` radians about `pivot` (canvas-local
     /// px, y-down positive-clockwise like the rest of the canvas API).
     /// Exact on canvas and GPU alike: the rotation rides the transform
@@ -784,8 +913,30 @@ fn alpha_paint(paint: PaintDesc, alpha: f32) -> PaintDesc {
             start_color: alpha_color(start_color, alpha),
             end_color: alpha_color(end_color, alpha),
         },
+        PaintDesc::LinearStops { start, end, stops } => PaintDesc::LinearStops {
+            start,
+            end,
+            stops: alpha_stops(stops, alpha),
+        },
+        PaintDesc::RadialStops {
+            center,
+            radius,
+            stops,
+        } => PaintDesc::RadialStops {
+            center,
+            radius,
+            stops: alpha_stops(stops, alpha),
+        },
         _ => paint,
     }
+}
+
+fn alpha_stops(stops: GradientStops, alpha: f32) -> GradientStops {
+    let mut scaled = stops;
+    for stop in scaled.as_mut_slice() {
+        stop.color = alpha_color(stop.color, alpha);
+    }
+    scaled
 }
 
 fn map_mesh_data(m: &VectorMeshData, dx: f32, dy: f32, alpha: f32) -> VectorMeshData {
@@ -1481,8 +1632,17 @@ fn tessellate_arc_wedge(
     mesh_from_buffers(buffers, generated_vertex_color())
 }
 
-pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) -> View {
-    let painter = move |scene: &mut Scene, rect: Rect, alpha: f32| {
+/// Translate a `DrawScope` recording into `scene` nodes positioned at
+/// `rect` (canvas-local px) and modulated by `alpha`. [`Canvas`] is the view
+/// wrapper; this is the same translation on its own, for hosts (and tests)
+/// that build their own scene.
+pub fn paint_draw_commands(
+    scene: &mut Scene,
+    rect: Rect,
+    alpha: f32,
+    on_draw: &dyn Fn(&mut DrawScope),
+) {
+    {
         let mut scope = DrawScope {
             commands: Vec::with_capacity(16),
             size: Size {
@@ -1501,6 +1661,51 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
             y: rect.y + r.y,
             w: r.w,
             h: r.h,
+        };
+        // Graphics-layer ids are handed out from `CANVAS_LAYER_ID_BASE`, the
+        // band reserved for canvas hosts: producers that count up from 1 and
+        // the renderer's own blur-scratch / flatten ids live outside it, so a
+        // scene can mix all three without collision.
+        let mut next_layer_id = CANVAS_LAYER_ID_BASE;
+        let mut open_layers: Vec<u32> = Vec::new();
+        let mut just_closed_layer: Option<u32> = None;
+        let push_image = |scene: &mut Scene,
+                          r: Rect,
+                          handle: ImageHandle,
+                          tint: Color,
+                          fit: ImageFit,
+                          filter: ImageFilter,
+                          source_rect: Option<ImageSourceRect>,
+                          blend: BlendMode| {
+            let style = ImagePaintStyle {
+                fit,
+                filter,
+                source_rect,
+                ..Default::default()
+            };
+            let image_rect = repose_core::Rect {
+                x: r.x + rect.x,
+                y: r.y + rect.y,
+                w: r.w,
+                h: r.h,
+            };
+            let tint = alpha_color(tint, alpha);
+            if matches!(blend, BlendMode::Alpha) {
+                scene.nodes.push(SceneNode::Image {
+                    rect: image_rect,
+                    handle,
+                    tint,
+                    style,
+                });
+            } else {
+                scene.nodes.push(SceneNode::ImageBlended {
+                    rect: image_rect,
+                    handle,
+                    tint,
+                    style,
+                    blend,
+                });
+            }
         };
         for cmd in &scope.commands {
             match cmd {
@@ -1847,25 +2052,108 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                     filter,
                     source_rect,
                 } => {
-                    scene.nodes.push(SceneNode::Image {
-                        rect: repose_core::Rect {
-                            x: r.x + rect.x,
-                            y: r.y + rect.y,
-                            w: r.w,
-                            h: r.h,
-                        },
-                        handle: *handle,
-                        tint: alpha_color(*tint, alpha),
-                        style: ImagePaintStyle {
-                            fit: *fit,
-                            filter: *filter,
-                            source_rect: *source_rect,
-                            ..Default::default()
-                        },
+                    push_image(
+                        scene,
+                        *r,
+                        *handle,
+                        *tint,
+                        *fit,
+                        *filter,
+                        *source_rect,
+                        BlendMode::Alpha,
+                    );
+                }
+                DrawCommand::ImageBlended {
+                    rect: r,
+                    handle,
+                    tint,
+                    fit,
+                    filter,
+                    source_rect,
+                    blend,
+                } => {
+                    push_image(
+                        scene,
+                        *r,
+                        *handle,
+                        *tint,
+                        *fit,
+                        *filter,
+                        *source_rect,
+                        *blend,
+                    );
+                }
+                DrawCommand::BeginLayer {
+                    rect: r,
+                    alpha: layer_alpha,
+                    blur_radius_x,
+                    blur_radius_y,
+                    rectangle_edge,
+                } => {
+                    let layer_id = next_layer_id;
+                    next_layer_id = next_layer_id.wrapping_add(1);
+                    // Snap to whole pixels so the composite quad matches the
+                    // offscreen texture 1:1 (fractional sampling blurs text and
+                    // vector content inside the layer).
+                    let layer_rect = to_global(*r);
+                    let layer_rect = Rect {
+                        x: layer_rect.x.round(),
+                        y: layer_rect.y.round(),
+                        w: layer_rect.w.round().max(1.0),
+                        h: layer_rect.h.round().max(1.0),
+                    };
+                    scene.nodes.push(SceneNode::BeginLayer {
+                        rect: layer_rect,
+                        layer_id,
+                        alpha: *layer_alpha,
+                        blur_radius_x: *blur_radius_x,
+                        blur_radius_y: *blur_radius_y,
+                        rectangle_edge: *rectangle_edge,
+                    });
+                    // Layer content is addressed in layer-local pixels; the
+                    // shift must use the same snapped origin or content lands
+                    // up to a pixel off.
+                    scene.nodes.push(SceneNode::PushTransform {
+                        transform: Transform::translate(-layer_rect.x, -layer_rect.y),
+                    });
+                    open_layers.push(layer_id);
+                    just_closed_layer = None;
+                }
+                DrawCommand::EndLayer => {
+                    // Unbalanced pop: the renderer would skip it, so drop the
+                    // command instead of emitting a half-open layer.
+                    let Some(layer_id) = open_layers.pop() else {
+                        continue;
+                    };
+                    scene.nodes.push(SceneNode::PopTransform);
+                    scene.nodes.push(SceneNode::EndLayer { layer_id });
+                    just_closed_layer = Some(layer_id);
+                }
+                DrawCommand::CompositeShadow {
+                    blur_px,
+                    offset_px,
+                    color,
+                    shape_px,
+                } => {
+                    let Some(layer_id) = just_closed_layer.take() else {
+                        continue;
+                    };
+                    scene.nodes.push(SceneNode::CompositeShadow {
+                        layer_id,
+                        blur_px: *blur_px,
+                        offset_px: *offset_px,
+                        color: alpha_color(*color, alpha),
+                        shape_px: *shape_px,
                     });
                 }
             }
         }
+    }
+}
+
+pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) -> View {
+    let painter = move |scene: &mut Scene, rect: Rect, alpha: f32| {
+        paint_draw_commands(scene, rect, alpha, &on_draw);
     };
 
     let mut m = modifier.painter(painter);
