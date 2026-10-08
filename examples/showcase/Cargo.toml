@@ -25,7 +25,7 @@ apk_name = "showcase"
 build_targets = ["aarch64-linux-android"]
 
 [package.metadata.android.sdk]
-version_code = 16785272
+version_code = 16785282
 min_sdk_version = 26
 target_sdk_version = 35
 
