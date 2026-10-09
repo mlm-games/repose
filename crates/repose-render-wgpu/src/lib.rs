@@ -30,6 +30,18 @@ fn align_up(value: u64, alignment: u64) -> anyhow::Result<u64> {
         .ok_or_else(|| anyhow::anyhow!("alignment overflow"))
 }
 
+/// Stride between per-draw uniform slots. Only the slot start must satisfy the
+/// device's `min_uniform_buffer_offset_alignment`, so round to the next power
+/// of two above that: always a legal offset, and a power of two so
+/// [`align_up`] can size the buffer. Rounding to the bare minimum (272 -> 288
+/// at the common 32-byte alignment) produced a non-power-of-two stride, which
+/// made `align_up` reject the capacity and collapse the buffer to one slot, so
+/// every mesh after the first in a frame was silently dropped.
+fn mesh_uniform_stride(size: u64, base: u64) -> u64 {
+    let rounded = size.saturating_add(base.saturating_sub(1)) / base * base;
+    rounded.next_power_of_two().max(base)
+}
+
 mod commands;
 pub use commands::RenderCommandFailure;
 pub use commands::RenderCommandReport;
@@ -3007,13 +3019,12 @@ impl WgpuSceneRenderer {
         let mesh_uniform_size = std::mem::size_of::<MeshUniform>() as u64;
         let base_mesh_alignment =
             u64::from(device.limits().min_uniform_buffer_offset_alignment).max(4);
-        let mesh_uniform_alignment =
-            align_up(mesh_uniform_size, base_mesh_alignment).unwrap_or(base_mesh_alignment);
+        let mesh_uniform_alignment = mesh_uniform_stride(mesh_uniform_size, base_mesh_alignment);
         let mesh_uniform_cap = align_up(
             MESH_UNIFORM_CAP
                 .min(device.limits().max_buffer_size)
                 .max(mesh_uniform_alignment),
-            mesh_uniform_alignment,
+            base_mesh_alignment,
         )
         .unwrap_or(mesh_uniform_alignment);
         let globals_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -12447,6 +12458,33 @@ mod tests {
         assert_eq!(align_up(1, 4).unwrap(), 4);
         assert!(align_up(1, 3).is_err());
         assert!(align_up(u64::MAX, 4).is_err());
+    }
+
+    /// Every stride must be a legal dynamic offset and a legal `align_up`
+    /// alignment at every alignment a driver may report.
+    #[test]
+    fn mesh_uniform_stride_is_always_a_power_of_two() {
+        for base in [4u64, 16, 32, 64, 128, 256, 512] {
+            for size in [
+                std::mem::size_of::<MeshUniform>() as u64,
+                96,
+                272,
+                288,
+                1024,
+            ] {
+                let stride = mesh_uniform_stride(size, base);
+                assert!(
+                    stride.is_power_of_two(),
+                    "stride {stride} for size {size} base {base} is not a power of two"
+                );
+                assert_eq!(stride % base, 0, "stride {stride} misaligned to {base}");
+                assert!(stride >= size, "stride {stride} below size {size}");
+                assert!(
+                    align_up(size, stride).is_ok(),
+                    "capacity alignment rejects stride {stride}"
+                );
+            }
+        }
     }
 
     /// Byte layout of one `MeshUniform`, as the shader sees it.

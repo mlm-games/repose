@@ -3,7 +3,7 @@ members = ["crates/*", "examples/*"]
 resolver = "3"
 
 [workspace.package]
-version = "0.31.13"
+version = "0.31.14"
 edition = "2024"
 license = "MPL-2.0"
 repository = "https://github.com/mlm-games/repose"
@@ -96,7 +96,7 @@ repose-canvas = { path = "crates/repose-canvas", version = "0.31.13" }
 repose-navigation = { path = "crates/repose-navigation", version = "0.31.13" }
 repose-devtools = { path = "crates/repose-devtools", version = "0.31.13" }
 repose-text = { path = "crates/repose-text", version = "0.31.13" }
-repose-render-wgpu = { path = "crates/repose-render-wgpu", version = "0.31.13" }
+repose-render-wgpu = { path = "crates/repose-render-wgpu", version = "0.31.14" }
 repose-platform = { path = "crates/repose-platform", version = "0.31.13" }
 repose-tree = { path = "crates/repose-tree", version = "0.31.13" }
 repose-docking = { path = "crates/repose-docking", version = "0.31.13" }
