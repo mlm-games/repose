@@ -38,11 +38,21 @@ pub struct TouchGestureState {
     scroll_capture_id: Option<u64>,
     gesture_state: Option<GestureState>,
     past_touch_slop: bool,
+    gesture_kind: Option<GestureKind>,
     accum_pan: Vec2,
     accum_zoom: f32,
     accum_rotation: f32,
     primary_press_focus: Option<Option<u64>>,
     pending_primary: Option<(Vec2, u64)>,
+}
+
+/// Which motion a multi-finger gesture committed to. Set once, when the gesture
+/// first travels past slop, so a pinch never also pans.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum GestureKind {
+    Pan,
+    Zoom,
+    Rotate,
 }
 
 impl Default for TouchGestureState {
@@ -58,6 +68,7 @@ impl Default for TouchGestureState {
             scroll_capture_id: None,
             gesture_state: None,
             past_touch_slop: false,
+            gesture_kind: None,
             accum_pan: Vec2 { x: 0.0, y: 0.0 },
             accum_zoom: 1.0,
             accum_rotation: 0.0,
@@ -113,6 +124,7 @@ impl TouchGestureState {
                 if added_or_removed {
                     state.previous = None;
                     self.past_touch_slop = false;
+                    self.gesture_kind = None;
                     self.accum_pan = Vec2 { x: 0.0, y: 0.0 };
                     self.accum_zoom = 1.0;
                     self.accum_rotation = 0.0;
@@ -123,6 +135,7 @@ impl TouchGestureState {
                     current: dyn_state,
                 });
                 self.past_touch_slop = false;
+                self.gesture_kind = None;
                 self.accum_pan = Vec2 { x: 0.0, y: 0.0 };
                 self.accum_zoom = 1.0;
                 self.accum_rotation = 0.0;
@@ -133,6 +146,7 @@ impl TouchGestureState {
         } else {
             self.gesture_state = None;
             self.past_touch_slop = false;
+            self.gesture_kind = None;
             self.accum_pan = Vec2 { x: 0.0, y: 0.0 };
             self.accum_zoom = 1.0;
             self.accum_rotation = 0.0;
@@ -253,14 +267,31 @@ impl TouchGestureState {
                         || pan_motion > touch_slop
                     {
                         self.past_touch_slop = true;
+                        // Whichever motion travelled furthest commits the
+                        // gesture. A real pinch also moves its centroid, so
+                        // without this a pinch pans and zooms at once - the
+                        // view lurches while it scales.
+                        self.gesture_kind = Some(
+                            if zoom_motion >= rotation_motion && zoom_motion >= pan_motion {
+                                GestureKind::Zoom
+                            } else if rotation_motion >= pan_motion {
+                                GestureKind::Rotate
+                            } else {
+                                GestureKind::Pan
+                            },
+                        );
                     }
                 }
-                if self.past_touch_slop {
-                    pinch = Some((raw_zoom, center));
-                    pan = Some((raw_pan, center));
-                    if raw_rot != 0.0 {
-                        rotation = Some((raw_rot, center));
+                match self.gesture_kind {
+                    Some(GestureKind::Zoom) => pinch = Some((raw_zoom, center)),
+                    Some(GestureKind::Rotate) => {
+                        if raw_rot != 0.0 {
+                            rotation = Some((raw_rot, center));
+                        }
                     }
+                    _ => pan = Some((raw_pan, center)),
+                }
+                if self.past_touch_slop {
                     self.touch_scrolled = true;
                     dirty = true;
                 } else {
@@ -369,6 +400,7 @@ impl TouchGestureState {
         } else {
             self.gesture_state = None;
             self.past_touch_slop = false;
+            self.gesture_kind = None;
             self.accum_pan = Vec2 { x: 0.0, y: 0.0 };
             self.accum_zoom = 1.0;
             self.accum_rotation = 0.0;
@@ -444,6 +476,10 @@ mod tests {
     use std::cell::RefCell;
     use std::rc::Rc;
 
+    /// A twist travels furthest around the centroid, so it must commit the
+    /// gesture to rotation and report nothing else. When the channels were
+    /// independent a twist also zoomed and panned, so the view lurched while
+    /// it turned.
     #[test]
     fn twist_reports_rotation_once_past_slop() {
         let mut rt = ReposeRuntime::new();
@@ -455,8 +491,8 @@ mod tests {
         let (_, _, _, _) = g.touch_moved(&mut rt, 1, (50.0, 80.0), 1.0);
         let (dirty, pinch, pan, rotation) = g.touch_moved(&mut rt, 1, (0.0, 100.0), 1.0);
         assert!(dirty, "twist past slop must mark dirty");
-        assert!(pinch.is_some(), "zoom channel still reported");
-        assert!(pan.is_some(), "pan channel still reported");
+        assert!(pinch.is_none(), "a twist must not also zoom");
+        assert!(pan.is_none(), "a twist must not also pan");
         let (delta_rot, center) = rotation.expect("rotation must be propagated, not dropped");
         assert!(
             delta_rot.abs() > 0.1,
@@ -465,6 +501,23 @@ mod tests {
         assert!(center.x.is_finite() && center.y.is_finite());
         let info = g.multi_touch_info().expect("info mirrors deltas");
         assert!(info.rotation.abs() > 0.0);
+    }
+
+    /// The mirror image: a pure pinch (fingers moving apart without the
+    /// centroid following) must commit to zoom and not slide the view.
+    #[test]
+    fn pinch_reports_zoom_once_past_slop() {
+        let mut rt = ReposeRuntime::new();
+        let mut g = TouchGestureState::default();
+        g.touch_started(&mut rt, 0, (40.0, 50.0));
+        g.touch_started(&mut rt, 1, (60.0, 50.0));
+        // Spread the fingers to 3x their separation while the centroid holds.
+        let (dirty, pinch, pan, _) = g.touch_moved(&mut rt, 1, (70.0, 50.0), 1.0);
+        g.touch_moved(&mut rt, 0, (30.0, 50.0), 1.0);
+        let (dirty, pinch, pan, _) = g.touch_moved(&mut rt, 1, (90.0, 50.0), 1.0);
+        assert!(dirty, "pinch past slop must mark dirty");
+        assert!(pinch.is_some(), "pinch must report zoom");
+        assert!(pan.is_none(), "a pinch must not also pan");
     }
 
     #[test]
