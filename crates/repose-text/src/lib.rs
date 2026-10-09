@@ -750,7 +750,11 @@ fn init_provider_sync() -> font_awl::Provider {
     // feature.
     // Also excluded from wasm, where the on-demand downloader fetches a
     // rasterizable CBDT Noto Color Emoji instead.
-    #[cfg(all(not(target_arch = "wasm32"), feature = "system-fonts"))]
+    #[cfg(all(
+        not(target_arch = "wasm32"),
+        feature = "system-fonts",
+        not(feature = "probe_no_system")
+    ))]
     if let Err(e) = provider.load_system_fonts_best_effort() {
         log::warn!("font-awl: failed to load system fonts: {e}");
     }
@@ -840,6 +844,45 @@ fn engine() -> &'static Mutex<Engine> {
 
 pub fn register_font_data(bytes: &[u8]) {
     let _ = register_font_data_if_usable(bytes);
+}
+
+/// Register `bytes` under `alias` instead of the family name in its name table.
+///
+/// Addressing a face by a name the host controls keeps it reachable when the
+/// same family is also installed system-wide: a family-name lookup resolves to
+/// whichever copy was registered first, so two machines with different font
+/// sets otherwise shape the same string with different advances. Returns
+/// `false` if the bytes are not a parseable font.
+pub fn register_font_as(bytes: &[u8], alias: &str) -> bool {
+    if alias.is_empty() {
+        return false;
+    }
+    let (font_cx, newly_registered) = {
+        let mut p = provider().lock().unwrap();
+        if p.collection_mut().family_by_name(alias).is_some() {
+            return true;
+        }
+        let blob = font_blob(Arc::from(bytes));
+        let families = p.collection_mut().register_fonts(
+            blob,
+            Some(parley::fontique::FontInfoOverride {
+                family_name: Some(alias),
+                ..Default::default()
+            }),
+        );
+        if families.is_empty() {
+            return false;
+        }
+        append_registered_families(p.collection_mut(), &families);
+        configure_collection(p.collection_mut());
+        (p.new_parley_context(), true)
+    };
+    if newly_registered {
+        let mut eng = engine().lock().unwrap();
+        eng.font_cx = font_cx;
+        clear_caches_for_fallback_in(&mut eng);
+    }
+    true
 }
 
 fn font_source_bytes(font: &parley::fontique::FontInfo) -> Option<&[u8]> {

@@ -15,6 +15,7 @@ emoji = ["font-awl/emoji"]
 cjk = ["font-awl/cjk"]
 monospace = ["font-awl/monospace"]
 local-fonts = ["font-awl/local-fonts"]
+probe_no_system = []
 
 [dependencies]
 font-awl = { workspace = true }
