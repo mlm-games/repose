@@ -2592,6 +2592,26 @@ fn clamp_to_char_boundary(s: &str, i: usize) -> usize {
     prev_grapheme_boundary(s, j)
 }
 
+/// The hint never scrolls, so a placeholder wider than the field is ellipsized
+/// rather than left to the field clip, which would slice the last glyph.
+fn hint_line(
+    text_input: &TextInputConfig,
+    metrics: &TextFieldMetrics,
+    font_px: f32,
+    max_width: f32,
+) -> String {
+    repose_text::ellipsize_line_with_family(
+        &text_input.hint,
+        font_px,
+        max_width,
+        metrics.font_family,
+        metrics.font_weight,
+        metrics.font_style,
+        metrics.letter_spacing_px,
+        metrics.font_variation_settings.as_deref(),
+    )
+}
+
 /// Paint a text field into the scene. Called by layout.rs when
 /// `modifier.text_input.is_some()`. This is the Compose-equivalent of
 /// `TextFieldCoreModifierNode.draw()` - the engine handles painting natively
@@ -2764,7 +2784,7 @@ pub(crate) fn paint_text_field(
                 ts.color.unwrap_or(th.on_surface)
             };
             let render_txt = if display_src.is_empty() {
-                text_input.hint.clone()
+                hint_line(text_input, &metrics, font_val, rect.w)
             } else {
                 rendered_by_vt(display_src)
             };
@@ -2862,7 +2882,7 @@ pub(crate) fn paint_text_field(
                         w: rect.w,
                         h: line_h,
                     },
-                    text: Arc::from(text_input.hint.clone()),
+                    text: Arc::from(hint_line(text_input, &metrics, font_val, rect.w)),
                     color: mul_alpha_color(ts.color.unwrap_or(th.on_surface_variant), alpha_accum),
                     size: Px(font_val),
                     style: TextPaintStyle {
@@ -3090,7 +3110,7 @@ pub(crate) fn paint_text_field(
                     w: rect.w,
                     h: line_h,
                 },
-                text: Arc::from(text_input.hint.clone()),
+                text: Arc::from(hint_line(text_input, &metrics, font_val, rect.w)),
                 color: mul_alpha_color(th.on_surface_variant, alpha_accum),
                 size: Px(font_val),
                 style: TextPaintStyle {
@@ -3203,7 +3223,7 @@ pub(crate) fn paint_text_field(
         ) = if let Some(state_rc) = state {
             let st = state_rc.borrow();
             let display = if st.text.is_empty() {
-                text_input.hint.clone()
+                hint_line(text_input, &metrics, font_val, rect.w)
             } else if let Some(ref vt) = text_input.visual_transformation {
                 let annotated = repose_core::AnnotatedString::new(st.text.clone(), vec![]);
                 vt.filter(&annotated).text.text

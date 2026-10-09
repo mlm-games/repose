@@ -723,6 +723,7 @@ fn outlined_field_decoration(
         ZStack(
             Modifier::new()
                 .fill_max_width()
+                .min_width(Dp(200.0))
                 .min_height(OutlinedTextFieldDefaults::MIN_HEIGHT),
         )
         .child((
@@ -781,7 +782,7 @@ fn outlined_field_decoration(
             )),
             if let Some(lbl) = label_str {
                 Box(Modifier::new()
-                    .min_width(Dp(200.0))
+                    .fill_max_width()
                     .padding_values(PaddingValues {
                         left: label_x,
                         right: Dp(20.0),
@@ -789,11 +790,13 @@ fn outlined_field_decoration(
                         bottom: Dp(0.0),
                     })
                     .absolute()
-                    .offset(Some(Dp(0.0)), Some(label_y), None, None))
+                    .offset(None, Some(label_y), None, None))
                 .child(
                     Text(lbl.as_ref().to_string())
                         .color(label_color)
-                        .size(label_size),
+                        .size(label_size)
+                        .single_line()
+                        .overflow_ellipsize(),
                 )
             } else {
                 Box(Modifier::new())
@@ -1128,15 +1131,27 @@ pub fn TextField(
                 .absolute()
                 .offset(None, None, None, Some(Dp(0.0)))
                 .background(indicator_color)),
-            // Floating label inside the stack
+            // Floating label inside the stack. Absolute positioning takes it out
+            // of the flow, so nothing else constrains it: without an explicit
+            // width and an ellipsis, a label longer than the field runs past its
+            // right edge into whatever is next and is cut mid-glyph.
             if let Some(lbl) = label_str {
                 Box(Modifier::new()
+                    .fill_max_width()
+                    .padding_values(PaddingValues {
+                        left: label_x,
+                        right: Dp(16.0),
+                        top: Dp(0.0),
+                        bottom: Dp(0.0),
+                    })
                     .absolute()
-                    .offset(Some(label_x), Some(label_y), None, None))
+                    .offset(None, Some(label_y), None, None))
                 .child(
                     Text(lbl.as_ref().to_string())
                         .color(label_color)
-                        .size(label_size),
+                        .size(label_size)
+                        .single_line()
+                        .overflow_ellipsize(),
                 )
             } else {
                 Box(Modifier::new())
@@ -1145,10 +1160,135 @@ pub fn TextField(
         supporting.unwrap_or(Box(Modifier::new())),
     ))
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
+
+    use repose_core::locals::{Density, with_density};
+    use repose_core::runtime::ComposeGuard;
+    use repose_core::scope::Scope;
+    use repose_ui::Interactions;
+    use repose_ui::layout::LayoutEngine;
+
+    /// Lay a field out at 1x and hand back its container rect and its label's.
+    fn measure(build: impl FnOnce() -> View) -> (Rect, Rect, String) {
+        let scope = Scope::new();
+        let guard = ComposeGuard::begin();
+        let (container, label, text) = scope.run(|| {
+            with_density(Density { scale: 1.0 }, || {
+                let view = build();
+                let mut engine = LayoutEngine::new();
+                // The frame is what narrows the field: a layout root is
+                // stretched to the space it is given.
+                let (scene, _, _) = engine.layout_frame(
+                    &view,
+                    (320, 200),
+                    &HashMap::new(),
+                    &Interactions::default(),
+                    None,
+                );
+
+                let container = scene
+                    .nodes
+                    .iter()
+                    .find_map(|node| match node {
+                        SceneNode::Rect { rect, .. } => Some(*rect),
+                        _ => None,
+                    })
+                    .expect("the field paints a container");
+                // The input is a Text node too, and it is empty here, so the
+                // label is the last node with anything in it.
+                let (rect, text) = scene
+                    .nodes
+                    .iter()
+                    .rev()
+                    .find_map(|node| match node {
+                        SceneNode::Text { rect, text, .. } if !text.is_empty() => {
+                            Some((*rect, text.to_string()))
+                        }
+                        _ => None,
+                    })
+                    .expect("the field paints its label");
+
+                (container, rect, text)
+            })
+        });
+        drop(guard);
+        scope.dispose();
+        (container, label, text)
+    }
+
+    const LONG: &str = "instruments (comma separated, empty = all)";
+
+    #[test]
+    fn a_filled_field_truncates_a_label_longer_than_itself() {
+        let (container, label, text) = measure(|| {
+            TextField(
+                Modifier::new(),
+                String::new(),
+                |_| {},
+                TextFieldConfig {
+                    label: Some(LONG.into()),
+                    ..Default::default()
+                },
+            )
+        });
+
+        assert!(
+            label.x + label.w <= container.x + container.w,
+            "label runs past the field: {label:?} vs {container:?}"
+        );
+        assert!(
+            text.len() < LONG.len(),
+            "the label should be truncated, got {text:?}"
+        );
+    }
+
+    #[test]
+    fn an_outlined_field_truncates_a_label_longer_than_itself() {
+        let (container, label, text) = measure(|| {
+            OutlinedTextField(
+                Modifier::new(),
+                String::new(),
+                |_| {},
+                OutlinedTextFieldConfig {
+                    label: Some(LONG.into()),
+                    ..Default::default()
+                },
+            )
+        });
+
+        assert!(
+            label.x + label.w <= container.x + container.w,
+            "label runs past the field: {label:?} vs {container:?}"
+        );
+        assert!(
+            text.len() < LONG.len(),
+            "the label should be truncated, got {text:?}"
+        );
+    }
+
+    #[test]
+    fn a_short_label_is_left_alone() {
+        let (container, label, text) = measure(|| {
+            TextField(
+                Modifier::new(),
+                String::new(),
+                |_| {},
+                TextFieldConfig {
+                    label: Some("Email".into()),
+                    ..Default::default()
+                },
+            )
+        });
+
+        assert_eq!(text, "Email");
+        assert!(
+            label.w < container.w,
+            "a short label does not fill the field"
+        );
+    }
 
     #[test]
     fn password_accessibility_value_is_transformed() {
