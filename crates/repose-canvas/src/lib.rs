@@ -1601,6 +1601,7 @@ fn tessellate_arc_wedge(
     start: f32,
     sweep: f32,
 ) -> Option<VectorMeshData> {
+    use lyon_path::FillRule;
     use lyon_path::math::Point;
     use lyon_tessellation::{
         FillOptions, FillTessellator, VertexBuffers, geometry_builder::simple_builder,
@@ -1625,7 +1626,9 @@ fn tessellate_arc_wedge(
     let mut buffers: VertexBuffers<Point, u16> = VertexBuffers::new();
     tess.tessellate_path(
         &path,
-        &FillOptions::default().with_tolerance(0.25),
+        &FillOptions::default()
+            .with_tolerance(0.25)
+            .with_fill_rule(FillRule::NonZero),
         &mut simple_builder(&mut buffers),
     )
     .ok()?;

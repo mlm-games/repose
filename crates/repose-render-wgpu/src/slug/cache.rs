@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 
+use lyon_path::FillRule;
 use lyon_path::math::Point;
 use lyon_tessellation::{
     FillOptions, FillTessellator, LineCap, LineJoin, StrokeOptions, StrokeTessellator,
@@ -12,6 +13,15 @@ use crate::slug::outline::commands_to_path;
 use crate::slug::path_effect::apply_path_effect;
 
 const EVICT_FRAMES: u64 = 120;
+/// Glyph outlines are TrueType/CFF and are painted with the nonzero winding
+/// rule. Lyon defaults to even-odd, which punches a hole wherever two
+/// same-direction contours of one glyph overlap, so counters and joins tear
+/// open (Fredoka's `A` and `1`, `b`, `d`, `g`, `p`, `q`, `x`, `y`, ...).
+fn glyph_fill_options(tolerance: f32) -> FillOptions {
+    FillOptions::default()
+        .with_tolerance(tolerance)
+        .with_fill_rule(FillRule::NonZero)
+}
 /// Stroke variants kept per glyph. A glyph that is on screen while its
 /// width or dash phase animates mints a new variant per frame, and eviction
 /// only ever drops whole glyphs, so without this cap a single visible glyph
@@ -170,7 +180,7 @@ impl GlyphSlugCache {
                     let mut buffers: VertexBuffers<Point, u16> = VertexBuffers::new();
                     tess.tessellate_path(
                         &path,
-                        &FillOptions::default().with_tolerance(tolerance),
+                        &glyph_fill_options(tolerance),
                         &mut simple_builder(&mut buffers),
                     )
                     .ok()?;
@@ -194,7 +204,7 @@ impl GlyphSlugCache {
                 let mut buffers: VertexBuffers<Point, u16> = VertexBuffers::new();
                 tess.tessellate_path(
                     &path,
-                    &FillOptions::default().with_tolerance(tolerance),
+                    &glyph_fill_options(tolerance),
                     &mut simple_builder(&mut buffers),
                 )
                 .ok()?;
