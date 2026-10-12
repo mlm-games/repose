@@ -8,8 +8,6 @@ Its objective is to make declarative, state-driven UI practical in Rust while ke
 [![License](https://img.shields.io/github/license/mlm-games/repose)](LICENSE)
 [![Demo](https://img.shields.io/badge/demo-live-blue)](https://mlm-games.github.io/repose/)
 
-> **Status: pre-1.0.** The API may still change, especially in smaller areas.
-
 Repose targets straightforward applications first and can grow into larger ones without requiring an embedded web view or separate native UI implementations.
 
 ## Features
