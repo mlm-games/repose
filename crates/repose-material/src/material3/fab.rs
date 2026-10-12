@@ -212,3 +212,87 @@ pub fn ExtendedFAB(
             .single_line(),
     ))
 }
+
+pub struct FABMenuItem {
+    pub icon: View,
+    pub label: String,
+    pub on_click: Rc<dyn Fn()>,
+}
+
+#[derive(Clone, Debug)]
+pub struct FABMenuConfig {
+    pub modifier: Modifier,
+    pub fab_config: FABConfig,
+    pub item_spacing: Dp,
+}
+
+impl Default for FABMenuConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            fab_config: FABConfig::default(),
+            item_spacing: Dp(12.0),
+        }
+    }
+}
+
+pub fn FloatingActionButtonMenu(
+    expanded: bool,
+    on_expanded_change: impl Fn(bool) + 'static,
+    toggle_icon: View,
+    items: Vec<FABMenuItem>,
+    config: FABMenuConfig,
+) -> View {
+    let th = theme();
+    let id = remember(unique_component_id);
+    let reveal = repose_ui::anim::animate_f32(
+        format!("fabmenu:{id}:reveal"),
+        if expanded { 1.0 } else { 0.0 },
+        th.motion.overlay,
+    );
+    let on_expanded_change = Rc::new(on_expanded_change);
+    if reveal <= 0.01 && !expanded {
+        let opener = on_expanded_change.clone();
+        return FAB(toggle_icon, move || opener(true), config.fab_config);
+    }
+    let mut sub_views: Vec<View> = items
+        .into_iter()
+        .map(|item| {
+            let cb = item.on_click.clone();
+            let closer = on_expanded_change.clone();
+            repose_ui::Row(Modifier::new()
+                .align_items(AlignItems::CENTER)
+                .column_gap(Dp(12.0))
+                .justify_content(JustifyContent::END))
+            .child((
+                Box(Modifier::new()
+                    .background(th.surface_container_high)
+                    .clip_rounded(Dp(8.0))
+                    .padding_values(PaddingValues {
+                        left: Dp(12.0),
+                        right: Dp(12.0),
+                        top: Dp(8.0),
+                        bottom: Dp(8.0),
+                    }))
+                .child(Text(item.label).size(th.typography.label_large)),
+                SmallFAB(
+                    item.icon,
+                    move || {
+                        cb();
+                        closer(false);
+                    },
+                    config.fab_config.clone(),
+                ),
+            ))
+        })
+        .collect::<Vec<_>>();
+    sub_views.push(FAB(toggle_icon, move || on_expanded_change(false), config.fab_config.clone()));
+    repose_ui::Column(
+        Modifier::new()
+            .alpha(reveal)
+            .row_gap(config.item_spacing)
+            .align_items(AlignItems::END)
+            .then(config.modifier),
+    )
+    .with_children(sub_views)
+}

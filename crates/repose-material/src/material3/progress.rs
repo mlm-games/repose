@@ -762,3 +762,172 @@ mod tests {
         scope.dispose();
     }
 }
+
+#[derive(Clone, Debug)]
+pub struct LoadingIndicatorConfig {
+    pub modifier: Modifier,
+    pub color: Color,
+    pub dot_count: usize,
+    pub diameter: Dp,
+}
+
+impl Default for LoadingIndicatorConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            color: ProgressIndicatorDefaults::circular_color(),
+            dot_count: 5,
+            diameter: ProgressIndicatorDefaults::CIRCULAR_INDICATOR_SIZE,
+        }
+    }
+}
+
+pub fn LoadingIndicator(progress: Option<f32>, config: LoadingIndicatorConfig) -> View {
+    let instance_id = remember(unique_component_id);
+    let identity = progress_identity(&config.modifier, "loading", *instance_id);
+    let driver = if progress.is_none() {
+        Some(indeterminate_value(
+            &format!("{identity}:loading-t"),
+            0.0,
+            indeterminate_spec(Duration::from_millis(1200)),
+            Some(1.0),
+            None,
+        ))
+    } else {
+        None
+    };
+    let dots = config.dot_count.clamp(3, 12);
+    let color = config.color;
+    Box(Modifier::new()
+        .size(config.diameter, config.diameter)
+        .then(config.modifier)
+        .semantics(Semantics {
+            role: Role::ProgressBar,
+            value: progress.map(|v| format!("{:.0}%", v.clamp(0.0, 1.0) * 100.0)),
+            progress: progress.map(|v| ProgressRangeInfo {
+                current: v.clamp(0.0, 1.0),
+                min: 0.0,
+                max: 1.0,
+                step: None,
+            }),
+            ..Default::default()
+        })
+        .painter(move |scene: &mut Scene, rect: Rect, alpha: f32| {
+            let t = driver.as_ref().map(|d| *d.borrow().get()).unwrap_or(0.0);
+            let cx = rect.x + rect.w * 0.5;
+            let cy = rect.y + rect.h * 0.5;
+            let radius = (rect.w.min(rect.h) * 0.5 - 4.0).max(1.0);
+            let shown = progress.map(|v| (v.clamp(0.0, 1.0) * dots as f32).round() as usize);
+            for i in 0..dots {
+                let frac = i as f32 / dots as f32;
+                let phase = (t - frac).rem_euclid(1.0);
+                let pulse = if progress.is_none() {
+                    0.4 + 0.6 * (0.5 + 0.5 * (phase * std::f32::consts::TAU).cos())
+                } else {
+                    1.0
+                };
+                let a = if shown.is_some_and(|n| i < n) || progress.is_none() {
+                    alpha * pulse as f32
+                } else {
+                    alpha * 0.25
+                };
+                let r = 3.0 * (0.6 + 0.4 * pulse) as f32;
+                let ang = frac * std::f32::consts::TAU - std::f32::consts::FRAC_PI_2;
+                scene.nodes.push(SceneNode::Ellipse {
+                    rect: Rect {
+                        x: cx + radius * ang.cos() - r,
+                        y: cy + radius * ang.sin() - r,
+                        w: r * 2.0,
+                        h: r * 2.0,
+                    },
+                    brush: Brush::Solid(Color(
+                        color.0,
+                        color.1,
+                        color.2,
+                        ((color.3 as f32) * a).clamp(0.0, 255.0) as u8,
+                    )),
+                });
+            }
+        }))
+}
+
+#[derive(Clone, Debug)]
+pub struct WavyProgressIndicatorConfig {
+    pub modifier: Modifier,
+    pub color: Color,
+    pub track_color: Color,
+    pub amplitude: Dp,
+    pub wavelength: Dp,
+}
+
+impl Default for WavyProgressIndicatorConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            color: ProgressIndicatorDefaults::circular_color(),
+            track_color: ProgressIndicatorDefaults::circular_track_color(),
+            amplitude: Dp(4.0),
+            wavelength: Dp(24.0),
+        }
+    }
+}
+
+pub fn WavyProgressIndicator(value: Option<f32>, config: WavyProgressIndicatorConfig) -> View {
+    let instance_id = remember(unique_component_id);
+    let identity = progress_identity(&config.modifier, "wavy", *instance_id);
+    let driver = if value.is_none() {
+        Some(indeterminate_value(
+            &format!("{identity}:wavy-t"),
+            0.0,
+            indeterminate_spec(Duration::from_millis(1600)),
+            Some(1.0),
+            None,
+        ))
+    } else {
+        None
+    };
+    let color = config.color;
+    let track = config.track_color;
+    let amp = config.amplitude.to_px().0.max(1.0);
+    let wave = config.wavelength.to_px().0.max(8.0);
+    Box(Modifier::new()
+        .fill_max_width()
+        .height(Dp(amp * 2.0 + 8.0))
+        .then(config.modifier)
+        .semantics(Semantics {
+            role: Role::ProgressBar,
+            value: value.map(|v| format!("{:.0}%", v.clamp(0.0, 1.0) * 100.0)),
+            progress: value.map(|v| ProgressRangeInfo {
+                current: v.clamp(0.0, 1.0),
+                min: 0.0,
+                max: 1.0,
+                step: None,
+            }),
+            ..Default::default()
+        })
+        .painter(move |scene: &mut Scene, rect: Rect, alpha: f32| {
+            let t = driver.as_ref().map(|d| *d.borrow().get()).unwrap_or(0.0);
+            let n = ((rect.w / 7.0) as usize).clamp(8, 96);
+            let cy = rect.y + rect.h * 0.5;
+            let paint = |c: Color, a: f32| {
+                Brush::Solid(Color(
+                    c.0,
+                    c.1,
+                    c.2,
+                    ((c.3 as f32) * a).clamp(0.0, 255.0) as u8,
+                ))
+            };
+            for i in 0..n {
+                let x = rect.x + (i as f32 + 0.5) / n as f32 * rect.w;
+                let y = cy + amp * ((x / wave - t).rem_euclid(1.0) * std::f32::consts::TAU).sin();
+                let active = match value {
+                    Some(v) => x <= rect.x + v.clamp(0.0, 1.0) * rect.w,
+                    None => true,
+                };
+                scene.nodes.push(SceneNode::Ellipse {
+                    rect: Rect { x: x - 2.0, y: y - 2.0, w: 4.0, h: 4.0 },
+                    brush: paint(if active { color } else { track }, alpha),
+                });
+            }
+        }))
+}

@@ -29,6 +29,10 @@ thread_local! {
     /// instead of last-wins. `CLEAR_FOCUS_MARKER` entries clear focus.
     static FOCUS_REQUESTS: RefCell<std::collections::VecDeque<u64>> =
         const { RefCell::new(std::collections::VecDeque::new()) };
+
+    /// Captured-focus lock (`FocusRequester::capture_focus`). While set,
+    /// queued requests for other targets are denied and focus stays pinned.
+    static FOCUS_CAPTURED: RefCell<Option<u64>> = const { RefCell::new(None) };
 }
 
 pub const CLEAR_FOCUS_MARKER: u64 = u64::MAX;
@@ -258,8 +262,20 @@ pub fn take_focus_request() -> Option<u64> {
 }
 
 /// Drain all queued focus requests in FIFO order.
+///
+/// While a capture lock is held, requests for other targets are denied and
+/// the captured id is returned instead, pinning focus.
 pub fn drain_focus_requests() -> Vec<u64> {
+    if let Some(captured) = FOCUS_CAPTURED.with(|c| *c.borrow()) {
+        FOCUS_REQUESTS.with(|r| r.borrow_mut().clear());
+        return vec![captured];
+    }
     FOCUS_REQUESTS.with(|r| r.borrow_mut().drain(..).collect())
+}
+
+/// Currently captured focus target, if any.
+pub fn focus_capture() -> Option<u64> {
+    FOCUS_CAPTURED.with(|c| *c.borrow())
 }
 
 /// A handle that can programmatically request focus for a widget.
@@ -285,24 +301,59 @@ impl FocusRequester {
     /// frame are all honored in order. If the target is not laid out yet the
     /// request is dropped (target assigned during layout/paint).
     pub fn request_focus(&self) {
-        if let Some(id) = *self.target.borrow() {
-            FOCUS_REQUESTS.with(|r| r.borrow_mut().push_back(id));
+        let _ = self.try_request_focus();
+    }
+
+    /// Enqueue a focus request, reporting whether it was accepted.
+    /// Returns `false` when the target is not laid out yet (request dropped)
+    /// or when another target holds the capture lock.
+    pub fn try_request_focus(&self) -> bool {
+        let Some(id) = *self.target.borrow() else {
+            return false;
+        };
+        if let Some(captured) = FOCUS_CAPTURED.with(|c| *c.borrow())
+            && captured != id
+        {
+            return false;
         }
+        FOCUS_REQUESTS.with(|r| r.borrow_mut().push_back(id));
+        true
+    }
+
+    /// Request focus for the associated widget from a traversal direction.
+    /// Directional enter delegation is not implemented (focus targets are
+    /// flat, not containers), so this behaves like [`try_request_focus`](Self::try_request_focus)
+    /// and reports acceptance the same way.
+    pub fn request_focus_directed(&self, _direction: FocusDirection) -> bool {
+        self.try_request_focus()
     }
 
     /// Free/clear focus from the associated widget on the next frame.
     /// If the associated widget currently has focus, focus is cleared entirely.
-    /// Corresponds to Compose's `freeFocus()`.
+    /// Corresponds to Compose's `freeFocus()`. Releases this target's capture
+    /// lock when held.
     pub fn free_focus(&self) {
+        if let Some(id) = *self.target.borrow() {
+            FOCUS_CAPTURED.with(|c| {
+                if *c.borrow() == Some(id) {
+                    *c.borrow_mut() = None;
+                }
+            });
+        }
         FOCUS_REQUESTS.with(|r| r.borrow_mut().push_back(CLEAR_FOCUS_MARKER));
     }
 
-    /// Request focus for the associated widget on the next frame,
-    /// bypassing some focusability checks. Corresponds to Compose's
-    /// `captureFocus()`, which is typically used internally by the focus system.
-    /// In repose this is an alias for `request_focus()`.
-    pub fn capture_focus(&self) {
-        self.request_focus();
+    /// Capture focus for the associated widget: focus moves to the target and
+    /// stays pinned there until [`free_focus`](Self::free_focus). Other
+    /// targets' requests are denied while the lock is held.
+    /// Returns `false` when the target is not laid out yet.
+    pub fn capture_focus(&self) -> bool {
+        let Some(id) = *self.target.borrow() else {
+            return false;
+        };
+        FOCUS_CAPTURED.with(|c| *c.borrow_mut() = Some(id));
+        FOCUS_REQUESTS.with(|r| r.borrow_mut().push_back(id));
+        true
     }
 }
 
@@ -1194,6 +1245,11 @@ pub struct HitRegion {
 
     pub on_action: Option<Rc<dyn Fn(crate::shortcuts::Action) -> bool>>,
 
+    pub on_set_progress: Option<Rc<dyn Fn(f32)>>,
+    pub on_expand: Option<Rc<dyn Fn()>>,
+    pub on_collapse: Option<Rc<dyn Fn()>>,
+    pub on_dismiss: Option<Rc<dyn Fn()>>,
+
     /// Called when a key event is received while this element is focused.
     /// Return `true` to consume the event.
     pub on_key_event: Option<Rc<dyn Fn(crate::input::KeyEvent) -> bool>>,
@@ -1247,6 +1303,10 @@ impl HitRegion {
             on_pointer_enter: m.on_pointer_enter.clone(),
             on_pointer_leave: m.on_pointer_leave.clone(),
             on_action: m.on_action.clone(),
+            on_set_progress: m.on_set_progress.clone(),
+            on_expand: m.on_expand.clone(),
+            on_collapse: m.on_collapse.clone(),
+            on_dismiss: m.on_dismiss.clone(),
             on_key_event: m.on_key_event.clone(),
             on_preview_key_event: m.on_preview_key_event.clone(),
             on_ime: m.on_ime.clone(),
@@ -1266,6 +1326,48 @@ impl HitRegion {
             ..Default::default()
         }
     }
+}
+
+/// Route a gesture action to the topmost hit region under `center`,
+/// walking up ancestors until one consumes it. Fallback for gestures that
+/// miss the focused widget, matching Compose routing to the node under the
+/// pointer. Coordinates are physical px, like [`HitRegion::rect`].
+pub fn route_action_to_point(
+    hits: &[HitRegion],
+    action: &crate::shortcuts::Action,
+    center: crate::Vec2,
+) -> bool {
+    let mut best: Option<&HitRegion> = None;
+    for h in hits {
+        if h.disabled || h.on_action.is_none() {
+            continue;
+        }
+        let r = h.rect;
+        if center.x < r.x || center.x > r.x + r.w || center.y < r.y || center.y > r.y + r.h {
+            continue;
+        }
+        let better = match best {
+            None => true,
+            Some(b) => (h.z_index, h.depth) >= (b.z_index, b.depth),
+        };
+        if better {
+            best = Some(h);
+        }
+    }
+    let mut current = best.map(|h| h.id);
+    while let Some(id) = current {
+        let Some(h) = hits.iter().find(|h| h.id == id) else {
+            break;
+        };
+        if !h.disabled
+            && let Some(cb) = &h.on_action
+            && cb(action.clone())
+        {
+            return true;
+        }
+        current = h.parent;
+    }
+    false
 }
 
 /// Flattened semantics node produced by `layout_and_paint`.
@@ -1293,6 +1395,23 @@ pub struct SemNode {
     pub checked: Option<bool>,
     pub selected: Option<bool>,
     pub value: Option<String>,
+    pub heading: bool,
+    pub live_region: Option<crate::semantics::LiveRegion>,
+    pub state_description: Option<String>,
+    pub traversal_index: Option<f32>,
+    pub is_traversal_group: bool,
+    pub hidden: bool,
+    pub collection_rows: Option<usize>,
+    pub collection_columns: Option<usize>,
+    pub row_index: Option<usize>,
+    pub column_index: Option<usize>,
+    pub progress: Option<crate::semantics::ProgressRangeInfo>,
+    pub error: Option<String>,
+    pub expanded: Option<bool>,
+    pub scrollable: bool,
+    pub can_expand: bool,
+    pub can_collapse: bool,
+    pub can_dismiss: bool,
 }
 
 impl Default for SemNode {
@@ -1309,6 +1428,23 @@ impl Default for SemNode {
             checked: None,
             selected: None,
             value: None,
+            heading: false,
+            live_region: None,
+            state_description: None,
+            traversal_index: None,
+            is_traversal_group: false,
+            hidden: false,
+            collection_rows: None,
+            collection_columns: None,
+            row_index: None,
+            column_index: None,
+            progress: None,
+            error: None,
+            expanded: None,
+            scrollable: false,
+            can_expand: false,
+            can_collapse: false,
+            can_dismiss: false,
         }
     }
 }

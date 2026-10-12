@@ -90,6 +90,9 @@ where
         content_padding,
         reverse_layout,
         user_scroll_enabled,
+        spacing,
+        sticky_keys,
+        content_type,
     } = config;
 
     let mut items = items;
@@ -119,25 +122,32 @@ where
 
     let padding_top_px = content_padding.top.to_px().0;
     let padding_bottom_px = content_padding.bottom.to_px().0;
+    let spacing_px = spacing.to_px().0.max(0.0);
     let uniform_height_dp = item_height.uniform_height().map(|height| height.max(1.0));
     let uniform_height_px = uniform_height_dp.map(|height| Dp(height).to_px().0);
+    state.set_content_padding(padding_top_px);
+    state.set_item_count(items.len());
+    state.set_item_metrics(spacing_px, uniform_height_px.unwrap_or(0.0));
+    let stride_px = uniform_height_px.map(|h| h + spacing_px);
     let geometry = uniform_height_dp.is_none().then(|| {
         let heights_px: Vec<f32> = items
             .iter()
-            .map(|item| Dp(item_height.get(item).max(1.0)).to_px().0)
+            .enumerate()
+            .map(|(i, item)| {
+                let h = Dp(item_height.get(item).max(1.0)).to_px().0;
+                if i + 1 < items.len() { h + spacing_px } else { h }
+            })
             .collect();
         state.geometry(&current_keys, &heights_px)
     });
-    let content_height_px = geometry
-        .as_ref()
-        .map(|geometry| geometry.total())
-        .unwrap_or_else(|| {
-            uniform_height_px
-                .map(|height| height * items.len() as f32)
-                .unwrap_or(0.0)
-        })
-        + padding_top_px
-        + padding_bottom_px;
+    let items_total_px = geometry.as_ref().map(|geometry| geometry.total()).unwrap_or_else(|| {
+        uniform_height_px
+            .map(|height| {
+                height * items.len() as f32 + spacing_px * items.len().saturating_sub(1) as f32
+            })
+            .unwrap_or(0.0)
+    });
+    let content_height_px = items_total_px + padding_top_px + padding_bottom_px;
 
     let scroll_offset_px = state.core.axis.offset.get();
     let viewport_height_px = state.core.axis.viewport.get();
@@ -148,7 +158,7 @@ where
             geometry.first_visible(padded_visible_start),
             geometry.end_visible(padded_visible_end),
         )
-    } else if let Some(stride) = uniform_height_px {
+    } else if let Some(stride) = stride_px {
         let first = if padded_visible_start <= 0.0 {
             0
         } else {
@@ -163,6 +173,7 @@ where
     } else {
         (0, 0)
     };
+    state.set_visible_range(first_visible, last_visible);
 
     let buffer = 2usize;
     let first_with_buffer = first_visible.saturating_sub(buffer);
@@ -177,8 +188,24 @@ where
             (padding_top_px + geometry.top(index), geometry.height(index))
         } else {
             let height = uniform_height_px.unwrap_or(1.0);
-            (padding_top_px + height * index as f32, height)
+            let stride = stride_px.unwrap_or(height);
+            (padding_top_px + stride * index as f32, height)
         }
+    };
+    let sticky_active: Option<usize> = if sticky_keys.is_empty() || items.is_empty() {
+        None
+    } else {
+        let mut active = None;
+        for i in 0..(first_visible + 1).min(items.len()) {
+            if sticky_keys.contains(&current_keys[i]) && current_geometry(i).0 <= scroll_offset_px
+            {
+                active = Some(i);
+            }
+        }
+        active
+    };
+    let content_type_of = |data_index: usize| -> u64 {
+        content_type.as_ref().map(|f| f(data_index)).unwrap_or(0)
     };
     let mut entering = std::collections::HashSet::new();
     let animation_id = state_id as u64;
@@ -351,8 +378,26 @@ where
             )
         };
         let item_builder_ref = &item_builder;
+        if visual_index > first_with_buffer && spacing_px > 0.0 {
+            combined_children.push(crate::Box(
+                Modifier::new()
+                    .fill_max_width()
+                    .height(Dp(Px(spacing_px).to_dp().0.max(0.0))),
+            ));
+        }
+        if Some(visual_index) == sticky_active {
+            combined_children.push(crate::Box(
+                Modifier::new().fill_max_width().height(Dp(height_dp)),
+            ));
+            continue;
+        }
+        let ct_suffix = content_type_of(data_index);
         if is_entering {
-            combined_children.push(scoped_item(key, state_id, revision, move || {
+            combined_children.push(scoped_item_with_key(
+                format!("lazy_{state_id:x}_item_{key}_{ct_suffix}"),
+                key,
+                revision,
+                move || {
                 crate::Box(
                     Modifier::new()
                         .fill_max_width()
@@ -362,20 +407,18 @@ where
                 .child(item_builder_ref(item.clone(), data_index))
             }));
         } else {
-            combined_children.push(scoped_item(key, state_id, revision, move || {
-                crate::Box(Modifier::new().fill_max_width().height(Dp(height_dp)))
-                    .child(item_builder_ref(item.clone(), data_index))
-            }));
+            combined_children.push(scoped_item_with_key(
+                format!("lazy_{state_id:x}_item_{key}_{ct_suffix}"),
+                key,
+                revision,
+                move || {
+                    crate::Box(Modifier::new().fill_max_width().height(Dp(height_dp)))
+                        .child(item_builder_ref(item.clone(), data_index))
+                },
+            ));
         }
     }
-    let total_items_height_px = geometry
-        .as_ref()
-        .map(|geometry| geometry.total())
-        .unwrap_or_else(|| {
-            uniform_height_px
-                .map(|height| height * items.len() as f32)
-                .unwrap_or(0.0)
-        });
+    let total_items_height_px = items_total_px;
     let bottom_start_px = if last_with_buffer >= items.len() {
         total_items_height_px
     } else {
@@ -495,19 +538,43 @@ where
         let st = state.clone();
         Rc::new(move |conn| st.set_nested_scroll_parent(conn))
     };
-    repose_core::View::new(0, repose_core::ViewKind::Box)
-        .modifier(modifier.vertical_scroll(ScrollAxisBinding {
-            on_scroll,
-            set_viewport_main: Some(set_viewport),
-            set_content_main: Some(Rc::new(move |h| measured_h_px(h))),
-            get_offset_main: Some(get_scroll),
-            set_offset_main: Some(set_scroll),
-            reversed: false,
-            show_scrollbar: user_scroll_enabled,
-            tick: tick_scroll,
-            set_nested_scroll_parent: Some(set_nested_scroll_parent),
-        }))
-        .with_children(vec![content])
+    let binding = ScrollAxisBinding {
+        on_scroll,
+        set_viewport_main: Some(set_viewport),
+        set_content_main: Some(Rc::new(move |h| measured_h_px(h))),
+        get_offset_main: Some(get_scroll),
+        set_offset_main: Some(set_scroll),
+        reversed: false,
+        show_scrollbar: user_scroll_enabled,
+        tick: tick_scroll,
+        set_nested_scroll_parent: Some(set_nested_scroll_parent),
+    };
+    let sticky_pinned = sticky_active.and_then(|vi| {
+        let data_index = to_data_idx(vi);
+        let item = items.get(vi)?.clone();
+        let height_dp = uniform_height_dp.unwrap_or_else(|| item_height.get(&item).max(1.0));
+        Some(
+            crate::Box(
+                Modifier::new()
+                    .absolute()
+                    .offset(None, Some(Dp::ZERO), None, None)
+                    .fill_max_width()
+                    .height(Dp(height_dp)),
+            )
+            .child(item_builder(item, data_index)),
+        )
+    });
+    match sticky_pinned {
+        Some(pinned) => {
+            let scroll_view = repose_core::View::new(0, repose_core::ViewKind::Box)
+                .modifier(Modifier::new().fill_max_size().vertical_scroll(binding))
+                .with_children(vec![content]);
+            crate::ZStack(modifier).child(scroll_view).child(pinned)
+        }
+        None => repose_core::View::new(0, repose_core::ViewKind::Box)
+            .modifier(modifier.vertical_scroll(binding))
+            .with_children(vec![content]),
+    }
 }
 
 /// List without virtualization (for small lists)
@@ -1042,6 +1109,9 @@ where
         content_padding,
         reverse_layout,
         user_scroll_enabled,
+        spacing,
+        sticky_keys,
+        content_type,
     } = config;
 
     let items = items;
@@ -1057,18 +1127,27 @@ where
     let padding_left_px = content_padding.left.to_px().0;
     let padding_right_px = content_padding.right.to_px().0;
     let item_w_px = Dp(item_width_dp).to_px().0.max(1.0);
-    let content_width_px = items.len() as f32 * item_w_px + padding_left_px + padding_right_px;
+    let spacing_px = spacing.to_px().0.max(0.0);
+    let stride_px = item_w_px + spacing_px;
+    let items_width_px =
+        items.len() as f32 * item_w_px + spacing_px * items.len().saturating_sub(1) as f32;
+    let content_width_px = items_width_px + padding_left_px + padding_right_px;
+    state.set_content_padding(padding_left_px);
+    state.set_item_metrics(spacing_px, item_w_px);
+    state.set_item_count(items.len());
 
     let scroll_offset_px = state.core.axis.offset.get();
     let viewport_width_px = state.core.axis.viewport.get();
 
     let padded_offset = scroll_offset_px - padding_left_px;
+    let left_at = |i: usize| padding_left_px + i as f32 * stride_px;
     let first_visible = if padded_offset <= 0.0 {
         0
     } else {
-        (padded_offset / item_w_px).floor().max(0.0) as usize
+        (padded_offset / stride_px).floor().max(0.0) as usize
     };
-    let last_visible = ((padded_offset + viewport_width_px) / item_w_px).ceil() as usize + 2;
+    let last_visible = ((padded_offset + viewport_width_px) / stride_px).ceil() as usize + 2;
+    state.set_visible_range(first_visible, last_visible.min(src_len));
 
     let buffer = 2usize;
     let first_with_buffer = first_visible.saturating_sub(buffer);
@@ -1086,16 +1165,46 @@ where
         children.push(crate::Box(
             Modifier::new()
                 .fill_max_height()
-                .width(Dp(first_with_buffer as f32 * item_width_dp)),
+                .width(Dp(Px(left_at(first_with_buffer) - padding_left_px).to_dp().0.max(0.0))),
         ));
     }
+
+    let sticky_active: Option<usize> = if sticky_keys.is_empty() || src_len == 0 {
+        None
+    } else {
+        let mut active = None;
+        for i in 0..(first_visible + 1).min(src_len) {
+            if sticky_keys.contains(&(to_data_idx(i) as u64)) && left_at(i) <= scroll_offset_px {
+                active = Some(i);
+            }
+        }
+        active
+    };
+    let content_type_of = |data_index: usize| -> u64 {
+        content_type.as_ref().map(|f| f(data_index)).unwrap_or(0)
+    };
 
     let state_id = Rc::as_ptr(&state) as usize;
     for i in first_with_buffer..last_visible {
         if i >= src_len {
             continue;
         }
+        if i > first_with_buffer && spacing_px > 0.0 {
+            children.push(crate::Box(
+                Modifier::new()
+                    .fill_max_height()
+                    .width(Dp(Px(spacing_px).to_dp().0.max(0.0))),
+            ));
+        }
         let data_i = to_data_idx(i);
+        if Some(i) == sticky_active {
+            children.push(crate::Box(
+                Modifier::new()
+                    .fill_max_height()
+                    .width(Dp(item_width_dp)),
+            ));
+            continue;
+        }
         if let Some(item) = items.get(data_i) {
             let revision = state.cache_revision_for_with(
                 data_i as u64,
@@ -1103,18 +1212,23 @@ where
                 item_w_px,
                 0,
             );
-            children.push(scoped_item(data_i as u64, state_id, revision, || {
-                item_builder(item.clone(), data_i)
-            }));
+            let ct_suffix = content_type_of(data_i);
+            children.push(scoped_item_with_key(
+                format!("lazy_{state_id:x}_item_{data_i}_{ct_suffix}"),
+                data_i as u64,
+                revision,
+                || item_builder(item.clone(), data_i),
+            ));
         }
     }
 
     if last_visible < items.len() {
-        let remaining = items.len() - last_visible;
+        let bottom_start = left_at(last_visible) - padding_left_px;
+        let remaining_px = (items_width_px - bottom_start).max(0.0);
         children.push(crate::Box(
             Modifier::new()
                 .fill_max_height()
-                .width(Dp(remaining as f32 * item_width_dp)),
+                .width(Dp(Px(remaining_px).to_dp().0.max(0.0))),
         ));
     }
 
@@ -1207,19 +1321,42 @@ where
         let st = state.clone();
         Rc::new(move |conn| st.set_nested_scroll_parent(conn))
     };
-    View::new(0, ViewKind::Box)
-        .modifier(modifier.horizontal_scroll(ScrollAxisBinding {
-            on_scroll,
-            set_viewport_main: Some(set_viewport_w),
-            set_content_main: Some(set_content_w),
-            get_offset_main: Some(get_scroll),
-            set_offset_main: Some(set_scroll),
-            reversed: false,
-            show_scrollbar: user_scroll_enabled,
-            tick: tick_scroll,
-            set_nested_scroll_parent: Some(set_nested_scroll_parent),
-        }))
-        .with_children(vec![content])
+    let binding = ScrollAxisBinding {
+        on_scroll,
+        set_viewport_main: Some(set_viewport_w),
+        set_content_main: Some(set_content_w),
+        get_offset_main: Some(get_scroll),
+        set_offset_main: Some(set_scroll),
+        reversed: false,
+        show_scrollbar: user_scroll_enabled,
+        tick: tick_scroll,
+        set_nested_scroll_parent: Some(set_nested_scroll_parent),
+    };
+    let sticky_pinned = sticky_active.and_then(|vi| {
+        let data_i = to_data_idx(vi);
+        let item = items.get(data_i)?.clone();
+        Some(
+            crate::Box(
+                Modifier::new()
+                    .absolute()
+                    .offset(Some(Dp::ZERO), None, None, None)
+                    .fill_max_height()
+                    .width(Dp(item_width_dp)),
+            )
+            .child(item_builder(item, data_i)),
+        )
+    });
+    match sticky_pinned {
+        Some(pinned) => {
+            let scroll_view = View::new(0, ViewKind::Box)
+                .modifier(Modifier::new().fill_max_size().horizontal_scroll(binding))
+                .with_children(vec![content]);
+            crate::ZStack(modifier).child(scroll_view).child(pinned)
+        }
+        None => View::new(0, ViewKind::Box)
+            .modifier(modifier.horizontal_scroll(binding))
+            .with_children(vec![content]),
+    }
 }
 
 #[derive(Clone, Copy)]

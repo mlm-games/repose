@@ -469,3 +469,82 @@ mod tests {
         assert_eq!(state.selected_field.get(), TimePickerField::Minute);
     }
 }
+
+#[derive(Clone, Debug)]
+pub struct TimeInputConfig {
+    pub modifier: Modifier,
+    pub hour_label: String,
+    pub minute_label: String,
+}
+
+impl Default for TimeInputConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            hour_label: "Hour".into(),
+            minute_label: "Minute".into(),
+        }
+    }
+}
+
+pub fn TimeInput(state: Rc<TimePickerState>, config: TimeInputConfig) -> View {
+    let hour_text = format!("{:02}", state.hour.get().min(23));
+    let minute_text = format!("{:02}", state.minute.get().min(59));
+    let is_am = state.is_am.get();
+    let st_hour = state.clone();
+    let st_minute = state.clone();
+    let st_period = state.clone();
+    Row(config.modifier.align_items(AlignItems::CENTER)).child((
+        OutlinedTextField(
+            Modifier::new().width(Dp(96.0)),
+            hour_text,
+            move |v| {
+                if let Ok(h) = v.trim().parse::<u32>() {
+                    st_hour.set_hour(h.min(23));
+                }
+            },
+            OutlinedTextFieldConfig {
+                label: Some(config.hour_label.clone()),
+                single_line: true,
+                ..Default::default()
+            },
+        ),
+        Text(":").size(theme().typography.headline_small),
+        OutlinedTextField(
+            Modifier::new().width(Dp(96.0)),
+            minute_text,
+            move |v| {
+                if let Ok(m) = v.trim().parse::<u32>() {
+                    st_minute.set_minute(m.min(59));
+                }
+            },
+            OutlinedTextFieldConfig {
+                label: Some(config.minute_label.clone()),
+                single_line: true,
+                ..Default::default()
+            },
+        ),
+        Spacer(),
+        TextButton(
+            Modifier::new(),
+            {
+                let st_period = st_period.clone();
+                move || st_period.is_am.set_neq(true)
+            },
+            ButtonConfig {
+                enabled: !is_am,
+                ..Default::default()
+            },
+            || Text("AM").single_line(),
+        ),
+        TextButton(
+            Modifier::new(),
+            move || st_period.is_am.set_neq(false),
+            ButtonConfig {
+                enabled: is_am,
+                ..Default::default()
+            },
+            || Text("PM").single_line(),
+        ),
+    ))
+}

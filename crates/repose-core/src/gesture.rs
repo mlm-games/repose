@@ -121,6 +121,16 @@ impl<T: Clone + PartialEq + 'static> SwipeableState<T> {
         })
     }
 
+    /// All registered `(offset, value)` anchors in order.
+    pub fn anchors(&self) -> Vec<(f32, T)> {
+        self.anchors.iter().cloned().collect()
+    }
+
+    /// Offset registered for an anchor value, if present.
+    pub fn anchor_offset(&self, value: &T) -> Option<f32> {
+        self.anchors.iter().find(|(_, v)| v == value).map(|(o, _)| *o)
+    }
+
     /// Snap to an absolute offset instantly (used during active drag).
     pub fn snap_to(&self, off: f32) {
         let clamped = self.clamp_offset(off);
@@ -273,6 +283,220 @@ impl<T: Clone + PartialEq + 'static> SwipeableState<T> {
     }
 }
 
+pub struct DraggableConfig {
+    pub orientation: Option<DragOrientation>,
+    pub enabled: bool,
+    pub reverse_direction: bool,
+    pub start_drag_immediately: bool,
+    pub slop_px: f32,
+}
+
+impl Default for DraggableConfig {
+    fn default() -> Self {
+        Self {
+            orientation: None,
+            enabled: true,
+            reverse_direction: false,
+            start_drag_immediately: false,
+            slop_px: 18.0,
+        }
+    }
+}
+
+impl DragOrientation {
+    pub fn horizontal() -> DraggableConfig {
+        DraggableConfig {
+            orientation: Some(DragOrientation::Horizontal),
+            ..Default::default()
+        }
+    }
+
+    pub fn vertical() -> DraggableConfig {
+        DraggableConfig {
+            orientation: Some(DragOrientation::Vertical),
+            ..Default::default()
+        }
+    }
+}
+
+pub struct TransformableState {
+    on_transform: Rc<dyn Fn(f32, crate::Vec2, f32)>,
+    enabled: Cell<bool>,
+    lock_rotation_on_zoom_pan: Cell<bool>,
+    last_pinch: Cell<Option<Instant>>,
+}
+
+impl TransformableState {
+    pub fn new(on_transform: impl Fn(f32, crate::Vec2, f32) + 'static) -> Self {
+        Self {
+            on_transform: Rc::new(on_transform),
+            enabled: Cell::new(true),
+            lock_rotation_on_zoom_pan: Cell::new(false),
+            last_pinch: Cell::new(None),
+        }
+    }
+
+    pub fn set_enabled(&self, enabled: bool) {
+        self.enabled.set(enabled);
+    }
+
+    pub fn set_lock_rotation_on_zoom_pan(&self, lock: bool) {
+        self.lock_rotation_on_zoom_pan.set(lock);
+    }
+
+    pub fn handle_gesture(&self, gesture: &crate::shortcuts::Gesture) -> bool {
+        if !self.enabled.get() {
+            return false;
+        }
+        match gesture {
+            crate::shortcuts::Gesture::PinchWithCenter { delta_scale, .. } => {
+                self.last_pinch.set(Some(Instant::now()));
+                (self.on_transform)(*delta_scale, crate::Vec2::ZERO, 0.0);
+                request_frame();
+                true
+            }
+            crate::shortcuts::Gesture::Rotate { delta_rotation, .. } => {
+                if self.lock_rotation_on_zoom_pan.get()
+                    && let Some(t) = self.last_pinch.get()
+                    && t.elapsed().as_millis() < 120
+                {
+                    return true;
+                }
+                (self.on_transform)(1.0, crate::Vec2::ZERO, *delta_rotation);
+                request_frame();
+                true
+            }
+            crate::shortcuts::Gesture::Pan { delta, .. } => {
+                (self.on_transform)(1.0, *delta, 0.0);
+                request_frame();
+                true
+            }
+            _ => false,
+        }
+    }
+}
+
+impl Clone for TransformableState {
+    fn clone(&self) -> Self {
+        Self {
+            on_transform: self.on_transform.clone(),
+            enabled: Cell::new(self.enabled.get()),
+            lock_rotation_on_zoom_pan: Cell::new(self.lock_rotation_on_zoom_pan.get()),
+            last_pinch: Cell::new(self.last_pinch.get()),
+        }
+    }
+}
+
+pub struct AnchoredDraggableState<T: Clone + PartialEq + 'static> {
+    inner: SwipeableState<T>,
+    config: SwipeableConfig,
+    confirm_value_change: Rc<RefCell<Option<Rc<dyn Fn(T) -> bool>>>>,
+    target: Rc<RefCell<Option<T>>>,
+}
+
+impl<T: Clone + PartialEq + 'static> AnchoredDraggableState<T> {
+    pub fn new(
+        anchors: Vec<(f32, T)>,
+        config: SwipeableConfig,
+        confirm_value_change: Option<Rc<dyn Fn(T) -> bool>>,
+    ) -> Self {
+        let target = anchors.first().map(|(_, v)| v.clone());
+        Self {
+            inner: SwipeableState::new(anchors, config.clone()),
+            config,
+            confirm_value_change: Rc::new(RefCell::new(confirm_value_change)),
+            target: Rc::new(RefCell::new(target)),
+        }
+    }
+
+    pub fn update_anchors(&mut self, anchors: Vec<(f32, T)>) {
+        let current = self.inner.offset();
+        self.inner = SwipeableState::new(anchors, self.config.clone());
+        self.inner.snap_to(current);
+    }
+
+    pub fn anchors(&self) -> Vec<(f32, T)> {
+        self.inner.anchors()
+    }
+
+    pub fn anchor_offset_for(&self, value: &T) -> Option<f32> {
+        self.inner.anchor_offset(value)
+    }
+
+
+
+    pub fn offset(&self) -> f32 {
+        self.inner.offset()
+    }
+
+    pub fn current_value(&self) -> T {
+        self.inner.current_value()
+    }
+
+    pub fn target_value(&self) -> Option<T> {
+        self.target.borrow().clone()
+    }
+
+    pub fn is_animating(&self) -> bool {
+        self.inner.is_animating()
+    }
+
+    pub fn snap_to(&self, value: &T) {
+        if self.confirm_value_change.borrow().as_ref().is_some_and(|f| !f(value.clone())) {
+            return;
+        }
+        if let Some(offset) = self.inner.anchor_offset(value) {
+            *self.target.borrow_mut() = Some(value.clone());
+            self.inner.snap_to(offset);
+        }
+    }
+
+    pub fn animate_to(&self, value: &T) {
+        if self.confirm_value_change.borrow().as_ref().is_some_and(|f| !f(value.clone())) {
+            return;
+        }
+        *self.target.borrow_mut() = Some(value.clone());
+        self.inner.animate_to(value);
+    }
+
+    pub fn on_pointer_down(&self, axis_pos: f32) {
+        self.inner.on_pointer_down(axis_pos);
+    }
+
+    pub fn on_pointer_move(&self, axis_pos: f32) {
+        self.inner.on_pointer_move(axis_pos);
+    }
+
+    pub fn on_pointer_up(&self) {
+        let candidate = self.inner.current_value();
+        if self
+            .confirm_value_change
+            .borrow()
+            .as_ref()
+            .is_some_and(|f| !f(candidate.clone()))
+        {
+            let settled = self.target.borrow().clone();
+            if let Some(settled) = settled {
+                self.inner.animate_to(&settled);
+            }
+            return;
+        }
+        *self.target.borrow_mut() = Some(candidate);
+        self.inner.on_pointer_up();
+    }
+}
+
+impl<T: Clone + PartialEq + 'static> Clone for AnchoredDraggableState<T> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            config: self.config.clone(),
+            confirm_value_change: self.confirm_value_change.clone(),
+            target: self.target.clone(),
+        }
+    }
+}
+
 impl<T: Clone + PartialEq + 'static> Clone for SwipeableState<T> {
     fn clone(&self) -> Self {
         Self {
@@ -285,5 +509,85 @@ impl<T: Clone + PartialEq + 'static> Clone for SwipeableState<T> {
             last_move_pos: self.last_move_pos.clone(),
             release_velocity: self.release_velocity.clone(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime::HitRegion;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    #[test]
+    fn test_transformable_forwards_deltas() {
+        let seen = Rc::new(RefCell::new(Vec::new()));
+        let seen_pan = seen.clone();
+        let state = TransformableState::new(move |zoom, pan, rotation| {
+            seen_pan.borrow_mut().push((zoom, pan.x, rotation));
+        });
+        assert!(state.handle_gesture(&crate::shortcuts::Gesture::PinchWithCenter {
+            delta_scale: 2.0,
+            center: crate::Vec2 { x: 1.0, y: 1.0 },
+        }));
+        assert!(state.handle_gesture(&crate::shortcuts::Gesture::Pan {
+            delta: crate::Vec2 { x: 3.0, y: 4.0 },
+            center: crate::Vec2 { x: 0.0, y: 0.0 },
+        }));
+        assert!(!state.handle_gesture(&crate::shortcuts::Gesture::SwipeLeft));
+        assert_eq!(seen.borrow().len(), 2);
+        assert_eq!(seen.borrow()[0].0, 2.0);
+        assert_eq!(seen.borrow()[1].1, 3.0);
+    }
+
+    #[test]
+    fn test_anchored_draggable_vetoes() {
+        let state = AnchoredDraggableState::new(
+            vec![(0.0, "a"), (100.0, "b")],
+            SwipeableConfig::default(),
+            Some(Rc::new(|v: &'static str| v != "b")),
+        );
+        state.animate_to(&"b");
+        assert_eq!(state.target_value(), Some("a"));
+        state.animate_to(&"a");
+        assert_eq!(state.target_value(), Some("a"));
+        assert_eq!(state.anchors().len(), 2);
+        assert_eq!(state.anchor_offset_for(&"b"), Some(100.0));
+    }
+
+    #[test]
+    fn test_route_action_to_point_walks_up() {
+        let fired = Rc::new(RefCell::new(Vec::new()));
+        let fired_child = fired.clone();
+        let mut child = HitRegion::default();
+        child.id = 2;
+        child.parent = Some(1);
+        child.rect = crate::Rect { x: 0.0, y: 0.0, w: 10.0, h: 10.0 };
+        child.z_index = 2.0;
+        child.on_action = Some(Rc::new(move |_| {
+            fired_child.borrow_mut().push(2u64);
+            false
+        }));
+        let mut parent = HitRegion::default();
+        parent.id = 1;
+        parent.rect = crate::Rect { x: 0.0, y: 0.0, w: 100.0, h: 100.0 };
+        parent.z_index = 1.0;
+        parent.on_action = Some(Rc::new(move |_| true));
+        let hits = vec![parent, child];
+        let action = crate::shortcuts::Action::Gesture(crate::shortcuts::Gesture::PinchWithCenter {
+            delta_scale: 1.0,
+            center: crate::Vec2 { x: 5.0, y: 5.0 },
+        });
+        assert!(crate::runtime::route_action_to_point(
+            &hits,
+            &action,
+            crate::Vec2 { x: 5.0, y: 5.0 }
+        ));
+        assert_eq!(*fired.borrow(), vec![2u64]);
+        assert!(!crate::runtime::route_action_to_point(
+            &hits,
+            &action,
+            crate::Vec2 { x: 500.0, y: 500.0 }
+        ));
     }
 }

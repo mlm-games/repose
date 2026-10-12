@@ -271,3 +271,17 @@ pub fn NavigationRail(
         ),
     ))
 }
+
+pub fn WideNavigationRail(
+    selected_index: usize,
+    items: Vec<NavRailItem>,
+    header: Option<View>,
+    fab: Option<View>,
+    config: NavigationRailConfig,
+) -> View {
+    let mut config = config;
+    if config.width.0 < 120.0 {
+        config.width = Dp(120.0);
+    }
+    NavigationRail(selected_index, items, header, fab, config)
+}

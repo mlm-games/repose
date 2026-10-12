@@ -311,3 +311,134 @@ pub fn OutlinedIconButton(
         true,
     )
 }
+
+fn toggle_semantics(view: View, checked: bool, enabled: bool, label: Option<String>) -> View {
+    let mut semantics = Semantics {
+        role: Role::Checkbox,
+        enabled,
+        checked: Some(checked),
+        ..Default::default()
+    };
+    if let Some(label) = label {
+        semantics.label = Some(label);
+    }
+    view.semantics(semantics)
+}
+
+pub fn IconToggleButton(
+    checked: bool,
+    on_checked_change: impl Fn(bool) + 'static,
+    icon: View,
+    label: Option<String>,
+    config: IconButtonConfig,
+) -> View {
+    let th = theme();
+    let mut config = config;
+    if checked {
+        config.colors = IconButtonColors {
+            container_color: th.secondary_container,
+            content_color: th.on_secondary_container,
+            disabled_container_color: th.on_surface.with_alpha_f32(0.12),
+            disabled_content_color: th.on_surface.with_alpha_f32(0.38),
+        };
+    }
+    let enabled = config.enabled;
+    toggle_semantics(
+        IconButton(icon, move || on_checked_change(!checked), config),
+        checked,
+        enabled,
+        label,
+    )
+}
+
+pub fn FilledIconToggleButton(
+    checked: bool,
+    on_checked_change: impl Fn(bool) + 'static,
+    icon: View,
+    label: Option<String>,
+    config: IconButtonConfig,
+) -> View {
+    let th = theme();
+    let mut config = config;
+    if checked {
+        config.colors = IconButtonColors {
+            container_color: th.primary,
+            content_color: th.on_primary,
+            disabled_container_color: th.on_surface.with_alpha_f32(0.12),
+            disabled_content_color: th.on_surface.with_alpha_f32(0.38),
+        };
+    } else {
+        config.colors = IconButtonColors {
+            container_color: th.surface_container_highest,
+            content_color: th.primary,
+            disabled_container_color: th.on_surface.with_alpha_f32(0.12),
+            disabled_content_color: th.on_surface.with_alpha_f32(0.38),
+        };
+    }
+    let enabled = config.enabled;
+    toggle_semantics(
+        FilledIconButton(icon, move || on_checked_change(!checked), config),
+        checked,
+        enabled,
+        label,
+    )
+}
+
+pub fn FilledTonalIconToggleButton(
+    checked: bool,
+    on_checked_change: impl Fn(bool) + 'static,
+    icon: View,
+    label: Option<String>,
+    config: IconButtonConfig,
+) -> View {
+    let th = theme();
+    let mut config = config;
+    if checked {
+        config.colors = IconButtonColors {
+            container_color: th.secondary_container,
+            content_color: th.on_secondary_container,
+            disabled_container_color: th.on_surface.with_alpha_f32(0.12),
+            disabled_content_color: th.on_surface.with_alpha_f32(0.38),
+        };
+    } else {
+        config.colors = IconButtonColors {
+            container_color: th.surface_container_highest,
+            content_color: th.on_surface_variant,
+            disabled_container_color: th.on_surface.with_alpha_f32(0.12),
+            disabled_content_color: th.on_surface.with_alpha_f32(0.38),
+        };
+    }
+    let enabled = config.enabled;
+    toggle_semantics(
+        FilledTonalIconButton(icon, move || on_checked_change(!checked), config),
+        checked,
+        enabled,
+        label,
+    )
+}
+
+pub fn OutlinedIconToggleButton(
+    checked: bool,
+    on_checked_change: impl Fn(bool) + 'static,
+    icon: View,
+    label: Option<String>,
+    config: IconButtonConfig,
+) -> View {
+    let th = theme();
+    let mut config = config;
+    if checked {
+        config.colors = IconButtonColors {
+            container_color: th.secondary_container,
+            content_color: th.on_secondary_container,
+            disabled_container_color: th.on_surface.with_alpha_f32(0.12),
+            disabled_content_color: th.on_surface.with_alpha_f32(0.38),
+        };
+    }
+    let enabled = config.enabled;
+    toggle_semantics(
+        OutlinedIconButton(icon, move || on_checked_change(!checked), config),
+        checked,
+        enabled,
+        label,
+    )
+}

@@ -331,6 +331,7 @@ pub struct SnackbarRequest {
     pub message: String,
     pub action: Option<SnackbarAction>,
     pub duration_ms: u32,
+    pub on_finished: Option<Rc<dyn Fn()>>,
     /// Called on every frame with whether the snackbar is in its
     /// exit-animation phase, so the view can animate out.
     pub builder: Rc<dyn Fn(bool) -> View>,
@@ -356,6 +357,7 @@ struct ActiveSnackbar {
     message: String,
     action: Option<SnackbarAction>,
     phase: SnackbarPhase,
+    on_finished: Option<Rc<dyn Fn()>>,
 }
 
 impl ActiveSnackbar {
@@ -471,7 +473,11 @@ impl SnackbarController {
                 }
             }
         }
-        drop(finished);
+        if let Some(done) = finished
+            && let Some(cb) = done.on_finished
+        {
+            cb();
+        }
         self.activate_next_if_needed();
     }
 
@@ -533,10 +539,12 @@ impl SnackbarController {
         });
         let guard = OverlayGuard::show(&self.inner.overlay, wrapped_builder, 900.0, true);
         let deadline = Instant::now() + Duration::from_millis(u64::from(req.duration_ms.max(1)));
+        let on_finished = req.on_finished.clone();
         self.inner.state.borrow_mut().active = Some(ActiveSnackbar {
             guard,
             message: req.message,
             action,
+            on_finished,
             phase: SnackbarPhase::Showing { deadline },
         });
     }
@@ -552,6 +560,7 @@ mod tests {
             message: "hi".into(),
             action: None,
             duration_ms: 60_000,
+            on_finished: None,
             builder: Rc::new(|_| View::new(0, ViewKind::OverlayHost)),
         }
     }

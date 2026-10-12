@@ -122,3 +122,33 @@ pub fn TwoPaneTopBar(title: &str, leading: Option<View>, trailing: Option<View>)
         trailing,
     ))
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SupportingPaneValue {
+    Main,
+    Supporting,
+}
+
+pub fn SupportingPaneScaffold<F1, F2>(
+    directive: PaneScaffoldDirective,
+    value: SupportingPaneValue,
+    main: F1,
+    supporting: F2,
+) -> View
+where
+    F1: Fn() -> View + 'static,
+    F2: Fn() -> View + 'static,
+{
+    if directive.max_horizontal_partitions >= 2 {
+        let spacing = directive.horizontal_part_spacing;
+        Row(Modifier::new().fill_max_size().gap(spacing)).child((
+            Box(Modifier::new().flex_grow(1.0).fill_max_height()).child(main()),
+            Box(Modifier::new().flex_grow(1.0).fill_max_height()).child(supporting()),
+        ))
+    } else {
+        match value {
+            SupportingPaneValue::Main => main(),
+            SupportingPaneValue::Supporting => supporting(),
+        }
+    }
+}

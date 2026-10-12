@@ -1531,3 +1531,15 @@ impl CarouselDefaults {
     pub const MAX_SMALL_ITEM_SIZE: Dp = Dp(56.0);
     pub const ANCHOR_SIZE: Dp = Dp(10.0);
 }
+
+pub struct FloatingToolbarDefaults;
+
+impl FloatingToolbarDefaults {
+    pub const SHAPE_RADIUS: Dp = Dp(28.0);
+    pub fn container_color() -> Color {
+        theme().surface_container_high
+    }
+    pub fn content_color() -> Color {
+        theme().on_surface_variant
+    }
+}

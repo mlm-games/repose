@@ -241,3 +241,13 @@ pub struct NavItem {
     pub enabled: bool,
     pub interaction_source: Option<MutableInteractionSource>,
 }
+
+pub fn ShortNavigationBar(
+    selected_index: usize,
+    items: Vec<NavItem>,
+    config: NavigationBarConfig,
+) -> View {
+    let mut config = config;
+    config.height = Dp(64.0);
+    NavigationBar(selected_index, items, config)
+}

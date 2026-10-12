@@ -538,11 +538,26 @@ pub fn Slider(
                 true
             }
         })
+        .on_set_progress({
+            let oc = oc.clone();
+            let en = is_enabled;
+            move |v: f32| {
+                if en {
+                    (oc)(snap_step(v, min, max, step));
+                }
+            }
+        })
         .then(config.modifier))
     .semantics(Semantics {
         role: Role::Slider,
         enabled: is_enabled,
         value: Some(format!("{value}")),
+        progress: Some(ProgressRangeInfo {
+            current: value,
+            min,
+            max,
+            step,
+        }),
         ..Default::default()
     })
 }
@@ -965,11 +980,26 @@ pub fn RangeSlider(
                 true
             }
         })
+        .on_set_progress({
+            let oc = oc.clone();
+            let en = is_enabled;
+            move |v: f32| {
+                if en {
+                    (oc)(snap_step(v, min, max, step).min(end), end);
+                }
+            }
+        })
         .then(config.modifier))
     .semantics(Semantics {
         role: Role::Slider,
         enabled: is_enabled,
         value: Some(format!("{start}..{end}")),
+        progress: Some(ProgressRangeInfo {
+            current: start,
+            min,
+            max,
+            step,
+        }),
         ..Default::default()
     })
 }

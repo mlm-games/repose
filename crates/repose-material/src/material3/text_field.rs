@@ -1300,3 +1300,48 @@ mod tests {
         );
     }
 }
+
+pub fn SecureTextField(
+    modifier: Modifier,
+    value: String,
+    on_value_change: impl Fn(String) + 'static,
+    config: TextFieldConfig,
+) -> View {
+    let mut config = config;
+    config.single_line = true;
+    config.sensitive = true;
+    if config.visual_transformation.is_none() {
+        config.visual_transformation = Some(Rc::new(PasswordVisualTransformation::default()));
+    }
+    TextField(modifier, value, on_value_change, config)
+}
+
+pub fn OutlinedSecureTextField(
+    modifier: Modifier,
+    value: String,
+    on_value_change: impl Fn(String) + 'static,
+    config: OutlinedTextFieldConfig,
+) -> View {
+    let mut config = config;
+    config.single_line = true;
+    config.sensitive = true;
+    if config.visual_transformation.is_none() {
+        config.visual_transformation = Some(Rc::new(PasswordVisualTransformation::default()));
+    }
+    OutlinedTextField(modifier, value, on_value_change, config)
+}
+
+pub fn OutlinedSecureTextFieldState(
+    modifier: Modifier,
+    state: Rc<RefCell<TextFieldState>>,
+    on_value_change: impl Fn(String) + 'static,
+    config: OutlinedTextFieldConfig,
+) -> View {
+    let mut config = config;
+    config.single_line = true;
+    config.sensitive = true;
+    if config.visual_transformation.is_none() {
+        config.visual_transformation = Some(Rc::new(PasswordVisualTransformation::default()));
+    }
+    OutlinedTextFieldState(modifier, state, on_value_change, config)
+}

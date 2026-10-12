@@ -989,4 +989,28 @@ mod keyed_slot_liveness {
         }
         assert!(has_key(key), "a consistently read slot must survive");
     }
+
+    #[test]
+    fn test_focus_request_acceptance_and_capture() {
+        use crate::runtime::{
+            CLEAR_FOCUS_MARKER, FocusManager, FocusRequester, drain_focus_requests, focus_capture,
+        };
+        let _ = drain_focus_requests();
+        let req = FocusRequester::new();
+        assert!(!req.try_request_focus());
+        FocusManager::set_requester_target(&req, 7);
+        assert!(req.try_request_focus());
+        assert_eq!(drain_focus_requests(), vec![7]);
+
+        assert!(req.capture_focus());
+        assert_eq!(focus_capture(), Some(7));
+        let other = FocusRequester::new();
+        FocusManager::set_requester_target(&other, 9);
+        assert!(!other.try_request_focus());
+        assert_eq!(drain_focus_requests(), vec![7]);
+        req.free_focus();
+        assert_eq!(focus_capture(), None);
+        assert!(other.try_request_focus());
+        assert_eq!(drain_focus_requests(), vec![CLEAR_FOCUS_MARKER, 9]);
+    }
 }

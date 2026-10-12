@@ -836,3 +836,60 @@ mod tests {
         scope.dispose();
     }
 }
+
+pub fn DragHandle(modifier: Modifier, color: Option<Color>) -> View {
+    let th = theme();
+    Box(Modifier::new()
+        .fill_max_width()
+        .justify_content(repose_core::JustifyContent::CENTER)
+        .padding_values(PaddingValues {
+            left: Dp::ZERO,
+            right: Dp::ZERO,
+            top: Dp(22.0),
+            bottom: Dp::ZERO,
+        })
+        .then(modifier))
+    .child(Box(Modifier::new()
+        .width(Dp(32.0))
+        .height(Dp(4.0))
+        .background(color.unwrap_or(th.on_surface_variant.with_alpha_f32(0.4)))
+        .clip_rounded(Dp(2.0))
+        .hidden_from_accessibility()))
+}
+
+pub fn Scrim(on_click: impl Fn() + 'static, color: Color, modifier: Modifier) -> View {
+    Box(Modifier::new()
+        .fill_max_size()
+        .background(color)
+        .clickable()
+        .on_click(on_click)
+        .then(modifier))
+}
+
+pub fn BottomSheetScaffold(
+    sheet_state: Rc<SheetState>,
+    sheet_content: View,
+    content: View,
+    modifier: Modifier,
+    config: BottomSheetConfig,
+) -> View {
+    let peek = Dp(
+        sheet_state
+            .peek_height
+            .get()
+            .max(config.peek_height.0),
+    );
+    let mut sheet_config = config;
+    sheet_config.peek_height = peek;
+    let state = sheet_state.clone();
+    Column(modifier.fill_max_size()).child((
+        Box(Modifier::new().flex_grow(1.0).fill_max_width()).child(content),
+        BottomSheet(
+            sheet_state.is_visible(),
+            move || state.dismiss(),
+            Modifier::new(),
+            sheet_content,
+            sheet_config,
+        ),
+    ))
+}

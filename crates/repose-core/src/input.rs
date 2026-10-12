@@ -489,6 +489,29 @@ pub enum Key {
     Space,
     ShiftLeft,
     ShiftRight,
+    ControlLeft,
+    ControlRight,
+    AltLeft,
+    AltRight,
+    MetaLeft,
+    MetaRight,
+    CapsLock,
+    NumLock,
+    ScrollLock,
+    Pause,
+    PrintScreen,
+    ContextMenu,
+    Numpad(char),
+    NumpadEnter,
+    MediaPlay,
+    MediaPause,
+    MediaPlayPause,
+    MediaStop,
+    MediaNext,
+    MediaPrevious,
+    VolumeUp,
+    VolumeDown,
+    VolumeMute,
     F(u8), // F1-F12
     Unknown,
 }
@@ -515,6 +538,21 @@ pub struct KeyEvent {
     pub utf16_code_point: u16,
     /// Physical key position, layout-independent. `None` for synthetic events.
     pub physical: Option<PhysicalKey>,
+}
+
+impl KeyEvent {
+    pub fn is_ctrl_pressed(&self) -> bool {
+        self.modifiers.ctrl
+    }
+    pub fn is_alt_pressed(&self) -> bool {
+        self.modifiers.alt
+    }
+    pub fn is_shift_pressed(&self) -> bool {
+        self.modifiers.shift
+    }
+    pub fn is_meta_pressed(&self) -> bool {
+        self.modifiers.meta
+    }
 }
 
 #[derive(Clone, Debug)]

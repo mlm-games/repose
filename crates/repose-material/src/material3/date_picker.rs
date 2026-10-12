@@ -640,4 +640,409 @@ mod tests {
         state.year.set(2023);
         assert_eq!(state.day.get(), 28);
     }
+
+    #[test]
+    fn date_range_selection_orders_and_restarts() {
+        let state = DateRangePickerState::new();
+        assert_eq!(state.range(), None);
+        state.select((2024, 5, 10));
+        assert_eq!(state.range(), None);
+        state.select((2024, 5, 3));
+        assert_eq!(state.range(), None);
+        assert_eq!(state.start.get(), Some((2024, 5, 3)));
+        state.select((2024, 5, 15));
+        assert_eq!(state.range(), Some(((2024, 5, 3), (2024, 5, 15))));
+        state.select((2024, 6, 1));
+        assert_eq!(state.range(), None);
+        assert_eq!(state.start.get(), Some((2024, 6, 1)));
+    }
+}
+
+pub type CalendarDate = (i32, u32, u32);
+
+pub struct DateRangePickerState {
+    pub start: Signal<Option<CalendarDate>>,
+    pub end: Signal<Option<CalendarDate>>,
+    pub selecting_end: Signal<bool>,
+    pub year: Signal<i32>,
+    pub month: Signal<u32>,
+    id: u64,
+}
+
+impl DateRangePickerState {
+    pub fn new() -> Self {
+        let (y, m, _) = today_date();
+        Self {
+            start: signal(None),
+            end: signal(None),
+            selecting_end: signal(false),
+            year: signal(y),
+            month: signal(m),
+            id: unique_component_id(),
+        }
+    }
+
+    pub fn key(&self, suffix: &str) -> String {
+        format!("date-range-picker:{}_{}", self.id, suffix)
+    }
+
+    pub fn range(&self) -> Option<(CalendarDate, CalendarDate)> {
+        match (self.start.get(), self.end.get()) {
+            (Some(s), Some(e)) if s <= e => Some((s, e)),
+            (Some(s), Some(e)) => Some((e, s)),
+            _ => None,
+        }
+    }
+
+    pub fn select(&self, date: CalendarDate) {
+        if !self.selecting_end.get() || self.start.get().is_none() {
+            self.start.set(Some(date));
+            self.end.set(None);
+            self.selecting_end.set(true);
+        } else if self.start.get().is_some_and(|s| date < s) {
+            self.start.set(Some(date));
+            self.end.set(None);
+        } else {
+            self.end.set(Some(date));
+            self.selecting_end.set(false);
+        }
+    }
+
+    pub fn clear(&self) {
+        self.start.set(None);
+        self.end.set(None);
+        self.selecting_end.set(false);
+    }
+}
+
+impl Default for DateRangePickerState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Clone)]
+pub struct DateRangePickerConfig {
+    pub modifier: Modifier,
+    pub colors: DatePickerColors,
+    pub confirm_label: String,
+    pub dismiss_label: String,
+}
+
+impl Default for DateRangePickerConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            colors: DatePickerColors::default(),
+            confirm_label: DatePickerDefaults::CONFIRM_LABEL.to_string(),
+            dismiss_label: DatePickerDefaults::DISMISS_LABEL.to_string(),
+        }
+    }
+}
+
+pub fn DateRangePicker(
+    state: Rc<DateRangePickerState>,
+    on_confirm: Rc<dyn Fn(CalendarDate, CalendarDate)>,
+    on_dismiss: Rc<dyn Fn()>,
+    config: DateRangePickerConfig,
+) -> View {
+    let th = theme();
+    let instance_key = state.key("navigation");
+    let year = state.year.get();
+    let month = state.month.get().clamp(1, 12);
+    let dim = days_in_month(year, month);
+    let start_dow = first_day_of_month(year, month);
+    let today = today_date();
+    let (start, end) = (state.start.get(), state.end.get());
+    let (lo, hi) = match (start, end) {
+        (Some(s), Some(e)) if s <= e => (Some(s), Some(e)),
+        (Some(s), Some(e)) => (Some(e), Some(s)),
+        (s, None) => (s, s),
+        (None, _) => (None, None),
+    };
+
+    let prev_month = {
+        let s = state.clone();
+        move || {
+            let (y, m) = (s.year.get(), s.month.get().clamp(1, 12));
+            let (next_y, next_m) = if m == 1 { (y.saturating_sub(1), 12) } else { (y, m - 1) };
+            s.year.set_neq(next_y);
+            s.month.set_neq(next_m);
+        }
+    };
+    let next_month = {
+        let s = state.clone();
+        move || {
+            let (y, m) = (s.year.get(), s.month.get().clamp(1, 12));
+            let (next_y, next_m) = if m == 12 { (y.saturating_add(1), 1) } else { (y, m + 1) };
+            s.year.set_neq(next_y);
+            s.month.set_neq(next_m);
+        }
+    };
+
+    let fmt = |d: CalendarDate| format!("{:04}-{:02}-{:02}", d.0, d.1, d.2);
+    let value = match (lo, hi) {
+        (Some(l), Some(h)) => format!("{} – {}", fmt(l), fmt(h)),
+        _ => "No range selected".into(),
+    };
+    let dismiss_label = config.dismiss_label.clone();
+    let confirm_label = config.confirm_label.clone();
+
+    Column(
+        config
+            .modifier
+            .background(config.colors.container_color)
+            .padding(DatePickerDefaults::HORIZONTAL_PADDING)
+            .semantics(Semantics {
+                role: Role::Container,
+                label: Some("Date range picker".into()),
+                value: Some(value),
+                ..Default::default()
+            }),
+    )
+    .child((
+        Row(Modifier::new()
+            .fill_max_width()
+            .align_items(AlignItems::CENTER))
+        .child((
+            navigation_button(
+                &instance_key,
+                "Previous month",
+                "◀",
+                config.colors.navigation_color,
+                prev_month,
+            ),
+            Spacer(),
+            Text(format!("{} {}", MONTH_NAMES[(month - 1) as usize], year))
+                .size(th.typography.title_medium)
+                .color(config.colors.header_color),
+            Spacer(),
+            navigation_button(
+                &instance_key,
+                "Next month",
+                "▶",
+                config.colors.navigation_color,
+                next_month,
+            ),
+        )),
+        Box(Modifier::new().fill_max_width().height(Dp(12.0))),
+        Column(Modifier::new()).child({
+            let mut rows: Vec<View> = Vec::new();
+            rows.push(
+                Row(Modifier::new()).with_children(
+                    DOW_HEADERS
+                        .iter()
+                        .map(|d| {
+                            Box(Modifier::new()
+                                .width(DatePickerDefaults::DATE_CELL_SIZE)
+                                .height(DatePickerDefaults::DATE_CELL_SIZE)
+                                .align_items(AlignItems::CENTER)
+                                .justify_content(JustifyContent::CENTER))
+                            .child(
+                                Text(d.to_string())
+                                    .size(th.typography.label_small)
+                                    .color(config.colors.weekday_color),
+                            )
+                        })
+                        .collect(),
+                ),
+            );
+            let total_cells = start_dow + dim;
+            let num_rows = total_cells.div_ceil(7).min(6);
+            for w in 0..num_rows {
+                let mut week: Vec<View> = Vec::new();
+                for d in 0..7 {
+                    let cell_idx = w * 7 + d;
+                    if cell_idx < start_dow {
+                        week.push(Box(Modifier::new()
+                            .width(DatePickerDefaults::DATE_CELL_SIZE)
+                            .height(DatePickerDefaults::DATE_CELL_SIZE)));
+                    } else {
+                        let day_num = (cell_idx - start_dow + 1) as i32;
+                        if day_num <= dim as i32 {
+                            let date = (year, month, day_num as u32);
+                            let is_endpoint =
+                                lo == Some(date) || hi == Some(date) && lo != hi;
+                            let in_range = match (lo, hi) {
+                                (Some(l), Some(h)) => date > l && date < h,
+                                _ => false,
+                            };
+                            let is_today = today == date;
+                            let s = state.clone();
+                            let day_color = if is_endpoint {
+                                config.colors.selected_day_color
+                            } else if is_today {
+                                config.colors.today_content_color
+                            } else {
+                                config.colors.day_color
+                            };
+                            week.push(
+                                Box(Modifier::new()
+                                    .width(DatePickerDefaults::DATE_CELL_SIZE)
+                                    .height(DatePickerDefaults::DATE_CELL_SIZE)
+                                    .background(if is_endpoint {
+                                        config.colors.selected_day_container_color
+                                    } else if in_range {
+                                        config
+                                            .colors
+                                            .selected_day_container_color
+                                            .with_alpha_f32(0.35)
+                                    } else {
+                                        Color::TRANSPARENT
+                                    })
+                                    .clip_rounded(DatePickerDefaults::DATE_CELL_SIZE * 0.5)
+                                    .align_items(AlignItems::CENTER)
+                                    .justify_content(JustifyContent::CENTER)
+                                    .clickable()
+                                    .on_click(move || s.select(date))
+                                    .semantics(Semantics {
+                                        role: Role::Button,
+                                        label: Some(day_num.to_string()),
+                                        enabled: true,
+                                        selected: Some(is_endpoint || in_range),
+                                        value: Some(fmt(date)),
+                                        ..Default::default()
+                                    }))
+                                .child(
+                                    Text(day_num.to_string())
+                                        .size(th.typography.body_medium)
+                                        .color(day_color),
+                                ),
+                            );
+                        } else {
+                            week.push(Box(Modifier::new()
+                                .width(DatePickerDefaults::DATE_CELL_SIZE)
+                                .height(DatePickerDefaults::DATE_CELL_SIZE)));
+                        }
+                    }
+                }
+                rows.push(Row(Modifier::new()).with_children(week));
+            }
+            rows
+        }),
+        Box(Modifier::new().fill_max_width().height(Dp(12.0))),
+        Row(Modifier::new()
+            .fill_max_width()
+            .justify_content(JustifyContent::END)
+            .gap(Dp(8.0)))
+        .child((
+            TextButton(
+                Modifier::new(),
+                {
+                    let on_dismiss = on_dismiss.clone();
+                    move || (on_dismiss)()
+                },
+                ButtonConfig::default(),
+                move || Text(dismiss_label.clone()).size(Sp(14.0)),
+            ),
+            TextButton(
+                Modifier::new(),
+                {
+                    let on_confirm = on_confirm.clone();
+                    let state = state.clone();
+                    move || {
+                        if let Some((s, e)) = state.range() {
+                            on_confirm(s, e);
+                        }
+                    }
+                },
+                ButtonConfig::default(),
+                move || Text(confirm_label.clone()).size(Sp(14.0)),
+            ),
+        )),
+    ))
+}
+
+fn parse_calendar_date(text: &str) -> Option<CalendarDate> {
+    let mut parts = text.trim().split('-');
+    let (y, m, d) = (parts.next()?, parts.next()?, parts.next()?);
+    if parts.next().is_some() {
+        return None;
+    }
+    let (y, m, d) = (y.parse::<i32>().ok()?, m.parse::<u32>().ok()?, d.parse::<u32>().ok()?);
+    is_valid_date(y, m, d).then_some((y, m, d))
+}
+
+pub fn DateInput(
+    state: Rc<DatePickerState>,
+    modifier: Modifier,
+    label: Option<String>,
+) -> View {
+    let (y, m, d) = state.selected_date();
+    let text = format!("{y:04}-{m:02}-{d:02}");
+    let invalid = remember_state_with_key(state.key("input-error"), || false);
+    let invalid_get = || *invalid.borrow();
+    let mut config = OutlinedTextFieldConfig {
+        label,
+        single_line: true,
+        is_error: invalid_get(),
+        ..Default::default()
+    };
+    config.placeholder = Some("YYYY-MM-DD".into());
+    OutlinedTextField(
+        modifier,
+        text,
+        move |v| {
+            if v.trim().is_empty() {
+                *invalid.borrow_mut() = false;
+                return;
+            }
+            match parse_calendar_date(&v) {
+                Some((y, m, d)) => {
+                    *invalid.borrow_mut() = false;
+                    state.set_date(y, m, d);
+                }
+                None => *invalid.borrow_mut() = true,
+            }
+        },
+        config,
+    )
+}
+
+pub fn DateRangeInput(
+    state: Rc<DateRangePickerState>,
+    modifier: Modifier,
+    start_label: Option<String>,
+    end_label: Option<String>,
+) -> View {
+    let fmt = |d: CalendarDate| format!("{:04}-{:02}-{:02}", d.0, d.1, d.2);
+    let start_text = state.start.get().map(&fmt).unwrap_or_default();
+    let end_text = state.end.get().map(&fmt).unwrap_or_default();
+    let st_start = state.clone();
+    let st_end = state.clone();
+    Row(modifier.align_items(AlignItems::CENTER).gap(Dp(8.0))).child((
+        OutlinedTextField(
+            Modifier::new().flex_grow(1.0),
+            start_text,
+            move |v| {
+                if let Some(date) = parse_calendar_date(&v) {
+                    st_start.start.set(Some(date));
+                    st_start.selecting_end.set(true);
+                }
+            },
+            OutlinedTextFieldConfig {
+                label: start_label,
+                single_line: true,
+                placeholder: Some("YYYY-MM-DD".into()),
+                ..Default::default()
+            },
+        ),
+        Text("–").size(theme().typography.title_medium),
+        OutlinedTextField(
+            Modifier::new().flex_grow(1.0),
+            end_text,
+            move |v| {
+                if let Some(date) = parse_calendar_date(&v) {
+                    st_end.end.set(Some(date));
+                    st_end.selecting_end.set(false);
+                }
+            },
+            OutlinedTextFieldConfig {
+                label: end_label,
+                single_line: true,
+                placeholder: Some("YYYY-MM-DD".into()),
+                ..Default::default()
+            },
+        ),
+    ))
 }

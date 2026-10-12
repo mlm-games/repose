@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use repose_core::NestedScrollConnection;
 use repose_core::*;
-use repose_ui::{Box, Column, Row, ViewExt, ZStack};
+use repose_ui::{Box, Column, Row, Text, TextStyle, ViewExt, ZStack};
 
 use super::*;
 
@@ -358,4 +358,108 @@ pub fn CenterAlignedTopAppBar(
     config: TopAppBarConfig,
 ) -> View {
     top_app_bar_layout(title, subtitle, navigation_icon, actions, config, true)
+}
+
+fn flexible_app_bar(
+    title: String,
+    navigation_icon: Option<View>,
+    actions: Vec<View>,
+    config: TopAppBarConfig,
+    expanded_height: Dp,
+    expanded_title: Sp,
+    collapsed_title: Sp,
+) -> View {
+    let th = theme();
+    let fraction = config
+        .scroll_behavior
+        .as_ref()
+        .map(|sb| sb.collapsed_fraction())
+        .unwrap_or(config.scroll_fraction)
+        .clamp(0.0, 1.0);
+    let height = Dp(
+        expanded_height.0 + (TopAppBarDefaults::HEIGHT.0 - expanded_height.0) * fraction,
+    );
+    let mut config = config;
+    config.height = height;
+    let title_view = ZStack(Modifier::new().fill_max_width()).child((
+        Box(Modifier::new().alpha(1.0 - fraction)).child(
+            Text(title.clone())
+                .size(expanded_title)
+                .color(th.on_surface),
+        ),
+        Box(Modifier::new().alpha(fraction)).child(
+            Text(title)
+                .size(collapsed_title)
+                .color(th.on_surface),
+        ),
+    ));
+    top_app_bar_layout(title_view, None, navigation_icon, actions, config, false)
+}
+
+pub fn MediumTopAppBar(
+    title: String,
+    navigation_icon: Option<View>,
+    actions: Vec<View>,
+    config: TopAppBarConfig,
+) -> View {
+    flexible_app_bar(title, navigation_icon, actions, config, Dp(112.0), Sp(28.0), Sp(22.0))
+}
+
+pub fn LargeTopAppBar(
+    title: String,
+    navigation_icon: Option<View>,
+    actions: Vec<View>,
+    config: TopAppBarConfig,
+) -> View {
+    flexible_app_bar(title, navigation_icon, actions, config, Dp(152.0), Sp(28.0), Sp(22.0))
+}
+
+#[derive(Clone, Debug)]
+pub struct FloatingToolbarConfig {
+    pub modifier: Modifier,
+    pub container_color: Color,
+    pub content_color: Color,
+    pub shape_radius: Dp,
+}
+
+impl Default for FloatingToolbarConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            container_color: FloatingToolbarDefaults::container_color(),
+            content_color: FloatingToolbarDefaults::content_color(),
+            shape_radius: FloatingToolbarDefaults::SHAPE_RADIUS,
+        }
+    }
+}
+
+pub fn FloatingToolbar(expanded: bool, content: View, config: FloatingToolbarConfig) -> View {
+    let th = theme();
+    let id = remember(unique_component_id);
+    let reveal = repose_ui::anim::animate_f32(
+        format!("floating-toolbar:{id}:reveal"),
+        if expanded { 1.0 } else { 0.0 },
+        th.motion.overlay,
+    );
+    if reveal <= 0.01 {
+        return Box(Modifier::new());
+    }
+    Box(Modifier::new()
+        .alpha(reveal)
+        .translate(0.0, 16.0 * (1.0 - reveal))
+        .then(config.modifier))
+    .child(
+        Row(Modifier::new()
+            .background(config.container_color)
+            .clip_rounded(config.shape_radius)
+            .shadow(th.elevation.level3, Dp::ZERO)
+            .padding_values(PaddingValues {
+                left: Dp(16.0),
+                right: Dp(16.0),
+                top: Dp(8.0),
+                bottom: Dp(8.0),
+            })
+            .align_items(AlignItems::CENTER))
+        .child(with_content_color(config.content_color, move || content)),
+    )
 }

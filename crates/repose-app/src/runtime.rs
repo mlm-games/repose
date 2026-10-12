@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
@@ -2321,11 +2321,25 @@ impl ReposeRuntime {
                         }
                         action => action,
                     };
+                    let advance: Cell<Option<repose_core::shortcuts::Action>> = Cell::new(None);
                     repose_ui::textfield::dispatch_textfield_keyboard_action(hit, action, &|| {
-                        if let Some(on_submit) = &hit.on_text_submit {
-                            on_submit(text.clone());
+                        match action {
+                            repose_core::text::ImeAction::Next => {
+                                advance.set(Some(repose_core::shortcuts::Action::FocusNext));
+                            }
+                            repose_core::text::ImeAction::Previous => {
+                                advance.set(Some(repose_core::shortcuts::Action::FocusPrevious));
+                            }
+                            _ => {
+                                if let Some(on_submit) = &hit.on_text_submit {
+                                    on_submit(text.clone());
+                                }
+                            }
                         }
                     });
+                    if let Some(step) = advance.take() {
+                        self.dispatch_action(step);
+                    }
                     request_frame();
                     return true;
                 }
@@ -2598,6 +2612,16 @@ impl ReposeRuntime {
             && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
             && let Some(cb) = &hit.on_action
             && cb(action.clone())
+        {
+            request_frame();
+            return true;
+        }
+
+        // 1b) Multi-touch gestures missed the focused widget: route to the
+        // node under the gesture centroid, walking up until consumed.
+        if let Some(center) = gesture_centroid(&action)
+            && let Some(f) = &self.frame_cache
+            && repose_core::runtime::route_action_to_point(&f.hit_regions, &action, center)
         {
             request_frame();
             return true;
@@ -3612,7 +3636,9 @@ where
         }
     }
 
-    if let Some(fid) = sched.focused
+    if repose_core::runtime::focus_capture().is_some() {
+        sched.focused = repose_core::runtime::focus_capture();
+    } else if let Some(fid) = sched.focused
         && !frame.focus_chain.contains(&fid)
     {
         sched.focused = None;
@@ -4405,5 +4431,17 @@ mod gamepad_tests {
             None,
             "an identical name cannot pick a pad by map order"
         );
+    }
+}
+
+fn gesture_centroid(action: &repose_core::shortcuts::Action) -> Option<repose_core::Vec2> {
+    match action {
+        repose_core::shortcuts::Action::Gesture(g) => match g {
+            repose_core::shortcuts::Gesture::PinchWithCenter { center, .. }
+            | repose_core::shortcuts::Gesture::Rotate { center, .. }
+            | repose_core::shortcuts::Gesture::Pan { center, .. } => Some(*center),
+            _ => None,
+        },
+        _ => None,
     }
 }

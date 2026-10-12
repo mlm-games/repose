@@ -268,6 +268,7 @@ pub fn show_simple_snackbar(
         message,
         action,
         duration_ms,
+        on_finished: None,
         builder: Rc::new(move |dismissing| {
             Snackbar(
                 view_message.clone(),
@@ -278,4 +279,120 @@ pub fn show_simple_snackbar(
             )
         }),
     });
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SnackbarDuration {
+    Short,
+    Long,
+    Indefinite,
+}
+
+impl SnackbarDuration {
+    pub fn to_millis(self) -> u32 {
+        match self {
+            SnackbarDuration::Short => 4_000,
+            SnackbarDuration::Long => 10_000,
+            SnackbarDuration::Indefinite => 86_400_000,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SnackbarResult {
+    Dismissed,
+    ActionPerformed,
+}
+
+#[derive(Clone)]
+pub struct SnackbarHostState {
+    controller: SnackbarController,
+}
+
+impl SnackbarHostState {
+    pub fn new(controller: &SnackbarController) -> Self {
+        Self {
+            controller: controller.clone(),
+        }
+    }
+
+    pub fn ambient() -> Self {
+        Self {
+            controller: SnackbarController::ambient(),
+        }
+    }
+
+    pub fn show_snackbar(
+        &self,
+        message: impl Into<String>,
+        action_label: Option<String>,
+        duration: SnackbarDuration,
+        on_result: Option<Rc<dyn Fn(SnackbarResult)>>,
+    ) {
+        let message = message.into();
+        let view_message = message.clone();
+        let performed = Rc::new(std::cell::Cell::new(false));
+        let action = action_label.map(|label| {
+            let controller = self.controller.clone();
+            let performed = performed.clone();
+            let on_result = on_result.clone();
+            SnackbarAction {
+                label,
+                on_click: Rc::new(move || {
+                    performed.set(true);
+                    if let Some(cb) = &on_result {
+                        cb(SnackbarResult::ActionPerformed);
+                    }
+                    controller.dismiss();
+                }),
+            }
+        });
+        let view_action = action.clone();
+        let animation_id = unique_component_id();
+        let finished_performed = performed.clone();
+        self.controller.show(SnackbarRequest {
+            message,
+            action,
+            duration_ms: duration.to_millis(),
+            on_finished: Some(Rc::new(move || {
+                if !finished_performed.get()
+                    && let Some(cb) = &on_result
+                {
+                    cb(SnackbarResult::Dismissed);
+                }
+            })),
+            builder: Rc::new(move |dismissing| {
+                Snackbar(
+                    view_message.clone(),
+                    view_action.clone(),
+                    Modifier::new().key(animation_id),
+                    SnackbarConfig::default(),
+                    dismissing,
+                )
+            }),
+        });
+    }
+
+    pub fn dismiss(&self) {
+        self.controller.dismiss();
+    }
+}
+
+pub fn SnackbarHost(host_state: &SnackbarHostState, modifier: Modifier) -> View {
+    let _ = host_state;
+    Box(modifier.semantics(
+        Semantics::new(Role::Container).with_live_region(LiveRegion::Polite),
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_snackbar_duration_mapping() {
+        assert_eq!(SnackbarDuration::Short.to_millis(), 4_000);
+        assert_eq!(SnackbarDuration::Long.to_millis(), 10_000);
+        assert!(SnackbarDuration::Indefinite.to_millis() > 0);
+    }
 }

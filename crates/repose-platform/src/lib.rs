@@ -367,6 +367,86 @@ pub fn run_desktop_app_with_config(
                         self.rt.sched.focused = Some(target_id);
                         self.request_redraw();
                     }
+                    accesskit::Action::ScrollUp
+                    | accesskit::Action::ScrollDown
+                    | accesskit::Action::ScrollLeft
+                    | accesskit::Action::ScrollRight => {
+                        let delta = match req.action {
+                            accesskit::Action::ScrollUp => repose_core::Vec2 { x: 0.0, y: -200.0 },
+                            accesskit::Action::ScrollDown => repose_core::Vec2 { x: 0.0, y: 200.0 },
+                            accesskit::Action::ScrollLeft => repose_core::Vec2 { x: -200.0, y: 0.0 },
+                            _ => repose_core::Vec2 { x: 200.0, y: 0.0 },
+                        };
+                        if let Some(hit) = f.hit_regions.iter().find(|h| h.id == target_id) {
+                            if let Some(scroll) = &hit.on_scroll_with_source {
+                                scroll(delta, repose_core::input::ScrollSource::Wheel);
+                                self.request_redraw();
+                            } else if let Some(scroll) = &hit.on_scroll {
+                                scroll(delta);
+                                self.request_redraw();
+                            }
+                        }
+                    }
+                    accesskit::Action::SetValue => {
+                        let value = match &req.data {
+                            Some(accesskit::ActionData::NumericValue(v)) => Some(*v as f32),
+                            Some(accesskit::ActionData::Value(v)) => v.parse::<f32>().ok(),
+                            _ => None,
+                        };
+                        if let Some(value) = value
+                            && let Some(hit) = f.hit_regions.iter().find(|h| h.id == target_id)
+                            && let Some(cb) = &hit.on_set_progress
+                        {
+                            cb(value);
+                            self.request_redraw();
+                        }
+                    }
+                    accesskit::Action::Increment | accesskit::Action::Decrement => {
+                        if let Some(hit) = f.hit_regions.iter().find(|h| h.id == target_id)
+                            && let Some(cb) = &hit.on_set_progress
+                        {
+                            let dir = if matches!(req.action, accesskit::Action::Increment) {
+                                1.0
+                            } else {
+                                -1.0
+                            };
+                            let value = f
+                                .semantics_nodes
+                                .iter()
+                                .find(|n| n.id == target_id)
+                                .and_then(|n| n.progress)
+                                .map(|p| p.current + dir * p.step.unwrap_or((p.max - p.min) / 20.0));
+                            if let Some(value) = value {
+                                cb(value);
+                                self.request_redraw();
+                            }
+                        }
+                    }
+                    accesskit::Action::ReplaceSelectedText => {
+                        if let Some(accesskit::ActionData::Value(text)) = &req.data
+                            && let Some(hit) = f.hit_regions.iter().find(|h| h.id == target_id)
+                            && let Some(cb) = &hit.on_text_change
+                        {
+                            cb(text.to_string());
+                            self.request_redraw();
+                        }
+                    }
+                    accesskit::Action::Expand => {
+                        if let Some(hit) = f.hit_regions.iter().find(|h| h.id == target_id)
+                            && let Some(cb) = &hit.on_expand
+                        {
+                            cb();
+                            self.request_redraw();
+                        }
+                    }
+                    accesskit::Action::Collapse => {
+                        if let Some(hit) = f.hit_regions.iter().find(|h| h.id == target_id)
+                            && let Some(cb) = &hit.on_collapse
+                        {
+                            cb();
+                            self.request_redraw();
+                        }
+                    }
                     _ => {}
                 }
             }

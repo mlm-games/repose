@@ -314,3 +314,22 @@ pub fn NavigationDrawerItem(
         ))
     }))
 }
+
+pub fn ModalDrawerSheet(modifier: Modifier, content: View) -> View {
+    let th = theme();
+    Box(Modifier::new()
+        .fill_max_height()
+        .width(NavigationDrawerDefaults::WIDTH)
+        .background(NavigationDrawerDefaults::container_color())
+        .then(modifier)
+        .semantics(Semantics::new(Role::Dialog)))
+    .child(with_content_color(th.on_surface_variant, move || content))
+}
+
+pub fn DismissibleDrawerSheet(modifier: Modifier, content: View) -> View {
+    ModalDrawerSheet(modifier, content)
+}
+
+pub fn PermanentDrawerSheet(modifier: Modifier, content: View) -> View {
+    ModalDrawerSheet(modifier, content)
+}

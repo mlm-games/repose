@@ -8,6 +8,7 @@ use taffy::{
 };
 
 use crate::animation::AnimationSpec;
+use crate::gesture::DragOrientation;
 use crate::indication::IndicationNodeFactory;
 use crate::units::{Dp, DpSize};
 use crate::{Brush, Color, PointerEvent, Transform, Vec2};
@@ -849,6 +850,10 @@ pub struct Modifier {
     pub drag_preview: Option<crate::dnd::DragPreview>,
 
     pub on_action: Option<Rc<dyn Fn(crate::shortcuts::Action) -> bool>>,
+    pub on_set_progress: Option<Rc<dyn Fn(f32)>>,
+    pub on_expand: Option<Rc<dyn Fn()>>,
+    pub on_collapse: Option<Rc<dyn Fn()>>,
+    pub on_dismiss: Option<Rc<dyn Fn()>>,
 
     /// Cursor icon hint for desktop/web runners.
     pub cursor: Option<crate::CursorIcon>,
@@ -1494,6 +1499,18 @@ impl Modifier {
         self.on_pointer_leave = Some(Rc::new(move |_| on_leave()));
         self
     }
+    pub fn hoverable_enabled(
+        self,
+        enabled: bool,
+        on_enter: impl Fn() + 'static,
+        on_leave: impl Fn() + 'static,
+    ) -> Self {
+        if enabled {
+            self.hoverable(on_enter, on_leave)
+        } else {
+            self
+        }
+    }
     /// Attach an [`InteractionSource`] to track hover state without explicit callbacks.
     /// The source automatically receives HoverEnter/Leave events from the layout engine's
     /// auto-wiring, so you can use it with `collect_is_hovered()` for custom visuals.
@@ -1638,6 +1655,162 @@ impl Modifier {
             }
         })
     }
+    pub fn transformable(
+        self,
+        state: &crate::gesture::TransformableState,
+        lock_rotation_on_zoom_pan: bool,
+        enabled: bool,
+    ) -> Self {
+        state.set_lock_rotation_on_zoom_pan(lock_rotation_on_zoom_pan);
+        state.set_enabled(enabled);
+        let state = state.clone();
+        self.on_action(move |action| match &action {
+            crate::shortcuts::Action::Gesture(g) => state.handle_gesture(g),
+            _ => false,
+        })
+    }
+
+    pub fn draggable_with_config(
+        self,
+        config: crate::gesture::DraggableConfig,
+        on_drag_started: impl Fn() + 'static,
+        on_drag: impl Fn(Vec2) + 'static,
+        on_drag_stopped: impl Fn(f32) + 'static,
+    ) -> Self {
+        if !config.enabled {
+            return self;
+        }
+        let drag_pos = crate::state::remember_mutable(Vec2::default);
+        let press_pos = crate::state::remember_mutable(Vec2::default);
+        let dragging = crate::state::remember_mutable(|| false);
+        let last_time = crate::state::remember_mutable(|| None::<web_time::Instant>);
+        let last_pos = crate::state::remember_mutable(|| None::<Vec2>);
+        let velocity = crate::state::remember_mutable(|| 0.0f32);
+        let on_drag = Rc::new(on_drag);
+        let on_drag_started = Rc::new(on_drag_started);
+        let on_drag_stopped = Rc::new(on_drag_stopped);
+        let axis = config.orientation;
+        let reverse = config.reverse_direction;
+        let slop = config.slop_px;
+        let immediate = config.start_drag_immediately;
+        let filter = Rc::new(move |d: Vec2| -> Vec2 {
+            let mut d = match axis {
+                Some(DragOrientation::Horizontal) => Vec2 { x: d.x, y: 0.0 },
+                Some(DragOrientation::Vertical) => Vec2 { x: 0.0, y: d.y },
+                None => d,
+            };
+            if reverse {
+                d = Vec2 { x: -d.x, y: -d.y };
+            }
+            d
+        });
+        self.on_pointer_down({
+            let drag_pos = drag_pos.clone();
+            let press_pos = press_pos.clone();
+            let dragging = dragging.clone();
+            let last_time = last_time.clone();
+            let last_pos = last_pos.clone();
+            let velocity = velocity.clone();
+            move |ev| {
+                press_pos.set(ev.position);
+                drag_pos.set(ev.position);
+                last_pos.set(Some(ev.position));
+                last_time.set(Some(web_time::Instant::now()));
+                velocity.set(0.0);
+                if immediate {
+                    dragging.set(true);
+                }
+            }
+        })
+        .on_pointer_move({
+            let drag_pos = drag_pos.clone();
+            let press_pos = press_pos.clone();
+            let dragging = dragging.clone();
+            let last_time = last_time.clone();
+            let last_pos = last_pos.clone();
+            let velocity = velocity.clone();
+            let on_drag = on_drag.clone();
+            let on_drag_started = on_drag_started.clone();
+            let filter = filter.clone();
+            move |ev| {
+                if !*dragging.get() {
+                    let dx = ev.position.x - press_pos.get().x;
+                    let dy = ev.position.y - press_pos.get().y;
+                    let dist = match axis {
+                        Some(DragOrientation::Horizontal) => dx.abs(),
+                        Some(DragOrientation::Vertical) => dy.abs(),
+                        None => dx.hypot(dy),
+                    };
+                    if dist < slop {
+                        return;
+                    }
+                    dragging.set(true);
+                    on_drag_started();
+                    drag_pos.set(ev.position);
+                    last_pos.set(Some(ev.position));
+                    last_time.set(Some(web_time::Instant::now()));
+                    return;
+                }
+                let prev = *drag_pos.get();
+                let delta = filter(Vec2 {
+                    x: ev.position.x - prev.x,
+                    y: ev.position.y - prev.y,
+                });
+                drag_pos.set(ev.position);
+                if let (Some(lp), Some(lt)) = (*last_pos.get(), *last_time.get()) {
+                    let now = web_time::Instant::now();
+                    let dt = (now - lt).as_secs_f32().max(1.0 / 240.0);
+                    let axis_delta = match axis {
+                        Some(DragOrientation::Horizontal) => ev.position.x - lp.x,
+                        Some(DragOrientation::Vertical) => ev.position.y - lp.y,
+                        None => (ev.position.x - lp.x).hypot(ev.position.y - lp.y),
+                    };
+                    velocity.set(axis_delta / dt);
+                    last_pos.set(Some(ev.position));
+                    last_time.set(Some(now));
+                }
+                on_drag(delta);
+                crate::frame_clock::request_frame();
+            }
+        })
+        .on_pointer_up({
+            let dragging = dragging.clone();
+            let velocity = velocity.clone();
+            let on_drag_stopped = on_drag_stopped.clone();
+            move |_| {
+                if *dragging.get() {
+                    dragging.set(false);
+                    on_drag_stopped(*velocity.get());
+                }
+            }
+        })
+        .on_pointer_cancel({
+            let dragging = dragging.clone();
+            let velocity = velocity.clone();
+            let on_drag_stopped = on_drag_stopped.clone();
+            move |_| {
+                if *dragging.get() {
+                    dragging.set(false);
+                    on_drag_stopped(*velocity.get());
+                }
+            }
+        })
+    }
+
+    pub fn draggable_2d(
+        self,
+        on_drag_started: impl Fn() + 'static,
+        on_drag: impl Fn(Vec2) + 'static,
+        on_drag_stopped: impl Fn(f32) + 'static,
+    ) -> Self {
+        self.draggable_with_config(
+            crate::gesture::DraggableConfig::default(),
+            on_drag_started,
+            on_drag,
+            on_drag_stopped,
+        )
+    }
+
     pub fn on_pointer_enter(mut self, f: impl Fn(PointerEvent) + 'static) -> Self {
         self.on_pointer_enter = Some(Rc::new(f));
         self
@@ -1998,6 +2171,67 @@ impl Modifier {
     pub fn on_action(mut self, f: impl Fn(crate::shortcuts::Action) -> bool + 'static) -> Self {
         self.on_action = Some(Rc::new(f));
         self
+    }
+    pub fn on_set_progress(mut self, f: impl Fn(f32) + 'static) -> Self {
+        self.on_set_progress = Some(Rc::new(f));
+        self
+    }
+    pub fn on_expand(mut self, f: impl Fn() + 'static) -> Self {
+        self.on_expand = Some(Rc::new(f));
+        self
+    }
+    pub fn on_collapse(mut self, f: impl Fn() + 'static) -> Self {
+        self.on_collapse = Some(Rc::new(f));
+        self
+    }
+    pub fn on_dismiss(mut self, f: impl Fn() + 'static) -> Self {
+        self.on_dismiss = Some(Rc::new(f));
+        self
+    }
+    fn with_semantics_mut(mut self, f: impl FnOnce(&mut crate::Semantics)) -> Self {
+        let mut s = self.semantics.take().unwrap_or_default();
+        f(&mut s);
+        self.semantics = Some(s);
+        self
+    }
+    pub fn heading(self) -> Self {
+        self.with_semantics_mut(|s| s.heading = true)
+    }
+    pub fn live_region(self, region: crate::LiveRegion) -> Self {
+        self.with_semantics_mut(|s| s.live_region = Some(region))
+    }
+    pub fn state_description(self, description: impl Into<String>) -> Self {
+        self.with_semantics_mut(|s| s.state_description = Some(description.into()))
+    }
+    pub fn traversal_index(self, index: f32) -> Self {
+        self.with_semantics_mut(|s| s.traversal_index = Some(index))
+    }
+    pub fn traversal_group(self) -> Self {
+        self.with_semantics_mut(|s| s.is_traversal_group = true)
+    }
+    pub fn hidden_from_accessibility(self) -> Self {
+        self.with_semantics_mut(|s| s.hidden = true)
+    }
+    pub fn collection_info(self, rows: usize, columns: usize) -> Self {
+        self.with_semantics_mut(|s| {
+            s.collection_rows = Some(rows);
+            s.collection_columns = Some(columns);
+        })
+    }
+    pub fn collection_item(self, row: usize, column: usize) -> Self {
+        self.with_semantics_mut(|s| {
+            s.row_index = Some(row);
+            s.column_index = Some(column);
+        })
+    }
+    pub fn progress_range(self, info: crate::ProgressRangeInfo) -> Self {
+        self.with_semantics_mut(|s| s.progress = Some(info))
+    }
+    pub fn semantics_error(self, message: impl Into<String>) -> Self {
+        self.with_semantics_mut(|s| s.error = Some(message.into()))
+    }
+    pub fn expandable(self, expanded: bool) -> Self {
+        self.with_semantics_mut(|s| s.expanded = Some(expanded))
     }
 
     /// Mark this node as a drag source. Return `Some(payload)` to start dragging.

@@ -189,6 +189,9 @@ pub fn SwipeToDismiss(
                 .on_pointer_move(on_move)
                 .on_pointer_up(on_up);
         }
+        if let Some(dismiss) = on_dismiss.clone() {
+            m = m.on_dismiss(move || dismiss());
+        }
         m
     };
 

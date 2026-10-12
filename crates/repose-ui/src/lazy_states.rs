@@ -1,5 +1,6 @@
 use repose_core::*;
 use std::cell::{Cell, RefCell};
+use std::collections::HashSet;
 use std::rc::Rc;
 use web_time::Instant;
 
@@ -96,6 +97,10 @@ impl LazyColumnGeometry {
         self.heights.get(index).copied().unwrap_or(0.0)
     }
 
+    pub(crate) fn len(&self) -> usize {
+        self.heights.len()
+    }
+
     /// Fenwick binary-lifting: largest item count whose cumulative height
     /// still fits within `offset`.
     fn prefix_within(&self, offset: f32) -> usize {
@@ -141,6 +146,12 @@ struct LazyColumnGeometryCache {
 }
 
 impl LazyColumnGeometryCache {
+    pub(crate) fn current(&self) -> Option<Rc<LazyColumnGeometry>> {
+        self.data.clone()
+    }
+}
+
+impl LazyColumnGeometryCache {
     fn new() -> Self {
         Self { data: None }
     }
@@ -177,6 +188,9 @@ pub struct LazyColumnConfig {
     pub content_padding: PaddingValues,
     pub reverse_layout: bool,
     pub user_scroll_enabled: bool,
+    pub spacing: Dp,
+    pub sticky_keys: HashSet<u64>,
+    pub content_type: Option<Rc<dyn Fn(usize) -> u64>>,
 }
 
 impl Default for LazyColumnConfig {
@@ -188,6 +202,9 @@ impl Default for LazyColumnConfig {
             content_padding: PaddingValues::default(),
             reverse_layout: false,
             user_scroll_enabled: true,
+            spacing: Dp::ZERO,
+            sticky_keys: HashSet::new(),
+            content_type: None,
         }
     }
 }
@@ -200,6 +217,9 @@ pub struct LazyRowConfig {
     pub content_padding: PaddingValues,
     pub reverse_layout: bool,
     pub user_scroll_enabled: bool,
+    pub spacing: Dp,
+    pub sticky_keys: HashSet<u64>,
+    pub content_type: Option<Rc<dyn Fn(usize) -> u64>>,
 }
 
 impl Default for LazyRowConfig {
@@ -210,6 +230,9 @@ impl Default for LazyRowConfig {
             content_padding: PaddingValues::default(),
             reverse_layout: false,
             user_scroll_enabled: true,
+            spacing: Dp::ZERO,
+            sticky_keys: HashSet::new(),
+            content_type: None,
         }
     }
 }
@@ -432,6 +455,12 @@ pub(crate) struct LazyScrollCore {
     pub(crate) parent_connection: Rc<RefCell<Option<NestedScrollConnection>>>,
     cache_revision: RefCell<Option<CacheRevision>>,
     prev_tick: Cell<Instant>,
+    anim: RefCell<Option<repose_core::animation::AnimatedValue<f32>>>,
+    pad_main: Cell<f32>,
+    spacing_main: Cell<f32>,
+    uniform_main: Cell<f32>,
+    visible: Cell<(usize, usize)>,
+    item_count: Cell<usize>,
 }
 
 impl LazyScrollCore {
@@ -442,7 +471,58 @@ impl LazyScrollCore {
             parent_connection: Rc::new(RefCell::new(None)),
             cache_revision: RefCell::new(None),
             prev_tick: Cell::new(Instant::now()),
+            anim: RefCell::new(None),
+            pad_main: Cell::new(0.0),
+            spacing_main: Cell::new(0.0),
+            uniform_main: Cell::new(0.0),
+            visible: Cell::new((0, 0)),
+            item_count: Cell::new(0),
         }
+    }
+
+    pub(crate) fn pad(&self) -> f32 {
+        self.pad_main.get()
+    }
+
+    pub(crate) fn item_count(&self) -> usize {
+        self.item_count.get()
+    }
+
+    pub(crate) fn set_item_count(&self, count: usize) {
+        self.item_count.set(count);
+    }
+
+    pub(crate) fn set_content_padding(&self, pad_px: f32) {
+        self.pad_main.set(pad_px.max(0.0));
+    }
+
+    pub(crate) fn set_item_metrics(&self, spacing_px: f32, uniform_px: f32) {
+        self.spacing_main.set(spacing_px.max(0.0));
+        self.uniform_main.set(uniform_px.max(0.0));
+    }
+
+    pub(crate) fn set_visible_range(&self, first: usize, last: usize) {
+        self.visible.set((first, last));
+    }
+
+    pub fn visible_range(&self) -> (usize, usize) {
+        self.visible.get()
+    }
+
+    pub(crate) fn uniform_offset_for_index(&self, index: usize) -> f32 {
+        self.pad_main.get() + index as f32 * (self.uniform_main.get() + self.spacing_main.get())
+    }
+
+    pub(crate) fn animate_offset_to(&self, target_px: f32, content_px: f32) {
+        let max = (content_px - self.axis.viewport.get()).max(0.0);
+        let target = target_px.clamp(0.0, max);
+        let mut anim = repose_core::animation::AnimatedValue::new(
+            self.axis.offset.get(),
+            repose_core::animation::AnimationSpec::spring_gentle(),
+        );
+        anim.set_target(target);
+        *self.anim.borrow_mut() = Some(anim);
+        repose_core::request_frame();
     }
 
     pub(crate) fn set_nested_scroll_parent(&self, conn: NestedScrollConnection) {
@@ -525,6 +605,24 @@ impl LazyScrollCore {
         let now = Instant::now();
         let dt = (now - self.prev_tick.get()).as_secs_f32().min(0.1);
         self.prev_tick.set(now);
+        let finished = {
+            let mut guard = self.anim.borrow_mut();
+            match guard.as_mut() {
+                None => false,
+                Some(anim) => {
+                    if anim.update() {
+                        let max = (content_px - self.axis.viewport.get()).max(0.0);
+                        self.axis.offset.set(anim.get().clamp(0.0, max));
+                        repose_core::request_frame();
+                        return true;
+                    }
+                    true
+                }
+            }
+        };
+        if finished {
+            self.anim.borrow_mut().take();
+        }
         self.axis.tick(content_px, &self.physics, dt)
     }
 }
@@ -619,6 +717,53 @@ impl LazyColumnState {
 
     pub fn tick(&self, content_height_px: f32) -> bool {
         self.core.tick(content_height_px)
+    }
+
+    pub(crate) fn set_content_padding(&self, pad_px: f32) {
+        self.core.set_content_padding(pad_px);
+    }
+
+    pub(crate) fn set_item_metrics(&self, spacing_px: f32, uniform_px: f32) {
+        self.core.set_item_metrics(spacing_px, uniform_px);
+    }
+
+    pub(crate) fn set_item_count(&self, count: usize) {
+        self.core.set_item_count(count);
+    }
+
+    pub(crate) fn set_visible_range(&self, first: usize, last: usize) {
+        self.core.set_visible_range(first, last);
+    }
+
+    pub fn visible_range(&self) -> (usize, usize) {
+        self.core.visible_range()
+    }
+
+    pub fn offset_for_index(&self, index: usize) -> Option<f32> {
+        let count = self.core.item_count();
+        if index >= count {
+            return None;
+        }
+        if let Some(geo) = self.geometry.borrow().current() {
+            if index < geo.len() {
+                return Some(self.core.pad() + geo.top(index));
+            }
+        }
+        Some(self.core.uniform_offset_for_index(index))
+    }
+
+    pub fn scroll_to_item(&self, index: usize, extra_offset_px: f32) {
+        if let Some(top) = self.offset_for_index(index) {
+            self.core
+                .set_offset(top + extra_offset_px, self.core.axis.content.get());
+        }
+    }
+
+    pub fn animate_scroll_to_item(&self, index: usize, extra_offset_px: f32) {
+        if let Some(top) = self.offset_for_index(index) {
+            self.core
+                .animate_offset_to(top + extra_offset_px, self.core.axis.content.get());
+        }
     }
 }
 
@@ -772,6 +917,47 @@ impl LazyRowState {
 
     pub fn tick(&self, content_width_px: f32) -> bool {
         self.core.tick(content_width_px)
+    }
+
+    pub(crate) fn set_content_padding(&self, pad_px: f32) {
+        self.core.set_content_padding(pad_px);
+    }
+
+    pub(crate) fn set_item_metrics(&self, spacing_px: f32, uniform_px: f32) {
+        self.core.set_item_metrics(spacing_px, uniform_px);
+    }
+
+    pub(crate) fn set_item_count(&self, count: usize) {
+        self.core.set_item_count(count);
+    }
+
+    pub(crate) fn set_visible_range(&self, first: usize, last: usize) {
+        self.core.set_visible_range(first, last);
+    }
+
+    pub fn visible_range(&self) -> (usize, usize) {
+        self.core.visible_range()
+    }
+
+    pub fn offset_for_index(&self, index: usize) -> Option<f32> {
+        if index >= self.core.item_count() {
+            return None;
+        }
+        Some(self.core.uniform_offset_for_index(index))
+    }
+
+    pub fn scroll_to_item(&self, index: usize, extra_offset_px: f32) {
+        if let Some(left) = self.offset_for_index(index) {
+            self.core
+                .set_offset(left + extra_offset_px, self.core.axis.content.get());
+        }
+    }
+
+    pub fn animate_scroll_to_item(&self, index: usize, extra_offset_px: f32) {
+        if let Some(left) = self.offset_for_index(index) {
+            self.core
+                .animate_offset_to(left + extra_offset_px, self.core.axis.content.get());
+        }
     }
 }
 
@@ -928,5 +1114,30 @@ mod tests {
             repose_core::frame_clock::peek_frame_request(),
             "an integrating fling must request the next frame"
         );
+    }
+
+    #[test]
+    fn test_offset_for_index_uniform_with_spacing() {
+        let state = LazyColumnState::new();
+        state.set_content_padding(10.0);
+        state.set_item_metrics(4.0, 50.0);
+        state.set_item_count(10);
+        assert_eq!(state.offset_for_index(0), Some(10.0));
+        assert_eq!(state.offset_for_index(2), Some(10.0 + 2.0 * 54.0));
+        assert_eq!(state.offset_for_index(10), None);
+        state.set_visible_range(2, 5);
+        assert_eq!(state.visible_range(), (2, 5));
+    }
+
+    #[test]
+    fn test_row_offset_for_index_and_animated_target() {
+        let state = LazyRowState::new();
+        state.set_content_padding(8.0);
+        state.set_item_metrics(6.0, 100.0);
+        state.set_item_count(5);
+        assert_eq!(state.offset_for_index(3), Some(8.0 + 3.0 * 106.0));
+        state.scroll_to_item(1, 0.0);
+        state.animate_scroll_to_item(2, 0.0);
+        assert!(state.core.anim.borrow().is_some());
     }
 }

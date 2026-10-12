@@ -553,6 +553,10 @@ impl LayoutEngine {
                 || modifier.click
                 || has_dnd
                 || modifier.on_action.is_some()
+                || modifier.on_set_progress.is_some()
+                || modifier.on_expand.is_some()
+                || modifier.on_collapse.is_some()
+                || modifier.on_dismiss.is_some()
                 || modifier.on_key_event.is_some()
                 || modifier.on_preview_key_event.is_some()
                 || modifier.focusable == Some(true)
@@ -1818,7 +1822,9 @@ impl LayoutEngine {
                     scene.nodes.push(SceneNode::PopClip);
                 }
                 let semantic = semantics.as_ref().or(modifier.semantics.as_ref());
-                sems.push(SemNode {
+                let (scrollable, can_expand, can_collapse, can_dismiss) =
+                    sem_capabilities(&modifier);
+                let mut sem_node = SemNode {
                     id: view_id,
                     parent: sem_parent,
                     role: semantic.map_or(Role::Text, |s| s.role),
@@ -1832,7 +1838,16 @@ impl LayoutEngine {
                     checked: semantic.and_then(|s| s.checked),
                     selected: semantic.and_then(|s| s.selected),
                     value: semantic.and_then(|s| s.value.clone()),
-                });
+                    ..Default::default()
+                };
+                semantic.map_or_else(SemExtras::none, SemExtras::of).apply(
+                    &mut sem_node,
+                    scrollable,
+                    can_expand,
+                    can_collapse,
+                    can_dismiss,
+                );
+                sems.push(sem_node);
                 next_sem_parent = Some(view_id);
             }
             ViewKind::Image {
@@ -2193,7 +2208,9 @@ impl LayoutEngine {
                 }
 
                 let semantic = semantics.as_ref().or(modifier.semantics.as_ref());
-                sems.push(SemNode {
+                let (scrollable, can_expand, can_collapse, can_dismiss) =
+                    sem_capabilities(&modifier);
+                let mut sem_node = SemNode {
                     id: view_id,
                     parent: sem_parent,
                     role: semantic.map_or(Role::TextField, |s| s.role),
@@ -2207,12 +2224,23 @@ impl LayoutEngine {
                     checked: semantic.and_then(|s| s.checked),
                     selected: semantic.and_then(|s| s.selected),
                     value: semantic.and_then(|s| s.value.clone()),
-                });
+                    ..Default::default()
+                };
+                semantic.map_or_else(SemExtras::none, SemExtras::of).apply(
+                    &mut sem_node,
+                    scrollable,
+                    can_expand,
+                    can_collapse,
+                    can_dismiss,
+                );
+                sems.push(sem_node);
                 next_sem_parent = Some(view_id);
             }
             _ => {
                 if let Some(s) = semantics.as_ref().or(modifier.semantics.as_ref()) {
-                    sems.push(SemNode {
+                    let (scrollable, can_expand, can_collapse, can_dismiss) =
+                        sem_capabilities(&modifier);
+                    let mut sem_node = SemNode {
                         id: view_id,
                         parent: sem_parent,
                         role: s.role,
@@ -2224,7 +2252,16 @@ impl LayoutEngine {
                         checked: s.checked,
                         selected: s.selected,
                         value: s.value.clone(),
-                    });
+                        ..Default::default()
+                    };
+                    SemExtras::of(s).apply(
+                        &mut sem_node,
+                        scrollable,
+                        can_expand,
+                        can_collapse,
+                        can_dismiss,
+                    );
+                    sems.push(sem_node);
                     next_sem_parent = Some(view_id);
                 }
             }
@@ -2822,6 +2859,100 @@ impl LayoutEngine {
         if let Some(cb) = &modifier.on_focus_changed {
             self.focus_callbacks.insert(view_id, cb.clone());
         }
+    }
+}
+
+fn sem_capabilities(modifier: &Modifier) -> (bool, bool, bool, bool) {
+    let scrollable = modifier.scroll.as_ref().is_some_and(|b| match b {
+        ScrollBinding::Vertical(x) | ScrollBinding::Horizontal(x) => x.on_scroll.is_some(),
+        ScrollBinding::Both(x) => x.on_scroll.is_some(),
+    });
+    (
+        scrollable,
+        modifier.on_expand.is_some(),
+        modifier.on_collapse.is_some(),
+        modifier.on_dismiss.is_some(),
+    )
+}
+
+struct SemExtras {
+    heading: bool,
+    live_region: Option<LiveRegion>,
+    state_description: Option<String>,
+    traversal_index: Option<f32>,
+    is_traversal_group: bool,
+    hidden: bool,
+    collection_rows: Option<usize>,
+    collection_columns: Option<usize>,
+    row_index: Option<usize>,
+    column_index: Option<usize>,
+    progress: Option<ProgressRangeInfo>,
+    error: Option<String>,
+    expanded: Option<bool>,
+}
+
+impl SemExtras {
+    fn of(s: &Semantics) -> Self {
+        Self {
+            heading: s.heading,
+            live_region: s.live_region,
+            state_description: s.state_description.clone(),
+            traversal_index: s.traversal_index,
+            is_traversal_group: s.is_traversal_group,
+            hidden: s.hidden,
+            collection_rows: s.collection_rows,
+            collection_columns: s.collection_columns,
+            row_index: s.row_index,
+            column_index: s.column_index,
+            progress: s.progress,
+            error: s.error.clone(),
+            expanded: s.expanded,
+        }
+    }
+
+    fn none() -> Self {
+        Self {
+            heading: false,
+            live_region: None,
+            state_description: None,
+            traversal_index: None,
+            is_traversal_group: false,
+            hidden: false,
+            collection_rows: None,
+            collection_columns: None,
+            row_index: None,
+            column_index: None,
+            progress: None,
+            error: None,
+            expanded: None,
+        }
+    }
+
+    fn apply(
+        &self,
+        node: &mut SemNode,
+        scrollable: bool,
+        can_expand: bool,
+        can_collapse: bool,
+        can_dismiss: bool,
+    ) {
+        node.heading = self.heading;
+        node.live_region = self.live_region;
+        node.state_description = self.state_description.clone();
+        node.traversal_index = self.traversal_index;
+        node.is_traversal_group = self.is_traversal_group;
+        node.hidden = self.hidden;
+        node.collection_rows = self.collection_rows;
+        node.collection_columns = self.collection_columns;
+        node.row_index = self.row_index;
+        node.column_index = self.column_index;
+        node.progress = self.progress;
+        node.error = self.error.clone();
+        node.expanded = self.expanded;
+        node.scrollable = scrollable;
+        node.can_expand = can_expand;
+        node.can_collapse = can_collapse;
+        node.can_dismiss = can_dismiss;
     }
 }
 

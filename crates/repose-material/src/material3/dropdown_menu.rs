@@ -1296,3 +1296,38 @@ mod submenu_placement_tests {
         assert_eq!(place(380.0, 760.0, &entries(8)), (440.0, 48.0, 380.0));
     }
 }
+
+pub fn ExposedDropdownMenuBox(
+    expanded: bool,
+    on_expanded_change: impl Fn(bool) + 'static,
+    text_field: View,
+    menu_state: Rc<MenuState>,
+    modifier: Modifier,
+    menu_modifier: Modifier,
+    items: Vec<DropdownMenuEntry>,
+    config: DropdownMenuConfig,
+) -> View {
+    if expanded != menu_state.is_open() {
+        if expanded {
+            menu_state.open();
+        } else {
+            menu_state.dismiss();
+        }
+    }
+    let on_expanded_change = Rc::new(on_expanded_change);
+    let toggle = {
+        let on_expanded_change = on_expanded_change.clone();
+        move || on_expanded_change(!expanded)
+    };
+    Box(modifier.semantics(
+        Semantics::new(Role::DropdownList).with_expanded(expanded),
+    ))
+    .child(Box(Modifier::new().fill_max_width().on_click(toggle)).child(text_field))
+    .child(DropdownMenu(
+        menu_state,
+        menu_modifier,
+        Box(Modifier::new()),
+        items,
+        config,
+    ))
+}

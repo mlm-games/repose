@@ -39,7 +39,7 @@ pub use crate::scroll::{
     HorizontalScrollState, ScrollAxis, ScrollAxisBinding, ScrollBinding, ScrollBothBinding,
     ScrollPhysics, ScrollState, ScrollStateXY, ScrollbarStyle, run_post_scroll, run_pre_scroll,
 };
-pub use crate::semantics::{Role, Semantics};
+pub use crate::semantics::{LiveRegion, ProgressRangeInfo, Role, Semantics};
 pub use crate::shortcuts;
 pub use crate::signal::{Signal, signal};
 pub use crate::state::{
