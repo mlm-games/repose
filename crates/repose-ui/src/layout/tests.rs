@@ -1675,6 +1675,7 @@ fn test_scrollbar_image_visuals_preserve_thumb_geometry() {
     let style = ScrollbarStyle::default()
         .with_thickness(Dp(16.0))
         .with_track_inset(Dp(0.0))
+        .with_fade_enabled(false)
         .with_fixed_thumb_length(Some(Dp(16.0)))
         .with_track_visuals(ControlVisualSet::default().with_normal(track))
         .with_thumb_visuals(ControlVisualSet::default().with_normal(thumb));
@@ -1709,7 +1710,9 @@ fn test_scrollbar_image_visuals_preserve_thumb_geometry() {
     assert!(hits.iter().any(|hit| hit.rect.h == 16.0));
 
     let default_scroll = crate::scroll::ScrollArea(
-        Modifier::new().size(Dp(100.0), Dp(200.0)),
+        Modifier::new()
+            .size(Dp(100.0), Dp(200.0))
+            .scrollbar_style(ScrollbarStyle::default().with_fade_enabled(false)),
         std::rc::Rc::new(ScrollState::new()),
         RBox(Modifier::new().size(Dp(100.0), Dp(400.0))),
     );
@@ -1733,6 +1736,447 @@ fn test_scrollbar_image_visuals_preserve_thumb_geometry() {
         .collect();
     assert_eq!(radii.len(), 2);
     assert!(radii.iter().all(|radius| *radius == [Px(4.0); 4]));
+}
+
+/// Compose `scrollbarDrag` parity for the built-in scrollbars: the press grabs
+/// without jumping, moves apply relative deltas against the live offset, and
+/// overshoot past an end is banked so reversing out stays pinned (Compose
+/// `unscrolledDragDistance`). The move handler must exist on the press-time
+/// snapshot, which paint-then-dispatch only guarantees when it is installed
+/// unconditionally.
+#[test]
+fn test_scrollbar_thumb_drag_is_relative_with_banked_overshoot() {
+    use repose_core::input::{Modifiers, PointerButton, PointerEventKind, PointerId, PointerKind};
+
+    let state = ScrollState::new();
+    state.set_show_scrollbar(true);
+    let scroll = crate::scroll::ScrollArea(
+        Modifier::new().size(Dp(200.0), Dp(200.0)),
+        std::rc::Rc::new(state.clone()),
+        RBox(Modifier::new().size(Dp(180.0), Dp(500.0))),
+    );
+    let mut engine = LayoutEngine::new();
+    let (_, hits, _) = engine.layout_frame(
+        &scroll,
+        (200, 200),
+        &HashMap::new(),
+        // Pressed is empty here: this is the exact frame a fresh press
+        // hit-tests, so a move handler gated on "already pressed" would be
+        // missing from the gesture snapshot.
+        &Interactions::default(),
+        None,
+    );
+    let thumb = hits
+        .iter()
+        .find(|hit| (hit.z_index - 1000.0).abs() < f32::EPSILON)
+        .expect("thumb hit region");
+    assert!(
+        thumb.on_pointer_down.is_some() && thumb.on_pointer_move.is_some(),
+        "thumb must install down+move unconditionally"
+    );
+
+    let center = Vec2 {
+        x: thumb.rect.x + thumb.rect.w * 0.5,
+        y: thumb.rect.y + thumb.rect.h * 0.5,
+    };
+    let event = |pos: Vec2, kind: PointerEventKind| {
+        PointerEvent::new(
+            PointerId(0),
+            PointerKind::Mouse,
+            kind,
+            pos,
+            1.0,
+            Modifiers::default(),
+        )
+    };
+
+    // Press grabs: no jump.
+    thumb.on_pointer_down.as_ref().unwrap()(event(
+        center,
+        PointerEventKind::Down(PointerButton::Primary),
+    ));
+    assert_eq!(state.get(), 0.0);
+
+    // Relative delta against the live offset: +40px of thumb travel maps to
+    // 40/scale of content, where scale = thumb travel per content px.
+    let max_scroll = 500.0 - 200.0;
+    let track = hits
+        .iter()
+        .find(|hit| (hit.z_index - 999.0).abs() < f32::EPSILON)
+        .expect("track hit region");
+    let max_p = track.rect.h - thumb.rect.h;
+    assert!(max_p > 40.0, "test needs room to drag");
+    thumb.on_pointer_move.as_ref().unwrap()(event(
+        Vec2 {
+            x: center.x,
+            y: center.y + 40.0,
+        },
+        PointerEventKind::Move,
+    ));
+    let expected = 40.0 / (max_p / max_scroll);
+    assert!(
+        (state.get() - expected).abs() < 1e-3,
+        "offset {} != mapped {}",
+        state.get(),
+        expected
+    );
+
+    // Overshoot clamps, then a halfway return stays pinned: the banked
+    // overshoot absorbs the reversal instead of jumping to the top.
+    thumb.on_pointer_move.as_ref().unwrap()(event(
+        Vec2 {
+            x: center.x,
+            y: center.y + 10_000.0,
+        },
+        PointerEventKind::Move,
+    ));
+    assert_eq!(state.get(), max_scroll);
+    thumb.on_pointer_move.as_ref().unwrap()(event(
+        Vec2 {
+            x: center.x,
+            y: center.y + 5_000.0,
+        },
+        PointerEventKind::Move,
+    ));
+    assert_eq!(
+        state.get(),
+        max_scroll,
+        "banked overshoot must absorb the reversal"
+    );
+
+    thumb.on_pointer_up.as_ref().unwrap()(event(
+        center,
+        PointerEventKind::Up(PointerButton::Primary),
+    ));
+}
+
+/// Compose `scrollOnPressTrack` parity: pressing the track outside the thumb
+/// pages one viewport immediately and arms the 300ms/100ms auto-repeat;
+/// release disarms it.
+#[test]
+fn test_scrollbar_track_press_pages_viewport_and_arms_repeat() {
+    use repose_core::input::{Modifiers, PointerButton, PointerEventKind, PointerId, PointerKind};
+
+    let state = ScrollState::new();
+    state.set_show_scrollbar(true);
+    let scroll = crate::scroll::ScrollArea(
+        Modifier::new().size(Dp(200.0), Dp(200.0)),
+        std::rc::Rc::new(state.clone()),
+        RBox(Modifier::new().size(Dp(180.0), Dp(500.0))),
+    );
+    let mut engine = LayoutEngine::new();
+    let (_, hits, _) = engine.layout_frame(
+        &scroll,
+        (200, 200),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
+    let thumb = hits
+        .iter()
+        .find(|hit| (hit.z_index - 1000.0).abs() < f32::EPSILON)
+        .expect("thumb hit region");
+    let track = hits
+        .iter()
+        .find(|hit| (hit.z_index - 999.0).abs() < f32::EPSILON)
+        .expect("track hit region");
+    assert!(track.on_pointer_down.is_some());
+
+    let event = |pos: Vec2, kind: PointerEventKind| {
+        PointerEvent::new(
+            PointerId(0),
+            PointerKind::Mouse,
+            kind,
+            pos,
+            1.0,
+            Modifiers::default(),
+        )
+    };
+    // Below the thumb, still on the track.
+    let below = Vec2 {
+        x: track.rect.x + track.rect.w * 0.5,
+        y: (thumb.rect.y + thumb.rect.h + 10.0).min(track.rect.y + track.rect.h - 1.0),
+    };
+    assert!(
+        below.y > thumb.rect.y + thumb.rect.h,
+        "test press must land outside the thumb"
+    );
+
+    track.on_pointer_down.as_ref().unwrap()(event(
+        below,
+        PointerEventKind::Down(PointerButton::Primary),
+    ));
+    assert_eq!(
+        state.get(),
+        200.0,
+        "track press must page exactly one viewport"
+    );
+    assert!(
+        crate::scrollbar_repeat::track_repeat_deadline().is_some(),
+        "track press must arm auto-repeat"
+    );
+
+    track.on_pointer_up.as_ref().unwrap()(event(
+        below,
+        PointerEventKind::Up(PointerButton::Primary),
+    ));
+    assert!(
+        crate::scrollbar_repeat::track_repeat_deadline().is_none(),
+        "release must disarm auto-repeat"
+    );
+    crate::scrollbar_repeat::cancel_all_track_repeats();
+}
+
+/// M3 draws the vertical bar at the end edge respecting layout direction:
+/// right in LTR, left in RTL.
+#[test]
+fn test_scrollbar_vertical_bar_sits_on_end_edge_for_direction() {
+    use repose_core::locals::{TextDirection, with_text_direction};
+
+    let build = || {
+        let state = ScrollState::new();
+        state.set_show_scrollbar(true);
+        crate::scroll::ScrollArea(
+            Modifier::new().size(Dp(200.0), Dp(200.0)),
+            std::rc::Rc::new(state),
+            RBox(Modifier::new().size(Dp(180.0), Dp(500.0))),
+        )
+    };
+    let track_at = |hits: &[repose_core::HitRegion]| {
+        hits.iter()
+            .find(|hit| (hit.z_index - 999.0).abs() < f32::EPSILON)
+            .expect("track hit region")
+            .rect
+    };
+    // Same engine for both: the paint cache must invalidate on direction.
+    let mut engine = LayoutEngine::new();
+    let (_, hits_ltr, _) = engine.layout_frame(
+        &build(),
+        (200, 200),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
+    let ltr = track_at(&hits_ltr);
+    assert!(
+        ltr.x + ltr.w >= 200.0 - 0.5,
+        "LTR bar must sit at the right edge, x={} w={}",
+        ltr.x,
+        ltr.w
+    );
+
+    let (_, hits_rtl, _) = with_text_direction(TextDirection::Rtl, || {
+        engine.layout_frame(
+            &build(),
+            (200, 200),
+            &HashMap::new(),
+            &Interactions::default(),
+            None,
+        )
+    });
+    let rtl = track_at(&hits_rtl);
+    assert!(
+        rtl.x <= 0.5,
+        "RTL bar must sit at the left edge, x={} w={}",
+        rtl.x,
+        rtl.w
+    );
+}
+
+/// M3 mirrors the horizontal thumb in RTL: at offset 0 it sits at the track
+/// end, not the track start.
+#[test]
+fn test_scrollbar_horizontal_thumb_mirrors_in_rtl() {
+    use repose_core::locals::{TextDirection, with_text_direction};
+
+    let build = || {
+        let state = crate::scroll::HorizontalScrollState::new();
+        state.set_show_scrollbar(true);
+        crate::scroll::HorizontalScrollArea(
+            Modifier::new().size(Dp(200.0), Dp(200.0)),
+            std::rc::Rc::new(state),
+            RBox(Modifier::new().size(Dp(500.0), Dp(180.0))),
+        )
+    };
+    let thumbs = |hits: &[repose_core::HitRegion]| {
+        let thumb = hits
+            .iter()
+            .find(|hit| (hit.z_index - 1000.0).abs() < f32::EPSILON)
+            .expect("thumb hit region")
+            .rect;
+        let track = hits
+            .iter()
+            .find(|hit| (hit.z_index - 999.0).abs() < f32::EPSILON)
+            .expect("track hit region")
+            .rect;
+        (thumb, track)
+    };
+    let mut engine = LayoutEngine::new();
+    let (_, hits_ltr, _) = engine.layout_frame(
+        &build(),
+        (200, 200),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
+    let (thumb, track) = thumbs(&hits_ltr);
+    assert!(
+        (thumb.x - track.x).abs() < 1.0,
+        "LTR thumb starts at the track start, thumb.x={} track.x={}",
+        thumb.x,
+        track.x
+    );
+
+    let (_, hits_rtl, _) = with_text_direction(TextDirection::Rtl, || {
+        engine.layout_frame(
+            &build(),
+            (200, 200),
+            &HashMap::new(),
+            &Interactions::default(),
+            None,
+        )
+    });
+    let (thumb, track) = thumbs(&hits_rtl);
+    assert!(
+        ((thumb.x + thumb.w) - (track.x + track.w)).abs() < 1.0,
+        "RTL thumb starts at the track end, thumb.right={} track.right={}",
+        thumb.x + thumb.w,
+        track.x + track.w
+    );
+}
+
+/// Reverse layout (Compose `reverseLayout`): offset 0 sits at the track end
+/// and dragging runs the mapping backwards.
+#[test]
+fn test_scrollbar_reversed_layout_runs_thumb_backwards() {
+    use repose_core::input::{Modifiers, PointerButton, PointerEventKind, PointerId, PointerKind};
+
+    let state = ScrollState::new();
+    state.set_show_scrollbar(true);
+    state.set_reversed(true);
+    let scroll = crate::scroll::ScrollArea(
+        Modifier::new().size(Dp(200.0), Dp(200.0)),
+        std::rc::Rc::new(state.clone()),
+        RBox(Modifier::new().size(Dp(180.0), Dp(500.0))),
+    );
+    let mut engine = LayoutEngine::new();
+    let (_, hits, _) = engine.layout_frame(
+        &scroll,
+        (200, 200),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
+    let thumb = hits
+        .iter()
+        .find(|hit| (hit.z_index - 1000.0).abs() < f32::EPSILON)
+        .expect("thumb hit region")
+        .rect;
+    let track = hits
+        .iter()
+        .find(|hit| (hit.z_index - 999.0).abs() < f32::EPSILON)
+        .expect("track hit region")
+        .rect;
+    assert!(
+        ((thumb.y + thumb.h) - (track.y + track.h)).abs() < 1.0,
+        "reversed thumb must start at the track end at offset 0"
+    );
+
+    let event = |pos: Vec2, kind: PointerEventKind| {
+        PointerEvent::new(
+            PointerId(0),
+            PointerKind::Mouse,
+            kind,
+            pos,
+            1.0,
+            Modifiers::default(),
+        )
+    };
+    let thumb_hit = hits
+        .iter()
+        .find(|hit| (hit.z_index - 1000.0).abs() < f32::EPSILON)
+        .expect("thumb hit region");
+    let center = Vec2 {
+        x: thumb.x + thumb.w * 0.5,
+        y: thumb.y + thumb.h * 0.5,
+    };
+    thumb_hit.on_pointer_down.as_ref().unwrap()(event(
+        center,
+        PointerEventKind::Down(PointerButton::Primary),
+    ));
+    // Dragging up (negative delta) must increase the offset when reversed.
+    thumb_hit.on_pointer_move.as_ref().unwrap()(event(
+        Vec2 {
+            x: center.x,
+            y: center.y - 40.0,
+        },
+        PointerEventKind::Move,
+    ));
+    let max_scroll = 500.0 - 200.0;
+    let max_p = track.h - thumb.h;
+    let expected = 40.0 / (max_p / max_scroll);
+    assert!(
+        (state.get() - expected).abs() < 1e-3,
+        "reversed drag must raise the offset, got {} want {}",
+        state.get(),
+        expected
+    );
+    thumb_hit.on_pointer_up.as_ref().unwrap()(event(
+        center,
+        PointerEventKind::Up(PointerButton::Primary),
+    ));
+}
+
+/// M3 fade: hidden while idle, wakeup armed once scrolling starts.
+#[test]
+fn test_scrollbar_fade_hides_when_idle_and_arms_deadline_on_scroll() {
+    repose_core::shutdown_composition();
+    crate::scrollbar_fade::reset_fade_for_tests();
+
+    let state = ScrollState::new();
+    state.set_show_scrollbar(true);
+    let scroll = crate::scroll::ScrollArea(
+        Modifier::new().size(Dp(200.0), Dp(200.0)),
+        std::rc::Rc::new(state.clone()),
+        RBox(Modifier::new()
+            .size(Dp(180.0), Dp(500.0))
+            .background(Color::from_rgb(100, 100, 100))),
+    );
+    let mut engine = LayoutEngine::new();
+    let (scene, _, _) = engine.layout_frame(
+        &scroll,
+        (200, 200),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
+    // M3 starts hidden when fading is enabled: no 4px scrollbar rects.
+    let bars: Vec<_> = scene
+        .nodes
+        .iter()
+        .filter_map(|node| match node {
+            SceneNode::Rect { rect, .. } if rect.w == 4.0 => Some(*rect),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        bars.is_empty(),
+        "idle scrollbar must paint nothing, found {bars:?}"
+    );
+    assert!(crate::scrollbar_fade::scrollbar_fade_deadline().is_none());
+
+    state.set_offset(120.0);
+    let _ = engine.layout_frame(
+        &scroll,
+        (200, 200),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
+    assert!(
+        crate::scrollbar_fade::scrollbar_fade_deadline().is_some(),
+        "scroll activity must arm the fade-out wakeup"
+    );
 }
 
 /// Locks the sizing table from Compose's `PainterNode.modifyConstraints`, which

@@ -232,6 +232,8 @@ impl LayoutEngine {
         alpha_q.hash(&mut h);
         interactions.hover.hash(&mut h);
         focused.hash(&mut h);
+        // Scrollbar placement mirrors with layout direction.
+        (locals::text_direction() == locals::TextDirection::Rtl).hash(&mut h);
         // Invalidate cached paint when focus chrome visibility flips with mode.
         repose_core::input::input_mode().hash(&mut h);
 
@@ -290,11 +292,13 @@ impl LayoutEngine {
                         if let Some(get) = &b.get_offset_main {
                             ((get() * 8.0) as i32).hash(&mut h);
                         }
+                        b.reversed.hash(&mut h);
                     }
                     ScrollBinding::Horizontal(b) => {
                         if let Some(get) = &b.get_offset_main {
                             ((get() * 8.0) as i32).hash(&mut h);
                         }
+                        b.reversed.hash(&mut h);
                     }
                     ScrollBinding::Both(b) => {
                         if let Some(get) = &b.get_offset_xy {
@@ -302,6 +306,8 @@ impl LayoutEngine {
                             ((x * 8.0) as i32).hash(&mut h);
                             ((y * 8.0) as i32).hash(&mut h);
                         }
+                        b.reversed_x.hash(&mut h);
+                        b.reversed_y.hash(&mut h);
                     }
                 }
             }
@@ -2366,21 +2372,23 @@ impl LayoutEngine {
                     }
 
                     if b.show_scrollbar {
-                        push_scrollbar(
-                            scene,
-                            hits,
-                            interactions,
-                            view_id,
-                            vp,
-                            ch,
-                            off,
-                            modifier.z_index,
-                            ScrollbarAxis::V,
-                            &modifier.scrollbar_style_or_default(),
-                            alpha_accum,
-                            b.set_offset_main.clone(),
-                            &scroll_hit_context,
-                        );
+                        push_scrollbar(ScrollbarParams {
+                            scene: scene,
+                            hits: hits,
+                            interactions: interactions,
+                            vid: view_id,
+                            vp: vp,
+                            content_len: ch,
+                            offset: off,
+                            z: modifier.z_index,
+                            axis: ScrollbarAxis::V,
+                            style: &modifier.scrollbar_style_or_default(),
+                            alpha: alpha_accum,
+                            set_offset: b.set_offset_main.clone(),
+                            get_offset: b.get_offset_main.clone(),
+                            reversed: b.reversed,
+                            hit_context: &scroll_hit_context,
+                        });
                     }
 
                     scene.nodes.push(SceneNode::PopClip);
@@ -2474,21 +2482,23 @@ impl LayoutEngine {
                     }
 
                     if b.show_scrollbar {
-                        push_scrollbar(
-                            scene,
-                            hits,
-                            interactions,
-                            view_id,
-                            vp,
-                            cw,
-                            off,
-                            modifier.z_index,
-                            ScrollbarAxis::H,
-                            &modifier.scrollbar_style_or_default(),
-                            alpha_accum,
-                            b.set_offset_main.clone(),
-                            &scroll_hit_context,
-                        );
+                        push_scrollbar(ScrollbarParams {
+                            scene: scene,
+                            hits: hits,
+                            interactions: interactions,
+                            vid: view_id,
+                            vp: vp,
+                            content_len: cw,
+                            offset: off,
+                            z: modifier.z_index,
+                            axis: ScrollbarAxis::H,
+                            style: &modifier.scrollbar_style_or_default(),
+                            alpha: alpha_accum,
+                            set_offset: b.set_offset_main.clone(),
+                            get_offset: b.get_offset_main.clone(),
+                            reversed: b.reversed,
+                            hit_context: &scroll_hit_context,
+                        });
                     }
 
                     scene.nodes.push(SceneNode::PopClip);
@@ -2631,36 +2641,46 @@ impl LayoutEngine {
                                     .clone()
                                     .map(|s| Rc::new(move |x| s(x, oy)) as Rc<dyn Fn(f32)>)
                             });
-                        push_scrollbar(
-                            scene,
-                            hits,
-                            interactions,
-                            view_id,
-                            vp,
-                            ch,
-                            oy,
-                            modifier.z_index,
-                            ScrollbarAxis::V,
-                            &modifier.scrollbar_style_or_default(),
-                            alpha_accum,
-                            set_y,
-                            &scroll_hit_context,
-                        );
-                        push_scrollbar(
-                            scene,
-                            hits,
-                            interactions,
-                            view_id,
-                            vp,
-                            cw,
-                            ox,
-                            modifier.z_index,
-                            ScrollbarAxis::H,
-                            &modifier.scrollbar_style_or_default(),
-                            alpha_accum,
-                            set_x,
-                            &scroll_hit_context,
-                        );
+                        let get_y = b.get_offset_xy.clone().map(|g| {
+                            Rc::new(move || g().1) as Rc<dyn Fn() -> f32>
+                        });
+                        let get_x = b.get_offset_xy.clone().map(|g| {
+                            Rc::new(move || g().0) as Rc<dyn Fn() -> f32>
+                        });
+                        push_scrollbar(ScrollbarParams {
+                            scene: scene,
+                            hits: hits,
+                            interactions: interactions,
+                            vid: view_id,
+                            vp: vp,
+                            content_len: ch,
+                            offset: oy,
+                            z: modifier.z_index,
+                            axis: ScrollbarAxis::V,
+                            style: &modifier.scrollbar_style_or_default(),
+                            alpha: alpha_accum,
+                            set_offset: set_y,
+                            get_offset: get_y,
+                            reversed: b.reversed_y,
+                            hit_context: &scroll_hit_context,
+                        });
+                        push_scrollbar(ScrollbarParams {
+                            scene: scene,
+                            hits: hits,
+                            interactions: interactions,
+                            vid: view_id,
+                            vp: vp,
+                            content_len: cw,
+                            offset: ox,
+                            z: modifier.z_index,
+                            axis: ScrollbarAxis::H,
+                            style: &modifier.scrollbar_style_or_default(),
+                            alpha: alpha_accum,
+                            set_offset: set_x,
+                            get_offset: get_x,
+                            reversed: b.reversed_x,
+                            hit_context: &scroll_hit_context,
+                        });
                     }
                     scene.nodes.push(SceneNode::PopClip);
                 }

@@ -21,11 +21,26 @@ pub enum ScrollAxis {
 pub struct ScrollbarStyle {
     pub thickness: Dp,
     pub track_inset: Dp,
+    /// Cross-axis inset of the track (M3 `crossAxisTrackInset`, default 0).
+    /// The vertical bar sits this far from the end edge; the horizontal bar
+    /// this far from the bottom edge.
+    pub track_cross_inset: Dp,
     pub min_thumb_length: Dp,
+    /// Maximum thumb length as a fraction of the track (M3
+    /// `thumbMaxLengthFraction`, default 0.9).
+    pub thumb_max_length_fraction: f32,
     pub fixed_thumb_length: Option<Dp>,
     pub radius: Option<Dp>,
     pub track_visuals: ControlVisualSet,
     pub thumb_visuals: ControlVisualSet,
+    /// M3 `isFadeEnabled`: the bar shows while scrolling (or while hovered /
+    /// pressed) and fades out after `fade_delay_ms`. When false the bar is
+    /// always fully visible.
+    pub fade_enabled: bool,
+    /// M3 `fadeDelayMillis`: idle time before the fade starts.
+    pub fade_delay_ms: u64,
+    /// M3 `fadeDurationMillis`: length of the fade animation.
+    pub fade_duration_ms: u64,
 }
 
 impl Default for ScrollbarStyle {
@@ -33,11 +48,16 @@ impl Default for ScrollbarStyle {
         Self {
             thickness: Dp(4.0),
             track_inset: Dp(2.0),
+            track_cross_inset: Dp(0.0),
             min_thumb_length: Dp(24.0),
+            thumb_max_length_fraction: 0.9,
             fixed_thumb_length: None,
             radius: None,
             track_visuals: ControlVisualSet::default(),
             thumb_visuals: ControlVisualSet::default(),
+            fade_enabled: true,
+            fade_delay_ms: 400,
+            fade_duration_ms: 250,
         }
     }
 }
@@ -50,6 +70,31 @@ impl ScrollbarStyle {
 
     pub fn with_track_inset(mut self, track_inset: Dp) -> Self {
         self.track_inset = track_inset;
+        self
+    }
+
+    pub fn with_track_cross_inset(mut self, track_cross_inset: Dp) -> Self {
+        self.track_cross_inset = track_cross_inset;
+        self
+    }
+
+    pub fn with_thumb_max_length_fraction(mut self, fraction: f32) -> Self {
+        self.thumb_max_length_fraction = fraction;
+        self
+    }
+
+    pub fn with_fade_enabled(mut self, fade_enabled: bool) -> Self {
+        self.fade_enabled = fade_enabled;
+        self
+    }
+
+    pub fn with_fade_delay_ms(mut self, fade_delay_ms: u64) -> Self {
+        self.fade_delay_ms = fade_delay_ms;
+        self
+    }
+
+    pub fn with_fade_duration_ms(mut self, fade_duration_ms: u64) -> Self {
+        self.fade_duration_ms = fade_duration_ms;
         self
     }
 
@@ -89,6 +134,9 @@ pub struct ScrollAxisBinding {
     pub set_content_main: Option<Rc<dyn Fn(f32)>>,
     pub get_offset_main: Option<Rc<dyn Fn() -> f32>>,
     pub set_offset_main: Option<Rc<dyn Fn(f32)>>,
+    /// Reverse layout (Compose `reverseLayout`): offset 0 sits at the end of
+    /// the track and the thumb mapping runs backwards.
+    pub reversed: bool,
     pub show_scrollbar: bool,
     pub tick: Option<Rc<dyn Fn()>>,
     pub set_nested_scroll_parent: Option<Rc<dyn Fn(NestedScrollConnection)>>,
@@ -122,6 +170,9 @@ pub struct ScrollBothBinding {
     pub set_content_height: Option<Rc<dyn Fn(f32)>>,
     pub get_offset_xy: Option<Rc<dyn Fn() -> (f32, f32)>>,
     pub set_offset_xy: Option<Rc<dyn Fn(f32, f32)>>,
+    /// Per-axis reverse layout; see `ScrollAxisBinding::reversed`.
+    pub reversed_x: bool,
+    pub reversed_y: bool,
     pub show_scrollbar: bool,
     pub tick: Option<Rc<dyn Fn()>>,
     pub set_nested_scroll_parent: Option<Rc<dyn Fn(NestedScrollConnection)>>,
@@ -431,6 +482,7 @@ pub struct ScrollState {
     overscroll_enabled: Cell<bool>,
     pub(crate) parent_connection: Rc<RefCell<Option<NestedScrollConnection>>>,
     show_scrollbar: Cell<bool>,
+    reversed: Rc<Cell<bool>>,
     prev_tick: Cell<Instant>,
 }
 
@@ -451,6 +503,7 @@ impl ScrollState {
             overscroll_enabled: Cell::new(true),
             parent_connection: Rc::new(RefCell::new(None)),
             show_scrollbar: Cell::new(true),
+            reversed: Rc::new(Cell::new(false)),
             prev_tick: Cell::new(Instant::now()),
         }
     }
@@ -495,6 +548,13 @@ impl ScrollState {
 
     pub fn set_show_scrollbar(&self, show: bool) {
         self.show_scrollbar.set(show);
+    }
+
+    /// Reverse layout (Compose `reverseLayout`): offset 0 sits at the end of
+    /// the track and the thumb mapping runs backwards. Call before
+    /// `to_binding`; the binding snapshots the flag like `show_scrollbar`.
+    pub fn set_reversed(&self, reversed: bool) {
+        self.reversed.set(reversed);
     }
 
     pub fn set_viewport_height(&self, h: f32) {
@@ -678,6 +738,7 @@ impl ScrollState {
             set_content_main: Some(c_set_content),
             get_offset_main: Some(c_get),
             set_offset_main: Some(c_set),
+            reversed: this.reversed.get(),
             show_scrollbar: self.show_scrollbar(),
             tick: Some(c_tick),
             set_nested_scroll_parent: Some(c_set_nested),
@@ -696,6 +757,7 @@ pub struct HorizontalScrollState {
     overscroll_enabled: Cell<bool>,
     pub(crate) parent_connection: Rc<RefCell<Option<NestedScrollConnection>>>,
     show_scrollbar: Cell<bool>,
+    reversed: Rc<Cell<bool>>,
     prev_tick: Cell<Instant>,
 }
 
@@ -716,6 +778,7 @@ impl HorizontalScrollState {
             overscroll_enabled: Cell::new(true),
             parent_connection: Rc::new(RefCell::new(None)),
             show_scrollbar: Cell::new(true),
+            reversed: Rc::new(Cell::new(false)),
             prev_tick: Cell::new(Instant::now()),
         }
     }
@@ -761,6 +824,13 @@ impl HorizontalScrollState {
 
     pub fn set_show_scrollbar(&self, show: bool) {
         self.show_scrollbar.set(show);
+    }
+
+    /// Reverse layout (Compose `reverseLayout`): offset 0 sits at the end of
+    /// the track and the thumb mapping runs backwards. Call before
+    /// `to_binding`; the binding snapshots the flag like `show_scrollbar`.
+    pub fn set_reversed(&self, reversed: bool) {
+        self.reversed.set(reversed);
     }
 
     pub fn set_viewport_width(&self, w: f32) {
@@ -921,6 +991,7 @@ impl HorizontalScrollState {
             set_content_main: Some(c_set_ct),
             get_offset_main: Some(c_get),
             set_offset_main: Some(c_set),
+            reversed: this.reversed.get(),
             show_scrollbar: this.show_scrollbar(),
             tick: Some(c_tick),
             set_nested_scroll_parent: Some(c_set_nested),
@@ -944,6 +1015,8 @@ pub struct ScrollStateXY {
     overscroll_enabled: Cell<bool>,
     pub(crate) parent_connection: Rc<RefCell<Option<NestedScrollConnection>>>,
     show_scrollbar: Cell<bool>,
+    reversed_x: Rc<Cell<bool>>,
+    reversed_y: Rc<Cell<bool>>,
     prev_tick: Cell<Instant>,
 }
 
@@ -969,6 +1042,8 @@ impl ScrollStateXY {
             overscroll_enabled: Cell::new(true),
             parent_connection: Rc::new(RefCell::new(None)),
             show_scrollbar: Cell::new(true),
+            reversed_x: Rc::new(Cell::new(false)),
+            reversed_y: Rc::new(Cell::new(false)),
             prev_tick: Cell::new(Instant::now()),
         }
     }
@@ -979,6 +1054,18 @@ impl ScrollStateXY {
 
     pub fn set_show_scrollbar(&self, show: bool) {
         self.show_scrollbar.set(show);
+    }
+
+    /// Reverse layout per axis (Compose `reverseLayout`); see
+    /// `ScrollState::set_reversed`. Snapshotted by `to_binding`.
+    pub fn set_reversed_x(&self, reversed: bool) {
+        self.reversed_x.set(reversed);
+    }
+
+    /// Reverse layout per axis (Compose `reverseLayout`); see
+    /// `ScrollState::set_reversed`. Snapshotted by `to_binding`.
+    pub fn set_reversed_y(&self, reversed: bool) {
+        self.reversed_y.set(reversed);
     }
 
     pub fn overscroll_offset(&self) -> (f32, f32) {
@@ -1291,6 +1378,8 @@ impl ScrollStateXY {
             set_content_height: Some(c_set_ch),
             get_offset_xy: Some(c_get_xy),
             set_offset_xy: Some(c_set_xy),
+            reversed_x: this.reversed_x.get(),
+            reversed_y: this.reversed_y.get(),
             show_scrollbar: this.show_scrollbar(),
             tick: Some(c_tick),
             set_nested_scroll_parent: Some(c_set_nested),

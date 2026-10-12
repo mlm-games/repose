@@ -437,6 +437,7 @@ impl ReposeRuntime {
         self.poll_long_press();
         self.flush_pending_click();
         self.poll_key_long_press();
+        repose_ui::scrollbar_repeat::poll_track_repeat();
     }
 
     /// Compose and layout a frame, returning the output for rendering.
@@ -452,6 +453,7 @@ impl ReposeRuntime {
         self.poll_long_press();
         self.flush_pending_click();
         self.poll_key_long_press();
+        repose_ui::scrollbar_repeat::poll_track_repeat();
 
         let size = self.sched.size;
         let rc = render_ctx.clone();
@@ -1153,6 +1155,9 @@ impl ReposeRuntime {
         if touch.is_none() && (self.capture_id.is_some() || self.hit_path.is_some()) {
             self.handle_pointer_cancel();
         }
+        // A new press supersedes any held track-press repeat for this pointer;
+        // the dispatch below may begin a fresh one.
+        repose_ui::scrollbar_repeat::cancel_track_repeat_for_touch(touch);
         if let Some(tid) = touch
             && self.touch_presses.contains_key(&tid)
         {
@@ -1414,6 +1419,9 @@ impl ReposeRuntime {
             self.sched.pointer_pos_px = Some((pos.x, pos.y));
             self.held_mouse.remove(&button);
         }
+        // The pointer is up: any track-press repeat it drove ends here even if
+        // the track hit itself is gone (recomposed away) and never sees Up.
+        repose_ui::scrollbar_repeat::cancel_track_repeat_for_touch(touch);
         let mut result = PointerButtonResult {
             focused: self.sched.focused,
             capture_id: self.capture_id,
@@ -1796,6 +1804,7 @@ impl ReposeRuntime {
     pub fn handle_touch_cancel_at(&mut self, tid: u64, pos: Vec2) {
         let _event_scope = crate::lifecycle::enter_dispatchers(self.event_dispatchers());
         let _dnd_guard = self.dnd_context.enter();
+        repose_ui::scrollbar_repeat::cancel_track_repeat_for_touch(Some(tid));
         let was_primary = self.touch_primary == Some(tid);
         let capture_id = self
             .touch_presses
@@ -1836,6 +1845,7 @@ impl ReposeRuntime {
     pub fn handle_pointer_cancel(&mut self) {
         let _event_scope = crate::lifecycle::enter_dispatchers(self.event_dispatchers());
         let _dnd_guard = self.dnd_context.enter();
+        repose_ui::scrollbar_repeat::cancel_all_track_repeats();
         self.sched.pointer_pos_px = None;
         self.held_mouse.clear();
         self.sched.mouse_primary = false;
@@ -3434,6 +3444,8 @@ impl ReposeRuntime {
                 .as_ref()
                 .filter(|(_, _, fired)| !*fired)
                 .map(|(_, at, _)| *at + web_time::Duration::from_millis(LONG_PRESS_MS as u64)),
+            repose_ui::scrollbar_repeat::track_repeat_deadline(),
+            repose_ui::scrollbar_fade::scrollbar_fade_deadline(),
         ]
         .into_iter()
         .flatten()

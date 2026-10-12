@@ -115,6 +115,8 @@ pub use subcompose::{
 pub mod overlay;
 pub mod pager;
 pub mod scroll;
+pub mod scrollbar_fade;
+pub mod scrollbar_repeat;
 pub mod window_v2;
 pub mod windowing;
 
