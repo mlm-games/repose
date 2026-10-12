@@ -135,18 +135,25 @@ where
             .enumerate()
             .map(|(i, item)| {
                 let h = Dp(item_height.get(item).max(1.0)).to_px().0;
-                if i + 1 < items.len() { h + spacing_px } else { h }
+                if i + 1 < items.len() {
+                    h + spacing_px
+                } else {
+                    h
+                }
             })
             .collect();
         state.geometry(&current_keys, &heights_px)
     });
-    let items_total_px = geometry.as_ref().map(|geometry| geometry.total()).unwrap_or_else(|| {
-        uniform_height_px
-            .map(|height| {
-                height * items.len() as f32 + spacing_px * items.len().saturating_sub(1) as f32
-            })
-            .unwrap_or(0.0)
-    });
+    let items_total_px = geometry
+        .as_ref()
+        .map(|geometry| geometry.total())
+        .unwrap_or_else(|| {
+            uniform_height_px
+                .map(|height| {
+                    height * items.len() as f32 + spacing_px * items.len().saturating_sub(1) as f32
+                })
+                .unwrap_or(0.0)
+        });
     let content_height_px = items_total_px + padding_top_px + padding_bottom_px;
 
     let scroll_offset_px = state.core.axis.offset.get();
@@ -197,16 +204,14 @@ where
     } else {
         let mut active = None;
         for i in 0..(first_visible + 1).min(items.len()) {
-            if sticky_keys.contains(&current_keys[i]) && current_geometry(i).0 <= scroll_offset_px
-            {
+            if sticky_keys.contains(&current_keys[i]) && current_geometry(i).0 <= scroll_offset_px {
                 active = Some(i);
             }
         }
         active
     };
-    let content_type_of = |data_index: usize| -> u64 {
-        content_type.as_ref().map(|f| f(data_index)).unwrap_or(0)
-    };
+    let content_type_of =
+        |data_index: usize| -> u64 { content_type.as_ref().map(|f| f(data_index)).unwrap_or(0) };
     let mut entering = std::collections::HashSet::new();
     let animation_id = state_id as u64;
     let animation_spec = animate_spec;
@@ -398,14 +403,15 @@ where
                 key,
                 revision,
                 move || {
-                crate::Box(
-                    Modifier::new()
-                        .fill_max_width()
-                        .height(Dp(height_dp))
-                        .alpha(alpha),
-                )
-                .child(item_builder_ref(item.clone(), data_index))
-            }));
+                    crate::Box(
+                        Modifier::new()
+                            .fill_max_width()
+                            .height(Dp(height_dp))
+                            .alpha(alpha),
+                    )
+                    .child(item_builder_ref(item.clone(), data_index))
+                },
+            ));
         } else {
             combined_children.push(scoped_item_with_key(
                 format!("lazy_{state_id:x}_item_{key}_{ct_suffix}"),
@@ -1163,9 +1169,12 @@ where
 
     if first_with_buffer > 0 {
         children.push(crate::Box(
-            Modifier::new()
-                .fill_max_height()
-                .width(Dp(Px(left_at(first_with_buffer) - padding_left_px).to_dp().0.max(0.0))),
+            Modifier::new().fill_max_height().width(Dp(Px(
+                left_at(first_with_buffer) - padding_left_px
+            )
+            .to_dp()
+            .0
+            .max(0.0))),
         ));
     }
 
@@ -1180,9 +1189,8 @@ where
         }
         active
     };
-    let content_type_of = |data_index: usize| -> u64 {
-        content_type.as_ref().map(|f| f(data_index)).unwrap_or(0)
-    };
+    let content_type_of =
+        |data_index: usize| -> u64 { content_type.as_ref().map(|f| f(data_index)).unwrap_or(0) };
 
     let state_id = Rc::as_ptr(&state) as usize;
     for i in first_with_buffer..last_visible {
@@ -1199,9 +1207,7 @@ where
         let data_i = to_data_idx(i);
         if Some(i) == sticky_active {
             children.push(crate::Box(
-                Modifier::new()
-                    .fill_max_height()
-                    .width(Dp(item_width_dp)),
+                Modifier::new().fill_max_height().width(Dp(item_width_dp)),
             ));
             continue;
         }

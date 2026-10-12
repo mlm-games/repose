@@ -925,7 +925,12 @@ pub fn WavyProgressIndicator(value: Option<f32>, config: WavyProgressIndicatorCo
                     None => true,
                 };
                 scene.nodes.push(SceneNode::Ellipse {
-                    rect: Rect { x: x - 2.0, y: y - 2.0, w: 4.0, h: 4.0 },
+                    rect: Rect {
+                        x: x - 2.0,
+                        y: y - 2.0,
+                        w: 4.0,
+                        h: 4.0,
+                    },
                     brush: paint(if active { color } else { track }, alpha),
                 });
             }

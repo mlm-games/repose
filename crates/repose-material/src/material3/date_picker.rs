@@ -765,7 +765,11 @@ pub fn DateRangePicker(
         let s = state.clone();
         move || {
             let (y, m) = (s.year.get(), s.month.get().clamp(1, 12));
-            let (next_y, next_m) = if m == 1 { (y.saturating_sub(1), 12) } else { (y, m - 1) };
+            let (next_y, next_m) = if m == 1 {
+                (y.saturating_sub(1), 12)
+            } else {
+                (y, m - 1)
+            };
             s.year.set_neq(next_y);
             s.month.set_neq(next_m);
         }
@@ -774,7 +778,11 @@ pub fn DateRangePicker(
         let s = state.clone();
         move || {
             let (y, m) = (s.year.get(), s.month.get().clamp(1, 12));
-            let (next_y, next_m) = if m == 12 { (y.saturating_add(1), 1) } else { (y, m + 1) };
+            let (next_y, next_m) = if m == 12 {
+                (y.saturating_add(1), 1)
+            } else {
+                (y, m + 1)
+            };
             s.year.set_neq(next_y);
             s.month.set_neq(next_m);
         }
@@ -861,8 +869,7 @@ pub fn DateRangePicker(
                         let day_num = (cell_idx - start_dow + 1) as i32;
                         if day_num <= dim as i32 {
                             let date = (year, month, day_num as u32);
-                            let is_endpoint =
-                                lo == Some(date) || hi == Some(date) && lo != hi;
+                            let is_endpoint = lo == Some(date) || hi == Some(date) && lo != hi;
                             let in_range = match (lo, hi) {
                                 (Some(l), Some(h)) => date > l && date < h,
                                 _ => false,
@@ -959,15 +966,15 @@ fn parse_calendar_date(text: &str) -> Option<CalendarDate> {
     if parts.next().is_some() {
         return None;
     }
-    let (y, m, d) = (y.parse::<i32>().ok()?, m.parse::<u32>().ok()?, d.parse::<u32>().ok()?);
+    let (y, m, d) = (
+        y.parse::<i32>().ok()?,
+        m.parse::<u32>().ok()?,
+        d.parse::<u32>().ok()?,
+    );
     is_valid_date(y, m, d).then_some((y, m, d))
 }
 
-pub fn DateInput(
-    state: Rc<DatePickerState>,
-    modifier: Modifier,
-    label: Option<String>,
-) -> View {
+pub fn DateInput(state: Rc<DatePickerState>, modifier: Modifier, label: Option<String>) -> View {
     let (y, m, d) = state.selected_date();
     let text = format!("{y:04}-{m:02}-{d:02}");
     let invalid = remember_state_with_key(state.key("input-error"), || false);

@@ -111,7 +111,11 @@ pub(crate) fn push_scrollbar(p: ScrollbarParams<'_>) {
     let max_p = (track_main - thumb_len).max(0.0);
     let tpos = (offset / (content_len - vp_len).max(1.0)).clamp(0.0, 1.0);
     let raw_offset = tpos * max_p;
-    let thumb_offset = if mirror { max_p - raw_offset } else { raw_offset };
+    let thumb_offset = if mirror {
+        max_p - raw_offset
+    } else {
+        raw_offset
+    };
 
     let (track_rect, thumb_rect) = match axis {
         ScrollbarAxis::V => (
@@ -161,8 +165,7 @@ pub(crate) fn push_scrollbar(p: ScrollbarParams<'_>) {
             ScrollbarAxis::V => crate::scrollbar_fade::FADE_KEY_V,
             ScrollbarAxis::H => crate::scrollbar_fade::FADE_KEY_H,
         };
-    let alpha =
-        alpha * crate::scrollbar_fade::scrollbar_alpha(fade_key, offset, engaged, style);
+    let alpha = alpha * crate::scrollbar_fade::scrollbar_alpha(fade_key, offset, engaged, style);
     let visual_state = ControlVisualState {
         alpha,
         enabled: true,
@@ -221,7 +224,6 @@ pub(crate) fn push_scrollbar(p: ScrollbarParams<'_>) {
             });
         }
     }
-
 
     if let Some(s) = set_offset {
         let track_start = match axis {
@@ -310,9 +312,9 @@ pub(crate) fn push_scrollbar(p: ScrollbarParams<'_>) {
             let drag = drag.clone();
             Rc::new(move |pe: PointerEvent| {
                 *drag.borrow_mut() = ThumbDrag::default();
-                crate::scrollbar_repeat::cancel_track_repeat(
-                    crate::scrollbar_repeat::pointer_key(pe.kind, pe.id),
-                );
+                crate::scrollbar_repeat::cancel_track_repeat(crate::scrollbar_repeat::pointer_key(
+                    pe.kind, pe.id,
+                ));
             })
         };
         let mut thumb_hit = HitRegion {
@@ -388,9 +390,9 @@ pub(crate) fn push_scrollbar(p: ScrollbarParams<'_>) {
         };
         let end_track: Rc<dyn Fn(PointerEvent)> = {
             Rc::new(move |pe: PointerEvent| {
-                crate::scrollbar_repeat::cancel_track_repeat(
-                    crate::scrollbar_repeat::pointer_key(pe.kind, pe.id),
-                );
+                crate::scrollbar_repeat::cancel_track_repeat(crate::scrollbar_repeat::pointer_key(
+                    pe.kind, pe.id,
+                ));
             })
         };
         let mut track_hit = HitRegion {

@@ -380,9 +380,7 @@ impl SnackbarHostState {
 
 pub fn SnackbarHost(host_state: &SnackbarHostState, modifier: Modifier) -> View {
     let _ = host_state;
-    Box(modifier.semantics(
-        Semantics::new(Role::Container).with_live_region(LiveRegion::Polite),
-    ))
+    Box(modifier.semantics(Semantics::new(Role::Container).with_live_region(LiveRegion::Polite)))
 }
 
 #[cfg(test)]

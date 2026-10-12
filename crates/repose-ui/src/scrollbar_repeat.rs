@@ -70,7 +70,10 @@ pub fn begin_track_repeat(pointer: u64, page: Rc<dyn Fn()>) {
 pub fn cancel_track_repeat(pointer: u64) {
     ACTIVE.with(|active| {
         let mut slot = active.borrow_mut();
-        if slot.as_ref().is_some_and(|repeat| repeat.pointer == pointer) {
+        if slot
+            .as_ref()
+            .is_some_and(|repeat| repeat.pointer == pointer)
+        {
             *slot = None;
         }
     });

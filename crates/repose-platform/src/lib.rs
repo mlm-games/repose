@@ -374,7 +374,9 @@ pub fn run_desktop_app_with_config(
                         let delta = match req.action {
                             accesskit::Action::ScrollUp => repose_core::Vec2 { x: 0.0, y: -200.0 },
                             accesskit::Action::ScrollDown => repose_core::Vec2 { x: 0.0, y: 200.0 },
-                            accesskit::Action::ScrollLeft => repose_core::Vec2 { x: -200.0, y: 0.0 },
+                            accesskit::Action::ScrollLeft => {
+                                repose_core::Vec2 { x: -200.0, y: 0.0 }
+                            }
                             _ => repose_core::Vec2 { x: 200.0, y: 0.0 },
                         };
                         if let Some(hit) = f.hit_regions.iter().find(|h| h.id == target_id) {
@@ -415,7 +417,9 @@ pub fn run_desktop_app_with_config(
                                 .iter()
                                 .find(|n| n.id == target_id)
                                 .and_then(|n| n.progress)
-                                .map(|p| p.current + dir * p.step.unwrap_or((p.max - p.min) / 20.0));
+                                .map(|p| {
+                                    p.current + dir * p.step.unwrap_or((p.max - p.min) / 20.0)
+                                });
                             if let Some(value) = value {
                                 cb(value);
                                 self.request_redraw();

@@ -2138,9 +2138,11 @@ fn test_scrollbar_fade_hides_when_idle_and_arms_deadline_on_scroll() {
     let scroll = crate::scroll::ScrollArea(
         Modifier::new().size(Dp(200.0), Dp(200.0)),
         std::rc::Rc::new(state.clone()),
-        RBox(Modifier::new()
-            .size(Dp(180.0), Dp(500.0))
-            .background(Color::from_rgb(100, 100, 100))),
+        RBox(
+            Modifier::new()
+                .size(Dp(180.0), Dp(500.0))
+                .background(Color::from_rgb(100, 100, 100)),
+        ),
     );
     let mut engine = LayoutEngine::new();
     let (scene, _, _) = engine.layout_frame(

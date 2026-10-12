@@ -260,10 +260,12 @@ pub fn FloatingActionButtonMenu(
         .map(|item| {
             let cb = item.on_click.clone();
             let closer = on_expanded_change.clone();
-            repose_ui::Row(Modifier::new()
-                .align_items(AlignItems::CENTER)
-                .column_gap(Dp(12.0))
-                .justify_content(JustifyContent::END))
+            repose_ui::Row(
+                Modifier::new()
+                    .align_items(AlignItems::CENTER)
+                    .column_gap(Dp(12.0))
+                    .justify_content(JustifyContent::END),
+            )
             .child((
                 Box(Modifier::new()
                     .background(th.surface_container_high)
@@ -286,7 +288,11 @@ pub fn FloatingActionButtonMenu(
             ))
         })
         .collect::<Vec<_>>();
-    sub_views.push(FAB(toggle_icon, move || on_expanded_change(false), config.fab_config.clone()));
+    sub_views.push(FAB(
+        toggle_icon,
+        move || on_expanded_change(false),
+        config.fab_config.clone(),
+    ));
     repose_ui::Column(
         Modifier::new()
             .alpha(reveal)

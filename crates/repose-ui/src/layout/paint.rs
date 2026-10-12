@@ -2678,12 +2678,14 @@ impl LayoutEngine {
                                     .clone()
                                     .map(|s| Rc::new(move |x| s(x, oy)) as Rc<dyn Fn(f32)>)
                             });
-                        let get_y = b.get_offset_xy.clone().map(|g| {
-                            Rc::new(move || g().1) as Rc<dyn Fn() -> f32>
-                        });
-                        let get_x = b.get_offset_xy.clone().map(|g| {
-                            Rc::new(move || g().0) as Rc<dyn Fn() -> f32>
-                        });
+                        let get_y = b
+                            .get_offset_xy
+                            .clone()
+                            .map(|g| Rc::new(move || g().1) as Rc<dyn Fn() -> f32>);
+                        let get_x = b
+                            .get_offset_xy
+                            .clone()
+                            .map(|g| Rc::new(move || g().0) as Rc<dyn Fn() -> f32>);
                         push_scrollbar(ScrollbarParams {
                             scene: scene,
                             hits: hits,

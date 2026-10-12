@@ -744,10 +744,10 @@ impl LazyColumnState {
         if index >= count {
             return None;
         }
-        if let Some(geo) = self.geometry.borrow().current() {
-            if index < geo.len() {
-                return Some(self.core.pad() + geo.top(index));
-            }
+        if let Some(geo) = self.geometry.borrow().current()
+            && index < geo.len()
+        {
+            return Some(self.core.pad() + geo.top(index));
         }
         Some(self.core.uniform_offset_for_index(index))
     }

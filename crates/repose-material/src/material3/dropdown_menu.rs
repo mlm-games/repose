@@ -1319,15 +1319,13 @@ pub fn ExposedDropdownMenuBox(
         let on_expanded_change = on_expanded_change.clone();
         move || on_expanded_change(!expanded)
     };
-    Box(modifier.semantics(
-        Semantics::new(Role::DropdownList).with_expanded(expanded),
-    ))
-    .child(Box(Modifier::new().fill_max_width().on_click(toggle)).child(text_field))
-    .child(DropdownMenu(
-        menu_state,
-        menu_modifier,
-        Box(Modifier::new()),
-        items,
-        config,
-    ))
+    Box(modifier.semantics(Semantics::new(Role::DropdownList).with_expanded(expanded)))
+        .child(Box(Modifier::new().fill_max_width().on_click(toggle)).child(text_field))
+        .child(DropdownMenu(
+            menu_state,
+            menu_modifier,
+            Box(Modifier::new()),
+            items,
+            config,
+        ))
 }

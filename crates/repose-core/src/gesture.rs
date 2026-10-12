@@ -128,7 +128,10 @@ impl<T: Clone + PartialEq + 'static> SwipeableState<T> {
 
     /// Offset registered for an anchor value, if present.
     pub fn anchor_offset(&self, value: &T) -> Option<f32> {
-        self.anchors.iter().find(|(_, v)| v == value).map(|(o, _)| *o)
+        self.anchors
+            .iter()
+            .find(|(_, v)| v == value)
+            .map(|(o, _)| *o)
     }
 
     /// Snap to an absolute offset instantly (used during active drag).
@@ -387,10 +390,12 @@ impl Clone for TransformableState {
     }
 }
 
+pub type ConfirmValueChange<T> = Rc<dyn Fn(T) -> bool>;
+
 pub struct AnchoredDraggableState<T: Clone + PartialEq + 'static> {
     inner: SwipeableState<T>,
     config: SwipeableConfig,
-    confirm_value_change: Rc<RefCell<Option<Rc<dyn Fn(T) -> bool>>>>,
+    confirm_value_change: Rc<RefCell<Option<ConfirmValueChange<T>>>>,
     target: Rc<RefCell<Option<T>>>,
 }
 
@@ -398,7 +403,7 @@ impl<T: Clone + PartialEq + 'static> AnchoredDraggableState<T> {
     pub fn new(
         anchors: Vec<(f32, T)>,
         config: SwipeableConfig,
-        confirm_value_change: Option<Rc<dyn Fn(T) -> bool>>,
+        confirm_value_change: Option<ConfirmValueChange<T>>,
     ) -> Self {
         let target = anchors.first().map(|(_, v)| v.clone());
         Self {
@@ -423,8 +428,6 @@ impl<T: Clone + PartialEq + 'static> AnchoredDraggableState<T> {
         self.inner.anchor_offset(value)
     }
 
-
-
     pub fn offset(&self) -> f32 {
         self.inner.offset()
     }
@@ -442,7 +445,12 @@ impl<T: Clone + PartialEq + 'static> AnchoredDraggableState<T> {
     }
 
     pub fn snap_to(&self, value: &T) {
-        if self.confirm_value_change.borrow().as_ref().is_some_and(|f| !f(value.clone())) {
+        if self
+            .confirm_value_change
+            .borrow()
+            .as_ref()
+            .is_some_and(|f| !f(value.clone()))
+        {
             return;
         }
         if let Some(offset) = self.inner.anchor_offset(value) {
@@ -452,7 +460,12 @@ impl<T: Clone + PartialEq + 'static> AnchoredDraggableState<T> {
     }
 
     pub fn animate_to(&self, value: &T) {
-        if self.confirm_value_change.borrow().as_ref().is_some_and(|f| !f(value.clone())) {
+        if self
+            .confirm_value_change
+            .borrow()
+            .as_ref()
+            .is_some_and(|f| !f(value.clone()))
+        {
             return;
         }
         *self.target.borrow_mut() = Some(value.clone());
@@ -526,10 +539,12 @@ mod tests {
         let state = TransformableState::new(move |zoom, pan, rotation| {
             seen_pan.borrow_mut().push((zoom, pan.x, rotation));
         });
-        assert!(state.handle_gesture(&crate::shortcuts::Gesture::PinchWithCenter {
-            delta_scale: 2.0,
-            center: crate::Vec2 { x: 1.0, y: 1.0 },
-        }));
+        assert!(
+            state.handle_gesture(&crate::shortcuts::Gesture::PinchWithCenter {
+                delta_scale: 2.0,
+                center: crate::Vec2 { x: 1.0, y: 1.0 },
+            })
+        );
         assert!(state.handle_gesture(&crate::shortcuts::Gesture::Pan {
             delta: crate::Vec2 { x: 3.0, y: 4.0 },
             center: crate::Vec2 { x: 0.0, y: 0.0 },
@@ -559,25 +574,40 @@ mod tests {
     fn test_route_action_to_point_walks_up() {
         let fired = Rc::new(RefCell::new(Vec::new()));
         let fired_child = fired.clone();
-        let mut child = HitRegion::default();
-        child.id = 2;
-        child.parent = Some(1);
-        child.rect = crate::Rect { x: 0.0, y: 0.0, w: 10.0, h: 10.0 };
-        child.z_index = 2.0;
-        child.on_action = Some(Rc::new(move |_| {
-            fired_child.borrow_mut().push(2u64);
-            false
-        }));
-        let mut parent = HitRegion::default();
-        parent.id = 1;
-        parent.rect = crate::Rect { x: 0.0, y: 0.0, w: 100.0, h: 100.0 };
-        parent.z_index = 1.0;
-        parent.on_action = Some(Rc::new(move |_| true));
+        let child = HitRegion {
+            id: 2,
+            parent: Some(1),
+            rect: crate::Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 10.0,
+                h: 10.0,
+            },
+            z_index: 2.0,
+            on_action: Some(Rc::new(move |_| {
+                fired_child.borrow_mut().push(2u64);
+                false
+            })),
+            ..Default::default()
+        };
+        let parent = HitRegion {
+            id: 1,
+            rect: crate::Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 100.0,
+                h: 100.0,
+            },
+            z_index: 1.0,
+            on_action: Some(Rc::new(move |_| true)),
+            ..Default::default()
+        };
         let hits = vec![parent, child];
-        let action = crate::shortcuts::Action::Gesture(crate::shortcuts::Gesture::PinchWithCenter {
-            delta_scale: 1.0,
-            center: crate::Vec2 { x: 5.0, y: 5.0 },
-        });
+        let action =
+            crate::shortcuts::Action::Gesture(crate::shortcuts::Gesture::PinchWithCenter {
+                delta_scale: 1.0,
+                center: crate::Vec2 { x: 5.0, y: 5.0 },
+            });
         assert!(crate::runtime::route_action_to_point(
             &hits,
             &action,

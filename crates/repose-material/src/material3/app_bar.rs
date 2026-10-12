@@ -376,9 +376,8 @@ fn flexible_app_bar(
         .map(|sb| sb.collapsed_fraction())
         .unwrap_or(config.scroll_fraction)
         .clamp(0.0, 1.0);
-    let height = Dp(
-        expanded_height.0 + (TopAppBarDefaults::HEIGHT.0 - expanded_height.0) * fraction,
-    );
+    let height =
+        Dp(expanded_height.0 + (TopAppBarDefaults::HEIGHT.0 - expanded_height.0) * fraction);
     let mut config = config;
     config.height = height;
     let title_view = ZStack(Modifier::new().fill_max_width()).child((
@@ -387,11 +386,8 @@ fn flexible_app_bar(
                 .size(expanded_title)
                 .color(th.on_surface),
         ),
-        Box(Modifier::new().alpha(fraction)).child(
-            Text(title)
-                .size(collapsed_title)
-                .color(th.on_surface),
-        ),
+        Box(Modifier::new().alpha(fraction))
+            .child(Text(title).size(collapsed_title).color(th.on_surface)),
     ));
     top_app_bar_layout(title_view, None, navigation_icon, actions, config, false)
 }
@@ -402,7 +398,15 @@ pub fn MediumTopAppBar(
     actions: Vec<View>,
     config: TopAppBarConfig,
 ) -> View {
-    flexible_app_bar(title, navigation_icon, actions, config, Dp(112.0), Sp(28.0), Sp(22.0))
+    flexible_app_bar(
+        title,
+        navigation_icon,
+        actions,
+        config,
+        Dp(112.0),
+        Sp(28.0),
+        Sp(22.0),
+    )
 }
 
 pub fn LargeTopAppBar(
@@ -411,7 +415,15 @@ pub fn LargeTopAppBar(
     actions: Vec<View>,
     config: TopAppBarConfig,
 ) -> View {
-    flexible_app_bar(title, navigation_icon, actions, config, Dp(152.0), Sp(28.0), Sp(22.0))
+    flexible_app_bar(
+        title,
+        navigation_icon,
+        actions,
+        config,
+        Dp(152.0),
+        Sp(28.0),
+        Sp(22.0),
+    )
 }
 
 #[derive(Clone, Debug)]

@@ -167,10 +167,10 @@ fn build_children(sems: &[SemNode]) -> (Vec<u64>, FxHashMap<u64, Vec<u64>>) {
 }
 
 fn sort_traversal(sems: &[SemNode], ids: &mut Vec<u64>) {
-    if ids
-        .iter()
-        .any(|id| sems.iter().any(|n| n.id == *id && n.traversal_index.is_some()))
-    {
+    if ids.iter().any(|id| {
+        sems.iter()
+            .any(|n| n.id == *id && n.traversal_index.is_some())
+    }) {
         ids.sort_by(|a, b| {
             let ta = sems
                 .iter()
@@ -444,20 +444,22 @@ mod tests {
 
     #[test]
     fn test_hidden_prunes_and_reparents_with_traversal_sort() {
-        let mut parent = node(1, None, CoreRole::Container);
+        // Ids must stay clear of WINDOW_ID (1), which is always emitted.
+        let mut parent = node(101, None, CoreRole::Container);
         parent.hidden = true;
-        let mut a = node(2, Some(1), CoreRole::Button);
+        let mut a = node(102, Some(101), CoreRole::Button);
         a.traversal_index = Some(2.0);
-        let mut b = node(3, Some(1), CoreRole::Button);
+        let mut b = node(103, Some(101), CoreRole::Button);
         b.traversal_index = Some(1.0);
         let sems = vec![parent, a, b];
         let (roots, map) = build_children(&sems);
-        assert_eq!(roots, vec![3, 2]);
+        assert_eq!(roots, vec![103, 102]);
         assert!(map.is_empty());
 
         let mut tree = A11yTree::default();
         let update = tree.update(&sems, 1.0, None).expect("initial update");
-        assert!(!update.nodes.iter().any(|(id, _)| *id == NodeId(1)));
+        assert!(!update.nodes.iter().any(|(id, _)| *id == NodeId(101)));
+        assert!(update.nodes.iter().any(|(id, _)| *id == NodeId(102)));
     }
 
     #[test]

@@ -873,12 +873,7 @@ pub fn BottomSheetScaffold(
     modifier: Modifier,
     config: BottomSheetConfig,
 ) -> View {
-    let peek = Dp(
-        sheet_state
-            .peek_height
-            .get()
-            .max(config.peek_height.0),
-    );
+    let peek = Dp(sheet_state.peek_height.get().max(config.peek_height.0));
     let mut sheet_config = config;
     sheet_config.peek_height = peek;
     let state = sheet_state.clone();

@@ -50,14 +50,18 @@ impl Default for TabRowConfig {
 
 static TABROW_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+enum TabCellWidth {
+    Fill,
+    Min(Dp),
+}
+
 fn tab_cell(
     row_id: u64,
     index: usize,
     tab: Tab,
     selected: bool,
     config: &TabRowConfig,
-    grow: bool,
-    min_width: Option<Dp>,
+    width: TabCellWidth,
     indicator_fraction: Option<f32>,
 ) -> View {
     let th = theme();
@@ -100,11 +104,9 @@ fn tab_cell(
             disabled: Color::TRANSPARENT,
         })
         .semantics(Semantics::new(Role::Tab).with_label(&tab.label));
-    if grow {
-        tab_m = tab_m.flex_grow(1.0);
-    }
-    if let Some(w) = min_width {
-        tab_m = tab_m.min_width(w);
+    match width {
+        TabCellWidth::Fill => tab_m = tab_m.flex_grow(1.0),
+        TabCellWidth::Min(w) => tab_m = tab_m.min_width(w),
     }
 
     tab_m = apply_m3_clickable(tab_m, &tab_source, th.on_surface, tab.enabled, move || cb());
@@ -148,7 +150,17 @@ pub fn TabRow(selected_index: usize, tabs: Vec<Tab>, config: TabRowConfig) -> Vi
         .child(
             tabs.into_iter()
                 .enumerate()
-                .map(|(i, tab)| tab_cell(*id, i, tab, i == selected_index, &config, true, None, None))
+                .map(|(i, tab)| {
+                    tab_cell(
+                        *id,
+                        i,
+                        tab,
+                        i == selected_index,
+                        &config,
+                        TabCellWidth::Fill,
+                        None,
+                    )
+                })
                 .collect::<Vec<_>>(),
         ),
         Box(Modifier::new()
@@ -176,7 +188,15 @@ pub fn SecondaryTabRow(selected_index: usize, tabs: Vec<Tab>, config: TabRowConf
             tabs.into_iter()
                 .enumerate()
                 .map(|(i, tab)| {
-                    tab_cell(*id, i, tab, i == selected_index, &config, true, None, Some(0.6))
+                    tab_cell(
+                        *id,
+                        i,
+                        tab,
+                        i == selected_index,
+                        &config,
+                        TabCellWidth::Fill,
+                        Some(0.6),
+                    )
                 })
                 .collect::<Vec<_>>(),
         ),
@@ -254,8 +274,7 @@ pub fn ScrollableTabRow(
                     tab,
                     i == selected_index,
                     &base,
-                    false,
-                    Some(config.min_tab_width),
+                    TabCellWidth::Min(config.min_tab_width),
                     None,
                 )
             })
