@@ -139,8 +139,8 @@ fn scaffold_inner(content: impl Fn(PaddingValues) -> View, config: ScaffoldConfi
             Modifier::new().absolute().offset(
                 Some(Dp::ZERO),
                 None,
-                Some(ibottom + iime),
                 Some(Dp::ZERO),
+                Some(ibottom + iime),
             ),
         )
     });
@@ -156,14 +156,14 @@ fn scaffold_inner(content: impl Fn(PaddingValues) -> View, config: ScaffoldConfi
             FabPosition::End => Modifier::new().absolute().offset(
                 None,
                 None,
-                Some(bottom),
                 Some(ScaffoldDefaults::FAB_MARGIN + iright),
+                Some(bottom),
             ),
             FabPosition::Center => Modifier::new()
                 .absolute()
                 .fill_max_width()
                 .align_self(AlignSelf::CENTER)
-                .offset(None, None, Some(bottom), None),
+                .offset(None, None, None, Some(bottom)),
         };
         Box(modifier.on_size_changed({
             let measured = fab_height.clone();
