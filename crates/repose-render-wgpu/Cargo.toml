@@ -30,6 +30,9 @@ image = { workspace = true }
 lyon_tessellation = { workspace = true }
 lyon_path = { workspace = true }
 
+[build-dependencies]
+wesl.workspace = true
+
 [dev-dependencies]
 repose-canvas.workspace = true
 repose-ui.workspace = true

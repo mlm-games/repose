@@ -797,7 +797,10 @@ impl Pipelines {
                 let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
                     label: Some(concat!($shader, ".wgsl")),
                     source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(concat!(
-                        "shaders/", $shader, ".wgsl"
+                        env!("OUT_DIR"),
+                        "/",
+                        $shader,
+                        ".wgsl"
                     )))),
                 });
                 let pipeline_layout =

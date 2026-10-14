@@ -1,8 +1,4 @@
-struct Globals {
-    ndc_to_px: vec2<f32>,
-    _pad: vec2<f32>,
-};
-@group(0) @binding(0) var<uniform> G: Globals;
+import super::common::{G, eval_brush_px, sdf_round_box_px};
 
 struct VSOut {
     @builtin(position) pos: vec4<f32>,
@@ -16,18 +12,6 @@ struct VSOut {
     @location(7) @interpolate(flat) stroke_px: f32,
     @location(8) @interpolate(flat) bits: u32,
 };
-
-fn brush_type_of(bits: u32) -> u32 {
-    return bits & 3u;
-}
-
-fn grad_kind_of(bits: u32) -> u32 {
-    return (bits >> 2u) & 3u;
-}
-
-fn tile_mode_of(bits: u32) -> u32 {
-    return (bits >> 4u) & 3u;
-}
 
 @vertex
 fn vs_main(
@@ -66,59 +50,6 @@ fn vs_main(
     out.bits = bits;
     out.stroke_px = stroke_px;
     return out;
-}
-
-fn corner_radius(p: vec2<f32>, r: vec4<f32>) -> f32 {
-    return select(
-        select(r[3], r[2], p.x >= 0.0),
-        select(r[0], r[1], p.x >= 0.0),
-        p.y >= 0.0
-    );
-}
-
-fn sdf_round_box_px(p_px: vec2<f32>, half_px: vec2<f32>, r: vec4<f32>) -> f32 {
-    let ri = corner_radius(p_px, r);
-    let ri_clamped = max(ri, 0.0);
-    let q = abs(p_px) - (half_px - vec2<f32>(ri_clamped, ri_clamped));
-    let outside = max(q, vec2<f32>(0.0));
-    let inside = min(max(q.x, q.y), 0.0);
-    return length(outside) + inside - ri_clamped;
-}
-
-fn apply_tile(t: f32, tile_mode: u32) -> f32 {
-    if tile_mode == 1u {
-        return t - floor(t);
-    }
-    if tile_mode == 2u {
-        let m = t - floor(t * 0.5) * 2.0;
-        return select(m, 2.0 - m, m > 1.0);
-    }
-    return clamp(t, 0.0, 1.0);
-}
-
-fn eval_shape_brush(in: VSOut, local_px: vec2<f32>) -> vec4<f32> {
-    let grad_p0 = in.grad.xy;
-    let grad_p1 = in.grad.zw;
-    let tile_mode = tile_mode_of(in.bits);
-    if brush_type_of(in.bits) == 0u {
-        return in.color0;
-    }
-    if grad_kind_of(in.bits) == 1u {
-        let d = distance(local_px, grad_p0);
-        let radius = max(grad_p1.x, 1e-3);
-        return mix(in.color0, in.color1, apply_tile(d / radius, tile_mode));
-    }
-    if grad_kind_of(in.bits) == 2u {
-        let rel = local_px - grad_p0;
-        var frac = atan2(rel.y, rel.x) / 6.2831853;
-        if (frac < 0.0) {
-            frac += 1.0;
-        }
-        return mix(in.color0, in.color1, apply_tile(frac, tile_mode));
-    }
-    let dir = grad_p1 - grad_p0;
-    let len2 = max(dot(dir, dir), 1e-6);
-    return mix(in.color0, in.color1, apply_tile(dot(local_px - grad_p0, dir) / len2, tile_mode));
 }
 
 @fragment
@@ -173,7 +104,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
         unrotated_px.x * scale_px.x,
         -unrotated_px.y * scale_px.y,
     ) + half_px;
-    let base = eval_shape_brush(in, local_px);
+    let base = eval_brush_px(in.color0, in.color1, in.grad, in.bits, local_px);
 
     let a = base.a * ring;
     return vec4(base.rgb * a, a);

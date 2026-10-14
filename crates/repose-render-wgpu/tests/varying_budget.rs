@@ -104,29 +104,43 @@ fn location_inputs(module: &naga::Module, entry: &naga::EntryPoint) -> Vec<(u32,
 #[test]
 fn shaders_fit_the_webgl2_varying_budget() {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/shaders");
-    let mut paths: Vec<_> = std::fs::read_dir(&dir)
+    let mut sources: Vec<(String, String)> = std::fs::read_dir(&dir)
         .unwrap_or_else(|e| panic!("cannot read {}: {e}", dir.display()))
         .map(|entry| entry.expect("dir entry").path())
         .filter(|path| path.extension().is_some_and(|ext| ext == "wgsl"))
+        .map(|path| {
+            let name = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .expect("shader file name is not utf-8")
+                .to_owned();
+            let source = std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("{}: cannot read: {e}", path.display()));
+            (name, source)
+        })
         .collect();
-    paths.sort();
+
+    // WESL sources are linked by build.rs into OUT_DIR; check the linked
+    // artifact, since mangling and dead-code stripping change what naga sees.
+    let out_dir = Path::new(env!("OUT_DIR"));
+    for module in ["rect", "border", "ellipse", "ellipse_border", "arc"] {
+        let path = out_dir.join(format!("{module}.wgsl"));
+        let source = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("{}: cannot read: {e}", path.display()));
+        sources.push((module.to_owned(), source));
+    }
+
+    sources.sort();
 
     assert!(
-        !paths.is_empty(),
+        !sources.is_empty(),
         "no shaders found in {}, so this test would pass vacuously",
         dir.display()
     );
 
     let mut failures = Vec::new();
-    for path in &paths {
-        let name = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .expect("shader file name is not utf-8");
-
-        let source = std::fs::read_to_string(path)
-            .unwrap_or_else(|e| panic!("{}: cannot read: {e}", path.display()));
-        let module = naga::front::wgsl::parse_str(&source)
+    for (name, source) in &sources {
+        let module = naga::front::wgsl::parse_str(source)
             .unwrap_or_else(|e| panic!("{name}.wgsl: parse failed: {e}"));
 
         for entry in entry_points(&module, naga::ShaderStage::Fragment) {

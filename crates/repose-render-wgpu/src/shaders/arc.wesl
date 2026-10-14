@@ -1,8 +1,4 @@
-struct Globals {
-    ndc_to_px: vec2<f32>,
-    _pad: vec2<f32>,
-};
-@group(0) @binding(0) var<uniform> G: Globals;
+import super::common::{G, eval_brush_px};
 
 struct VSOut {
     @builtin(position) pos: vec4<f32>,
@@ -16,18 +12,6 @@ struct VSOut {
     @location(7) @interpolate(flat) angles: vec2<f32>,
     @location(8) @interpolate(flat) bits: u32,
 };
-
-fn brush_type_of(bits: u32) -> u32 {
-    return bits & 3u;
-}
-
-fn grad_kind_of(bits: u32) -> u32 {
-    return (bits >> 2u) & 3u;
-}
-
-fn tile_mode_of(bits: u32) -> u32 {
-    return (bits >> 4u) & 3u;
-}
 
 @vertex
 fn vs_main(
@@ -160,12 +144,13 @@ fn cap_coverage(
     half_width_px: f32,
     aa: f32,
     cap: f32,
+    ndc_to_px: vec2<f32>,
 ) -> f32 {
     if (cap < 0.5 || abs(end_angle - start_angle) >= 6.2831853) {
         return 0.0;
     }
-    let radii = 0.5 * xywh.zw * G.ndc_to_px;
-    let pos = unrotated_rel(pos_ndc, xywh, fwd_mat) * G.ndc_to_px;
+    let radii = 0.5 * xywh.zw * ndc_to_px;
+    let pos = unrotated_rel(pos_ndc, xywh, fwd_mat) * ndc_to_px;
     let start = vec2<f32>(radii.x * cos(start_angle), -radii.y * sin(start_angle));
     let end = vec2<f32>(radii.x * cos(end_angle), -radii.y * sin(end_angle));
     if (cap < 1.5) {
@@ -186,48 +171,6 @@ fn cap_coverage(
     let start_distance = length(max(start_q, vec2<f32>(0.0))) + min(max(start_q.x, start_q.y), 0.0);
     let end_distance = length(max(end_q, vec2<f32>(0.0))) + min(max(end_q.x, end_q.y), 0.0);
     return 1.0 - smoothstep(-aa, aa, min(start_distance, end_distance));
-}
-
-fn apply_tile(t: f32, tile_mode: u32) -> f32 {
-    if tile_mode == 1u {
-        return t - floor(t);
-    }
-    if tile_mode == 2u {
-        let m = t - floor(t * 0.5) * 2.0;
-        return select(m, 2.0 - m, m > 1.0);
-    }
-    return clamp(t, 0.0, 1.0);
-}
-
-fn eval_arc_brush(in: VSOut) -> vec4<f32> {
-    let grad_p0 = in.grad.xy;
-    let grad_p1 = in.grad.zw;
-    let tile_mode = tile_mode_of(in.bits);
-    if brush_type_of(in.bits) == 0u {
-        return in.color0;
-    }
-    // Shape-local px with (0,0) at the shape top-left. `unrotated_rel` is in
-    // NDC, `xywh.zw` is the shape size in px: convert the offset, recenter.
-    let local_px = vec2(
-        unrotated_rel(in.pos_ndc, in.xywh, in.fwd_mat).x,
-        -unrotated_rel(in.pos_ndc, in.xywh, in.fwd_mat).y,
-    ) * G.ndc_to_px + 0.5 * in.xywh.zw * G.ndc_to_px;
-    if grad_kind_of(in.bits) == 1u {
-        let d = distance(local_px, grad_p0);
-        let radius = max(grad_p1.x, 1e-3);
-        return mix(in.color0, in.color1, apply_tile(d / radius, tile_mode));
-    }
-    if grad_kind_of(in.bits) == 2u {
-        let rel = local_px - grad_p0;
-        var frac = atan2(rel.y, rel.x) / 6.2831853;
-        if frac < 0.0 {
-            frac += 1.0;
-        }
-        return mix(in.color0, in.color1, apply_tile(frac, tile_mode));
-    }
-    let dir = grad_p1 - grad_p0;
-    let len2 = max(dot(dir, dir), 1e-6);
-    return mix(in.color0, in.color1, apply_tile(dot(local_px - grad_p0, dir) / len2, tile_mode));
 }
 
 @fragment
@@ -266,10 +209,18 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
         half_width_px,
         cap_aa,
         f32((in.bits >> 6u) & 3u),
+        G.ndc_to_px,
     );
 
     let alpha_cov = max(stroke_cov * angle_cov, cap_cov);
-    let base = eval_arc_brush(in);
+
+    // Shape-local px with (0,0) at the shape top-left. `unrotated_rel` is in
+    // NDC, `xywh.zw` is the shape size in px: convert the offset, recenter.
+    let local = vec2(
+        unrotated_rel(in.pos_ndc, in.xywh, in.fwd_mat).x,
+        -unrotated_rel(in.pos_ndc, in.xywh, in.fwd_mat).y,
+    ) * G.ndc_to_px + 0.5 * in.xywh.zw * G.ndc_to_px;
+    let base = eval_brush_px(in.color0, in.color1, in.grad, in.bits, local);
     let a = base.a * alpha_cov;
     return vec4(base.rgb * a, a);
 }
