@@ -27,13 +27,22 @@ fn srgb_oetf(c: f32) -> f32 {
     return 1.055 * pow(c, 1.0 / 2.4) - 0.055;
 }
 
+// Ordered-ish hash dither, applied in display space. Must stay after the
+// transfer: a sub-LSB perturbation in linear would be multiplied by the
+// sRGB curve's 12.92 slope near black and read as speckle instead of noise.
+fn screen_space_dither(frag_coord: vec2<f32>) -> vec3<f32> {
+    let h = dot(vec2<f32>(171.0, 231.0), frag_coord);
+    let d = fract(vec3<f32>(h, h, h) / vec3<f32>(103.0, 71.0, 97.0));
+    return (d - 0.5) / 255.0;
+}
+
 @fragment
 fn fs_main(i: VSOut) -> @location(0) vec4<f32> {
     let linear = textureSample(tex, samp, i.uv);
-    return vec4(
+    let encoded = vec3<f32>(
         srgb_oetf(linear.r),
         srgb_oetf(linear.g),
         srgb_oetf(linear.b),
-        linear.a,
     );
+    return vec4<f32>(encoded + screen_space_dither(i.pos.xy), linear.a);
 }
