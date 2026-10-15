@@ -302,6 +302,15 @@ pub enum DrawCommand {
         clip: Option<u32>,
         blend: BlendMode,
     },
+    /// One mesh, one paint, many placements. Every transform is canvas-local
+    /// and lands in a single indexed draw, so N copies of the same geometry
+    /// cost one paint uniform and one draw call instead of N of each.
+    VectorMeshInstanced {
+        mesh: Arc<VectorMeshData>,
+        transforms: Vec<[f32; 6]>,
+        paint: PaintDesc,
+        blend: BlendMode,
+    },
     /// Canvas-local overlay meshes translated to the canvas origin and emitted
     /// without the world transform.
     VectorOverlay { meshes: Arc<[VectorMeshData]> },
@@ -672,6 +681,39 @@ impl DrawScope {
             transform,
             paint,
             clip: None,
+            blend,
+        });
+    }
+
+    /// Draw one mesh at many placements in a single draw. Empty input draws
+    /// nothing. This is the instanced counterpart of
+    /// [`draw_vector_mesh`](Self::draw_vector_mesh): same mesh, same paint,
+    /// `transforms.len()` placements.
+    pub fn draw_vector_mesh_instanced(
+        &mut self,
+        mesh: Arc<VectorMeshData>,
+        transforms: Vec<[f32; 6]>,
+        paint: PaintDesc,
+    ) {
+        self.draw_vector_mesh_instanced_blended(mesh, transforms, paint, BlendMode::Alpha)
+    }
+
+    /// [`draw_vector_mesh_instanced`](Self::draw_vector_mesh_instanced) with an
+    /// explicit blend mode.
+    pub fn draw_vector_mesh_instanced_blended(
+        &mut self,
+        mesh: Arc<VectorMeshData>,
+        transforms: Vec<[f32; 6]>,
+        paint: PaintDesc,
+        blend: BlendMode,
+    ) {
+        if transforms.is_empty() {
+            return;
+        }
+        self.commands.push(DrawCommand::VectorMeshInstanced {
+            mesh,
+            transforms,
+            paint,
             blend,
         });
     }
@@ -2008,6 +2050,22 @@ pub fn paint_draw_commands(
                         ],
                         paint: alpha_paint(*paint, alpha),
                         clip: *clip,
+                        blend: *blend,
+                    });
+                }
+                DrawCommand::VectorMeshInstanced {
+                    mesh,
+                    transforms,
+                    paint,
+                    blend,
+                } => {
+                    scene.nodes.push(SceneNode::VectorMeshInstanced {
+                        mesh: mapped_mesh(mesh, 0.0, 0.0, alpha),
+                        transforms: transforms
+                            .iter()
+                            .map(|t| [t[0], t[1], t[2], t[3], t[4] + rect.x, t[5] + rect.y])
+                            .collect(),
+                        paint: alpha_paint(*paint, alpha),
                         blend: *blend,
                     });
                 }

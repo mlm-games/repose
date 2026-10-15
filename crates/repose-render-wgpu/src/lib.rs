@@ -279,6 +279,12 @@ pub struct WgpuSceneRenderer {
     mesh_uniform_head: u64,
     mesh_uniform_alignment: u64,
     mesh_uniform_cap: u64,
+    /// Per-placement transforms, one record per mesh instance. A lone mesh
+    /// writes a single record and draws `0..1`; an instanced run writes N
+    /// contiguous records and draws `0..N` against one shared paint uniform.
+    mesh_instance_buf: wgpu::Buffer,
+    mesh_instance_head: u64,
+    mesh_instance_cap: u64,
 
     /// Translator-owned flatten layer ids used by the previous frame;
     /// drained from the layer pool at the start of each translation (they
@@ -538,6 +544,10 @@ enum ActiveClip {
         mesh: Option<MeshGpu>,
         source: Arc<repose_core::VectorMeshData>,
         uoff: u64,
+        /// The push's own instance run, replayed verbatim on the pop so the
+        /// decrement mask matches the increment bit for bit.
+        ioff: u64,
+        icnt: u32,
         affine: [f32; 6],
         scissor: (u32, u32, u32, u32),
         difference: bool,
@@ -1502,6 +1512,22 @@ impl Pipelines {
                 },
             ],
         };
+        let mesh_instance_layout = wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<MeshInstance>() as u64,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    shader_location: 3,
+                    offset: 0,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    shader_location: 4,
+                    offset: 16,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+            ],
+        };
         let make_mesh_pipeline =
             |label: &str, depth: &wgpu::DepthStencilState, color: &wgpu::ColorTargetState| {
                 device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -1510,7 +1536,10 @@ impl Pipelines {
                     vertex: wgpu::VertexState {
                         module: &mesh_shader,
                         entry_point: Some("vs_main"),
-                        buffers: &[Some(mesh_vertex_layout.clone())],
+                        buffers: &[
+                            Some(mesh_vertex_layout.clone()),
+                            Some(mesh_instance_layout.clone()),
+                        ],
                         compilation_options: wgpu::PipelineCompilationOptions::default(),
                     },
                     fragment: Some(wgpu::FragmentState {
@@ -2008,6 +2037,10 @@ enum Cmd {
     VectorMesh {
         mesh: MeshGpu,
         uoff: u64,
+        /// Byte offset of this draw's placement transforms in
+        /// `mesh_instances`, and how many of them to draw.
+        ioff: u64,
+        icnt: u32,
         blend: repose_core::BlendMode,
     },
     /// Composite an isolated source layer over the current target with a
@@ -2028,6 +2061,8 @@ enum Cmd {
     VectorOverlay {
         mesh: MeshGpu,
         uoff: u64,
+        ioff: u64,
+        icnt: u32,
     },
     /// Increment the stencil buffer with a tessellated vector mask.
     /// `difference` marks an inverse (`\iclip`-style) mask: content draws
@@ -2036,6 +2071,8 @@ enum Cmd {
     VectorClipPush {
         mesh: MeshGpu,
         uoff: u64,
+        ioff: u64,
+        icnt: u32,
         scissor: (u32, u32, u32, u32),
         difference: bool,
         applied: bool,
@@ -2044,6 +2081,8 @@ enum Cmd {
     VectorClipPop {
         mesh: MeshGpu,
         uoff: u64,
+        ioff: u64,
+        icnt: u32,
         scissor: (u32, u32, u32, u32),
         stencil_scissor: (u32, u32, u32, u32),
         difference: bool,
@@ -2664,8 +2703,6 @@ fn slug_draw_cache_entry_bytes(vertices: usize) -> u64 {
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct MeshUniform {
-    m0: [f32; 4],
-    m1: [f32; 4],
     paint: [u32; 4],
     color0: [f32; 4],
     color1: [f32; 4],
@@ -2680,10 +2717,38 @@ struct MeshUniform {
 /// Bytes `MeshUniform` occupies. `tests::mesh_uniform_matches_the_wgsl_member_layout`
 /// parses `shaders/mesh.wgsl` and checks every member offset and the total
 /// size against the struct, so the two halves cannot drift apart.
-const MESH_UNIFORM_BYTES: usize = 272;
+const MESH_UNIFORM_BYTES: usize = 240;
 const _: () = assert!(std::mem::size_of::<MeshUniform>() == MESH_UNIFORM_BYTES);
 
 const MESH_UNIFORM_CAP: u64 = 4 * 1024 * 1024;
+
+/// One placement of a mesh, as a per-instance vertex record. Slot order is the
+/// canonical `[A, B, tx, C, D, ty]` consumed by `vs_main`: rows land in
+/// `xf0`/`xf1`, matching `combine_mesh_affine` and `mesh_aabb`.
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct MeshInstance {
+    xf0: [f32; 4],
+    xf1: [f32; 4],
+}
+
+impl MeshInstance {
+    fn new(affine: [f32; 6]) -> Self {
+        Self {
+            xf0: [affine[0], affine[1], affine[2], 0.0],
+            xf1: [affine[3], affine[4], affine[5], 0.0],
+        }
+    }
+}
+
+/// Placement records per frame. 32 B each, so this holds 262144 placements -
+/// far past a dense 2D frame, and past the point where the CPU-side walk is
+/// the bottleneck rather than the draw count.
+const MESH_INSTANCE_CAP: u64 = 8 * 1024 * 1024;
+
+/// Canonical identity placement, for meshes already baked in world space
+/// (vector clips and screen-space overlays).
+const IDENTITY_AFFINE: [f32; 6] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
 const MAX_RETAINED_IMAGE_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_RETAINED_IMAGES: usize = 512;
 const MAX_BLEND_SNAPSHOT_BYTES: u64 = 64 * 1024 * 1024;
@@ -2724,8 +2789,6 @@ fn canonical_fourcc(format: PixelFormat) -> u32 {
 impl MeshUniform {
     fn identity() -> Self {
         Self {
-            m0: [1.0, 0.0, 0.0, 0.0],
-            m1: [0.0, 1.0, 0.0, 0.0],
             paint: [0; 4],
             color0: [0.0; 4],
             color1: [0.0; 4],
@@ -2774,7 +2837,7 @@ fn pack_gradient_stops(stops: &GradientStops) -> PackedStops {
     (stop_colors, stop_offsets, count)
 }
 
-fn mesh_uniform_from_paint(affine: [f32; 6], paint: &repose_core::PaintDesc) -> MeshUniform {
+fn mesh_uniform_from_paint(paint: &repose_core::PaintDesc) -> MeshUniform {
     let no_stops = GradientStops::default();
     let (paint_type, paint_kind, stops, color0, color1, grad_start, grad_end) = match paint {
         repose_core::PaintDesc::Solid => {
@@ -2847,8 +2910,6 @@ fn mesh_uniform_from_paint(affine: [f32; 6], paint: &repose_core::PaintDesc) -> 
     };
     let (stop_colors, stop_offsets, count) = pack_gradient_stops(&stops);
     MeshUniform {
-        m0: [affine[0], affine[1], affine[2], 0.0],
-        m1: [affine[3], affine[4], affine[5], 0.0],
         paint: [paint_type, paint_kind, count, 0],
         color0,
         color1,
@@ -2879,6 +2940,51 @@ fn combine_mesh_affine(current: &Transform, mesh: [f32; 6]) -> [f32; 6] {
     // Canonical slot order consumed by `MeshUniform`/shader and `mesh_aabb`:
     // [A, B, tx, C, D, ty] where world = [[A,B],[C,D]] * local + (tx, ty).
     [r00, r01, tx, r10, r11, ty]
+}
+
+/// True when this mesh+paint+blend combination cannot be drawn straight into
+/// the current pass: a backdrop-dependent mode always needs its own isolated
+/// source layer, and a fixed-function blend needs one too when the geometry or
+/// paint is translucent (the pipeline would otherwise blend against itself).
+/// Such draws cannot share an instance run, so they take the per-placement
+/// path.
+fn mesh_blend_needs_isolation(
+    blend: repose_core::BlendMode,
+    mesh: &repose_core::VectorMeshData,
+    paint: &repose_core::PaintDesc,
+) -> bool {
+    if blend.needs_isolation() {
+        return true;
+    }
+    let paint_alpha = match paint {
+        repose_core::PaintDesc::Linear {
+            start_color,
+            end_color,
+            ..
+        }
+        | repose_core::PaintDesc::Radial {
+            start_color,
+            end_color,
+            ..
+        }
+        | repose_core::PaintDesc::Sweep {
+            start_color,
+            end_color,
+            ..
+        } => Some(start_color.3.min(end_color.3) as f32 / 255.0),
+        repose_core::PaintDesc::LinearStops { stops, .. }
+        | repose_core::PaintDesc::RadialStops { stops, .. } => Some(stops.min_alpha()),
+        _ => None,
+    };
+    matches!(
+        blend,
+        repose_core::BlendMode::Add
+            | repose_core::BlendMode::Multiply
+            | repose_core::BlendMode::Screen
+            | repose_core::BlendMode::Darken
+            | repose_core::BlendMode::Lighten
+    ) && (mesh.vertices.iter().any(|vertex| vertex.color[3] < 0.9999)
+        || paint_alpha.is_some_and(|alpha| alpha < 0.9999))
 }
 
 fn mesh_aabb(mesh: &repose_core::VectorMeshData, affine: [f32; 6]) -> repose_core::Rect {
@@ -3023,6 +3129,9 @@ impl WgpuSceneRenderer {
         let base_mesh_alignment =
             u64::from(device.limits().min_uniform_buffer_offset_alignment).max(4);
         let mesh_uniform_alignment = mesh_uniform_stride(mesh_uniform_size, base_mesh_alignment);
+        let mesh_instance_cap = MESH_INSTANCE_CAP
+            .min(device.limits().max_buffer_size)
+            .max(4);
         let mesh_uniform_cap = align_up(
             MESH_UNIFORM_CAP
                 .min(device.limits().max_buffer_size)
@@ -3337,6 +3446,12 @@ impl WgpuSceneRenderer {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        let mesh_instance_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("mesh instance buffer"),
+            size: mesh_instance_cap,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
         let mesh_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("mesh uniform bind"),
             layout: &mesh_bind_layout,
@@ -3629,6 +3744,9 @@ impl WgpuSceneRenderer {
             mesh_uniform_head: 0,
             mesh_uniform_alignment,
             mesh_uniform_cap,
+            mesh_instance_buf,
+            mesh_instance_head: 0,
+            mesh_instance_cap,
 
             projective_ring: ring_projective,
             blend_ring,
@@ -7818,13 +7936,15 @@ impl WgpuSceneRenderer {
                         blocked = blocked || !difference;
                     } else if let Some(mesh_gpu) = mesh.clone()
                         && let Some(uoff) = self.alloc_mesh_uniform(mesh_uniform_from_paint(
-                            local_affine,
                             &repose_core::PaintDesc::Solid,
                         ))
+                        && let Some((ioff, icnt)) = self.alloc_mesh_instances(&[local_affine])
                     {
                         command = Some(Cmd::VectorClipPush {
                             mesh: mesh_gpu.clone(),
                             uoff,
+                            ioff,
+                            icnt,
                             scissor,
                             difference,
                             applied: true,
@@ -7833,6 +7953,8 @@ impl WgpuSceneRenderer {
                             mesh: Some(mesh_gpu),
                             source: source.clone(),
                             uoff,
+                            ioff,
+                            icnt,
                             affine: local_affine,
                             scissor,
                             difference,
@@ -7882,6 +8004,8 @@ impl WgpuSceneRenderer {
                         mesh: mesh.clone(),
                         source: source.clone(),
                         uoff: 0,
+                        ioff: 0,
+                        icnt: 0,
                         affine: parent_affine_to_layer_affine(*affine, parent_transform, origin)
                             .unwrap_or([0.0; 6]),
                         scissor: *scissor,
@@ -8341,6 +8465,36 @@ impl WgpuSceneRenderer {
         Some(slot)
     }
 
+    /// Write `affines` as one contiguous instance run. Returns the byte offset
+    /// and record count for a `Cmd::VectorMesh`. Every placement in the run
+    /// shares one paint uniform, which is the whole point: N copies of a rig
+    /// frame cost one uniform slot and one draw.
+    fn alloc_mesh_instances(&mut self, affines: &[[f32; 6]]) -> Option<(u64, u32)> {
+        let count = u32::try_from(affines.len()).ok()?;
+        if count == 0 {
+            return None;
+        }
+        let stride = std::mem::size_of::<MeshInstance>() as u64;
+        let bytes = u64::from(count) * stride;
+        let slot = self.mesh_instance_head;
+        let next = slot.checked_add(bytes)?;
+        if next > self.mesh_instance_cap {
+            log::warn!("mesh instance buffer exhausted; remaining meshes skipped");
+            return None;
+        }
+        let mut staging = Vec::with_capacity(affines.len());
+        for affine in affines {
+            staging.push(MeshInstance::new(*affine));
+        }
+        self.queue.write_buffer(
+            &self.mesh_instance_buf,
+            slot,
+            bytemuck::cast_slice(&staging),
+        );
+        self.mesh_instance_head = next;
+        Some((slot, count))
+    }
+
     /// Shared isolation + backdrop composite for a source that needs the
     /// backdrop: snapshot the parent's region, render the source alone into a
     /// translator-owned graphics layer via `emit_source`, then composite that
@@ -8790,16 +8944,41 @@ impl WgpuSceneRenderer {
         blend: repose_core::BlendMode,
         cmds: &mut Vec<Cmd>,
     ) {
-        let affine = combine_mesh_affine(current_transform, transform);
+        self.emit_vector_mesh_affines(current_transform, mesh, &[transform], paint, blend, cmds);
+    }
+
+    /// One mesh, one paint, N placements, one draw. `transforms` are local
+    /// affines, each combined with `current_transform` before upload, so a run
+    /// of placements sharing a parent transform and a paint collapses into a
+    /// single indexed draw with `icnt` instances.
+    #[allow(clippy::too_many_arguments)]
+    fn emit_vector_mesh_affines(
+        &mut self,
+        current_transform: &Transform,
+        mesh: &Arc<repose_core::VectorMeshData>,
+        transforms: &[[f32; 6]],
+        paint: &repose_core::PaintDesc,
+        blend: repose_core::BlendMode,
+        cmds: &mut Vec<Cmd>,
+    ) {
         let Some(mesh_gpu) = self.upload_mesh_geometry(mesh) else {
             return;
         };
-        let Some(uoff) = self.alloc_mesh_uniform(mesh_uniform_from_paint(affine, paint)) else {
+        let Some(uoff) = self.alloc_mesh_uniform(mesh_uniform_from_paint(paint)) else {
+            return;
+        };
+        let affines: Vec<[f32; 6]> = transforms
+            .iter()
+            .map(|transform| combine_mesh_affine(current_transform, *transform))
+            .collect();
+        let Some((ioff, icnt)) = self.alloc_mesh_instances(&affines) else {
             return;
         };
         cmds.push(Cmd::VectorMesh {
             mesh: mesh_gpu,
             uoff,
+            ioff,
+            icnt,
             blend,
         });
     }
@@ -9143,6 +9322,7 @@ impl WgpuSceneRenderer {
 
         self.slug_ring.reset();
         self.mesh_uniform_head = 0;
+        self.mesh_instance_head = 0;
         self.projective_ring.reset();
         self.blend_ring.reset();
         for id in self.flatten_layer_ids.drain(..) {
@@ -10733,39 +10913,8 @@ impl WgpuSceneRenderer {
                         continue;
                     }
                     flush_batch!();
-                    let paint_alpha = match paint {
-                        repose_core::PaintDesc::Linear {
-                            start_color,
-                            end_color,
-                            ..
-                        }
-                        | repose_core::PaintDesc::Radial {
-                            start_color,
-                            end_color,
-                            ..
-                        }
-                        | repose_core::PaintDesc::Sweep {
-                            start_color,
-                            end_color,
-                            ..
-                        } => Some(start_color.3.min(end_color.3) as f32 / 255.0),
-                        repose_core::PaintDesc::LinearStops { stops, .. }
-                        | repose_core::PaintDesc::RadialStops { stops, .. } => {
-                            Some(stops.min_alpha())
-                        }
-                        _ => None,
-                    };
-                    let translucent_fixed_blend =
-                        matches!(
-                            blend,
-                            repose_core::BlendMode::Add
-                                | repose_core::BlendMode::Multiply
-                                | repose_core::BlendMode::Screen
-                                | repose_core::BlendMode::Darken
-                                | repose_core::BlendMode::Lighten
-                        ) && (mesh.vertices.iter().any(|vertex| vertex.color[3] < 0.9999)
-                            || paint_alpha.is_some_and(|alpha| alpha < 0.9999));
-                    if blend.needs_isolation() || translucent_fixed_blend {
+                    let needs_isolated = mesh_blend_needs_isolation(*blend, mesh, paint);
+                    if needs_isolated {
                         let blend_scissor = to_scissor(
                             &scissor_stack.last().copied().unwrap_or(root_clip_rect),
                             current_target_size.0 as u32,
@@ -10801,6 +10950,53 @@ impl WgpuSceneRenderer {
                         );
                     }
                 }
+                SceneNode::VectorMeshInstanced {
+                    mesh,
+                    transforms,
+                    paint,
+                    blend,
+                } => {
+                    let clip = scissor_stack.last().copied().unwrap_or(root_clip_rect);
+                    let t_identity = Transform::identity();
+                    let current_transform = transform_stack.last().unwrap_or(&t_identity);
+                    // Cull per placement: an off-screen instance contributes
+                    // nothing and never reaches the instance buffer.
+                    let live: Vec<[f32; 6]> = transforms
+                        .iter()
+                        .copied()
+                        .filter(|transform| {
+                            let affine = combine_mesh_affine(current_transform, *transform);
+                            visible(mesh_aabb(mesh, affine), clip)
+                        })
+                        .collect();
+                    if live.is_empty() {
+                        continue;
+                    }
+                    flush_batch!();
+                    if mesh_blend_needs_isolation(*blend, mesh, paint) {
+                        // Each of these needs its own isolated source layer, so
+                        // batching them would not save anything.
+                        for transform in &live {
+                            self.emit_vector_mesh(
+                                current_transform,
+                                mesh,
+                                *transform,
+                                paint,
+                                *blend,
+                                &mut current_pass.cmds,
+                            );
+                        }
+                    } else {
+                        self.emit_vector_mesh_affines(
+                            current_transform,
+                            mesh,
+                            &live,
+                            paint,
+                            *blend,
+                            &mut current_pass.cmds,
+                        );
+                    }
+                }
                 SceneNode::VectorOverlay { meshes } => {
                     let clip = scissor_stack.last().copied().unwrap_or(root_clip_rect);
                     let has_visible = meshes
@@ -10820,9 +11016,15 @@ impl WgpuSceneRenderer {
                         let Some(uoff) = self.alloc_mesh_uniform(MeshUniform::identity()) else {
                             continue;
                         };
+                        let Some((ioff, icnt)) = self.alloc_mesh_instances(&[IDENTITY_AFFINE])
+                        else {
+                            continue;
+                        };
                         current_pass.cmds.push(Cmd::VectorOverlay {
                             mesh: mesh_gpu,
                             uoff,
+                            ioff,
+                            icnt,
                         });
                     }
                 }
@@ -10862,6 +11064,8 @@ impl WgpuSceneRenderer {
                     let mut applied = false;
                     let mut geometry = None;
                     let mut uoff = 0;
+                    let mut ioff = 0;
+                    let mut icnt = 0;
                     if !blocked
                         && has_area
                         && (if difference {
@@ -10872,16 +11076,20 @@ impl WgpuSceneRenderer {
                     {
                         if let Some(mesh_gpu) = self.upload_mesh_geometry(mesh)
                             && let Some(slot) = self.alloc_mesh_uniform(mesh_uniform_from_paint(
-                                affine,
                                 &repose_core::PaintDesc::Solid,
                             ))
+                            && let Some((run_off, run_cnt)) = self.alloc_mesh_instances(&[affine])
                         {
                             geometry = Some(mesh_gpu.clone());
                             uoff = slot;
+                            ioff = run_off;
+                            icnt = run_cnt;
                             applied = true;
                             current_pass.cmds.push(Cmd::VectorClipPush {
                                 mesh: mesh_gpu,
                                 uoff,
+                                ioff,
+                                icnt,
                                 scissor,
                                 difference,
                                 applied,
@@ -10901,6 +11109,8 @@ impl WgpuSceneRenderer {
                         mesh: geometry,
                         source: mesh.clone(),
                         uoff,
+                        ioff,
+                        icnt,
                         affine,
                         scissor,
                         difference,
@@ -10928,6 +11138,8 @@ impl WgpuSceneRenderer {
                         Some(ActiveClip::Vector {
                             mesh: Some(mesh),
                             uoff,
+                            ioff,
+                            icnt,
                             scissor: stencil_scissor,
                             difference,
                             applied,
@@ -10936,6 +11148,8 @@ impl WgpuSceneRenderer {
                             current_pass.cmds.push(Cmd::VectorClipPop {
                                 mesh,
                                 uoff,
+                                ioff,
+                                icnt,
                                 scissor,
                                 stencil_scissor,
                                 difference,
@@ -11457,7 +11671,7 @@ impl WgpuSceneRenderer {
             }
 
             macro_rules! draw_indexed_mesh {
-                ($pipeline:expr, $uoff:ident, $mesh:ident) => {{
+                ($pipeline:expr, $uoff:ident, $mesh:ident, $ioff:ident, $icnt:ident) => {{
                     rpass.set_pipeline($pipeline);
                     rpass.set_bind_group(1, &self.mesh_bind, &[$uoff as u32]);
                     let vbytes =
@@ -11468,7 +11682,9 @@ impl WgpuSceneRenderer {
                         $mesh.indices.slice(0..ibytes),
                         wgpu::IndexFormat::Uint32,
                     );
-                    rpass.draw_indexed(0..$mesh.index_count, 0, 0..1);
+                    let ibytes = ($icnt as u64) * std::mem::size_of::<MeshInstance>() as u64;
+                    rpass.set_vertex_buffer(1, self.mesh_instance_buf.slice($ioff..$ioff + ibytes));
+                    rpass.draw_indexed(0..$mesh.index_count, 0, 0..$icnt);
                 }};
             }
 
@@ -11798,22 +12014,35 @@ impl WgpuSceneRenderer {
                         }
                     }
 
-                    Cmd::VectorMesh { mesh, uoff, blend } => {
+                    Cmd::VectorMesh {
+                        mesh,
+                        uoff,
+                        ioff,
+                        icnt,
+                        blend,
+                    } => {
                         let pipe = match FIXED_FUNCTION_BLENDS.iter().position(|m| *m == blend) {
                             Some(index) => &pipes.mesh_blends[index],
                             None => &pipes.mesh,
                         };
-                        draw_indexed_mesh!(pipe, uoff, mesh);
+                        draw_indexed_mesh!(pipe, uoff, mesh, ioff, icnt);
                     }
 
-                    Cmd::VectorOverlay { mesh, uoff } => {
+                    Cmd::VectorOverlay {
+                        mesh,
+                        uoff,
+                        ioff,
+                        icnt,
+                    } => {
                         rpass.set_stencil_reference(STENCIL_BASE + clip_depth);
-                        draw_indexed_mesh!(&pipes.mesh_overlay, uoff, mesh);
+                        draw_indexed_mesh!(&pipes.mesh_overlay, uoff, mesh, ioff, icnt);
                     }
 
                     Cmd::VectorClipPush {
                         mesh,
                         uoff,
+                        ioff,
+                        icnt,
                         scissor,
                         difference,
                         applied,
@@ -11829,7 +12058,7 @@ impl WgpuSceneRenderer {
                             } else {
                                 &pipes.mesh_clip_inc
                             };
-                            draw_indexed_mesh!(pipe, uoff, mesh);
+                            draw_indexed_mesh!(pipe, uoff, mesh, ioff, icnt);
                             if !difference {
                                 clip_depth = (clip_depth + 1).min(STENCIL_MAX_DEPTH);
                             }
@@ -11842,6 +12071,8 @@ impl WgpuSceneRenderer {
                     Cmd::VectorClipPop {
                         mesh,
                         uoff,
+                        ioff,
+                        icnt,
                         scissor,
                         stencil_scissor,
                         difference,
@@ -11870,7 +12101,7 @@ impl WgpuSceneRenderer {
                             } else {
                                 &pipes.mesh_clip_dec
                             };
-                            draw_indexed_mesh!(pipe, uoff, mesh);
+                            draw_indexed_mesh!(pipe, uoff, mesh, ioff, icnt);
                             if scissor.2 > 0 && scissor.3 > 0 {
                                 rpass.set_scissor_rect(scissor.0, scissor.1, scissor.2, scissor.3);
                             }
@@ -12523,8 +12754,6 @@ mod tests {
             })
             .expect("mesh.wgsl declares MeshUniform");
         let rust = [
-            ("m0", std::mem::offset_of!(MeshUniform, m0)),
-            ("m1", std::mem::offset_of!(MeshUniform, m1)),
             ("paint", std::mem::offset_of!(MeshUniform, paint)),
             ("color0", std::mem::offset_of!(MeshUniform, color0)),
             ("color1", std::mem::offset_of!(MeshUniform, color1)),

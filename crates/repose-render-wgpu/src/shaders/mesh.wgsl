@@ -7,9 +7,12 @@ struct Globals {
 // Field order and member widths mirror `MeshUniform` in src/lib.rs; every
 // member is a `vec4` because the uniform address space forces 16-byte
 // alignment. `paint.z` is the live stop count (0..=8).
+//
+// The placement transform is NOT here: it arrives as the per-instance
+// `xf0`/`xf1` vertex attributes, so one pipeline serves both a lone mesh and
+// an instanced run of the same mesh, and a paint shared by N placements costs
+// one uniform slot instead of N.
 struct MeshUniform {
-    m0: vec4f,
-    m1: vec4f,
     paint: vec4u,
     color0: vec4f,
     color1: vec4f,
@@ -36,11 +39,13 @@ fn vs_main(
     @location(0) pos: vec2f,
     @location(1) color: vec4f,
     @location(2) uv: vec2f,
+    @location(3) xf0: vec4f,
+    @location(4) xf1: vec4f,
 ) -> VSOut {
-    // world_px = affine(local), rows in U.m0 / U.m1.
+    // world_px = affine(local), rows in xf0 / xf1.
     let world = vec2f(
-        U.m0.x * pos.x + U.m0.y * pos.y + U.m0.z,
-        U.m1.x * pos.x + U.m1.y * pos.y + U.m1.z,
+        xf0.x * pos.x + xf0.y * pos.y + xf0.z,
+        xf1.x * pos.x + xf1.y * pos.y + xf1.z,
     );
     var out: VSOut;
     out.pos = vec4f(

@@ -519,6 +519,18 @@ pub enum SceneNode {
         clip: Option<u32>,
         blend: BlendMode,
     },
+    /// One mesh, one paint, many placements, drawn as a single indexed draw
+    /// with one instance per transform. Placement order is the transform
+    /// order, so an alpha-blended run composites front-to-back last-wins
+    /// exactly as N separate `VectorMesh` nodes would. Use it when the same
+    /// geometry repeats - sprite frames, repeated icons, tiled fills - since
+    /// `VectorMesh` costs one draw and one paint uniform per placement.
+    VectorMeshInstanced {
+        mesh: Arc<VectorMeshData>,
+        transforms: Vec<[f32; 6]>,
+        paint: PaintDesc,
+        blend: BlendMode,
+    },
     /// Screen-space overlays (handles, rubber bands, playhead). Each mesh
     /// is positioned in final device pixels and ignores the world
     /// PushTransform stack. Emit outside the viewport's world transform.
