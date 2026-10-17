@@ -3083,13 +3083,20 @@ impl WgpuSceneRenderer {
         validate_render_target_format(adapter, output_format, msaa)?;
         let working_space_msaa =
             pick_surface_msaa_for_mode(adapter, wgpu::TextureFormat::Rgba16Float, msaa, true);
-        Self::from_device_with_working_space_msaa(
+        let mut renderer = Self::from_device_with_working_space_msaa(
             device,
             queue,
             output_format,
             msaa,
             working_space_msaa,
-        )
+        )?;
+        // Only the adapter knows the device's downlevel capabilities, so
+        // publish them for callbacks to read via
+        // `resources.get::<wgpu::DownlevelCapabilities>()`.
+        renderer
+            .callback_resources
+            .insert(adapter.get_downlevel_capabilities());
+        Ok(renderer)
     }
 
     /// Point the renderer at a surface whose texture format differs from
@@ -11328,6 +11335,16 @@ impl WgpuSceneRenderer {
                             self.evict_callback_scope(&active_callback_scopes);
                         }
                         let resources = self.callback_scoped_resources.entry(scope).or_default();
+                        // The renderer publishes the device's downlevel
+                        // capabilities on its base resources; seed every
+                        // callback bucket with a clone so `prepare` sees
+                        // them.
+                        if !resources.contains::<wgpu::DownlevelCapabilities>()
+                            && let Some(capabilities) =
+                                self.callback_resources.get::<wgpu::DownlevelCapabilities>()
+                        {
+                            resources.insert(capabilities.clone());
+                        }
                         prepare_buffers.extend(cb.0.prepare(
                             &self.device,
                             &self.queue,
