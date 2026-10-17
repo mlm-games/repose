@@ -109,6 +109,21 @@ pub struct DepthComposite {
     bytes_total: u64,
 }
 
+/// Attachment behaviour of an offscreen scene pass
+/// ([`DepthComposite::begin_scene_ops`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ScenePassOps {
+    /// Clear color when `Some`, else keep the target's contents instead (a
+    /// pass that draws over what an earlier pass left).
+    pub clear: Option<[f32; 4]>,
+    /// Keep the depth buffer's contents instead of clearing it.
+    pub load_depth: bool,
+    /// Keep the depth buffer after the pass. `false` discards it (the
+    /// single-pass default); a later pass that loads depth needs `true` on
+    /// the earlier one.
+    pub store_depth: bool,
+}
+
 struct BlitShared {
     shader: wgpu::ShaderModule,
     layout: wgpu::BindGroupLayout,
@@ -437,7 +452,8 @@ impl DepthComposite {
     /// The depth and stencil attachments are discarded when the pass ends:
     /// [`blit`](Self::blit) only samples the color target, so nothing in
     /// this crate reads them afterwards. A caller that needs the depth
-    /// buffer afterwards must keep its own copy.
+    /// buffer afterwards uses [`begin_scene_ops`](Self::begin_scene_ops)
+    /// with `store_depth`.
     ///
     /// `clear` uses straight (un-premultiplied) alpha, which the blit
     /// premultiplies before compositing.
@@ -447,8 +463,52 @@ impl DepthComposite {
         encoder: &'a mut wgpu::CommandEncoder,
         clear: [f32; 4],
     ) -> Option<wgpu::RenderPass<'a>> {
+        self.begin_scene_ops(
+            id,
+            encoder,
+            ScenePassOps {
+                clear: Some(clear),
+                load_depth: false,
+                store_depth: false,
+            },
+        )
+    }
+
+    /// [`begin_scene`](Self::begin_scene) with explicit attachment ops, for
+    /// a pass that draws over what an earlier pass left (see
+    /// [`ScenePassOps`]). The target keeps its contents only if the earlier
+    /// pass stored them.
+    pub fn begin_scene_ops<'a>(
+        &'a self,
+        id: &str,
+        encoder: &'a mut wgpu::CommandEncoder,
+        ops: ScenePassOps,
+    ) -> Option<wgpu::RenderPass<'a>> {
         let t = self.targets.get(id)?;
         let (w, h) = (t.key.2 as f32, t.key.3 as f32);
+        let color_load = match ops.clear {
+            Some(clear) => wgpu::LoadOp::Clear(wgpu::Color {
+                r: clear[0] as f64,
+                g: clear[1] as f64,
+                b: clear[2] as f64,
+                a: clear[3] as f64,
+            }),
+            None => wgpu::LoadOp::Load,
+        };
+        let depth_ops = wgpu::Operations {
+            load: if ops.load_depth {
+                wgpu::LoadOp::Load
+            } else {
+                wgpu::LoadOp::Clear(1.0)
+            },
+            // Nothing in this crate reads depth/stencil after a pass; a
+            // caller that loads depth asks for it to be kept too.
+            store: if ops.store_depth {
+                wgpu::StoreOp::Store
+            } else {
+                wgpu::StoreOp::Discard
+            },
+        };
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("depth_composite_scene"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -456,24 +516,13 @@ impl DepthComposite {
                 depth_slice: None,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color {
-                        r: clear[0] as f64,
-                        g: clear[1] as f64,
-                        b: clear[2] as f64,
-                        a: clear[3] as f64,
-                    }),
+                    load: color_load,
                     store: wgpu::StoreOp::Store,
                 },
             })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: &t.depth_view,
-                // Nothing reads the offscreen depth/stencil after this pass:
-                // the blit declares `depth_write_enabled: false` /
-                // `depth_compare: Always`.
-                depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(1.0),
-                    store: wgpu::StoreOp::Discard,
-                }),
+                depth_ops: Some(depth_ops),
                 stencil_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(0),
                     store: wgpu::StoreOp::Discard,

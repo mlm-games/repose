@@ -55,7 +55,7 @@ pub use callback::{
 };
 
 mod depth_composite;
-pub use depth_composite::{BlitRenderPass, DepthComposite};
+pub use depth_composite::{BlitRenderPass, DepthComposite, ScenePassOps};
 
 #[derive(Clone)]
 struct UploadRing {
