@@ -275,6 +275,9 @@ struct App {
     last_window_focused: bool,
     os_focused: bool,
     occluded: bool,
+    /// Last declared pointer confinement, `None` until applied; reset
+    /// with the window so a rebuilt canvas re-applies it.
+    cursor_grab: Option<repose_core::CursorGrabMode>,
 
     external_drop_actions: Rc<RefCell<Vec<ExternalDropAction>>>,
 
@@ -386,6 +389,7 @@ impl App {
             last_window_focused: true,
             os_focused: true,
             occluded: false,
+            cursor_grab: None,
 
             external_drop_actions: Rc::new(RefCell::new(Vec::new())),
             drop_listeners: None,
@@ -440,6 +444,29 @@ impl App {
             self.rt.scale / reported
         } else {
             1.0
+        }
+    }
+
+    /// Apply the app's declared pointer confinement, on change only.
+    /// The web only has one mechanism - pointer lock for `Locked`,
+    /// which a browser grants while a user gesture is live and
+    /// rejects otherwise - so a rejected request is a debug note, not
+    /// a warning. `Confined` has no web equivalent and leaves the
+    /// pointer free.
+    fn apply_frame_cursor_grab(&mut self, window: &Window, mode: repose_core::CursorGrabMode) {
+        if self.cursor_grab == Some(mode) {
+            return;
+        }
+        self.cursor_grab = Some(mode);
+        use repose_core::CursorGrabMode as Repose;
+        use winit::window::CursorGrabMode as Winit;
+        let result = match mode {
+            Repose::None => window.set_cursor_grab(Winit::None),
+            Repose::Confined => return,
+            Repose::Locked => window.set_cursor_grab(Winit::Locked),
+        };
+        if let Err(e) = result {
+            log::debug!("cannot grab cursor on web ({mode:?}): {e:?}");
         }
     }
 
@@ -1210,6 +1237,7 @@ Settings &rsaquo; General &rsaquo; Configuration Editor, then set
         self.ensure_fullscreen_size(&window);
         self.sync_size_from_window(&window);
         self.window = Some(window.clone());
+        self.cursor_grab = None;
         *self.deeplink_window.borrow_mut() = Some(window.clone());
         self.install_dom_listeners(&window);
         self.start_backend(window);
@@ -1773,6 +1801,7 @@ impl ApplicationHandler<()> for App {
                 let output = self.rt.frame(&mut self.root, &self.render);
                 self.drain_render_commands();
                 self.apply_frame_cursor(&window, &output.platform.cursor);
+                self.apply_frame_cursor_grab(&window, output.platform.cursor_grab);
                 self.sync_text_agent(&window, &output.platform);
 
                 let frame = output.into_shared_frame();

@@ -59,6 +59,11 @@ fn is_tf_hit(f: &Frame, id: u64) -> bool {
 pub struct PlatformOutput {
     /// Cursor to display (None = default/system cursor).
     pub cursor: Option<CursorIcon>,
+    /// Pointer confinement the app declared this frame. The host
+    /// applies it to the window and releases on `None`; the field is
+    /// always a declaration for the frame, not an edge, so a host can
+    /// dedupe it however it likes.
+    pub cursor_grab: repose_core::CursorGrabMode,
     /// Whether IME input is allowed for the currently focused widget.
     pub ime_allowed: bool,
     /// IME cursor area in logical (DPI-scaled) coordinates: (x, y, width, height).
@@ -589,8 +594,10 @@ impl ReposeRuntime {
 
         let declared = self.sched.cursor_override.take();
         self.frame_cursor_override = declared.clone();
+        let cursor_grab = std::mem::take(&mut self.sched.cursor_grab);
         let platform = PlatformOutput {
             cursor: declared.or_else(|| self.take_cursor_suggestion()),
+            cursor_grab,
             ime_allowed,
             ime_cursor_area,
             clipboard_text,

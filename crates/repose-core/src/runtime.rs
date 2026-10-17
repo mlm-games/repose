@@ -9,7 +9,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::effects::Dispose;
 use crate::scope::Scope;
-use crate::{CursorIcon, Rect, Scene, View, input::PhysicalKey, semantics::Role};
+use crate::{CursorGrabMode, CursorIcon, Rect, Scene, View, input::PhysicalKey, semantics::Role};
 
 thread_local! {
     pub static COMPOSER: RefCell<Composer> = RefCell::new(Composer::default());
@@ -1498,6 +1498,15 @@ pub struct Scheduler {
     /// write it; last write per frame wins), consumed by the runner
     /// after `frame()`.
     pub cursor_override: Option<CursorIcon>,
+    /// App-requested pointer confinement, declared per frame like
+    /// `cursor_override`: a game steering with the mouse sets
+    /// [`CursorGrabMode::Confined`](crate::CursorGrabMode::Confined)
+    /// while the pointer is its input, so the mouse stops at the
+    /// window edge instead of escaping and freezing the control. The
+    /// field is reset to `None` after every `frame()`, so a game that
+    /// stops asking - a paused match, a closed editor - releases the
+    /// pointer the same frame.
+    pub cursor_grab: CursorGrabMode,
 }
 
 impl Default for Scheduler {
@@ -1524,6 +1533,7 @@ impl Scheduler {
             mouse_secondary: false,
             mouse_middle: false,
             cursor_override: None,
+            cursor_grab: CursorGrabMode::None,
         }
     }
 

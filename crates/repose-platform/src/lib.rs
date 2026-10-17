@@ -319,6 +319,10 @@ pub fn run_desktop_app_with_config(
 
         custom_cursor: Option<(u64, winit::window::CustomCursor)>,
         last_cursor_key: Option<(u8, u64)>,
+        /// Last declared pointer confinement, `None` until applied.
+        /// Reset when the window is created so the mode lands on the
+        /// new window too.
+        cursor_grab: Option<repose_core::CursorGrabMode>,
 
         frame_pacer: rc::FramePacer,
         redraw_deferred: bool,
@@ -511,6 +515,7 @@ pub fn run_desktop_app_with_config(
                 last_window_theme: None,
                 custom_cursor: None,
                 last_cursor_key: None,
+                cursor_grab: None,
                 touch_gestures: rc::TouchGestureState::default(),
                 gamepad: gamepad::create_backend()
                     .map(|b| Box::new(b) as Box<dyn gamepad::GamepadBackend>),
@@ -743,6 +748,30 @@ pub fn run_desktop_app_with_config(
             win.set_cursor(map_cursor(c));
         }
 
+        /// Apply the app's declared pointer confinement to the window,
+        /// with the same fallback ladder `bevy_winit` uses: `Locked`
+        /// falls back to `Confined` where the platform has no lock
+        /// (X11), and `Confined` falls back to free where it has no
+        /// confinement (macOS). Failures are logged, not fatal - a
+        /// window without the protocol still plays, it just does not
+        /// confine.
+        fn apply_cursor_grab(win: &winit::window::Window, mode: repose_core::CursorGrabMode) {
+            use repose_core::CursorGrabMode as Repose;
+            use winit::window::CursorGrabMode as Winit;
+            let result = match mode {
+                Repose::None => win.set_cursor_grab(Winit::None),
+                Repose::Confined => win
+                    .set_cursor_grab(Winit::Confined)
+                    .or_else(|_| win.set_cursor_grab(Winit::None)),
+                Repose::Locked => win
+                    .set_cursor_grab(Winit::Locked)
+                    .or_else(|_| win.set_cursor_grab(Winit::Confined)),
+            };
+            if let Err(e) = result {
+                log::warn!("cannot grab cursor ({mode:?}): {e:?}");
+            }
+        }
+
         fn clear_input_state(&mut self) {
             let active_touches = self
                 .touch_gestures
@@ -850,6 +879,11 @@ pub fn run_desktop_app_with_config(
                                 self.backend = Some(b);
                                 set_app_window(w.clone());
                                 self.window = Some(w);
+                                // Window-level state is per-window: a
+                                // recreated window starts ungrabbed, so
+                                // force the declared mode to be applied
+                                // again on the next frame.
+                                self.cursor_grab = None;
                                 self.request_redraw();
                             }
                             Err(e) => {
@@ -1385,6 +1419,12 @@ pub fn run_desktop_app_with_config(
                     let scale = self.rt.scale;
 
                     let output = self.rt.frame(&mut self.root, &self.render);
+
+                    let declared_grab = output.platform.cursor_grab;
+                    if self.cursor_grab != Some(declared_grab) {
+                        self.cursor_grab = Some(declared_grab);
+                        Self::apply_cursor_grab(&win, declared_grab);
+                    }
 
                     if let Some(cursor) = &output.platform.cursor {
                         let win = win.clone();
