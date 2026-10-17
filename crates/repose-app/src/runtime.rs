@@ -265,7 +265,6 @@ pub struct ReposeRuntime {
 
     cursor: Option<CursorIcon>,
     frame_cursor_override: Option<CursorIcon>,
-    fullscreen_request: Option<bool>,
 
     pub shortcuts: repose_core::shortcuts::ShortcutState,
 
@@ -356,7 +355,6 @@ impl ReposeRuntime {
             frame_cache: None,
             cursor: None,
             frame_cursor_override: None,
-            fullscreen_request: None,
             shortcuts: repose_core::shortcuts::ShortcutState::new().without_global_fallback(),
             textfield_states: HashMap::new(),
             gamepads: HashMap::new(),
@@ -3540,18 +3538,23 @@ impl ReposeRuntime {
     /// Ask the runner for borderless fullscreen on or off, as dock and
     /// handheld mode switches need. Read back with
     /// [`take_fullscreen_request`](Self::take_fullscreen_request).
+    ///
+    /// Kept here as well as on the scheduler because the two are the same
+    /// request: the field lives on [`Scheduler`] so a game holding only a
+    /// scheduler can ask for the same thing, and these are the shell's own way
+    /// in to it.
     pub fn request_fullscreen(&mut self, fullscreen: bool) {
-        self.fullscreen_request = Some(fullscreen);
+        self.sched.request_fullscreen(fullscreen);
     }
 
     /// Whether the window is currently fullscreen, as far as requests go.
     pub fn fullscreen(&self) -> Option<bool> {
-        self.fullscreen_request
+        self.sched.fullscreen_request
     }
 
     /// Take the pending fullscreen request (clears it).
     pub fn take_fullscreen_request(&mut self) -> Option<bool> {
-        self.fullscreen_request.take()
+        self.sched.fullscreen_request.take()
     }
 
     fn move_cursor_suggestion(&self) -> Option<CursorIcon> {

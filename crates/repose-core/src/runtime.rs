@@ -1507,6 +1507,16 @@ pub struct Scheduler {
     /// stops asking - a paused match, a closed editor - releases the
     /// pointer the same frame.
     pub cursor_grab: CursorGrabMode,
+    /// App-requested borderless fullscreen, taken by the runner when it next
+    /// looks rather than declared per frame like `cursor_grab`.
+    ///
+    /// A switch rather than a state, and the difference matters: the game asks
+    /// on the frame the player flips the setting, so a window the player
+    /// resized themselves is left alone by the next frame re-asserting it. The
+    /// runner consumes the request, so it is `None` again once it has been
+    /// applied. Games ask through [`Scheduler::request_fullscreen`]; shells
+    /// read it back with `repose_app::Runtime::take_fullscreen_request`.
+    pub fullscreen_request: Option<bool>,
 }
 
 impl Default for Scheduler {
@@ -1534,7 +1544,19 @@ impl Scheduler {
             mouse_middle: false,
             cursor_override: None,
             cursor_grab: CursorGrabMode::None,
+            fullscreen_request: None,
         }
+    }
+
+    /// Ask the runner for borderless fullscreen on or off.
+    ///
+    /// The app's side of the request: the runner consumes it when it next
+    /// looks, so this is asked once, on the frame the player changes their
+    /// mind, rather than asserted every frame. A game has no other way to
+    /// reach the window — the closure the shell calls is handed a scheduler
+    /// and a render context, and neither is the window.
+    pub fn request_fullscreen(&mut self, fullscreen: bool) {
+        self.fullscreen_request = Some(fullscreen);
     }
 
     /// Enter a named scope. Subsequent `id()` calls within this scope
