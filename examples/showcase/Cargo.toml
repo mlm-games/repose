@@ -32,6 +32,16 @@ target_sdk_version = 35
 [package.metadata.android.application]
 label = "Repose Showcase"
 theme = "@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen"
+enable_on_back_invoked_callback = true
+
+[[package.metadata.android.application.activity]]
+name = "rust.rlobkit.RlobKitMainActivity"
+exported = true
+launch_mode = "singleTask"
+
+[[package.metadata.android.application.activity.intent_filter]]
+actions = ["android.intent.action.MAIN"]
+categories = ["android.intent.category.LAUNCHER"]
 
 [target.'cfg(target_os = "android")'.dependencies]
 rlobkit-app-events = { workspace = true }

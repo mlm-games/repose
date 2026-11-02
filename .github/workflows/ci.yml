@@ -88,7 +88,7 @@ jobs:
       - name: Install Android target and pinned tool
         run: |
           rustup target add aarch64-linux-android
-          cargo install cargo-rapk --version 0.22.1 --locked
+          cargo install cargo-rapk --version 0.25.1 --locked
           cargo rapk version
           cargo fetch --locked
           echo "CARGO_NET_OFFLINE=true" >> "$GITHUB_ENV"

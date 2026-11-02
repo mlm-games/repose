@@ -39,9 +39,9 @@ Repose targets straightforward applications first and can grow into larger ones 
   rustup target add wasm32-unknown-unknown
   cargo install trunk --version 0.21.14 --locked
   ```
-- Android: use JDK `21`, Android build-tools `35.0.0`, the Android SDK/NDK, `adb`, and a connected device or emulator with USB debugging enabled. The documented local setup was tested with Android NDK `29.0.14206865`, `adb` `1.0.41`, and `cargo-rapk` `0.22.1`:
+- Android: use JDK `21`, Android build-tools `35.0.0`, the Android SDK/NDK, `adb`, and a connected device or emulator with USB debugging enabled. The documented local setup was tested with Android NDK `29.0.14206865`, `adb` `1.0.41`, and `cargo-rapk` `0.25.1`:
   ```bash
-  cargo install cargo-rapk --version 0.22.1 --locked
+  cargo install cargo-rapk --version 0.25.1 --locked
   adb devices
   ```
   Set `ANDROID_HOME` (or `ANDROID_SDK_ROOT`), `ANDROID_NDK_HOME`, `ANDROID_NDK_ROOT`, and `ANDROID_BUILD_TOOLS` before building.
