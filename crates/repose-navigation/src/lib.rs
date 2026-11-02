@@ -9,7 +9,7 @@ use std::{
 };
 
 use repose_core::*;
-use repose_ui::{Box as VBox, Column, ViewExt, anim::animate_f32_from};
+use repose_ui::{Box as VBox, Column, ViewExt, ZStack, anim::animate_f32_from};
 use serde::{Deserialize, Serialize};
 
 pub trait NavKey: Clone + Debug + 'static + Serialize + for<'de> Deserialize<'de> {}
@@ -588,52 +588,116 @@ pub fn NavDisplay<K: NavKey>(
     };
 
     let dir = stack.last_dir();
-    if dir == TransitionDir::None {
-        let v = entry_scope.run(|| (make_view)(&scope));
-        return maybe_intercept_back(v, on_back);
-    }
-
-    let (initial, target) = if dir == TransitionDir::Push {
-        (0.0, 1.0)
+    let base = if dir == TransitionDir::None {
+        entry_scope.run(|| (make_view)(&scope))
     } else {
-        (1.0, 0.0)
-    };
-    let t = animate_f32_from(
-        format!("nav3:{}:{}:{}", stack.stack_id, transition_id, id),
-        initial,
-        target,
-        transition.spec,
-    );
-
-    let slide = if dir == TransitionDir::Push {
-        1.0 - t
-    } else {
-        t
-    };
-    let dx = slide
-        * transition.slide_px
-        * if dir == TransitionDir::Push {
-            1.0
+        let (initial, target) = if dir == TransitionDir::Push {
+            (0.0, 1.0)
         } else {
-            -1.0
+            (1.0, 0.0)
         };
-    let alpha = if transition.fade {
-        0.75 + 0.25 * (1.0 - slide)
-    } else {
-        1.0
-    };
+        let t = animate_f32_from(
+            format!("nav3:{}:{}:{}", stack.stack_id, transition_id, id),
+            initial,
+            target,
+            transition.spec,
+        );
 
-    let v = entry_scope.run(|| (make_view)(&scope));
-    let framed = Column(Modifier::new().fill_max_size()).child(
-        VBox(
-            Modifier::new()
-                .fill_max_size()
-                .translate(dx, 0.0)
-                .alpha(alpha),
+        let slide = if dir == TransitionDir::Push {
+            1.0 - t
+        } else {
+            t
+        };
+        let dx = slide
+            * transition.slide_px
+            * if dir == TransitionDir::Push {
+                1.0
+            } else {
+                -1.0
+            };
+        let alpha = if transition.fade {
+            0.75 + 0.25 * (1.0 - slide)
+        } else {
+            1.0
+        };
+
+        let v = entry_scope.run(|| (make_view)(&scope));
+        Column(Modifier::new().fill_max_size()).child(
+            VBox(
+                Modifier::new()
+                    .fill_max_size()
+                    .translate(dx, 0.0)
+                    .alpha(alpha),
+            )
+            .child(v),
         )
-        .child(v),
-    );
+    };
+    let framed = with_back_gesture(&stack, &repose_core::back::gesture(), base, &make_view);
     maybe_intercept_back(framed, on_back)
+}
+
+/// Follows the predictive-back drag with the top entry while the entry below it
+/// is revealed underneath.
+///
+/// Only runs while a gesture is in progress; a completed or cancelled one leaves
+/// the normal push/pop transition in charge.
+fn with_back_gesture<K: NavKey>(
+    stack: &Rc<NavBackStack<K>>,
+    gesture: &repose_core::back::BackGesture,
+    current: View,
+    make_view: &EntryRenderer<K>,
+) -> View {
+    if !gesture.active || gesture.progress <= 0.0 {
+        return current;
+    }
+    let previous = {
+        let state = stack.inner.borrow();
+        let len = state.entries.len();
+        if len < 2 {
+            None
+        } else {
+            let entry = &state.entries[len - 2];
+            Some((
+                entry.id,
+                entry.key.clone(),
+                entry.saved.clone(),
+                entry.scope.clone(),
+            ))
+        }
+    };
+    let Some((id, key, saved, entry_scope)) = previous else {
+        return current;
+    };
+    let width = remember_with_key(
+        format!("nav3:back-gesture-width:{}", stack.stack_id),
+        || signal(0.0f32),
+    );
+    let under = EntryScope {
+        id,
+        key,
+        saved,
+        scope: entry_scope.clone(),
+        nav: Navigator {
+            stack: (**stack).clone(),
+        },
+    };
+    let under_view = entry_scope.run(|| (make_view)(&under));
+    let dx = gesture.progress * width.get() * 0.4;
+    let scale = 1.0 - 0.06 * gesture.progress;
+    let width_slot = width.clone();
+    ZStack(
+        Modifier::new()
+            .fill_max_size()
+            .on_size_changed(move |size| {
+                if (width_slot.get() - size.x).abs() > 0.5 {
+                    width_slot.set(size.x);
+                }
+            }),
+    )
+    .child(under_view)
+    .child(
+        VBox(Modifier::new().fill_max_size().translate(dx, 0.0).scale(scale)).child(current),
+    )
 }
 
 fn maybe_intercept_back(v: View, on_back: Option<Rc<dyn Fn()>>) -> View {
