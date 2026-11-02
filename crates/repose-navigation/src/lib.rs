@@ -665,21 +665,27 @@ fn maybe_intercept_back(v: View, on_back: Option<Rc<dyn Fn()>>) -> View {
 
 /// Back-dispatcher
 ///
-/// platform calls handle_back(); app sets handler during composition.
+/// A platform runner calls [`back::handle`] on a back press and
+/// [`back::can_handle`] to decide whether the system should receive the press
+/// instead. The app sets the handler during composition.
 pub mod back {
     use std::{cell::RefCell, rc::Rc};
 
     type Handler = Rc<dyn Fn() -> bool>;
+    type Check = Rc<dyn Fn() -> bool>;
 
     struct Installed {
         handler: Handler,
+        check: Option<Check>,
         owner: String,
     }
 
     #[derive(Default)]
     struct Registry {
         base: Option<Handler>,
+        base_check: Option<Check>,
         current: Option<Handler>,
+        current_check: Option<Check>,
         installed: Vec<Installed>,
     }
 
@@ -687,10 +693,21 @@ pub mod back {
         static REGISTRY: RefCell<Registry> = RefCell::new(Registry::default());
     }
 
+    /// Set the base handler. Without a check it is assumed to handle back.
     pub fn set(handler: Option<Handler>) {
+        set_checked(handler, None);
+    }
+
+    /// Set the base handler and, when known, whether it would consume a press.
+    ///
+    /// A root screen can keep a handler installed for popping while reporting
+    /// `can_handle = false`, so Android plays its own back-to-home animation
+    /// instead of a dead gesture.
+    pub fn set_checked(handler: Option<Handler>, check: Option<Check>) {
         let _ = REGISTRY.try_with(|registry| {
             let mut registry = registry.borrow_mut();
             registry.base = handler;
+            registry.base_check = check;
             sync_current(&mut registry);
         });
     }
@@ -706,14 +723,20 @@ pub mod back {
     }
 
     fn sync_current(registry: &mut Registry) {
-        registry.current = registry
-            .installed
-            .last()
-            .map(|entry| entry.handler.clone())
-            .or_else(|| registry.base.clone());
+        if let Some(entry) = registry.installed.last() {
+            registry.current = Some(entry.handler.clone());
+            registry.current_check = entry.check.clone();
+        } else {
+            registry.current = registry.base.clone();
+            registry.current_check = registry.base_check.clone();
+        }
     }
 
-    pub(crate) fn install(handler: Handler, owner: String) -> Option<Handler> {
+    pub(crate) fn install(
+        handler: Handler,
+        check: Option<Check>,
+        owner: String,
+    ) -> Option<Handler> {
         REGISTRY
             .try_with(|slot| {
                 let mut registry = slot.borrow_mut();
@@ -721,9 +744,10 @@ pub mod back {
                 registry.installed.retain(|entry| entry.owner != owner);
                 registry.installed.push(Installed {
                     handler: handler.clone(),
+                    check,
                     owner,
                 });
-                registry.current = Some(handler);
+                sync_current(&mut registry);
                 previous
             })
             .ok()
@@ -745,6 +769,19 @@ pub mod back {
         });
     }
 
+    /// Whether the active handler says it would consume a press.
+    pub fn can_handle() -> bool {
+        REGISTRY
+            .try_with(|registry| {
+                let registry = registry.borrow();
+                if registry.current.is_none() {
+                    return false;
+                }
+                registry.current_check.as_ref().is_none_or(|check| check())
+            })
+            .unwrap_or(false)
+    }
+
     pub fn handle() -> bool {
         let handler = current();
         handler.is_some_and(|handler| handler())
@@ -763,7 +800,12 @@ pub fn InstallBackHandler<K: NavKey>(stack: NavBackStack<K>) -> Dispose {
         stack: stack.clone(),
     };
     let handler: Rc<dyn Fn() -> bool> = Rc::new(move || nav.pop());
+    let check: Rc<dyn Fn() -> bool> = {
+        let stack = stack.clone();
+        Rc::new(move || stack.size() > 1)
+    };
     let handler_for_effect = handler.clone();
+    let check_for_effect = check.clone();
     let owner = format!("navigation-back:{}", stack.stack_id);
     let key = format!(
         "navigation-back-effect:{}:{}:{}:{}",
@@ -773,7 +815,11 @@ pub fn InstallBackHandler<K: NavKey>(stack: NavBackStack<K>) -> Dispose {
         owner
     );
     let install = move || {
-        back::install(handler_for_effect.clone(), owner.clone());
+        back::install(
+            handler_for_effect.clone(),
+            Some(check_for_effect.clone()),
+            owner.clone(),
+        );
         on_unmount(move || back::restore(&handler_for_effect))
     };
     if current_scope().is_some() {
@@ -904,9 +950,9 @@ mod nav_state_tests {
         back::set(Some(base));
         assert!(!back::handle());
         assert!(base_called.get());
-        back::install(first.clone(), "first".into());
-        back::install(second.clone(), "second".into());
-        back::install(third.clone(), "third".into());
+        back::install(first.clone(), None, "first".into());
+        back::install(second.clone(), None, "second".into());
+        back::install(third.clone(), None, "third".into());
         back::restore(&second);
         assert!(back::handle());
         assert!(third_called.get());
@@ -919,6 +965,21 @@ mod nav_state_tests {
         back::restore(&third);
         assert!(!back::handle());
         assert!(base_called.get());
+        back::reset_for_test();
+    }
+
+    #[test]
+    fn back_can_handle_uses_the_active_check() {
+        back::reset_for_test();
+        let root = Rc::new(std::cell::Cell::new(true));
+        let check = {
+            let root = root.clone();
+            Rc::new(move || !root.get())
+        };
+        back::set_checked(Some(Rc::new(|| false)), Some(check));
+        assert!(!back::can_handle());
+        root.set(false);
+        assert!(back::can_handle());
         back::reset_for_test();
     }
 

@@ -292,10 +292,16 @@ pub fn app(_s: &mut Scheduler) -> View {
         RefCell::new(WindowManagerState::new())
     });
 
-    back::set(Some(Rc::new({
-        let nav = navigator.clone();
-        move || nav.pop()
-    })));
+    back::set_checked(
+        Some(Rc::new({
+            let nav = navigator.clone();
+            move || nav.pop()
+        })),
+        Some(Rc::new({
+            let stack = stack.clone();
+            move || stack.size() > 1
+        })),
+    );
 
     let current = stack.top().map(|(_, k, _, _)| k).unwrap_or(Route::Home);
 

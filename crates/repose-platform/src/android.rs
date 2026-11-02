@@ -17,8 +17,9 @@ use crate::common as rc;
 use crate::render::RenderContext;
 use crate::*;
 
-use std::sync::Arc;
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use repose_app::ReposeRuntime;
 use winit::application::ApplicationHandler;
@@ -47,6 +48,36 @@ pub fn set_continuous_redraw(enabled: bool) {
     }
 }
 
+/// Gesture phases arrive on the Java main thread; the render loop owns all of
+/// the state they affect, so they are queued here and woken through the event
+/// loop proxy.
+static BACK_EVENTS: Mutex<VecDeque<rlobkit_app_events::back::BackEvent>> =
+    Mutex::new(VecDeque::new());
+
+fn install_back_bridge() {
+    rlobkit_app_events::back::set_on_back_event(|event| {
+        BACK_EVENTS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push_back(event);
+        crate::wake_event_loop();
+    });
+    rlobkit_app_events::back::set_on_back(|| {
+        if rlobkit_app_events::back::handled() {
+            rlobkit_app_events::back::BackOutcome::Consumed
+        } else {
+            rlobkit_app_events::back::BackOutcome::PropagateToSystem
+        }
+    });
+}
+
+fn take_back_event() -> Option<rlobkit_app_events::back::BackEvent> {
+    BACK_EVENTS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .pop_front()
+}
+
 /// Run an Android app with default [`AndroidOptions`].
 ///
 /// Deprecated: use [`run_android_app_with_options`] with
@@ -61,6 +92,16 @@ pub fn run_android_app(
     run_android_app_with_options(app, root, AndroidOptions::default())
 }
 
+/// Run an Android app with explicit [`AndroidOptions`].
+///
+/// Back is dispatched to the topmost overlay with a back handler, then to
+/// [`repose_navigation::back`]. While neither can handle it the Activity keeps
+/// its back callback unregistered, so Android plays its own back-to-home
+/// animation. On Android 14 the gesture's progress is exposed through
+/// [`repose_core::back`] for the duration of the drag.
+///
+/// Predictive back needs `android:enableOnBackInvokedCallback="true"` in the
+/// merged manifest.
 pub fn run_android_app_with_options(
     app: AndroidApp,
     root: impl FnMut(&mut Scheduler, &RenderContext) -> View + 'static,
@@ -71,11 +112,11 @@ pub fn run_android_app_with_options(
     // this runner starts. The runner stays logger-agnostic so apps keep
     // one shared tracing backend with no `log`-global races.
     repose_core::animation::set_clock(Box::new(repose_core::animation::SystemClock));
-
     let event_loop = winit::event_loop::EventLoopBuilder::new()
         .with_android_app(app)
         .build()?;
     crate::set_event_loop_proxy(event_loop.create_proxy());
+    install_back_bridge();
 
     struct AppState {
         root: Box<dyn FnMut(&mut Scheduler, &RenderContext) -> View>,
@@ -422,6 +463,43 @@ pub fn run_android_app_with_options(
 
             false
         }
+
+        fn drain_back_events(&mut self) {
+            while let Some(event) = take_back_event() {
+                match event {
+                    rlobkit_app_events::back::BackEvent::Started => {
+                        repose_core::back::set_gesture(true, 0.0);
+                    }
+                    rlobkit_app_events::back::BackEvent::Progress(progress) => {
+                        repose_core::back::set_gesture(true, progress);
+                    }
+                    rlobkit_app_events::back::BackEvent::Cancelled => {
+                        repose_core::back::set_gesture(false, 0.0);
+                    }
+                    rlobkit_app_events::back::BackEvent::Invoked => {
+                        repose_core::back::set_gesture(false, 0.0);
+                        if self.dispatch_back_request() {
+                            self.request_redraw();
+                        } else {
+                            rlobkit_app_events::back::finish();
+                        }
+                    }
+                }
+            }
+        }
+
+        fn dispatch_back_request(&mut self) -> bool {
+            self.rt.overlay.handle_back() || repose_navigation::back::handle()
+        }
+
+        /// Tell the Activity whether back has somewhere to go. `false`
+        /// unregisters its callback so Android plays the back-to-home animation
+        /// itself instead of showing a dead gesture at the root.
+        fn sync_back_handled(&self) {
+            let handled =
+                self.rt.overlay.has_back_handler() || repose_navigation::back::can_handle();
+            rlobkit_app_events::back::set_handled(handled);
+        }
         fn overlay_drag_indicator(&self, scene: &mut Scene) {
             let _dnd_guard = self.rt.dnd_context.enter();
             Self::overlay_drag_indicator_static(scene, self.rt.mouse_pos_px);
@@ -468,6 +546,7 @@ pub fn run_android_app_with_options(
             if let Some(backend) = self.backend.as_mut() {
                 backend.take_surface();
             }
+            repose_core::back::set_gesture(false, 0.0);
             self.clear_input_state();
         }
 
@@ -704,12 +783,7 @@ pub fn run_android_app_with_options(
                         && !key_event.repeat
                         && (rc::is_back_key(&key_event) || rc::is_escape_key(&key_event))
                     {
-                        if self.rt.overlay.handle_back() {
-                            self.request_redraw();
-                            return;
-                        }
-                        use repose_navigation::back;
-                        if back::handle() {
+                        if self.dispatch_back_request() {
                             self.request_redraw();
                             return;
                         }
@@ -798,6 +872,7 @@ pub fn run_android_app_with_options(
                         if has_frame {
                             self.handle_frame_result(presented);
                         }
+                        self.sync_back_handled();
                         return;
                     }
 
@@ -824,6 +899,7 @@ pub fn run_android_app_with_options(
                         });
                     let frame = output.into_shared_frame();
                     self.rt.after_compose_shared(frame.clone(), scale);
+                    self.sync_back_handled();
 
                     let mut overlay = repose_core::dnd::is_dragging().then(|| frame.scene.clone());
                     if let Some(overlay) = &mut overlay {
@@ -857,6 +933,8 @@ pub fn run_android_app_with_options(
             let _dnd_guard = self.rt.dnd_context.enter();
             self.rt.process_deeplinks();
             self.rt.process_lifecycle();
+            self.drain_back_events();
+            self.sync_back_handled();
             let redraw_deferred = self.redraw_deferred;
 
             #[cfg(feature = "gamepad")]
@@ -1003,6 +1081,8 @@ pub fn run_android_app_with_options(
         }
 
         fn user_event(&mut self, _: &winit::event_loop::ActiveEventLoop, _: ()) {
+            self.drain_back_events();
+            self.sync_back_handled();
             request_frame();
         }
     }

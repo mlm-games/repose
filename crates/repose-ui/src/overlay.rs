@@ -181,6 +181,14 @@ impl OverlayHandle {
         handlers.into_iter().any(|handler| handler())
     }
 
+    /// Whether any overlay registered a back handler.
+    ///
+    /// Used by platform runners to decide whether back should reach the system
+    /// at all; the handler itself is only run on an actual press.
+    pub fn has_back_handler(&self) -> bool {
+        !self.inner.borrow().back_handlers.is_empty()
+    }
+
     /// Number of live entries. Reads state directly rather than going through
     /// [`Self::host`], which rebuilds every entry and so cannot be used to
     /// observe what is registered.

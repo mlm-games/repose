@@ -104,6 +104,7 @@
 
 pub mod animation;
 pub mod animation_driver;
+pub mod back;
 pub mod clipboard;
 pub mod color;
 pub mod cursor;
