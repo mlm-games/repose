@@ -500,6 +500,7 @@ pub fn run_android_app_with_options(
                 self.rt.overlay.has_back_handler() || repose_navigation::back::can_handle();
             rlobkit_app_events::back::set_handled(handled);
         }
+
         fn overlay_drag_indicator(&self, scene: &mut Scene) {
             let _dnd_guard = self.rt.dnd_context.enter();
             Self::overlay_drag_indicator_static(scene, self.rt.mouse_pos_px);
