@@ -3548,9 +3548,9 @@ dependencies = [
 
 [[package]]
 name = "rlobkit-app-events"
-version = "0.6.2"
+version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ce9fa7be075c0e35b7ff8a7cbf37cea0f5859034c0f8556e2b712fa7361acf0"
+checksum = "51d45e20a6dadd187de4e7654a1575e5e4f8cfb3d198091ba9d72320aa9559d9"
 dependencies = [
  "jni",
  "jni-min-helper",
@@ -3564,9 +3564,9 @@ dependencies = [
 
 [[package]]
 name = "rlobkit-core"
-version = "0.6.2"
+version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5627f844eafb013724e82ec559edb80c223b3e8766cb52a6a69c3aec83a9bc3f"
+checksum = "e130fa491536a5b2914f201e98d9d8e04b37d6b1bbcf67c7f3a56bb0c8082990"
 dependencies = [
  "bytes",
  "dirs",
