@@ -30,6 +30,7 @@ static ACTIVE: AtomicBool = AtomicBool::new(false);
 static PROGRESS_BITS: AtomicU32 = AtomicU32::new(0);
 static SETTLE_BITS: AtomicU32 = AtomicU32::new(0);
 static SETTLE_START: Mutex<Option<web_time::Instant>> = Mutex::new(None);
+static COMMITTED_AT: Mutex<Option<web_time::Instant>> = Mutex::new(None);
 
 /// How long a cancelled gesture takes to return to rest.
 const SETTLE_MS: f32 = 180.0;
@@ -98,7 +99,7 @@ pub fn set_gesture(active: bool, progress: f32) {
 
 /// Abandon the gesture, easing back to rest from where the finger left it.
 ///
-/// The committed case resets through [`set_gesture`] instead: the navigation
+/// The committed case resets through [`commit`] instead: the navigation
 /// transition takes over from the release point.
 pub fn cancel() {
     let from = progress();
@@ -107,4 +108,27 @@ pub fn cancel() {
     SETTLE_BITS.store(from.to_bits(), Ordering::Relaxed);
     *SETTLE_START.lock().unwrap_or_else(|e| e.into_inner()) = Some(web_time::Instant::now());
     crate::request_frame();
+}
+
+/// Finish a gesture that committed.
+///
+/// Resets at once and remembers the moment, so a navigation display can land
+/// where the gesture already was instead of animating the destination in again.
+pub fn commit() {
+    set_gesture(false, 0.0);
+    *COMMITTED_AT.lock().unwrap_or_else(|e| e.into_inner()) = Some(web_time::Instant::now());
+}
+
+/// Whether a predictive gesture committed within the last few hundred
+/// milliseconds.
+pub fn committed_recently() -> bool {
+    let mut at = COMMITTED_AT.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(started) = *at else {
+        return false;
+    };
+    if started.elapsed().as_millis() > 400 {
+        *at = None;
+        return false;
+    }
+    true
 }

@@ -588,7 +588,9 @@ pub fn NavDisplay<K: NavKey>(
     };
 
     let dir = stack.last_dir();
-    let base = if dir == TransitionDir::None {
+    let base = if dir == TransitionDir::None
+        || (dir == TransitionDir::Pop && repose_core::back::committed_recently())
+    {
         entry_scope.run(|| (make_view)(&scope))
     } else {
         let (initial, target) = if dir == TransitionDir::Push {
@@ -640,12 +642,13 @@ pub fn NavDisplay<K: NavKey>(
     maybe_intercept_back(framed, on_back)
 }
 
-/// Cross-fades the top entry with the one below it while the back gesture is in
-/// progress, matching what Navigation Compose does by default: the outgoing
-/// screen fades and shrinks slightly, the screen underneath fades in.
+/// Shrinks the top entry over the one below it while the back gesture is in
+/// progress, the `scaleOut(0.9)` look the Compose navigation docs recommend:
+/// the outgoing screen stays opaque and pulls back to reveal the screen it is
+/// returning to.
 ///
 /// Cancelled gestures keep reporting a settling progress for a moment, so the
-/// fade unwinds instead of snapping.
+/// shrink unwinds instead of snapping.
 fn with_back_gesture<K: NavKey>(
     stack: &Rc<NavBackStack<K>>,
     gesture: &repose_core::back::BackGesture,
@@ -686,13 +689,12 @@ fn with_back_gesture<K: NavKey>(
     let under_view = entry_scope.run(|| (make_view)(&under));
     let scale = 1.0 - 0.1 * progress;
     ZStack(Modifier::new().fill_max_size())
-        .child(VBox(Modifier::new().fill_max_size().alpha(progress)).child(under_view))
+        .child(VBox(Modifier::new().fill_max_size()).child(under_view))
         .child(
             VBox(
                 Modifier::new()
                     .fill_max_size()
                     .background(theme().background)
-                    .alpha(1.0 - progress)
                     .scale(scale),
             )
             .child(current),

@@ -477,7 +477,7 @@ pub fn run_android_app_with_options(
                         repose_core::back::cancel();
                     }
                     rlobkit_app_events::back::BackEvent::Invoked => {
-                        repose_core::back::set_gesture(false, 0.0);
+                        repose_core::back::commit();
                         if self.dispatch_back_request() {
                             self.request_redraw();
                         } else {
