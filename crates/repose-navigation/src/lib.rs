@@ -696,7 +696,14 @@ fn with_back_gesture<K: NavKey>(
     )
     .child(under_view)
     .child(
-        VBox(Modifier::new().fill_max_size().translate(dx, 0.0).scale(scale)).child(current),
+        VBox(
+            Modifier::new()
+                .fill_max_size()
+                .background(theme().background)
+                .translate(dx, 0.0)
+                .scale(scale),
+        )
+        .child(current),
     )
 }
 
