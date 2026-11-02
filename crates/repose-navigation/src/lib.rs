@@ -632,22 +632,28 @@ pub fn NavDisplay<K: NavKey>(
             .child(v),
         )
     };
-    let framed = with_back_gesture(&stack, &repose_core::back::gesture(), base, &make_view);
+    let framed = if dir == TransitionDir::Pop {
+        base
+    } else {
+        with_back_gesture(&stack, &repose_core::back::gesture(), base, &make_view)
+    };
     maybe_intercept_back(framed, on_back)
 }
 
-/// Follows the predictive-back drag with the top entry while the entry below it
-/// is revealed underneath.
+/// Cross-fades the top entry with the one below it while the back gesture is in
+/// progress, matching what Navigation Compose does by default: the outgoing
+/// screen fades and shrinks slightly, the screen underneath fades in.
 ///
-/// Only runs while a gesture is in progress; a completed or cancelled one leaves
-/// the normal push/pop transition in charge.
+/// Cancelled gestures keep reporting a settling progress for a moment, so the
+/// fade unwinds instead of snapping.
 fn with_back_gesture<K: NavKey>(
     stack: &Rc<NavBackStack<K>>,
     gesture: &repose_core::back::BackGesture,
     current: View,
     make_view: &EntryRenderer<K>,
 ) -> View {
-    if !gesture.active || gesture.progress <= 0.0 {
+    let progress = gesture.progress;
+    if progress <= 0.0 {
         return current;
     }
     let previous = {
@@ -668,10 +674,6 @@ fn with_back_gesture<K: NavKey>(
     let Some((id, key, saved, entry_scope)) = previous else {
         return current;
     };
-    let width = remember_with_key(
-        format!("nav3:back-gesture-width:{}", stack.stack_id),
-        || signal(0.0f32),
-    );
     let under = EntryScope {
         id,
         key,
@@ -682,29 +684,21 @@ fn with_back_gesture<K: NavKey>(
         },
     };
     let under_view = entry_scope.run(|| (make_view)(&under));
-    let dx = gesture.progress * width.get() * 0.4;
-    let scale = 1.0 - 0.06 * gesture.progress;
-    let width_slot = width.clone();
-    ZStack(
-        Modifier::new()
-            .fill_max_size()
-            .on_size_changed(move |size| {
-                if (width_slot.get() - size.x).abs() > 0.5 {
-                    width_slot.set(size.x);
-                }
-            }),
-    )
-    .child(under_view)
-    .child(
-        VBox(
-            Modifier::new()
-                .fill_max_size()
-                .background(theme().background)
-                .translate(dx, 0.0)
-                .scale(scale),
+    let scale = 1.0 - 0.1 * progress;
+    ZStack(Modifier::new().fill_max_size())
+        .child(
+            VBox(Modifier::new().fill_max_size().alpha(progress)).child(under_view),
         )
-        .child(current),
-    )
+        .child(
+            VBox(
+                Modifier::new()
+                    .fill_max_size()
+                    .background(theme().background)
+                    .alpha(1.0 - progress)
+                    .scale(scale),
+            )
+            .child(current),
+        )
 }
 
 fn maybe_intercept_back(v: View, on_back: Option<Rc<dyn Fn()>>) -> View {
