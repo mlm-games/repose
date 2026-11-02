@@ -13,8 +13,8 @@
 //! and the runner dispatches the back request, which unwinds the screen with the
 //! navigation transition.
 
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 /// The current predictive-back gesture.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]

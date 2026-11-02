@@ -686,9 +686,7 @@ fn with_back_gesture<K: NavKey>(
     let under_view = entry_scope.run(|| (make_view)(&under));
     let scale = 1.0 - 0.1 * progress;
     ZStack(Modifier::new().fill_max_size())
-        .child(
-            VBox(Modifier::new().fill_max_size().alpha(progress)).child(under_view),
-        )
+        .child(VBox(Modifier::new().fill_max_size().alpha(progress)).child(under_view))
         .child(
             VBox(
                 Modifier::new()
