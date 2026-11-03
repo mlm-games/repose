@@ -48,7 +48,7 @@ static WINDOW_OCCLUDED: AtomicBool = AtomicBool::new(false);
 static CLOSE_TO_TRAY: AtomicBool = AtomicBool::new(false);
 
 #[cfg(not(target_arch = "wasm32"))]
-static EVENT_LOOP_PROXY: OnceLock<winit::event_loop::EventLoopProxy<()>> = OnceLock::new();
+static EVENT_LOOP_PROXY: Mutex<Option<winit::event_loop::EventLoopProxy<()>>> = Mutex::new(None);
 
 /// Optional callback invoked on every AboutToWait, regardless of redraw state.
 #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
@@ -111,10 +111,7 @@ pub fn push_window_lifecycle(visible: bool) {
 /// Push a deeplink payload and wake the UI loop. Thin wrapper over `repose_app`.
 pub fn push_deeplink(data: Vec<u8>) {
     repose_app::lifecycle::push_deeplink(data);
-    #[cfg(not(target_arch = "wasm32"))]
-    if let Some(proxy) = EVENT_LOOP_PROXY.get() {
-        let _ = proxy.send_event(());
-    }
+    wake_event_loop();
 }
 
 /// Store the application window handle (called once during app setup).
@@ -126,7 +123,7 @@ pub fn set_app_window(window: Arc<Window>) {
 /// Store the event loop proxy so tray commands / deeplinks can wake the event loop.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn set_event_loop_proxy(proxy: winit::event_loop::EventLoopProxy<()>) {
-    let _ = EVENT_LOOP_PROXY.set(proxy);
+    *EVENT_LOOP_PROXY.lock().unwrap_or_else(|e| e.into_inner()) = Some(proxy);
 }
 
 /// Register a callback invoked on every AboutToWait (used for draining tray commands).
@@ -140,7 +137,11 @@ pub fn set_about_to_wait_callback(cb: Box<dyn Fn() + Send>) {
 /// Wake the winit event loop from another thread (e.g. tray's GTK thread, JNI callback).
 #[cfg(not(target_arch = "wasm32"))]
 pub fn wake_event_loop() {
-    if let Some(proxy) = EVENT_LOOP_PROXY.get() {
+    if let Some(proxy) = EVENT_LOOP_PROXY
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+    {
         let _ = proxy.send_event(());
     }
 }

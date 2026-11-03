@@ -9,7 +9,7 @@ use std::{
 };
 
 use repose_core::*;
-use repose_ui::{Box as VBox, Column, ViewExt, ZStack, anim::animate_f32_from};
+use repose_ui::{Box as VBox, BoxWithConstraints, Column, ViewExt, ZStack, anim::animate_f32_from};
 use serde::{Deserialize, Serialize};
 
 pub trait NavKey: Clone + Debug + 'static + Serialize + for<'de> Deserialize<'de> {}
@@ -169,6 +169,9 @@ struct BackState<K: NavKey> {
     next_id: u64,
     last_dir: TransitionDir,
     transition_id: u64,
+    /// Set when the pop came from a predictive-back gesture that already
+    /// played the transition.
+    gesture_pop: bool,
 }
 
 #[derive(Clone)]
@@ -202,6 +205,9 @@ impl<K: NavKey> NavBackStack<K> {
     pub fn last_dir(&self) -> TransitionDir {
         self.inner.borrow().last_dir
     }
+    fn gesture_pop(&self) -> bool {
+        self.inner.borrow().gesture_pop
+    }
     fn bump(&self) {
         let v = self.version.get();
         self.version.set(v.wrapping_add(1));
@@ -225,6 +231,7 @@ impl<K: NavKey> NavBackStack<K> {
         let mut s = self.inner.borrow_mut();
         self.fresh_entry(&mut s, key);
         s.last_dir = TransitionDir::Push;
+        s.gesture_pop = false;
         s.transition_id = s.transition_id.wrapping_add(1);
     }
 
@@ -244,6 +251,7 @@ impl<K: NavKey> NavBackStack<K> {
                 entry.saved.set_current(true);
             }
             s.last_dir = TransitionDir::Pop;
+            s.gesture_pop = repose_core::back::take_committed();
             s.transition_id = s.transition_id.wrapping_add(1);
             entries
         };
@@ -310,6 +318,7 @@ impl<K: NavKey> NavBackStack<K> {
             let old = s.entries.pop();
             self.fresh_entry(&mut s, key);
             s.last_dir = TransitionDir::Push;
+            s.gesture_pop = false;
             s.transition_id = s.transition_id.wrapping_add(1);
             old
         };
@@ -356,6 +365,7 @@ impl<K: NavKey> NavBackStack<K> {
                 self.fresh_entry(&mut s, k);
             }
             s.last_dir = TransitionDir::None;
+            s.gesture_pop = false;
             s.transition_id = s.transition_id.wrapping_add(1);
             old
         };
@@ -402,6 +412,7 @@ impl<K: NavKey> Navigator<K> {
             let old = std::mem::take(&mut s.entries);
             self.stack.fresh_entry(&mut s, k);
             s.last_dir = TransitionDir::Push;
+            s.gesture_pop = false;
             s.transition_id = s.transition_id.wrapping_add(1);
             old
         };
@@ -459,6 +470,7 @@ pub fn remember_back_stack_with_key<K: NavKey>(
             next_id: 2,
             last_dir: TransitionDir::None,
             transition_id: 0,
+            gesture_pop: false,
         })),
         version: std::rc::Rc::new(signal(0)),
         stack_id: unique_component_id(),
@@ -588,9 +600,13 @@ pub fn NavDisplay<K: NavKey>(
     };
 
     let dir = stack.last_dir();
-    let base = if dir == TransitionDir::None
-        || (dir == TransitionDir::Pop && repose_core::back::committed_recently())
-    {
+    let gesture_pop = dir == TransitionDir::Pop && stack.gesture_pop();
+    let gesture = repose_core::back::gesture();
+    let framed = if gesture.progress > 0.0 {
+        // The preview replaces the settled page, so it also owns building it:
+        // the pair needs the page's own width, which only the layout knows.
+        with_back_gesture(&stack, &gesture, scope, &make_view)
+    } else if dir == TransitionDir::None || gesture_pop {
         entry_scope.run(|| (make_view)(&scope))
     } else {
         let (initial, target) = if dir == TransitionDir::Push {
@@ -634,30 +650,27 @@ pub fn NavDisplay<K: NavKey>(
             .child(v),
         )
     };
-    let framed = if dir == TransitionDir::Pop {
-        base
-    } else {
-        with_back_gesture(&stack, &repose_core::back::gesture(), base, &make_view)
-    };
     maybe_intercept_back(framed, on_back)
 }
 
-/// Shrinks the top entry over the one below it while the back gesture is in
-/// progress, the `scaleOut(0.9)` look the Compose navigation docs recommend:
-/// the outgoing screen stays opaque and pulls back to reveal the screen it is
-/// returning to.
+/// Renders the predictive-back pair as two screens that both move. The page
+/// being left follows the finger off toward the edge the drag started from,
+/// while the page underneath arrives from the opposite edge. The pair tiles the
+/// viewport, so at any progress the two screens occupy separate halves and
+/// their content never composites over each other.
 ///
-/// Cancelled gestures keep reporting a settling progress for a moment, so the
-/// shrink unwinds instead of snapping.
+/// A committed gesture keeps sliding the pair to the end of the transition, so
+/// the pop that follows is a swap with nothing left to animate. A cancelled
+/// gesture settles both pages back to rest.
 fn with_back_gesture<K: NavKey>(
     stack: &Rc<NavBackStack<K>>,
     gesture: &repose_core::back::BackGesture,
-    current: View,
+    current: EntryScope<K>,
     make_view: &EntryRenderer<K>,
 ) -> View {
     let progress = gesture.progress;
     if progress <= 0.0 {
-        return current;
+        return current.scope.run(|| (make_view)(&current));
     }
     let previous = {
         let state = stack.inner.borrow();
@@ -675,7 +688,7 @@ fn with_back_gesture<K: NavKey>(
         }
     };
     let Some((id, key, saved, entry_scope)) = previous else {
-        return current;
+        return current.scope.run(|| (make_view)(&current));
     };
     let under = EntryScope {
         id,
@@ -686,19 +699,52 @@ fn with_back_gesture<K: NavKey>(
             stack: (**stack).clone(),
         },
     };
-    let under_view = entry_scope.run(|| (make_view)(&under));
-    let scale = 1.0 - 0.1 * progress;
-    ZStack(Modifier::new().fill_max_size())
-        .child(VBox(Modifier::new().fill_max_size()).child(under_view))
-        .child(
-            VBox(
-                Modifier::new()
-                    .fill_max_size()
-                    .background(theme().background)
-                    .scale(scale),
+    let progress = progress.clamp(0.0, 1.0);
+    let edge_sign = match gesture.edge {
+        repose_core::back::SwipeEdge::Left => 1.0,
+        repose_core::back::SwipeEdge::Right => -1.0,
+    };
+    let make_view = make_view.clone();
+    // The travel is the page's own width, which only the layout knows: the
+    // navigation display is narrower than the window whenever the app insets
+    // it. Measuring it here keeps the two pages edge to edge instead of leaving
+    // a strip of background between them.
+    BoxWithConstraints(Modifier::new().fill_max_size(), move |constraints| {
+        let width_dp = if constraints.has_bounded_width() && constraints.max_width.0 > 0.0 {
+            constraints.max_width.0
+        } else {
+            repose_core::locals::get_window_container_width()
+        };
+        let page_width = width_dp * repose_core::locals::density().scale;
+        // The leaving page travels a full width toward the edge the drag came
+        // from; the one underneath enters from the opposite edge by exactly the
+        // remaining distance, so their facing edges always meet.
+        let travel = edge_sign * page_width * progress;
+        let under_travel = -edge_sign * page_width * (1.0 - progress);
+        let under_view = under.scope.run(|| (make_view)(&under));
+        let current_view = current.scope.run(|| (make_view)(&current));
+        ZStack(Modifier::new().fill_max_size().overflow(Overflow::Clip))
+            .child(
+                VBox(
+                    Modifier::new()
+                        .fill_max_size()
+                        .background(theme().background)
+                        .translate(under_travel, 0.0)
+                        .alpha(progress),
+                )
+                .child(under_view),
             )
-            .child(current),
-        )
+            .child(
+                VBox(
+                    Modifier::new()
+                        .fill_max_size()
+                        .background(theme().background)
+                        .translate(travel, 0.0)
+                        .alpha(1.0 - progress),
+                )
+                .child(current_view),
+            )
+    })
 }
 
 fn maybe_intercept_back(v: View, on_back: Option<Rc<dyn Fn()>>) -> View {

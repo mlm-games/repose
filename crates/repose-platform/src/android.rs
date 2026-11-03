@@ -71,6 +71,13 @@ fn install_back_bridge() {
     });
 }
 
+fn back_edge(edge: rlobkit_app_events::back::SwipeEdge) -> repose_core::back::SwipeEdge {
+    match edge {
+        rlobkit_app_events::back::SwipeEdge::Left => repose_core::back::SwipeEdge::Left,
+        rlobkit_app_events::back::SwipeEdge::Right => repose_core::back::SwipeEdge::Right,
+    }
+}
+
 fn take_back_event() -> Option<rlobkit_app_events::back::BackEvent> {
     BACK_EVENTS
         .lock()
@@ -112,6 +119,8 @@ pub fn run_android_app_with_options(
     // this runner starts. The runner stays logger-agnostic so apps keep
     // one shared tracing backend with no `log`-global races.
     repose_core::animation::set_clock(Box::new(repose_core::animation::SystemClock));
+    repose_core::back::set_gesture(false, 0.0);
+    rlobkit_app_events::back::set_handled(false);
     let event_loop = winit::event_loop::EventLoopBuilder::new()
         .with_android_app(app)
         .build()?;
@@ -155,6 +164,9 @@ pub fn run_android_app_with_options(
 
         frame_pacer: rc::FramePacer,
         redraw_deferred: bool,
+        /// A committed gesture whose back dispatch waits for the transition to
+        /// finish leaving.
+        pending_back: bool,
     }
 
     impl AppState {
@@ -189,6 +201,7 @@ pub fn run_android_app_with_options(
 
                 frame_pacer: rc::FramePacer::new(options.common.max_fps),
                 redraw_deferred: false,
+                pending_back: false,
             }
         }
 
@@ -465,26 +478,74 @@ pub fn run_android_app_with_options(
         }
 
         fn drain_back_events(&mut self) {
+            if self.pending_back {
+                if repose_core::back::commit_settled() {
+                    self.pending_back = false;
+                    self.finish_back_dispatch(true);
+                } else if repose_core::back::committing() {
+                    // Nothing else may be asking for frames: a screen that does
+                    // not read `progress()` would otherwise never wake up to
+                    // dispatch the back it committed.
+                    repose_core::request_frame();
+                } else {
+                    self.pending_back = false;
+                    self.finish_back_dispatch(true);
+                }
+            }
             while let Some(event) = take_back_event() {
                 match event {
-                    rlobkit_app_events::back::BackEvent::Started => {
+                    rlobkit_app_events::back::BackEvent::Started { edge } => {
+                        self.flush_pending_back();
+                        repose_core::back::set_edge(back_edge(edge));
                         repose_core::back::set_gesture(true, 0.0);
                     }
-                    rlobkit_app_events::back::BackEvent::Progress(progress) => {
+                    rlobkit_app_events::back::BackEvent::Progress { progress, edge } => {
+                        self.flush_pending_back();
+                        repose_core::back::set_edge(back_edge(edge));
                         repose_core::back::set_gesture(true, progress);
                     }
                     rlobkit_app_events::back::BackEvent::Cancelled => {
-                        repose_core::back::cancel();
+                        if !self.pending_back {
+                            repose_core::back::cancel();
+                        }
                     }
                     rlobkit_app_events::back::BackEvent::Invoked => {
-                        repose_core::back::commit();
-                        if self.dispatch_back_request() {
-                            self.request_redraw();
+                        // Let the gesture finish leaving before the screen
+                        // pops: Android commits near a third of the drag, and
+                        // dispatching at once would cut the page out mid-fade.
+                        let gesture = repose_core::back::active();
+                        self.flush_pending_back();
+                        if gesture {
+                            repose_core::back::commit();
+                            self.pending_back = true;
                         } else {
-                            rlobkit_app_events::back::finish();
+                            self.finish_back_dispatch(false);
                         }
                     }
                 }
+            }
+        }
+
+        fn flush_pending_back(&mut self) {
+            if self.pending_back {
+                self.pending_back = false;
+                self.finish_back_dispatch(true);
+            }
+        }
+
+        fn finish_back_dispatch(&mut self, gesture_played: bool) {
+            // Only a gesture that actually played the transition may skip the
+            // pop animation: a plain back press still has to show one.
+            if gesture_played {
+                repose_core::back::mark_committed();
+            }
+            repose_core::back::set_gesture(false, 0.0);
+            let handled = self.dispatch_back_request();
+            repose_core::back::take_committed();
+            if handled {
+                self.request_redraw();
+            } else {
+                rlobkit_app_events::back::finish();
             }
         }
 
@@ -546,6 +607,10 @@ pub fn run_android_app_with_options(
             self.render_retry_at = None;
             if let Some(backend) = self.backend.as_mut() {
                 backend.take_surface();
+            }
+            if self.pending_back {
+                self.pending_back = false;
+                self.finish_back_dispatch(true);
             }
             repose_core::back::set_gesture(false, 0.0);
             self.clear_input_state();
