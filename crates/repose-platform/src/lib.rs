@@ -111,6 +111,7 @@ pub fn push_window_lifecycle(visible: bool) {
 /// Push a deeplink payload and wake the UI loop. Thin wrapper over `repose_app`.
 pub fn push_deeplink(data: Vec<u8>) {
     repose_app::lifecycle::push_deeplink(data);
+    #[cfg(not(target_arch = "wasm32"))]
     wake_event_loop();
 }
 
