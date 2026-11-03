@@ -3,7 +3,7 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use web_time::{Duration, Instant};
 
-pub(crate) fn now() -> Instant {
+pub fn now() -> Instant {
     let clock = CLOCK.with(|clock| clock.borrow().clone());
     clock.now()
 }
@@ -1116,6 +1116,40 @@ pub struct TestClock {
 impl Clock for TestClock {
     fn now(&self) -> Instant {
         self.t
+    }
+}
+
+/// A shared clock whose time only moves when [`advance`](Self::advance) or
+/// [`set`](Self::set) is called.
+#[derive(Clone)]
+pub struct ManualClock {
+    now: std::sync::Arc<std::sync::Mutex<Instant>>,
+}
+
+impl ManualClock {
+    pub fn new(now: Instant) -> Self {
+        Self {
+            now: std::sync::Arc::new(std::sync::Mutex::new(now)),
+        }
+    }
+
+    pub fn now(&self) -> Instant {
+        *self.now.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    pub fn set(&self, now: Instant) {
+        *self.now.lock().unwrap_or_else(|e| e.into_inner()) = now;
+    }
+
+    pub fn advance(&self, by: Duration) {
+        let mut now = self.now.lock().unwrap_or_else(|e| e.into_inner());
+        *now += by;
+    }
+}
+
+impl Clock for ManualClock {
+    fn now(&self) -> Instant {
+        ManualClock::now(self)
     }
 }
 

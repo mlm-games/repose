@@ -627,6 +627,14 @@ pub fn last_layout_stats() -> layout::LayoutStats {
     LAYOUT_ENGINE.with(|engine| engine.borrow().stats.clone())
 }
 
+/// Drop the retained layout/paint tree on this thread.
+///
+/// Tests and hot reload use this to start a composition from an empty engine;
+/// the next `layout_and_paint` rebuilds it from the passed root.
+pub fn reset_layout_engine() {
+    LAYOUT_ENGINE.with(|engine| *engine.borrow_mut() = layout::LayoutEngine::new());
+}
+
 pub use layout::LayoutStats;
 
 /// Method styling (text sizes are [`Sp`]).

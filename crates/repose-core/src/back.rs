@@ -124,7 +124,7 @@ pub fn commit_phase() -> Option<f32> {
     if span <= 0.0 {
         return Some(1.0);
     }
-    let t = (start.elapsed().as_secs_f32() * 1000.0 / span).clamp(0.0, 1.0);
+    let t = ((crate::animation::now() - start).as_secs_f32() * 1000.0 / span).clamp(0.0, 1.0);
     if t < 1.0 {
         crate::request_frame();
     }
@@ -145,7 +145,7 @@ fn settling_progress() -> f32 {
         SETTLE_BITS.store(0, Ordering::Relaxed);
         return 0.0;
     }
-    let t = at.elapsed().as_secs_f32() * 1000.0 / span;
+    let t = (crate::animation::now() - at).as_secs_f32() * 1000.0 / span;
     if t >= 1.0 {
         *start = None;
         SETTLE_BITS.store(0, Ordering::Relaxed);
@@ -195,7 +195,7 @@ pub fn cancel() {
     ACTIVE.store(false, Ordering::Relaxed);
     PROGRESS_BITS.store(0, Ordering::Relaxed);
     SETTLE_BITS.store(from.to_bits(), Ordering::Relaxed);
-    *SETTLE_START.lock().unwrap_or_else(|e| e.into_inner()) = Some(web_time::Instant::now());
+    *SETTLE_START.lock().unwrap_or_else(|e| e.into_inner()) = Some(crate::animation::now());
     COMMIT_START
         .lock()
         .unwrap_or_else(|e| e.into_inner())
@@ -219,7 +219,7 @@ pub fn commit() {
         .take();
     SETTLE_BITS.store(0, Ordering::Relaxed);
     COMMIT_BITS.store(from.to_bits(), Ordering::Relaxed);
-    *COMMIT_START.lock().unwrap_or_else(|e| e.into_inner()) = Some(web_time::Instant::now());
+    *COMMIT_START.lock().unwrap_or_else(|e| e.into_inner()) = Some(crate::animation::now());
     crate::request_frame();
 }
 

@@ -84,6 +84,9 @@ pub struct LayoutEngine {
     pub(crate) scroll_node_ids: Vec<NodeId>,
     pub(crate) deferred_z_cache: FxHashMap<NodeId, bool>,
     pub(crate) transform_layer_cache: FxHashMap<NodeId, bool>,
+    pub(crate) shared_element_cache: FxHashMap<NodeId, bool>,
+    pub(crate) shared_element_bundles: Vec<SharedElementBundle>,
+    pub(crate) shared_element_depth: usize,
 
     /// Cached text layouts for non-scope nodes (persists across frames).
     pub(crate) text_cache: FxHashMap<NodeId, TextLayout>,
@@ -169,6 +172,18 @@ pub struct LayoutStats {
 
     /// Total time spent in the paint pass only (ms).
     pub paint_time_ms: f32,
+}
+
+pub(crate) struct SharedElementBundle {
+    pub(crate) state: SharedElementState,
+    pub(crate) world_rect: Rect,
+    pub(crate) local_to_world: [f64; 9],
+    pub(crate) scene_index: usize,
+    pub(crate) hit_index: usize,
+    pub(crate) sem_index: usize,
+    pub(crate) scene: Vec<SceneNode>,
+    pub(crate) hits: Vec<HitRegion>,
+    pub(crate) sems: Vec<SemNode>,
 }
 
 #[derive(Clone)]

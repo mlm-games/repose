@@ -148,6 +148,10 @@ impl HitContext {
         project_rect(self.local_to_world, rect)
     }
 
+    pub(crate) fn local_to_world(&self) -> [f64; 9] {
+        self.local_to_world
+    }
+
     pub(crate) fn to_local(&self, point: Vec2) -> Vec2 {
         apply_matrix(self.world_to_local, point)
     }

@@ -622,6 +622,27 @@ pub struct Composer {
     pub live_scope_keys: rustc_hash::FxHashSet<String>,
 }
 
+/// The position-dependent part of the composer, isolated for movable content.
+#[derive(Default)]
+pub(crate) struct ComposerSlots {
+    pub(crate) slots: Vec<Box<dyn Any>>,
+    pub(crate) slot_callers: Vec<&'static Location<'static>>,
+    pub(crate) cursor: usize,
+    pub(crate) auto_counts: FxHashMap<String, usize>,
+}
+
+pub(crate) fn replace_composer_slots(next: ComposerSlots) -> ComposerSlots {
+    COMPOSER.with(|composer| {
+        let mut composer = composer.borrow_mut();
+        ComposerSlots {
+            slots: std::mem::replace(&mut composer.slots, next.slots),
+            slot_callers: std::mem::replace(&mut composer.slot_callers, next.slot_callers),
+            cursor: std::mem::replace(&mut composer.cursor, next.cursor),
+            auto_counts: std::mem::replace(&mut composer.auto_counts, next.auto_counts),
+        }
+    })
+}
+
 pub struct ComposeGuard {
     scope: Scope,
 }
@@ -1282,6 +1303,26 @@ pub struct HitRegion {
     /// transitions so they stay in parity with pointer input.
     /// `None` when the component does not need one (no indication/state colors).
     pub interaction_source: Option<crate::modifier::InteractionSource>,
+
+    /// Test-only identifier copied from [`crate::Semantics::test_tag`].
+    pub test_tag: Option<String>,
+}
+
+fn with_pointer_input(
+    original: Option<Rc<dyn Fn(crate::input::PointerEvent)>>,
+    dispatch: &Option<crate::pointer::PointerInputDispatch>,
+) -> Option<Rc<dyn Fn(crate::input::PointerEvent)>> {
+    let Some(dispatch) = dispatch.clone() else {
+        return original;
+    };
+    Some(Rc::new(move |event: crate::input::PointerEvent| {
+        if let Some(original) = &original {
+            original(event.clone());
+        }
+        if !event.is_consumed() && dispatch.on_event(&event) {
+            event.consume();
+        }
+    }))
 }
 
 impl HitRegion {
@@ -1289,6 +1330,7 @@ impl HitRegion {
     /// Call‑sites should only override the fields that differ (on_click, focusable, etc.)
     /// via struct‑update syntax: `HitRegion { focusable: true, ..from_modifier(..) }`.
     pub fn from_modifier(id: u64, rect: Rect, m: &crate::modifier::Modifier) -> Self {
+        let dispatch = m.pointer_dispatch();
         Self {
             id,
             rect,
@@ -1296,10 +1338,10 @@ impl HitRegion {
             on_click: m.on_click.clone(),
             on_double_click: m.on_double_click.clone(),
             on_long_click: m.on_long_click.clone(),
-            on_pointer_down: m.on_pointer_down.clone(),
-            on_pointer_move: m.on_pointer_move.clone(),
-            on_pointer_up: m.on_pointer_up.clone(),
-            on_pointer_cancel: m.on_pointer_cancel.clone(),
+            on_pointer_down: with_pointer_input(m.on_pointer_down.clone(), &dispatch),
+            on_pointer_move: with_pointer_input(m.on_pointer_move.clone(), &dispatch),
+            on_pointer_up: with_pointer_input(m.on_pointer_up.clone(), &dispatch),
+            on_pointer_cancel: with_pointer_input(m.on_pointer_cancel.clone(), &dispatch),
             on_pointer_enter: m.on_pointer_enter.clone(),
             on_pointer_leave: m.on_pointer_leave.clone(),
             on_action: m.on_action.clone(),
@@ -1323,6 +1365,7 @@ impl HitRegion {
             disabled: m.disabled,
             tf_enabled: true,
             tf_read_only: false,
+            test_tag: m.semantics.as_ref().and_then(|s| s.test_tag.clone()),
             ..Default::default()
         }
     }
@@ -1412,6 +1455,7 @@ pub struct SemNode {
     pub can_expand: bool,
     pub can_collapse: bool,
     pub can_dismiss: bool,
+    pub test_tag: Option<String>,
 }
 
 impl Default for SemNode {
@@ -1445,6 +1489,7 @@ impl Default for SemNode {
             can_expand: false,
             can_collapse: false,
             can_dismiss: false,
+            test_tag: None,
         }
     }
 }

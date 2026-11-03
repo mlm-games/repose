@@ -39,6 +39,84 @@ struct PaintedDeferred {
     sems: Vec<SemNode>,
 }
 
+fn rects_close(a: Rect, b: Rect) -> bool {
+    (a.x - b.x).abs() <= 0.01
+        && (a.y - b.y).abs() <= 0.01
+        && (a.w - b.w).abs() <= 0.01
+        && (a.h - b.h).abs() <= 0.01
+}
+
+fn bounds_transform(from: Rect, to: Rect) -> Transform {
+    let scale_x = if from.w.abs() > 1e-4 {
+        to.w / from.w
+    } else {
+        1.0
+    };
+    let scale_y = if from.h.abs() > 1e-4 {
+        to.h / from.h
+    } else {
+        1.0
+    };
+    Transform {
+        translate_x: to.x - from.x * scale_x,
+        translate_y: to.y - from.y * scale_y,
+        scale_x,
+        scale_y,
+        rotate: 0.0,
+        shear_x: 0.0,
+        shear_y: 0.0,
+        origin_x: 0.0,
+        origin_y: 0.0,
+        perspective: [0.0, 0.0, 1.0],
+    }
+}
+
+fn transform_rect(transform: &Transform, rect: Rect) -> Rect {
+    let corners = [
+        Vec2 {
+            x: rect.x,
+            y: rect.y,
+        },
+        Vec2 {
+            x: rect.x + rect.w,
+            y: rect.y,
+        },
+        Vec2 {
+            x: rect.x + rect.w,
+            y: rect.y + rect.h,
+        },
+        Vec2 {
+            x: rect.x,
+            y: rect.y + rect.h,
+        },
+    ];
+    let mut min_x = f32::MAX;
+    let mut min_y = f32::MAX;
+    let mut max_x = f32::MIN;
+    let mut max_y = f32::MIN;
+    for corner in corners {
+        let point = transform.apply_projective(corner);
+        min_x = min_x.min(point.x);
+        min_y = min_y.min(point.y);
+        max_x = max_x.max(point.x);
+        max_y = max_y.max(point.y);
+    }
+    Rect {
+        x: min_x,
+        y: min_y,
+        w: max_x - min_x,
+        h: max_y - min_y,
+    }
+}
+
+fn matrix_is_identity(matrix: &[f32; 9]) -> bool {
+    const IDENTITY: [f32; 9] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+    matrix
+        .iter()
+        .zip(IDENTITY)
+        .all(|(value, expected)| (value - expected).abs() < 1e-5)
+}
+
 impl LayoutEngine {
     pub(crate) fn walk_tick(&self, _root_id: NodeId) {
         for &id in &self.scroll_node_ids {
@@ -69,6 +147,7 @@ impl LayoutEngine {
         font_px: &dyn Fn(Sp) -> f32,
     ) -> (Scene, Vec<HitRegion>, Vec<SemNode>) {
         crate::hit_testing::begin_hit_metadata_frame();
+        self.shared_element_bundles.clear();
         let mut scene = Scene {
             clear_color: locals::theme().background,
             nodes: vec![],
@@ -96,6 +175,10 @@ impl LayoutEngine {
             false,
             None,
         );
+
+        // Emit before deferred paint: a bundle's anchors are indices into the
+        // scene the walk built, and the deferred pass reorders that scene.
+        self.emit_shared_elements(&mut scene, &mut hits, &mut sems);
 
         let focus_stack_before_replay = self.focus_group_stack.clone();
         let mut pending = std::mem::take(&mut deferred);
@@ -211,6 +294,251 @@ impl LayoutEngine {
 
         crate::hit_testing::prune_hit_metadata();
         (scene, hits, sems)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn paint_shared_element(
+        &mut self,
+        node_id: NodeId,
+        state: SharedElementState,
+        scene: &mut Scene,
+        hits: &mut Vec<HitRegion>,
+        sems: &mut Vec<SemNode>,
+        textfield_states: &HashMap<u64, Rc<RefCell<TextFieldState>>>,
+        interactions: &Interactions,
+        focused: Option<u64>,
+        parent_offset_px: (f32, f32),
+        alpha_accum: f32,
+        sem_parent: Option<u64>,
+        interaction_source: Option<u64>,
+        hit_context: &HitContext,
+        font_px: &dyn Fn(Sp) -> f32,
+    ) {
+        let layout = self.layout_for_node(node_id);
+        let rect = repose_core::Rect {
+            x: parent_offset_px.0 + layout.location.x,
+            y: parent_offset_px.1 + layout.location.y,
+            w: layout.size.width,
+            h: layout.size.height,
+        };
+        let world_rect = hit_context.project_rect(rect);
+        let local_to_world = hit_context.local_to_world();
+        let scene_index = scene.nodes.len();
+        let hit_index = hits.len();
+        let sem_index = sems.len();
+
+        let mut bundle_scene = Scene {
+            clear_color: scene.clear_color,
+            nodes: Vec::new(),
+        };
+        let mut bundle_hits = Vec::new();
+        let mut bundle_sems = Vec::new();
+        let mut deferred = Vec::new();
+
+        self.shared_element_depth += 1;
+        self.walk_paint(
+            node_id,
+            &mut bundle_scene,
+            &mut bundle_hits,
+            &mut bundle_sems,
+            textfield_states,
+            interactions,
+            focused,
+            parent_offset_px,
+            alpha_accum,
+            sem_parent,
+            interaction_source,
+            hit_context,
+            font_px,
+            true,
+            &mut deferred,
+            false,
+            None,
+        );
+        self.shared_element_depth -= 1;
+
+        self.replay_shared_deferred(
+            deferred,
+            &mut bundle_scene,
+            &mut bundle_hits,
+            &mut bundle_sems,
+            textfield_states,
+            interactions,
+            focused,
+            font_px,
+        );
+
+        self.shared_element_bundles.push(SharedElementBundle {
+            state,
+            world_rect,
+            local_to_world,
+            scene_index,
+            hit_index,
+            sem_index,
+            scene: bundle_scene.nodes,
+            hits: bundle_hits,
+            sems: bundle_sems,
+        });
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn replay_shared_deferred(
+        &mut self,
+        mut pending: Vec<DeferredPaint>,
+        scene: &mut Scene,
+        hits: &mut Vec<HitRegion>,
+        sems: &mut Vec<SemNode>,
+        textfield_states: &HashMap<u64, Rc<RefCell<TextFieldState>>>,
+        interactions: &Interactions,
+        focused: Option<u64>,
+        font_px: &dyn Fn(Sp) -> f32,
+    ) {
+        if pending.is_empty() {
+            return;
+        }
+        let saved_focus = self.focus_group_stack.clone();
+        let mut next_order = pending.len();
+        while !pending.is_empty() {
+            pending.sort_unstable_by(|a, b| {
+                b.z.partial_cmp(&a.z)
+                    .unwrap_or(Ordering::Equal)
+                    .then_with(|| b.order.cmp(&a.order))
+            });
+            let item = pending.pop().expect("shared deferred queue is non-empty");
+            self.focus_group_stack = item.focus_group_stack.clone();
+            let mut local_scene = Scene {
+                clear_color: scene.clear_color,
+                nodes: Vec::new(),
+            };
+            let mut local_hits = Vec::new();
+            let mut local_sems = Vec::new();
+            let mut nested = Vec::new();
+            // A deferred subtree paints into a local scene; buffering its
+            // shared elements would anchor them in the wrong array.
+            self.shared_element_depth += 1;
+            self.walk_paint(
+                item.node_id,
+                &mut local_scene,
+                &mut local_hits,
+                &mut local_sems,
+                textfield_states,
+                interactions,
+                focused,
+                item.parent_offset_px,
+                item.alpha_accum,
+                item.sem_parent,
+                item.interaction_source,
+                &item.hit_context,
+                font_px,
+                true,
+                &mut nested,
+                false,
+                Some(item.node_id),
+            );
+            self.shared_element_depth -= 1;
+            for hit in &mut local_hits {
+                hit.z_index += item.z;
+            }
+            scene.nodes.extend(local_scene.nodes);
+            hits.extend(local_hits);
+            sems.extend(local_sems);
+            for mut nested_item in nested {
+                nested_item.order = next_order;
+                next_order += 1;
+                pending.push(nested_item);
+            }
+        }
+        self.focus_group_stack = saved_focus;
+    }
+
+    fn emit_shared_elements(
+        &mut self,
+        scene: &mut Scene,
+        hits: &mut Vec<HitRegion>,
+        sems: &mut Vec<SemNode>,
+    ) {
+        let mut bundles = std::mem::take(&mut self.shared_element_bundles);
+        if bundles.is_empty() {
+            return;
+        }
+
+        let mut counts: FxHashMap<u64, usize> = FxHashMap::default();
+        let mut last: FxHashMap<u64, usize> = FxHashMap::default();
+        for (index, bundle) in bundles.iter().enumerate() {
+            let id = bundle.state.id();
+            *counts.entry(id).or_insert(0) += 1;
+            last.insert(id, index);
+        }
+
+        let mut winners = Vec::new();
+        for (index, bundle) in bundles.iter().enumerate() {
+            let id = bundle.state.id();
+            if last.get(&id).copied() != Some(index) {
+                continue;
+            }
+            let current = bundle.state.prepare(bundle.world_rect);
+            let settled = rects_close(current, bundle.world_rect) && !bundle.state.is_animating();
+            winners.push((index, current, counts.get(&id).copied() == Some(1) && settled));
+        }
+
+        let mut splices: Vec<(usize, Rect)> = winners
+            .iter()
+            .filter(|(_, _, splice)| *splice)
+            .map(|(index, current, _)| (*index, *current))
+            .collect();
+        splices.sort_by_key(|(index, _)| bundles[*index].scene_index);
+
+        let mut node_offset = 0;
+        let mut hit_offset = 0;
+        let mut sem_offset = 0;
+        for (index, _) in splices {
+            let bundle = &mut bundles[index];
+            let node_count = bundle.scene.len();
+            let at = (bundle.scene_index + node_offset).min(scene.nodes.len());
+            scene
+                .nodes
+                .splice(at..at, std::mem::take(&mut bundle.scene));
+            node_offset += node_count;
+
+            let hit_count = bundle.hits.len();
+            let at = (bundle.hit_index + hit_offset).min(hits.len());
+            hits.splice(at..at, std::mem::take(&mut bundle.hits));
+            hit_offset += hit_count;
+
+            let sem_count = bundle.sems.len();
+            let at = (bundle.sem_index + sem_offset).min(sems.len());
+            sems.splice(at..at, std::mem::take(&mut bundle.sems));
+            sem_offset += sem_count;
+        }
+
+        for (index, current, splice) in winners {
+            if splice {
+                continue;
+            }
+            let bundle = &mut bundles[index];
+            let bounds = bounds_transform(bundle.world_rect, current);
+            let local: [f32; 9] = bundle.local_to_world.map(|value| value as f32);
+            let combined = Transform::compose_projective(&bounds.projective_matrix(), &local);
+            let identity = matrix_is_identity(&combined);
+            if !identity {
+                scene.nodes.push(SceneNode::PushTransform {
+                    transform: Transform::from_projective_rows(
+                        [combined[0], combined[1], combined[2]],
+                        [combined[3], combined[4], combined[5]],
+                        [combined[6], combined[7], combined[8]],
+                    ),
+                });
+            }
+            scene.nodes.append(&mut bundle.scene);
+            if !identity {
+                scene.nodes.push(SceneNode::PopTransform);
+            }
+            for mut hit in bundle.hits.drain(..) {
+                hit.rect = transform_rect(&bounds, hit.rect);
+                hits.push(hit);
+            }
+            sems.append(&mut bundle.sems);
+        }
     }
 
     pub(crate) fn paint_stamp_hash(
@@ -403,6 +731,24 @@ impl LayoutEngine {
         result
     }
 
+    fn subtree_has_shared_element(&mut self, node_id: NodeId) -> bool {
+        if let Some(&cached) = self.shared_element_cache.get(&node_id) {
+            return cached;
+        }
+        let Some(node) = self.tree.get(node_id) else {
+            self.shared_element_cache.insert(node_id, false);
+            return false;
+        };
+        let own = node.modifier.shared_element.is_some();
+        let children = node.children.clone();
+        let result = own
+            || children
+                .into_iter()
+                .any(|child_id| self.subtree_has_shared_element(child_id));
+        self.shared_element_cache.insert(node_id, result);
+        result
+    }
+
     fn subtree_may_paint_outside(&mut self, node_id: NodeId) -> bool {
         if let Some(&cached) = self.transform_layer_cache.get(&node_id) {
             return cached;
@@ -454,6 +800,7 @@ impl LayoutEngine {
     ) {
         let (subtree_hash, modifier, semantics, kind, children) = {
             let n = self.tree.get(node_id).unwrap();
+            n.modifier.attach_nodes();
             (
                 n.subtree_hash,
                 n.modifier.clone(),
@@ -465,6 +812,28 @@ impl LayoutEngine {
 
         let view_id = *self.view_ids.get(&node_id).unwrap_or(&0);
         let mut node_hit_context = hit_context.clone();
+
+        if self.shared_element_depth == 0
+            && let Some(state) = modifier.shared_element.clone()
+        {
+            self.paint_shared_element(
+                node_id,
+                state,
+                scene,
+                hits,
+                sems,
+                textfield_states,
+                interactions,
+                focused,
+                parent_offset_px,
+                alpha_accum,
+                sem_parent,
+                interaction_source,
+                hit_context,
+                font_px,
+            );
+            return;
+        }
 
         // Check if this node should be deferred for later painting
         if !skip_defer
@@ -526,7 +895,8 @@ impl LayoutEngine {
             interactions.hover == Some(view_id) || interactions.hover_ancestors.contains(&view_id);
         let is_pressed = interactions.pressed.contains(&view_id);
 
-        let has_pointer = modifier.on_pointer_down.is_some()
+        let has_pointer = modifier.pointer_dispatch().is_some()
+            || modifier.on_pointer_down.is_some()
             || modifier.on_pointer_move.is_some()
             || modifier.on_pointer_up.is_some()
             || modifier.on_pointer_cancel.is_some()
@@ -631,7 +1001,8 @@ impl LayoutEngine {
         });
         let boundary_cacheable = allow_cache
             && modifier.repaint_boundary
-            && !self.subtree_has_deferred_render_z(node_id);
+            && !self.subtree_has_deferred_render_z(node_id)
+            && !self.subtree_has_shared_element(node_id);
         if boundary_cacheable && boundary_candidate {
             let stamp = self.paint_stamp_hash(
                 node_id,
@@ -1838,6 +2209,7 @@ impl LayoutEngine {
                     checked: semantic.and_then(|s| s.checked),
                     selected: semantic.and_then(|s| s.selected),
                     value: semantic.and_then(|s| s.value.clone()),
+                    test_tag: semantic.and_then(|s| s.test_tag.clone()),
                     ..Default::default()
                 };
                 semantic.map_or_else(SemExtras::none, SemExtras::of).apply(
@@ -2224,6 +2596,7 @@ impl LayoutEngine {
                     checked: semantic.and_then(|s| s.checked),
                     selected: semantic.and_then(|s| s.selected),
                     value: semantic.and_then(|s| s.value.clone()),
+                    test_tag: semantic.and_then(|s| s.test_tag.clone()),
                     ..Default::default()
                 };
                 semantic.map_or_else(SemExtras::none, SemExtras::of).apply(
@@ -2252,6 +2625,7 @@ impl LayoutEngine {
                         checked: s.checked,
                         selected: s.selected,
                         value: s.value.clone(),
+                        test_tag: s.test_tag.clone(),
                         ..Default::default()
                     };
                     SemExtras::of(s).apply(

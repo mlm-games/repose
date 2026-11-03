@@ -68,6 +68,8 @@ pub struct Semantics {
     pub progress: Option<ProgressRangeInfo>,
     pub error: Option<String>,
     pub expanded: Option<bool>,
+    /// Test-only identifier, mirroring Compose's `Modifier.testTag`.
+    pub test_tag: Option<String>,
 }
 
 impl Semantics {
@@ -94,6 +96,7 @@ impl Semantics {
             progress: None,
             error: None,
             expanded: None,
+            test_tag: None,
         }
     }
     pub fn with_label(mut self, label: impl Into<String>) -> Self {
@@ -160,6 +163,10 @@ impl Semantics {
     }
     pub fn with_expanded(mut self, expanded: bool) -> Self {
         self.expanded = Some(expanded);
+        self
+    }
+    pub fn with_test_tag(mut self, tag: impl Into<String>) -> Self {
+        self.test_tag = Some(tag.into());
         self
     }
 }

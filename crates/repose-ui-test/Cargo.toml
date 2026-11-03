@@ -1,0 +1,17 @@
+[package]
+name = "repose-ui-test"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Deterministic UI testing harness for Repose"
+
+[dependencies]
+repose-app.workspace = true
+repose-core.workspace = true
+repose-ui.workspace = true
+web-time.workspace = true
+
+[dev-dependencies]
+repose-navigation.workspace = true

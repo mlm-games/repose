@@ -91,6 +91,7 @@ impl LayoutEngine {
         if has_tree_mutation || has_paint_mutation {
             self.deferred_z_cache.clear();
             self.transform_layer_cache.clear();
+            self.shared_element_cache.clear();
         }
 
         // 2. Determine layout need
@@ -359,6 +360,9 @@ impl LayoutEngine {
             scroll_node_ids: Vec::new(),
             deferred_z_cache: FxHashMap::default(),
             transform_layer_cache: FxHashMap::default(),
+            shared_element_cache: FxHashMap::default(),
+            shared_element_bundles: Vec::new(),
+            shared_element_depth: 0,
             text_cache: FxHashMap::default(),
             baseline_map: FxHashMap::default(),
             baseline_shifts: FxHashMap::default(),

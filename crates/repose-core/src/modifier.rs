@@ -116,6 +116,7 @@ macro_rules! impl_option_fields {
                     on_globally_positioned, on_size_changed,
                     on_key_event, on_preview_key_event, on_ime,
                     semantics, alpha, transform,
+                    shared_element,
                     grid, grid_col_span, grid_row_span,
                     position_type,
                     offset_left, offset_right, offset_top, offset_bottom,
@@ -146,6 +147,7 @@ macro_rules! impl_option_fields {
                 if other.indication.is_some() {
                     self.indication = other.indication;
                 }
+                self.nodes.extend(other.nodes);
                 // Always overwrite so `then(z_index(0.0))` resets layering.
                 self.z_index = other.z_index;
                 self
@@ -795,6 +797,10 @@ pub struct Modifier {
     pub semantics: Option<crate::Semantics>,
     pub alpha: Option<f32>,
     pub graphics_layer: Option<f32>,
+    /// Shared-element identity whose painted bounds follow the owning node.
+    pub shared_element: Option<crate::shared::SharedElementState>,
+    /// Persistent modifier nodes, reconciled by element type and key.
+    pub nodes: Vec<crate::modifier_node::ModifierNodeHandle>,
     pub shadow: Option<ShadowSpec>,
     /// Corner radii the shadow silhouette is shaped to, independent of what the
     /// layer's own alpha contains. Mirrors Compose's `Modifier.shadow(shape)`,
@@ -1904,9 +1910,89 @@ impl Modifier {
         self.semantics = Some(s);
         self
     }
+    /// Set a stable, test-only identifier (Compose `Modifier.testTag`).
+    pub fn test_tag(mut self, tag: impl Into<String>) -> Self {
+        let mut s = self.semantics.take().unwrap_or_default();
+        s.test_tag = Some(tag.into());
+        self.semantics = Some(s);
+        self
+    }
     pub fn alpha(mut self, a: f32) -> Self {
         self.alpha = Some(a);
         self
+    }
+    /// Share one element's painted bounds across locations.
+    pub fn shared_element(mut self, state: crate::shared::SharedElementState) -> Self {
+        self.shared_element = Some(state);
+        self
+    }
+    /// Attach a persistent [`ModifierNode`](crate::modifier_node::ModifierNode).
+    ///
+    /// The node survives recomposition while the element type and key stay the
+    /// same; `update` runs instead of rebuilding it.
+    pub fn node(mut self, element: impl crate::modifier_node::ModifierNodeElement + 'static) -> Self {
+        self.nodes.push(crate::modifier_node::ModifierNodeHandle::new(
+            std::rc::Rc::new(element),
+        ));
+        self
+    }
+    /// [`node`](Self::node) for an element that is already shared.
+    pub fn node_shared(
+        mut self,
+        element: std::rc::Rc<dyn crate::modifier_node::ModifierNodeElement>,
+    ) -> Self {
+        self.nodes
+            .push(crate::modifier_node::ModifierNodeHandle::new(element));
+        self
+    }
+    /// Attach a pointer gesture handler such as
+    /// [`TapGestures`](crate::pointer::TapGestures). Gesture state lives in the
+    /// modifier node, so it survives recomposition.
+    pub fn pointer_input(
+        self,
+        handler: impl crate::pointer::PointerInputHandler + 'static,
+    ) -> Self {
+        self.node_shared(crate::pointer::element(Box::new(handler)))
+    }
+    /// The gesture dispatcher carried by this modifier, if any.
+    pub fn pointer_dispatch(&self) -> Option<crate::pointer::PointerInputDispatch> {
+        crate::pointer::dispatch_from(&self.nodes)
+    }
+    /// Reuse nodes from a previous modifier where identity matches.
+    ///
+    /// Matching is by element identity, not position, so inserting a node at
+    /// the front of a chain does not reset the state of every node behind it.
+    #[doc(hidden)]
+    pub fn adopt_nodes_from(&mut self, previous: &Modifier) {
+        let mut taken = vec![false; previous.nodes.len()];
+        for handle in &mut self.nodes {
+            let matched = previous
+                .nodes
+                .iter()
+                .enumerate()
+                .position(|(index, candidate)| !taken[index] && handle.same_identity(candidate));
+            if let Some(index) = matched {
+                taken[index] = true;
+                handle.adopt(&previous.nodes[index]);
+            }
+        }
+    }
+    /// Whether `other` has the same node identities in the same order.
+    #[doc(hidden)]
+    pub fn nodes_identity_matches(&self, other: &Modifier) -> bool {
+        self.nodes.len() == other.nodes.len()
+            && self
+                .nodes
+                .iter()
+                .zip(&other.nodes)
+                .all(|(a, b)| a.same_identity(b))
+    }
+    /// Mark every attached node as live. Called when a tree node paints.
+    #[doc(hidden)]
+    pub fn attach_nodes(&self) {
+        for handle in &self.nodes {
+            handle.ensure_attached();
+        }
     }
     /// Render this subtree into an offscreen texture, then composite it
     /// back into the parent with the given group `alpha` (0.0..=1.0).

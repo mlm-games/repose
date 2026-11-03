@@ -250,6 +250,9 @@ fn modifier_identity_change(old: &Modifier, new: &Modifier) -> IdentityChange {
             }
         };
     }
+    if !old.nodes_identity_matches(new) {
+        change.paint = true;
+    }
     paint_changed!(
         on_scroll,
         on_pointer_down,
@@ -855,8 +858,14 @@ impl ViewTree {
             if kind_changed {
                 node.kind = view.kind.clone();
             }
-            if modifier_changed {
-                node.modifier = view.modifier.clone();
+            let old_modifier = node.modifier.clone();
+            if modifier_changed
+                || !old_modifier.nodes.is_empty()
+                || !view.modifier.nodes.is_empty()
+            {
+                let mut next = view.modifier.clone();
+                next.adopt_nodes_from(&old_modifier);
+                node.modifier = next;
             }
             if view_semantics_changed {
                 node.semantics = view.semantics.clone();

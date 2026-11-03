@@ -1,7 +1,7 @@
 pub use crate::animation::{
     AnimatedValue, AnimationSpec, Clock, DecayAnimationSpec, EaseKind, Easing, Interpolate,
-    KeyframesSpec, MonoSpline, RepeatableSpec, SplineKeyframes, SpringSpec, SystemClock, TestClock,
-    ensure_system_clock, motion_duration_scale, set_clock, set_motion_duration_scale,
+    KeyframesSpec, ManualClock, MonoSpline, RepeatableSpec, SplineKeyframes, SpringSpec, SystemClock,
+    TestClock, ensure_system_clock, motion_duration_scale, set_clock, set_motion_duration_scale,
     with_motion_duration_scale,
 };
 pub use crate::color::{Brush, Color, LinearGradient, TileMode};
@@ -41,6 +41,11 @@ pub use crate::scroll::{
     ScrollPhysics, ScrollState, ScrollStateXY, ScrollbarStyle, run_post_scroll, run_pre_scroll,
 };
 pub use crate::semantics::{LiveRegion, ProgressRangeInfo, Role, Semantics};
+pub use crate::modifier_node::{ModifierNode, ModifierNodeElement};
+pub use crate::pointer::{
+    DragEnd, DragGestures, DragStart, DragUpdate, PointerInputHandler, TapEvent, TapGestures,
+};
+pub use crate::shared::{MovableContent, SharedElementState};
 pub use crate::shortcuts;
 pub use crate::signal::{Signal, signal};
 pub use crate::state::{

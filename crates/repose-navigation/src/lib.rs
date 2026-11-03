@@ -1,5 +1,11 @@
 #![allow(non_snake_case)]
 pub mod deeplink;
+pub mod scene;
+
+pub use scene::{
+    DialogSceneStrategy, ListDetailSceneStrategy, NavDisplayWithStrategy, NavEntryInfo, PaneMode,
+    Scene, SceneRole, SceneStrategy, SinglePaneSceneStrategy,
+};
 
 use std::{
     any::{Any, TypeId},
@@ -9,7 +15,6 @@ use std::{
 };
 
 use repose_core::*;
-use repose_ui::{Box as VBox, BoxWithConstraints, Column, ViewExt, ZStack, anim::animate_f32_from};
 use serde::{Deserialize, Serialize};
 
 pub trait NavKey: Clone + Debug + 'static + Serialize + for<'de> Deserialize<'de> {}
@@ -178,7 +183,7 @@ struct BackState<K: NavKey> {
 pub struct NavBackStack<K: NavKey> {
     inner: Rc<RefCell<BackState<K>>>,
     version: Rc<Signal<u64>>,
-    stack_id: u64,
+    pub(crate) stack_id: u64,
 }
 impl<K: NavKey> NavBackStack<K> {
     pub fn top(&self) -> Option<(u64, K, Rc<SavedState>, Scope)> {
@@ -196,8 +201,32 @@ impl<K: NavKey> NavBackStack<K> {
     pub fn is_current(&self, entry_id: u64) -> bool {
         self.current_id() == Some(entry_id)
     }
-    fn transition_id(&self) -> u64 {
+    pub fn transition_id(&self) -> u64 {
         self.inner.borrow().transition_id
+    }
+    /// Every entry, root first.
+    pub fn snapshot(&self) -> Vec<(u64, K, Rc<SavedState>, Scope)> {
+        self.inner
+            .borrow()
+            .entries
+            .iter()
+            .map(|entry| {
+                (
+                    entry.id,
+                    entry.key.clone(),
+                    entry.saved.clone(),
+                    entry.scope.clone(),
+                )
+            })
+            .collect()
+    }
+    pub fn entry(&self, entry_id: u64) -> Option<(K, Rc<SavedState>, Scope)> {
+        self.inner
+            .borrow()
+            .entries
+            .iter()
+            .find(|entry| entry.id == entry_id)
+            .map(|entry| (entry.key.clone(), entry.saved.clone(), entry.scope.clone()))
     }
     pub fn size(&self) -> usize {
         self.inner.borrow().entries.len()
@@ -205,7 +234,7 @@ impl<K: NavKey> NavBackStack<K> {
     pub fn last_dir(&self) -> TransitionDir {
         self.inner.borrow().last_dir
     }
-    fn gesture_pop(&self) -> bool {
+    pub fn gesture_pop(&self) -> bool {
         self.inner.borrow().gesture_pop
     }
     fn bump(&self) {
@@ -485,6 +514,21 @@ pub struct EntryScope<K: NavKey> {
     nav: Navigator<K>,
 }
 impl<K: NavKey> EntryScope<K> {
+    pub fn new(
+        id: u64,
+        key: K,
+        saved: Rc<SavedState>,
+        scope: Scope,
+        nav: Navigator<K>,
+    ) -> Self {
+        Self {
+            id,
+            key,
+            saved,
+            scope,
+            nav,
+        }
+    }
     pub fn id(&self) -> u64 {
         self.id
     }
@@ -568,210 +612,19 @@ impl Default for NavTransition {
         }
     }
 }
-
 pub fn NavDisplay<K: NavKey>(
     stack: Rc<NavBackStack<K>>,
     make_view: EntryRenderer<K>,
     on_back: Option<Rc<dyn Fn()>>,
     transition: NavTransition,
 ) -> View {
-    let _version = stack.version.get();
-    let transition_id = stack.transition_id();
-    let (id, key, saved, entry_scope) = {
-        let state = stack.inner.borrow();
-        let Some(entry) = state.entries.last() else {
-            return VBox(Modifier::new());
-        };
-        (
-            entry.id,
-            entry.key.clone(),
-            entry.saved.clone(),
-            entry.scope.clone(),
-        )
-    };
-    let scope = EntryScope {
-        id,
-        key,
-        saved,
-        scope: entry_scope.clone(),
-        nav: Navigator {
-            stack: (*stack).clone(),
-        },
-    };
-
-    let dir = stack.last_dir();
-    let gesture_pop = dir == TransitionDir::Pop && stack.gesture_pop();
-    let gesture = repose_core::back::gesture();
-    let framed = if gesture.progress > 0.0 {
-        // The preview replaces the settled page, so it also owns building it:
-        // the pair needs the page's own width, which only the layout knows.
-        with_back_gesture(&stack, &gesture, scope, &make_view)
-    } else if dir == TransitionDir::None || gesture_pop {
-        entry_scope.run(|| (make_view)(&scope))
-    } else {
-        let (initial, target) = if dir == TransitionDir::Push {
-            (0.0, 1.0)
-        } else {
-            (1.0, 0.0)
-        };
-        let t = animate_f32_from(
-            format!("nav3:{}:{}:{}", stack.stack_id, transition_id, id),
-            initial,
-            target,
-            transition.spec,
-        );
-
-        let slide = if dir == TransitionDir::Push {
-            1.0 - t
-        } else {
-            t
-        };
-        let dx = slide
-            * transition.slide_px
-            * if dir == TransitionDir::Push {
-                1.0
-            } else {
-                -1.0
-            };
-        let alpha = if transition.fade {
-            0.75 + 0.25 * (1.0 - slide)
-        } else {
-            1.0
-        };
-
-        let v = entry_scope.run(|| (make_view)(&scope));
-        Column(Modifier::new().fill_max_size()).child(
-            VBox(
-                Modifier::new()
-                    .fill_max_size()
-                    .translate(dx, 0.0)
-                    .alpha(alpha),
-            )
-            .child(v),
-        )
-    };
-    maybe_intercept_back(framed, on_back)
-}
-
-/// Renders the predictive-back pair as two screens that both move. The page
-/// being left follows the finger off toward the edge the drag started from,
-/// while the page underneath arrives from the opposite edge. The pair tiles the
-/// viewport, so at any progress the two screens occupy separate halves and
-/// their content never composites over each other.
-///
-/// A committed gesture keeps sliding the pair to the end of the transition, so
-/// the pop that follows is a swap with nothing left to animate. A cancelled
-/// gesture settles both pages back to rest.
-fn with_back_gesture<K: NavKey>(
-    stack: &Rc<NavBackStack<K>>,
-    gesture: &repose_core::back::BackGesture,
-    current: EntryScope<K>,
-    make_view: &EntryRenderer<K>,
-) -> View {
-    let progress = gesture.progress;
-    if progress <= 0.0 {
-        return current.scope.run(|| (make_view)(&current));
-    }
-    let previous = {
-        let state = stack.inner.borrow();
-        let len = state.entries.len();
-        if len < 2 {
-            None
-        } else {
-            let entry = &state.entries[len - 2];
-            Some((
-                entry.id,
-                entry.key.clone(),
-                entry.saved.clone(),
-                entry.scope.clone(),
-            ))
-        }
-    };
-    let Some((id, key, saved, entry_scope)) = previous else {
-        return current.scope.run(|| (make_view)(&current));
-    };
-    let under = EntryScope {
-        id,
-        key,
-        saved,
-        scope: entry_scope.clone(),
-        nav: Navigator {
-            stack: (**stack).clone(),
-        },
-    };
-    let progress = progress.clamp(0.0, 1.0);
-    let edge_sign = match gesture.edge {
-        repose_core::back::SwipeEdge::Left => 1.0,
-        repose_core::back::SwipeEdge::Right => -1.0,
-    };
-    let make_view = make_view.clone();
-    // The travel is the page's own width, which only the layout knows: the
-    // navigation display is narrower than the window whenever the app insets
-    // it. Measuring it here keeps the two pages edge to edge instead of leaving
-    // a strip of background between them.
-    BoxWithConstraints(Modifier::new().fill_max_size(), move |constraints| {
-        let width_dp = if constraints.has_bounded_width() && constraints.max_width.0 > 0.0 {
-            constraints.max_width.0
-        } else {
-            repose_core::locals::get_window_container_width()
-        };
-        let page_width = width_dp * repose_core::locals::density().scale;
-        // The leaving page travels a full width toward the edge the drag came
-        // from; the one underneath enters from the opposite edge by exactly the
-        // remaining distance, so their facing edges always meet.
-        let travel = edge_sign * page_width * progress;
-        let under_travel = -edge_sign * page_width * (1.0 - progress);
-        let under_view = under.scope.run(|| (make_view)(&under));
-        let current_view = current.scope.run(|| (make_view)(&current));
-        ZStack(Modifier::new().fill_max_size().overflow(Overflow::Clip))
-            .child(
-                VBox(
-                    Modifier::new()
-                        .fill_max_size()
-                        .background(theme().background)
-                        .translate(under_travel, 0.0)
-                        .alpha(progress),
-                )
-                .child(under_view),
-            )
-            .child(
-                VBox(
-                    Modifier::new()
-                        .fill_max_size()
-                        .background(theme().background)
-                        .translate(travel, 0.0)
-                        .alpha(1.0 - progress),
-                )
-                .child(current_view),
-            )
-    })
-}
-
-fn maybe_intercept_back(v: View, on_back: Option<Rc<dyn Fn()>>) -> View {
-    let Some(on_back) = on_back else { return v };
-    // Per-screen handler runs on Escape key-down (desktop) and takes
-    // precedence over the global `InstallBackHandler`..
-    VBox(
-        Modifier::new()
-            .semantics(Semantics::new(Role::Container))
-            .on_preview_key_event(move |ke: KeyEvent| {
-                if ke.event_type != KeyEventType::Down || ke.is_repeat {
-                    return false;
-                }
-                let action = repose_core::shortcuts::resolve_action(
-                    repose_core::shortcuts::KeyChord::new(ke.key.clone(), ke.modifiers),
-                );
-                if ke.key == Key::Escape
-                    || matches!(action, Some(repose_core::shortcuts::Action::Back))
-                {
-                    on_back();
-                    true
-                } else {
-                    false
-                }
-            }),
+    NavDisplayWithStrategy(
+        stack,
+        Rc::new(SinglePaneSceneStrategy),
+        make_view,
+        on_back,
+        transition,
     )
-    .child(v)
 }
 
 /// Back-dispatcher

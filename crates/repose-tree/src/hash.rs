@@ -577,6 +577,8 @@ fn facet_hash_modifier(modifier: &Modifier, hashers: &mut FacetHashers) {
         modifier.focus_requester.is_some().hash(h);
         modifier.on_focus_changed.is_some().hash(h);
         modifier.interaction_source.is_some().hash(h);
+        modifier.shared_element.is_some().hash(h);
+        modifier.nodes.len().hash(h);
     });
     hashers.hash(FACET_LAYOUT, |h| {
         if let Some(layout) = &modifier.layout {

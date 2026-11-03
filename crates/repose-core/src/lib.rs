@@ -134,6 +134,9 @@ pub mod scope;
 pub mod scope_cache;
 pub mod scroll;
 pub mod semantics;
+pub mod modifier_node;
+pub mod pointer;
+pub mod shared;
 pub mod shortcuts;
 pub mod signal;
 pub mod state;
@@ -172,6 +175,11 @@ pub use render_context::{ImageHandleGuard, RenderCommand, RenderContext};
 pub use runtime::*;
 pub use runtime::{FocusDirection, FocusManager, FocusRequester, take_focus_request};
 pub use semantics::*;
+pub use modifier_node::{ModifierNode, ModifierNodeElement, ModifierNodeHandle};
+pub use pointer::{
+    DragEnd, DragGestures, DragStart, DragUpdate, PointerInputHandler, TapEvent, TapGestures,
+};
+pub use shared::{MovableContent, SharedElementState};
 pub use signal::*;
 pub use state::*;
 pub use text::*;
