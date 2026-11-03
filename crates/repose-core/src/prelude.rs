@@ -1,14 +1,15 @@
 pub use crate::animation::{
     AnimatedValue, AnimationSpec, Clock, DecayAnimationSpec, EaseKind, Easing, Interpolate,
     KeyframesSpec, MonoSpline, RepeatableSpec, SplineKeyframes, SpringSpec, SystemClock, TestClock,
-    ensure_system_clock, set_clock,
+    ensure_system_clock, motion_duration_scale, set_clock, set_motion_duration_scale,
+    with_motion_duration_scale,
 };
 pub use crate::color::{Brush, Color, LinearGradient, TileMode};
 pub use crate::dnd::*;
 pub use crate::effects::{Dispose, effect, effect_once, effect_once_with_key, on_unmount};
 pub use crate::error::*;
 pub use crate::frame_clock::{
-    peek_frame_request, request_frame, request_present, take_frame_request,
+    peek_frame_request, request_frame, request_present, take_frame_request, with_frame_nanos,
 };
 pub use crate::geometry::{Rect, Size, Vec2};
 pub use crate::indication::*;
@@ -44,7 +45,7 @@ pub use crate::shortcuts;
 pub use crate::signal::{Signal, signal};
 pub use crate::state::{
     Mutable, produce_state, produce_state_eq, remember_mutable, remember_mutable_with_key,
-    remember_reducer, remember_reducer_with_key,
+    remember_reducer, remember_reducer_with_key, remember_updated_state,
 };
 pub use crate::text::{
     AnnotatedString, AnnotatedStringBuilder, BaselineShift, SpanStyle, TextSpan,

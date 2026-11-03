@@ -60,6 +60,20 @@ impl<T> Signal<T> {
         f(&inner.value)
     }
 
+    /// Read the current value without tracking the read in the reactive graph.
+    /// Use inside producers or effects that must not subscribe to the signal.
+    pub fn peek(&self) -> T
+    where
+        T: Clone,
+    {
+        self.0.borrow().value.clone()
+    }
+
+    /// Read the current value by reference without tracking the read.
+    pub fn peek_with<R>(&self, f: impl FnOnce(&T) -> R) -> R {
+        f(&self.0.borrow().value)
+    }
+
     /// Set the signal value only if it changed, skipping subscribers, the
     /// reactive graph, and the frame request when the value is unchanged.
     pub fn set_neq(&self, v: T)

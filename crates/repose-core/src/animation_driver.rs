@@ -395,6 +395,7 @@ pub fn tick() -> bool {
     if SHUTTING_DOWN.with(Cell::get) {
         return false;
     }
+    crate::frame_clock::run_frame_callbacks();
     if TICKING.with(Cell::get) {
         return true;
     }

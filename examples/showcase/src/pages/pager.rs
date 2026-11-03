@@ -1,3 +1,4 @@
+use repose_core::PaddingValues;
 use repose_core::prelude::*;
 use repose_material::material3::{Button, ButtonConfig};
 use repose_ui::pager::{HorizontalPager, PagerConfig, PagerState, VerticalPager};
@@ -19,8 +20,9 @@ fn pager_colors() -> [Color; PAGES] {
     ]
 }
 
-fn dots(current: usize) -> View {
+fn dots(state: &PagerState) -> View {
     let colors = pager_colors();
+    let position = state.position();
     FlowRow(
         Modifier::new()
             .fill_max_width()
@@ -31,15 +33,14 @@ fn dots(current: usize) -> View {
     .child(
         (0..PAGES)
             .map(|i| {
+                let selected = (1.0 - (i as f32 - position).abs()).clamp(0.0, 1.0);
+                let color = theme().outline_variant.interpolate(&colors[i], selected);
+                let size = 8.0 + 4.0 * selected;
                 Box(Modifier::new()
-                    .size(Dp(8.0), Dp(8.0))
+                    .size(Dp(size), Dp(size))
                     .margin(Dp(4.0))
-                    .background(if i == current {
-                        colors[i]
-                    } else {
-                        theme().outline_variant
-                    })
-                    .clip_rounded(Dp(4.0)))
+                    .background(color)
+                    .clip_rounded(Dp(size / 2.0)))
             })
             .collect::<Vec<_>>(),
     )
@@ -100,7 +101,7 @@ fn pager_section(title: &str, state: Rc<PagerState>, pager: View) -> View {
     Section(
         title,
         Column(Modifier::new().fill_max_size()).child((
-            dots(current),
+            dots(&state),
             pager,
             controls(state, current),
         )),
@@ -110,6 +111,7 @@ fn pager_section(title: &str, state: Rc<PagerState>, pager: View) -> View {
 pub fn screen() -> View {
     let h_state: Rc<PagerState> = remember_with_key("h_pager", || PagerState::new(PAGES));
     let v_state: Rc<PagerState> = remember_with_key("v_pager", || PagerState::new(PAGES));
+    let peek_state: Rc<PagerState> = remember_with_key("peek_pager", || PagerState::new(PAGES));
 
     Page(vec![
         pager_section(
@@ -118,7 +120,7 @@ pub fn screen() -> View {
             HorizontalPager(
                 "h_demo",
                 h_state.clone(),
-                |p| page_face(p, "Swipe left/right"),
+                |p| page_face(p, "Drag, then release to snap"),
                 PagerConfig {
                     modifier: Modifier::new()
                         .fill_max_size()
@@ -129,16 +131,39 @@ pub fn screen() -> View {
             ),
         ),
         pager_section(
+            "HorizontalPager peek",
+            peek_state.clone(),
+            HorizontalPager(
+                "peek_demo",
+                peek_state.clone(),
+                |p| page_face(p, "content_padding + page_spacing"),
+                PagerConfig {
+                    modifier: Modifier::new()
+                        .fill_max_size()
+                        .height(Dp(180.0))
+                        .margin(sp::SM),
+                    page_spacing: Dp(12.0),
+                    content_padding: PaddingValues {
+                        left: Dp(32.0),
+                        right: Dp(32.0),
+                        top: Dp::ZERO,
+                        bottom: Dp::ZERO,
+                    },
+                    ..Default::default()
+                },
+            ),
+        ),
+        pager_section(
             "VerticalPager",
             v_state.clone(),
             VerticalPager(
                 "v_demo",
                 v_state.clone(),
-                |p| page_face(p, "Swipe up/down"),
+                |p| page_face(p, "Drag up/down to flip"),
                 PagerConfig {
                     modifier: Modifier::new()
                         .fill_max_size()
-                        .height(Dp(300.0))
+                        .height(Dp(260.0))
                         .margin(sp::SM),
                     ..Default::default()
                 },

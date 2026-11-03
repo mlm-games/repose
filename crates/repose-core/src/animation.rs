@@ -1,10 +1,72 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use web_time::{Duration, Instant};
 
 pub(crate) fn now() -> Instant {
     let clock = CLOCK.with(|clock| clock.borrow().clone());
     clock.now()
+}
+
+/// Process-wide animator duration scale, matching Android's
+/// `Settings.Global.ANIMATOR_DURATION_SCALE`: `0.0` disables animations,
+/// `0.5` runs them twice as fast, `2.0` twice as slow.
+static MOTION_DURATION_SCALE_BITS: AtomicU32 = AtomicU32::new(0x3F80_0000);
+
+thread_local! {
+    static MOTION_DURATION_SCALE_OVERRIDE: Cell<Option<f32>> = const { Cell::new(None) };
+}
+
+/// The animator duration scale in effect on this thread.
+///
+/// A scoped [`with_motion_duration_scale`] override wins; otherwise the
+/// process default set by [`set_motion_duration_scale`] applies.
+pub fn motion_duration_scale() -> f32 {
+    MOTION_DURATION_SCALE_OVERRIDE
+        .with(Cell::get)
+        .unwrap_or_else(|| f32::from_bits(MOTION_DURATION_SCALE_BITS.load(Ordering::Relaxed)))
+}
+
+/// Set the process-wide animator duration scale. Platforms call this when the
+/// system accessibility setting changes.
+pub fn set_motion_duration_scale(scale: f32) {
+    let scale = if scale.is_finite() {
+        scale.clamp(0.0, 10.0)
+    } else {
+        1.0
+    };
+    let previous = MOTION_DURATION_SCALE_BITS.swap(scale.to_bits(), Ordering::Relaxed);
+    if previous != scale.to_bits() {
+        crate::request_frame();
+    }
+}
+
+/// Run `f` with a scoped animator duration scale.
+pub fn with_motion_duration_scale<R>(scale: f32, f: impl FnOnce() -> R) -> R {
+    struct Guard(Option<f32>);
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            MOTION_DURATION_SCALE_OVERRIDE.with(|override_| override_.set(self.0));
+        }
+    }
+    let scale = if scale.is_finite() {
+        scale.clamp(0.0, 10.0)
+    } else {
+        1.0
+    };
+    let previous = MOTION_DURATION_SCALE_OVERRIDE.with(|override_| override_.replace(Some(scale)));
+    let _guard = Guard(previous);
+    f()
+}
+
+/// Real elapsed time divided by the animator duration scale. `None` means
+/// animations are disabled and the caller should jump to its target.
+fn scaled_elapsed(elapsed: Duration) -> Option<Duration> {
+    let scale = motion_duration_scale();
+    if scale <= 0.0 {
+        return None;
+    }
+    Some(Duration::from_secs_f32(elapsed.as_secs_f32() / scale))
 }
 
 /// Physical spring parameters. Duration is emergent (determined by physics), not specified.
@@ -912,11 +974,20 @@ impl AnimatedValue<f32> {
         };
 
         let now = now();
-        let dt = match self.last_update {
-            Some(last) => now.saturating_duration_since(last).as_secs_f32().min(0.05),
-            None => 0.0,
+        let raw_dt = match self.last_update {
+            Some(last) => now.saturating_duration_since(last),
+            None => Duration::ZERO,
         };
         self.last_update = Some(now);
+
+        let dt = match scaled_elapsed(raw_dt) {
+            Some(dt) => dt.as_secs_f32().min(0.05),
+            None => {
+                self.velocity = 0.0;
+                self.start_time = None;
+                return false;
+            }
+        };
 
         if dt <= 0.0 {
             return true;
@@ -1237,7 +1308,16 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
             Some(s) => s,
             None => return false,
         };
-        let elapsed = now().saturating_duration_since(start);
+        let elapsed = match scaled_elapsed(now().saturating_duration_since(start)) {
+            Some(elapsed) => elapsed,
+            None => {
+                if let Some(ref kf) = self.keyframes {
+                    self.current = kf.evaluate(if self.reverse { 0.0 } else { 1.0 });
+                }
+                self.start_time = None;
+                return false;
+            }
+        };
         let delay = if self.delay_applied {
             Duration::ZERO
         } else {
@@ -1270,8 +1350,18 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
             None => return false,
         };
 
-        let now = now();
-        let elapsed = now.saturating_duration_since(start);
+        let elapsed = match scaled_elapsed(now().saturating_duration_since(start)) {
+            Some(elapsed) => elapsed,
+            None => {
+                self.progress = 1.0;
+                self.velocity = 0.0;
+                self.spring_v0 = 0.0;
+                self.current = self.target.clone();
+                self.start_time = None;
+                self.last_update = None;
+                return false;
+            }
+        };
 
         let delay = if self.delay_applied {
             Duration::ZERO
@@ -1322,7 +1412,14 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
 
     fn update_tween(&mut self) -> bool {
         if let Some(start) = self.start_time {
-            let elapsed = now().saturating_duration_since(start);
+            let elapsed = match scaled_elapsed(now().saturating_duration_since(start)) {
+                Some(elapsed) => elapsed,
+                None => {
+                    self.current = self.target.clone();
+                    self.start_time = None;
+                    return false;
+                }
+            };
             let delay = if self.delay_applied {
                 Duration::ZERO
             } else {
@@ -1464,6 +1561,21 @@ mod tests {
         for t in [0.0, 0.25, 0.5, 0.75, 1.0] {
             assert!(s.evaluate(t).is_finite(), "t={t}");
         }
+    }
+
+    #[test]
+    fn motion_duration_scale_scales_elapsed() {
+        with_motion_duration_scale(2.0, || {
+            let scaled = scaled_elapsed(Duration::from_millis(100)).expect("enabled");
+            assert!((scaled.as_secs_f32() - 0.05).abs() < 1e-4);
+        });
+        with_motion_duration_scale(0.0, || {
+            assert_eq!(scaled_elapsed(Duration::from_millis(100)), None);
+        });
+        with_motion_duration_scale(1.0, || {
+            let scaled = scaled_elapsed(Duration::from_millis(100)).expect("enabled");
+            assert!((scaled.as_secs_f32() - 0.1).abs() < 1e-4);
+        });
     }
 
     #[test]

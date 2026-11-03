@@ -2,7 +2,7 @@ use std::any::Any;
 use std::cell::{Ref, RefCell, RefMut};
 use std::rc::Rc;
 
-use crate::{Signal, reactive, remember_with_key, request_frame};
+use crate::{Signal, reactive, remember, remember_with_key, request_frame};
 
 #[allow(dead_code)]
 pub struct MutableState<T: Clone + 'static> {
@@ -30,6 +30,17 @@ pub trait StateHolder: 'static {
 
     fn initial_state() -> Self::State;
     fn reduce(state: &Self::State, event: Self::Event) -> Self::State;
+}
+
+/// Keeps a signal holding the latest `value` for the lifetime of the current
+/// composition slot. Long-lived effects read the signal at call time instead
+/// of capturing a stale value.
+pub fn remember_updated_state<T: Clone + PartialEq + 'static>(value: T) -> Rc<Signal<T>> {
+    let slot = remember(|| Signal::new(value.clone()));
+    if slot.peek() != value {
+        slot.set_neq(value);
+    }
+    slot
 }
 
 /// Lazily produces a Signal<T> (remembered by key) and keeps it up to date

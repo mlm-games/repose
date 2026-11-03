@@ -1,9 +1,49 @@
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::sync::OnceLock;
+use web_time::{Duration, Instant};
 
 thread_local! {
     static NEEDS_COMPOSE: Cell<bool> = const { Cell::new(true) };
     static NEEDS_PRESENT: Cell<bool> = const { Cell::new(false) };
     static SIGNAL_FIRED: Cell<bool> = const { Cell::new(false) };
+    static FRAME_CALLBACKS: RefCell<Vec<Box<dyn FnOnce(Duration)>>> =
+        const { RefCell::new(Vec::new()) };
+    static RUNNING_FRAME_CALLBACKS: Cell<bool> = const { Cell::new(false) };
+}
+
+static FRAME_EPOCH: OnceLock<Instant> = OnceLock::new();
+
+/// Run `f` on the next frame with the time elapsed since the first frame.
+///
+/// The callback runs once, before composition, so writes it makes are visible
+/// in that same frame. Calling it again from inside `f` schedules the next one.
+pub fn with_frame_nanos(f: impl FnOnce(Duration) + 'static) {
+    FRAME_CALLBACKS.with(|callbacks| callbacks.borrow_mut().push(Box::new(f)));
+    request_frame();
+}
+
+/// Drain and run the callbacks queued with [`with_frame_nanos`]. Called by the
+/// animation driver at the start of each frame.
+pub(crate) fn run_frame_callbacks() {
+    if RUNNING_FRAME_CALLBACKS.with(Cell::get) {
+        return;
+    }
+    RUNNING_FRAME_CALLBACKS.with(|running| running.set(true));
+    struct Guard;
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            RUNNING_FRAME_CALLBACKS.with(|running| running.set(false));
+        }
+    }
+    let _guard = Guard;
+    let callbacks = FRAME_CALLBACKS.with(|callbacks| std::mem::take(&mut *callbacks.borrow_mut()));
+    if callbacks.is_empty() {
+        return;
+    }
+    let now = FRAME_EPOCH.get_or_init(Instant::now).elapsed();
+    for callback in callbacks {
+        callback(now);
+    }
 }
 
 /// Request another frame (coalesced). Sets both compose and present flags.
@@ -57,4 +97,21 @@ pub fn signal_fired() {
 #[inline]
 pub fn take_signal_fired() -> bool {
     SIGNAL_FIRED.replace(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::rc::Rc;
+
+    #[test]
+    fn frame_callbacks_run_once() {
+        let hits = Rc::new(Cell::new(0));
+        let counter = hits.clone();
+        with_frame_nanos(move |_| counter.set(counter.get() + 1));
+        run_frame_callbacks();
+        assert_eq!(hits.get(), 1);
+        run_frame_callbacks();
+        assert_eq!(hits.get(), 1);
+    }
 }

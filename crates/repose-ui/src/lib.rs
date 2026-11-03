@@ -112,11 +112,13 @@ pub use subcompose::{
     BoxWithConstraints, SubcomposeLayout, box_with_constraints_with_key, subcompose_hash_key,
     subcompose_layout_with_slots, subcompose_with_key, subcompose_with_key_slots,
 };
+pub use seekable::{SeekableTransitionScope, SeekableTransitionState};
 pub mod overlay;
 pub mod pager;
 pub mod scroll;
 pub mod scrollbar_fade;
 pub mod scrollbar_repeat;
+pub mod seekable;
 pub mod window_v2;
 pub mod windowing;
 
