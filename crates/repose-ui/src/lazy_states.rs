@@ -459,7 +459,7 @@ pub(crate) struct LazyScrollCore {
     pad_main: Cell<f32>,
     spacing_main: Cell<f32>,
     uniform_main: Cell<f32>,
-    visible: Cell<(usize, usize)>,
+    visible: Signal<(usize, usize)>,
     item_count: Cell<usize>,
 }
 
@@ -475,7 +475,7 @@ impl LazyScrollCore {
             pad_main: Cell::new(0.0),
             spacing_main: Cell::new(0.0),
             uniform_main: Cell::new(0.0),
-            visible: Cell::new((0, 0)),
+            visible: signal((0, 0)),
             item_count: Cell::new(0),
         }
     }
@@ -502,11 +502,15 @@ impl LazyScrollCore {
     }
 
     pub(crate) fn set_visible_range(&self, first: usize, last: usize) {
-        self.visible.set((first, last));
+        self.visible.set_neq((first, last));
     }
 
     pub fn visible_range(&self) -> (usize, usize) {
         self.visible.get()
+    }
+
+    pub fn visible_range_signal(&self) -> Signal<(usize, usize)> {
+        self.visible
     }
 
     pub(crate) fn uniform_offset_for_index(&self, index: usize) -> f32 {
@@ -739,6 +743,10 @@ impl LazyColumnState {
         self.core.visible_range()
     }
 
+    pub fn visible_range_signal(&self) -> Signal<(usize, usize)> {
+        self.core.visible_range_signal()
+    }
+
     pub fn offset_for_index(&self, index: usize) -> Option<f32> {
         let count = self.core.item_count();
         if index >= count {
@@ -937,6 +945,10 @@ impl LazyRowState {
 
     pub fn visible_range(&self) -> (usize, usize) {
         self.core.visible_range()
+    }
+
+    pub fn visible_range_signal(&self) -> Signal<(usize, usize)> {
+        self.core.visible_range_signal()
     }
 
     pub fn offset_for_index(&self, index: usize) -> Option<f32> {
