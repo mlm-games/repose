@@ -510,7 +510,7 @@ impl LazyScrollCore {
     }
 
     pub fn visible_range_signal(&self) -> Signal<(usize, usize)> {
-        self.visible
+        self.visible.clone()
     }
 
     pub(crate) fn uniform_offset_for_index(&self, index: usize) -> f32 {
