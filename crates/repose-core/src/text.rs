@@ -1,3 +1,4 @@
+use crate::units::Sp;
 use crate::Color;
 use std::fmt::Debug;
 use std::rc::Rc;
@@ -1324,6 +1325,16 @@ impl SpanStyle {
         self
     }
 
+    pub fn font_family(mut self, family: &'static str) -> Self {
+        self.font_family = Some(family);
+        self
+    }
+
+    pub fn line_height(mut self, line_height: Sp) -> Self {
+        self.line_height = Some(line_height);
+        self
+    }
+
     pub fn font_size(mut self, size: crate::units::Sp) -> Self {
         self.font_size = Some(size);
         self
@@ -1477,6 +1488,19 @@ impl AnnotatedStringBuilder {
     }
 
     /// Apply a style to a range of already-appended text.
+    /// Annotate a range of already-appended text as a clickable link.
+    pub fn add_link(&mut self, start: usize, end: usize, url: impl Into<Arc<str>>, style: SpanStyle) -> &mut Self {
+        if start < end && end <= self.text.len() {
+            self.spans.push(TextSpan {
+                start,
+                end,
+                style,
+                url: Some(url.into()),
+            });
+        }
+        self
+    }
+
     pub fn add_style(&mut self, start: usize, end: usize, style: SpanStyle) -> &mut Self {
         if start < end && end <= self.text.len() {
             self.spans.push(TextSpan {
