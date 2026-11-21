@@ -146,10 +146,14 @@ enum TapPhase {
         id: PointerId,
         start: Vec2,
         long_fired: bool,
-        /// First tap still waiting for its second tap when this press began.
-        pending_first: Option<TapEvent>,
     },
     WaitingSecond {
+        first: TapEvent,
+    },
+    SecondPressed {
+        id: PointerId,
+        start: Vec2,
+        long_fired: bool,
         first: TapEvent,
     },
 }
@@ -242,20 +246,24 @@ impl TapGestures {
         let delay = Duration::from_secs_f32(self.config.long_press_ms.max(0.0) / 1000.0);
         schedule_once(self.tick_key.clone(), delay, move || {
             let mut phase = phase.borrow_mut();
-            let TapPhase::Pressed {
-                id: pressed,
-                start: at,
-                long_fired,
-                ..
-            } = &mut *phase
-            else {
-                return;
+            let (pressed, long_fired, position) = match &mut *phase {
+                TapPhase::Pressed {
+                    id,
+                    start,
+                    long_fired,
+                }
+                | TapPhase::SecondPressed {
+                    id,
+                    start,
+                    long_fired,
+                    ..
+                } => (*id, long_fired, *start),
+                _ => return,
             };
-            if *pressed != id {
+            if pressed != id {
                 return;
             }
             *long_fired = true;
-            let position = *at;
             drop(phase);
             on_long_press(TapEvent { id, position });
         });
@@ -314,39 +322,46 @@ impl PointerInputHandler for TapGestures {
         match event.event {
             PointerEventKind::Down(_) => {
                 cancel(&self.tick_key);
-                let pending_first = match &*phase {
-                    TapPhase::WaitingSecond { first } => Some(*first),
-                    _ => None,
-                };
-                *phase = TapPhase::Pressed {
-                    id: event.id,
-                    start: event.position,
-                    long_fired: false,
-                    pending_first,
+                let previous = std::mem::replace(&mut *phase, TapPhase::Idle);
+                *phase = match previous {
+                    TapPhase::WaitingSecond { first } => TapPhase::SecondPressed {
+                        id: event.id,
+                        start: event.position,
+                        long_fired: false,
+                        first,
+                    },
+                    _ => TapPhase::Pressed {
+                        id: event.id,
+                        start: event.position,
+                        long_fired: false,
+                    },
                 };
                 drop(phase);
                 self.arm_long_press(event.id);
                 false
             }
             PointerEventKind::Move => {
-                let TapPhase::Pressed { start, pending_first, .. } = &*phase else {
-                    return false;
+                let (start, first) = match &*phase {
+                    TapPhase::Pressed { start, .. } => (*start, None),
+                    TapPhase::SecondPressed { start, first, .. } => (*start, Some(*first)),
+                    _ => return false,
                 };
                 let dx = event.position.x - start.x;
                 let dy = event.position.y - start.y;
                 if dx.hypot(dy) > self.config.touch_slop_px {
-                    let pending_first = *pending_first;
                     *phase = TapPhase::Idle;
                     drop(phase);
                     cancel(&self.tick_key);
-                    self.report_abandoned_first(pending_first);
+                    self.report_abandoned_first(first);
                     return false;
                 }
                 false
             }
             PointerEventKind::Up(_) => {
                 let matches_press = match &*phase {
-                    TapPhase::Pressed { id, .. } => *id == event.id,
+                    TapPhase::Pressed { id, .. } | TapPhase::SecondPressed { id, .. } => {
+                        *id == event.id
+                    }
                     TapPhase::WaitingSecond { .. } => true,
                     TapPhase::Idle => false,
                 };
@@ -356,34 +371,34 @@ impl PointerInputHandler for TapGestures {
                 let previous = std::mem::replace(&mut *phase, TapPhase::Idle);
                 drop(phase);
                 match previous {
-                    TapPhase::Pressed {
-                        id,
-                        long_fired,
-                        pending_first,
-                        ..
-                    } => {
+                    TapPhase::Pressed { long_fired, .. } => {
                         if long_fired {
                             return true;
                         }
                         let tap = TapEvent {
-                            id,
+                            id: event.id,
                             position: event.position,
                         };
                         cancel(&self.tick_key);
-                        if let Some(first) = pending_first {
-                            if let Some(on_double_tap) = &self.config.on_double_tap {
-                                on_double_tap(TapEvent {
-                                    id: first.id,
-                                    position: event.position,
-                                });
-                            }
-                            return true;
-                        }
                         if self.config.on_double_tap.is_some() {
                             *self.phase.borrow_mut() = TapPhase::WaitingSecond { first: tap };
                             self.schedule_single_tap(tap);
                         } else if let Some(on_tap) = &self.config.on_tap {
                             on_tap(tap);
+                        }
+                        true
+                    }
+                    TapPhase::SecondPressed {
+                        long_fired, first, ..
+                    } => {
+                        cancel(&self.tick_key);
+                        if !long_fired
+                            && let Some(on_double_tap) = &self.config.on_double_tap
+                        {
+                            on_double_tap(TapEvent {
+                                id: first.id,
+                                position: event.position,
+                            });
                         }
                         true
                     }
@@ -398,17 +413,15 @@ impl PointerInputHandler for TapGestures {
                 }
             }
             PointerEventKind::Cancel => {
-                let pending_first = match &*phase {
-                    TapPhase::Pressed {
-                        pending_first, ..
-                    } => *pending_first,
+                let first = match &*phase {
+                    TapPhase::SecondPressed { first, .. } => Some(*first),
                     _ => None,
                 };
                 let had = !matches!(&*phase, TapPhase::Idle);
                 *phase = TapPhase::Idle;
                 drop(phase);
                 cancel(&self.tick_key);
-                self.report_abandoned_first(pending_first);
+                self.report_abandoned_first(first);
                 had
             }
             PointerEventKind::Enter | PointerEventKind::Leave => false,

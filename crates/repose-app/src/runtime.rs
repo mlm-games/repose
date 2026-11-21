@@ -153,6 +153,7 @@ const LONG_PRESS_SLOP_DP: f32 = 18.0;
 /// as a drag, so the tap never fires. This is the same value Compose's
 /// `ViewConfiguration.touchSlop` resolves to on Android.
 pub(crate) const TAP_SLOP_DP: f32 = 18.0;
+pub(crate) const MOUSE_TAP_SLOP_DP: f32 = 2.25;
 
 /// Did the pointer travel from `(x0, y0)` past `slop` dp? Compared squared to
 /// keep the per-move path allocation-free.
@@ -215,6 +216,7 @@ pub struct ReposeRuntime {
     touch_targets: HashMap<u64, Vec<repose_ui::HitRegionSnapshot>>,
     touch_positions: HashMap<u64, Vec2>,
     touch_presses: HashMap<u64, TouchPressState>,
+    touch_move_consumers: HashSet<u64>,
     dnd_capture: Option<DndPointerCapture>,
     touch_primary: Option<u64>,
     suppressed_touch_clicks: HashSet<u64>,
@@ -224,7 +226,8 @@ pub struct ReposeRuntime {
     pub pressed_ids: HashSet<u64>,
     pub ime_preedit: bool,
     pub key_pressed_active: Option<u64>,
-    key_pressed_key: Option<Key>,
+    key_pressed: HashMap<Key, u64>,
+    down_keys: HashSet<Key>,
     pub last_focus: Option<u64>,
     /// Polled physical-key state, keyed by debug name (`KeyCode::KeyW`,
     /// `Digit1`, ...). Platform runners report every `KeyboardInput`
@@ -258,7 +261,7 @@ pub struct ReposeRuntime {
     long_press_touch: Option<u64>,
     /// Keyboard long-press (Compose combinedClickable: holding Space/Enter
     /// past LONG_PRESS_MS fires on_long_click). `bool` = already fired.
-    key_long_press: Option<(u64, web_time::Instant, bool)>,
+    key_long_press: HashMap<Key, (u64, web_time::Instant, bool)>,
     suppress_next_click: bool,
     pending_click: Option<(u64, web_time::Instant, Rc<dyn Fn()>)>,
 
@@ -312,6 +315,7 @@ impl ReposeRuntime {
             touch_targets: HashMap::new(),
             touch_positions: HashMap::new(),
             touch_presses: HashMap::new(),
+            touch_move_consumers: HashSet::new(),
             dnd_capture: None,
             touch_primary: None,
             suppressed_touch_clicks: HashSet::new(),
@@ -320,7 +324,8 @@ impl ReposeRuntime {
             pressed_ids: HashSet::new(),
             ime_preedit: false,
             key_pressed_active: None,
-            key_pressed_key: None,
+            key_pressed: HashMap::new(),
+            down_keys: HashSet::new(),
             last_focus: None,
             held_keys: HashSet::new(),
             held_mouse: HashSet::new(),
@@ -330,7 +335,7 @@ impl ReposeRuntime {
             double_candidate: None,
             long_press: None,
             long_press_touch: None,
-            key_long_press: None,
+            key_long_press: HashMap::new(),
             suppress_next_click: false,
             pending_click: None,
             frame_cache: None,
@@ -605,14 +610,20 @@ impl ReposeRuntime {
     pub fn cache_frame(&mut self, frame: impl Into<Rc<Frame>>) {
         let frame = frame.into();
         let _dnd_guard = self.dnd_context.enter();
-        if self.key_pressed_active.is_some_and(|id| {
-            self.sched.focused != Some(id)
-                || !frame
-                    .hit_regions
-                    .iter()
-                    .any(|hit| hit.id == id && !hit.disabled)
-        }) {
-            self.cancel_keyboard_press();
+        let stale_keys: Vec<Key> = self
+            .key_pressed
+            .iter()
+            .filter(|(_, id)| {
+                self.sched.focused != Some(**id)
+                    || !frame
+                        .hit_regions
+                        .iter()
+                        .any(|hit| hit.id == **id && !hit.disabled)
+            })
+            .map(|(key, _)| key.clone())
+            .collect();
+        for key in &stale_keys {
+            self.cancel_key_press(key);
         }
         self.hover_leave.clear();
         for hit in &frame.hit_regions {
@@ -732,12 +743,13 @@ impl ReposeRuntime {
         pos: Vec2,
         targets: &[repose_ui::HitRegionSnapshot],
         touch: Option<u64>,
-    ) {
+    ) -> bool {
         let (id, pkind) = match touch {
             Some(tid) => (PointerId(tid), PointerKind::Touch),
             None => (PointerId(0), PointerKind::Mouse),
         };
         let base = PointerEvent::new(id, pkind, kind, pos, 1.0, self.modifiers);
+        let mut move_consumed = false;
         for target in targets {
             let hit = target.hit();
             let callback = match kind {
@@ -755,10 +767,16 @@ impl ReposeRuntime {
             event.origin = origin;
             event.position = local;
             callback(event);
-            if !matches!(kind, PointerEventKind::Cancel) && base.is_consumed() {
-                break;
+            if base.is_consumed() {
+                if matches!(kind, PointerEventKind::Move) {
+                    move_consumed = true;
+                }
+                if !matches!(kind, PointerEventKind::Cancel) {
+                    break;
+                }
             }
         }
+        move_consumed
     }
 
     fn dispatch_pointer_to_path(
@@ -767,16 +785,16 @@ impl ReposeRuntime {
         pos: Vec2,
         path: &[u64],
         touch: Option<u64>,
-    ) {
+    ) -> bool {
         let Some(frame) = &self.frame_cache else {
-            return;
+            return false;
         };
         let targets: Vec<_> = path
             .iter()
             .filter_map(|id| frame.hit_regions.iter().find(|hit| hit.id == *id))
             .map(repose_ui::HitRegionSnapshot::new)
             .collect();
-        self.dispatch_pointer_to_targets(kind, pos, &targets, touch);
+        self.dispatch_pointer_to_targets(kind, pos, &targets, touch)
     }
 
     /// Splits captured targets into live/stale against the current frame.
@@ -891,6 +909,7 @@ impl ReposeRuntime {
                 self.touch_targets.remove(&tid);
                 self.touch_paths.remove(&tid);
                 self.touch_presses.remove(&tid);
+                self.touch_move_consumers.remove(&tid);
                 self.suppressed_touch_clicks.remove(&tid);
                 if let Some(key) = old_capture_key {
                     self.end_textfield_drag_key(key);
@@ -905,6 +924,9 @@ impl ReposeRuntime {
                     self.long_press_touch = None;
                 }
                 if self.touch_primary == Some(tid) {
+                    set_touch_gesture_active(false);
+                    self.long_press = None;
+                    self.long_press_touch = None;
                     self.touch_primary = None;
                     self.double_candidate = None;
                     self.pending_click = None;
@@ -920,6 +942,7 @@ impl ReposeRuntime {
             } else if live.is_empty() {
                 self.touch_paths.remove(&tid);
                 self.touch_presses.remove(&tid);
+                self.touch_move_consumers.remove(&tid);
                 self.suppressed_touch_clicks.remove(&tid);
             } else {
                 self.touch_targets.insert(tid, live.clone());
@@ -985,7 +1008,12 @@ impl ReposeRuntime {
             _ => false,
         };
         if active_long_press_matches && let Some((_, _, x0, y0)) = self.long_press {
-            let slop = LONG_PRESS_SLOP_DP * self.scale;
+            let slop_dp = if touch.is_none() {
+                MOUSE_TAP_SLOP_DP
+            } else {
+                LONG_PRESS_SLOP_DP
+            };
+            let slop = slop_dp * self.scale;
             let dx = pos.x - x0;
             let dy = pos.y - y0;
             if dx * dx + dy * dy > slop * slop {
@@ -1071,10 +1099,15 @@ impl ReposeRuntime {
         }
 
         if let Some(tid) = touch {
-            if let Some(targets) = self.touch_targets.get(&tid) {
-                self.dispatch_pointer_to_targets(PointerEventKind::Move, pos, targets, Some(tid));
+            let move_consumed = if let Some(targets) = self.touch_targets.get(&tid) {
+                self.dispatch_pointer_to_targets(PointerEventKind::Move, pos, targets, Some(tid))
             } else if let Some(path) = self.touch_paths.get(&tid).cloned() {
-                self.dispatch_pointer_to_path(PointerEventKind::Move, pos, &path, Some(tid));
+                self.dispatch_pointer_to_path(PointerEventKind::Move, pos, &path, Some(tid))
+            } else {
+                false
+            };
+            if move_consumed {
+                self.touch_move_consumers.insert(tid);
             }
             return PointerMoveResult {
                 cursor: self.move_cursor_suggestion(),
@@ -1226,6 +1259,7 @@ impl ReposeRuntime {
             if let Some(tid) = touch {
                 self.touch_paths.insert(tid, path.clone());
                 self.touch_targets.insert(tid, targets);
+                self.touch_move_consumers.remove(&tid);
                 self.touch_presses.insert(
                     tid,
                     TouchPressState {
@@ -1486,7 +1520,7 @@ impl ReposeRuntime {
         // below may activate the element. Compose `detectTapGestures` drops the
         // tap on the same condition; without this, releasing after a drag fires
         // onClick anyway.
-        let dragged = self.drag_cancelled_tap(self.capture_id, pos);
+        let dragged = self.drag_cancelled_tap(self.capture_id, pos, true);
         if dragged {
             self.pending_click = None;
         }
@@ -1574,6 +1608,7 @@ impl ReposeRuntime {
             .touch_presses
             .remove(&tid)
             .map(|state| state.capture_id);
+        self.touch_move_consumers.remove(&tid);
         result.capture_id = capture_id;
         let targets = self.touch_targets.remove(&tid);
         if let Some(targets) = &targets {
@@ -1627,7 +1662,7 @@ impl ReposeRuntime {
             }
 
             // Same drag-cancels-tap rule as the mouse path.
-            let dragged = self.drag_cancelled_tap(capture_id, pos);
+            let dragged = self.drag_cancelled_tap(capture_id, pos, false);
             if dragged {
                 self.pending_click = None;
             }
@@ -1702,26 +1737,46 @@ impl ReposeRuntime {
     /// Did the press behind `capture_id` travel past tap slop? When it did, the
     /// release is a drag and must not activate the element (Compose
     /// `detectTapGestures`).
-    fn drag_cancelled_tap(&self, capture_id: Option<u64>, pos: Vec2) -> bool {
-        capture_id.is_some_and(|cid| {
-            self.press_origin.is_some_and(|(oid, x0, y0)| {
-                oid == cid && moved_past_slop(x0, y0, pos, TAP_SLOP_DP, self.scale)
+    fn drag_cancelled_tap(&self, capture_id: Option<u64>, pos: Vec2, mouse: bool) -> bool {
+        let Some(cid) = capture_id else {
+            return false;
+        };
+        let slop = if mouse {
+            MOUSE_TAP_SLOP_DP
+        } else {
+            TAP_SLOP_DP
+        };
+        if self
+            .press_origin
+            .is_some_and(|(oid, x0, y0)| oid == cid && moved_past_slop(x0, y0, pos, slop, self.scale))
+        {
+            return true;
+        }
+        mouse
+            && self.frame_cache.as_ref().is_some_and(|frame| {
+                frame
+                    .hit_regions
+                    .iter()
+                    .find(|hit| hit.id == cid)
+                    .is_some_and(|hit| !repose_ui::hit_region_contains(hit, pos))
             })
-        })
     }
 
-    fn cancel_keyboard_press(&mut self) {
-        let active = self.key_pressed_active.take();
-        self.key_pressed_key = None;
-        self.key_long_press = None;
-        let Some(active) = active else {
+    fn sync_key_pressed_mirror(&mut self) {
+        self.key_pressed_active = self.key_pressed.values().next().copied();
+    }
+
+    fn cancel_key_press(&mut self, key: &Key) {
+        let Some(id) = self.key_pressed.remove(key) else {
             return;
         };
-        self.pressed_ids.remove(&active);
+        self.key_long_press.remove(key);
+        self.pressed_ids.remove(&id);
+        self.sync_key_pressed_mirror();
         let hit = self
             .frame_cache
             .as_ref()
-            .and_then(|frame| frame.hit_regions.iter().find(|hit| hit.id == active))
+            .and_then(|frame| frame.hit_regions.iter().find(|hit| hit.id == id))
             .cloned();
         if let Some(hit) = hit
             && let Some(source) = &hit.interaction_source
@@ -1731,14 +1786,21 @@ impl ReposeRuntime {
         }
     }
 
+    fn cancel_keyboard_press(&mut self) {
+        let keys: Vec<Key> = self.key_pressed.keys().cloned().collect();
+        for key in &keys {
+            self.cancel_key_press(key);
+        }
+    }
+
     fn rebuild_pressed_ids(&mut self) {
         self.pressed_ids = self
             .touch_presses
             .values()
             .flat_map(|state| state.pressed_ids.iter().copied())
             .collect();
-        if let Some(active) = self.key_pressed_active {
-            self.pressed_ids.insert(active);
+        for id in self.key_pressed.values() {
+            self.pressed_ids.insert(*id);
         }
     }
 
@@ -1756,23 +1818,21 @@ impl ReposeRuntime {
     /// moves, so an ancestor scroll container must not also scroll?
     ///
     /// True while a drag session is live (long-press drag and drop) or when
-    /// the pressed region handles `on_pointer_move` (splitters, sliders,
-    /// swipes, `draggable`). Compose's rule: a child that consumes the drag
-    /// wins over the parent `scrollable`.
+    /// the captured target consumed a pointer move. Compose's rule: a child
+    /// that consumes the position change wins over the parent `scrollable`;
+    /// merely having an `on_pointer_move` handler is not enough.
     pub fn touch_owns_drag(&self, tid: u64) -> bool {
         if dnd::is_dragging() {
             return true;
         }
-        let Some(capture_id) = self.touch_presses.get(&tid).map(|state| state.capture_id) else {
-            return false;
-        };
-        self.frame_cache.as_ref().is_some_and(|frame| {
-            frame
-                .hit_regions
-                .iter()
-                .find(|hit| hit.id == capture_id)
-                .is_some_and(|hit| hit.on_pointer_move.is_some())
-        })
+        if self
+            .dnd_capture
+            .as_ref()
+            .is_some_and(|capture| capture.touch == Some(tid))
+        {
+            return true;
+        }
+        self.touch_move_consumers.contains(&tid)
     }
 
     /// Cancel mouse pointer state (focus lost). Touch fingers never feed
@@ -1802,6 +1862,7 @@ impl ReposeRuntime {
             .remove(&tid)
             .map(|state| state.capture_id);
         let targets = self.touch_targets.remove(&tid);
+        self.touch_move_consumers.remove(&tid);
         if let Some(targets) = &targets {
             self.dispatch_pointer_to_targets(PointerEventKind::Cancel, pos, targets, Some(tid));
         } else if let Some(path) = self.touch_paths.remove(&tid) {
@@ -2006,6 +2067,7 @@ impl ReposeRuntime {
         self.touch_targets.clear();
         self.touch_positions.clear();
         self.touch_presses.clear();
+        self.touch_move_consumers.clear();
         self.dnd_capture = None;
         self.touch_primary = None;
         self.suppressed_touch_clicks.clear();
@@ -2014,9 +2076,9 @@ impl ReposeRuntime {
         self.last_down = None;
         self.press_origin = None;
         self.double_candidate = None;
+        self.key_pressed.clear();
+        self.key_long_press.clear();
         self.key_pressed_active = None;
-        self.key_pressed_key = None;
-        self.key_long_press = None;
         self.last_up = None;
         self.last_down = None;
         self.double_candidate = None;
@@ -2082,22 +2144,30 @@ impl ReposeRuntime {
 
     /// Holding Space/Enter past LONG_PRESS_MS fires long-click. The following KeyUp must not fire onClick.
     fn poll_key_long_press(&mut self) {
-        let Some((kid, t0, fired)) = self.key_long_press else {
-            return;
-        };
-        if t0.elapsed().as_millis() < LONG_PRESS_MS {
-            return;
-        }
         let Some(f) = self.frame_cache.clone() else {
             return;
         };
-        if !fired {
+        let expired: Vec<Key> = self
+            .key_long_press
+            .iter()
+            .filter(|(_, (_, t0, fired))| !*fired && t0.elapsed().as_millis() >= LONG_PRESS_MS)
+            .map(|(key, _)| key.clone())
+            .collect();
+        for key in expired {
+            let Some((kid, _, fired)) = self.key_long_press.get(&key).copied() else {
+                continue;
+            };
+            if fired {
+                continue;
+            }
             if let Some(hit) = f.hit_regions.iter().find(|h| h.id == kid && !h.disabled)
                 && let Some(cb) = &hit.on_long_click
             {
                 cb();
             }
-            self.key_long_press = Some((kid, t0, true));
+            if let Some(entry) = self.key_long_press.get_mut(&key) {
+                entry.2 = true;
+            }
             request_frame();
         }
     }
@@ -2147,6 +2217,17 @@ impl ReposeRuntime {
 
     /// Process a keyboard key event. Returns true if consumed.
     pub fn handle_key(&mut self, event: &KeyEvent) -> bool {
+        match event.event_type {
+            KeyEventType::Down => {
+                self.down_keys.insert(event.key.clone());
+            }
+            KeyEventType::Up => {
+                if !self.down_keys.remove(&event.key) {
+                    return false;
+                }
+            }
+            KeyEventType::Unknown => {}
+        }
         let _event_scope = crate::lifecycle::enter_dispatchers(self.event_dispatchers());
         let shortcut_state = self.shortcuts.clone();
         repose_core::shortcuts::with_runtime_state(&shortcut_state, || self.handle_key_inner(event))
@@ -2235,15 +2316,18 @@ impl ReposeRuntime {
                         {
                             return false; // don't steal keys from non-clickable focusables
                         }
-                        self.cancel_keyboard_press();
+                        self.cancel_key_press(&event.key);
                         self.pressed_ids.insert(fid);
-                        self.key_pressed_active = Some(fid);
-                        self.key_pressed_key = Some(event.key.clone());
-                        self.key_long_press = if hit.on_long_click.is_some() {
-                            Some((fid, web_time::Instant::now(), false))
+                        self.key_pressed.insert(event.key.clone(), fid);
+                        self.sync_key_pressed_mirror();
+                        if hit.on_long_click.is_some() {
+                            self.key_long_press.insert(
+                                event.key.clone(),
+                                (fid, web_time::Instant::now(), false),
+                            );
                         } else {
-                            None
-                        };
+                            self.key_long_press.remove(&event.key);
+                        }
 
                         if let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
                             && let Some(src) = &hit.interaction_source
@@ -2259,19 +2343,14 @@ impl ReposeRuntime {
                         return true;
                     }
                 } else if event.event_type == KeyEventType::Up
-                    && let Some(active_id) = self.key_pressed_active
-                    && self
-                        .key_pressed_key
-                        .as_ref()
-                        .is_some_and(|key| key == &event.key)
+                    && let Some(active_id) = self.key_pressed.remove(&event.key)
                 {
                     self.pressed_ids.remove(&active_id);
-                    self.key_pressed_active = None;
-                    self.key_pressed_key = None;
+                    self.sync_key_pressed_mirror();
 
                     let long_fired = self
                         .key_long_press
-                        .take()
+                        .remove(&event.key)
                         .map(|(_, _, fired)| fired)
                         .unwrap_or(false);
 
@@ -2897,9 +2976,10 @@ impl ReposeRuntime {
         self.sched.mouse_secondary = false;
         self.sched.mouse_middle = false;
         self.sched.touch_points.clear();
+        self.key_pressed.clear();
+        self.key_long_press.clear();
+        self.down_keys.clear();
         self.key_pressed_active = None;
-        self.key_pressed_key = None;
-        self.key_long_press = None;
         self.pressed_ids.clear();
         self.pending_click = None;
         self.last_down = None;
@@ -3392,11 +3472,14 @@ impl ReposeRuntime {
     /// Process a key event with an optional host-composed `text` payload
     /// (winit `key_event.text`, Android soft-keyboard text, ...).
     ///
-    /// When the modifiers are free of Ctrl/Alt/Meta and the payload is
-    /// Printable text goes to the focused field first. Otherwise falls through to handle_key.
+    /// The key event is dispatched first; printable text is inserted only
+    /// when no handler consumed it.
     pub fn handle_key_with_text(&mut self, event: &KeyEvent, composed_text: Option<&str>) -> bool {
         if event.event_type == KeyEventType::Down {
             let _ = repose_core::request_input_mode(repose_core::InputMode::Keyboard);
+        }
+        if self.handle_key(event) {
+            return true;
         }
         if event.event_type == KeyEventType::Down
             && !event.is_repeat
@@ -3406,11 +3489,10 @@ impl ReposeRuntime {
             && !event.modifiers.meta
             && let Some(text) = composed_text
             && !text.chars().all(|c| c.is_control())
-            && self.insert_text_into_focused(text)
         {
-            return true;
+            return self.insert_text_into_focused(text);
         }
-        self.handle_key(event)
+        false
     }
 
     /// Process a scroll event at an explicit position, honoring a caller-owned
@@ -3462,9 +3544,10 @@ impl ReposeRuntime {
                 .as_ref()
                 .map(|(_, at, _, _)| *at + web_time::Duration::from_millis(LONG_PRESS_MS as u64)),
             self.key_long_press
-                .as_ref()
+                .values()
                 .filter(|(_, _, fired)| !*fired)
-                .map(|(_, at, _)| *at + web_time::Duration::from_millis(LONG_PRESS_MS as u64)),
+                .map(|(_, at, _)| *at + web_time::Duration::from_millis(LONG_PRESS_MS as u64))
+                .min(),
             repose_ui::scrollbar_repeat::track_repeat_deadline(),
             repose_ui::scrollbar_fade::scrollbar_fade_deadline(),
         ]
@@ -3650,22 +3733,11 @@ where
 }
 
 /// Compose `FocusOwner.dispatchKeyEvent` chain: focused node up through its
-/// hit-region ancestors, root first.
-/// Falls back to the root alone when unfocused, unknown, or orphaned.
+/// hit-region ancestors, root first. Empty when nothing is focused.
 fn key_ancestor_chain(f: &Frame, focused: Option<u64>) -> Vec<u64> {
     let parent_of: HashMap<u64, Option<u64>> =
         f.hit_regions.iter().map(|h| (h.id, h.parent)).collect();
-    let mut leaf = focused.filter(|id| parent_of.contains_key(id));
-    if leaf.is_none() {
-        let ids: HashSet<u64> = parent_of.keys().copied().collect();
-        leaf = f
-            .hit_regions
-            .iter()
-            .filter(|h| !h.disabled)
-            .find(|h| h.parent.is_none_or(|p| !ids.contains(&p)))
-            .map(|h| h.id);
-    }
-    let Some(mut cur) = leaf else {
+    let Some(mut cur) = focused.filter(|id| parent_of.contains_key(id)) else {
         return Vec::new();
     };
     let mut chain = vec![cur];
@@ -3944,7 +4016,7 @@ fn dispatch_scroll(
     let mut remaining = delta;
     let mut first_consumer: Option<u64> = None;
     if let Some(cid) = scroll_capture
-        && let Some(hit) = frame.hit_regions.iter().find(|h| h.id == cid)
+        && let Some(hit) = frame.hit_regions.iter().find(|h| h.id == cid && !h.disabled)
         && let Some(leftover) = run_scroll_handler(hit, delta, source)
     {
         if (delta.x - leftover.x).abs() > 0.001 || (delta.y - leftover.y).abs() > 0.001 {
@@ -3961,7 +4033,7 @@ fn dispatch_scroll(
         if Some(id) == scroll_capture {
             continue;
         }
-        let Some(hit) = frame.hit_regions.iter().find(|hit| hit.id == id) else {
+        let Some(hit) = frame.hit_regions.iter().find(|hit| hit.id == id && !hit.disabled) else {
             continue;
         };
         if remaining.x.abs() <= 0.001 && remaining.y.abs() <= 0.001 {
