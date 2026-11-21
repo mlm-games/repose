@@ -1819,6 +1819,16 @@ impl ReposeRuntime {
         if dnd::is_dragging() {
             return true;
         }
+        if let Some(cid) = self.touch_presses.get(&tid).map(|state| state.capture_id)
+            && self.frame_cache.as_ref().is_some_and(|frame| {
+                frame
+                    .hit_regions
+                    .iter()
+                    .any(|hit| hit.id == cid && hit.drag_owner)
+            })
+        {
+            return true;
+        }
         self.touch_move_consumers.contains(&tid)
     }
 

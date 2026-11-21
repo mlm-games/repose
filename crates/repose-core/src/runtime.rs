@@ -1242,6 +1242,9 @@ pub struct HitRegion {
     pub on_pointer_cancel: Option<Rc<dyn Fn(crate::input::PointerEvent)>>,
     pub on_pointer_enter: Option<Rc<dyn Fn(crate::input::PointerEvent)>>,
     pub on_pointer_leave: Option<Rc<dyn Fn(crate::input::PointerEvent)>>,
+    /// True when an explicit `on_pointer_move` handler owns dragging (sliders,
+    /// splitters, drag surfaces). Tap-only `pointer_input` does not set this.
+    pub drag_owner: bool,
     pub z_index: f32,
     pub disabled: bool,
     /// Carried from [`Modifier::visible`](crate::Modifier::visible). `None` and
@@ -1367,6 +1370,7 @@ impl HitRegion {
             on_pointer_cancel: with_pointer_input(m.on_pointer_cancel.clone(), &dispatch),
             on_pointer_enter: m.on_pointer_enter.clone(),
             on_pointer_leave: m.on_pointer_leave.clone(),
+            drag_owner: m.on_pointer_move.is_some() && m.pointer_dispatch().is_none(),
             on_action: m.on_action.clone(),
             on_set_progress: m.on_set_progress.clone(),
             on_expand: m.on_expand.clone(),
