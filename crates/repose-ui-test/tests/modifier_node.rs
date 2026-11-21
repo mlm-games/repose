@@ -84,9 +84,7 @@ fn modifier_node_state_survives_recomposition_and_detaches_once() {
     assert_eq!(detaches.get(), 1, "node did not detach on removal");
 }
 
-fn gesture_ui(
-    make: Rc<dyn Fn() -> Modifier>,
-) -> UiTest {
+fn gesture_ui(make: Rc<dyn Fn() -> Modifier>) -> UiTest {
     UiTest::new((200, 100), move || {
         let modifier = make().fill_max_size().test_tag("target");
         RBox(modifier)
@@ -251,7 +249,11 @@ fn a_stale_first_tap_does_not_become_a_double_tap() {
     ui.on_node_with_tag("target").perform_click();
     ui.advance_time_by(Duration::from_millis(400));
     ui.on_node_with_tag("target").perform_click();
-    assert_eq!(doubles.get(), 0, "an expired first tap paired with a new one");
+    assert_eq!(
+        doubles.get(),
+        0,
+        "an expired first tap paired with a new one"
+    );
 }
 
 #[test]

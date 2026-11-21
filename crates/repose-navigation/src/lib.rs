@@ -514,13 +514,7 @@ pub struct EntryScope<K: NavKey> {
     nav: Navigator<K>,
 }
 impl<K: NavKey> EntryScope<K> {
-    pub fn new(
-        id: u64,
-        key: K,
-        saved: Rc<SavedState>,
-        scope: Scope,
-        nav: Navigator<K>,
-    ) -> Self {
+    pub fn new(id: u64, key: K, saved: Rc<SavedState>, scope: Scope, nav: Navigator<K>) -> Self {
         Self {
             id,
             key,

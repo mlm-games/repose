@@ -11,16 +11,14 @@ fn pager(state: Rc<PagerState>) -> View {
         "pager",
         state,
         |page| {
-            RBox(
-                Modifier::new()
-                    .fill_max_size()
-                    .background(Color::from_rgb(page as u8 * 10 + 1, 0, 0)),
-            )
+            RBox(Modifier::new().fill_max_size().background(Color::from_rgb(
+                page as u8 * 10 + 1,
+                0,
+                0,
+            )))
         },
         PagerConfig {
-            modifier: Modifier::new()
-                .size(Dp(300.0), Dp(200.0))
-                .test_tag("pager"),
+            modifier: Modifier::new().size(Dp(300.0), Dp(200.0)).test_tag("pager"),
             ..Default::default()
         },
     )

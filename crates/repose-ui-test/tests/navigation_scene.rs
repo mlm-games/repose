@@ -49,7 +49,10 @@ fn display(strategy: Rc<dyn SceneStrategy<String>>, keys: &'static [&'static str
 #[test]
 fn list_detail_shows_both_entries() {
     let ui = UiTest::new((900, 600), || {
-        display(Rc::new(ListDetailSceneStrategy::always()), &["list", "detail"])
+        display(
+            Rc::new(ListDetailSceneStrategy::always()),
+            &["list", "detail"],
+        )
     });
     ui.advance_until_idle();
     ui.on_node_with_tag("list").assert_is_displayed();
@@ -70,7 +73,10 @@ fn list_detail_shows_both_entries() {
 #[test]
 fn narrow_list_detail_falls_back_to_the_top_entry() {
     let ui = UiTest::new((400, 600), || {
-        display(Rc::new(ListDetailSceneStrategy::single()), &["list", "detail"])
+        display(
+            Rc::new(ListDetailSceneStrategy::single()),
+            &["list", "detail"],
+        )
     });
     ui.advance_until_idle();
     ui.on_node_with_tag("detail").assert_is_displayed();
@@ -79,7 +85,9 @@ fn narrow_list_detail_falls_back_to_the_top_entry() {
 
 #[test]
 fn dialog_keeps_the_area_scene_underneath() {
-    let strategy = Rc::new(DialogSceneStrategy::single_pane(|key: &String| key == "dialog"));
+    let strategy = Rc::new(DialogSceneStrategy::single_pane(|key: &String| {
+        key == "dialog"
+    }));
     let ui = UiTest::new((600, 400), move || {
         display(strategy.clone(), &["list", "dialog"])
     });

@@ -50,9 +50,7 @@ impl<T: 'static> MovableContent<T> {
         let key = inner.key.as_str();
         let slots = &mut *inner.slots.borrow_mut();
         with_own_slots(slots, || {
-            inner
-                .scope
-                .run(|| with_scope_key(key, || content(value)))
+            inner.scope.run(|| with_scope_key(key, || content(value)))
         })
     }
 }
@@ -202,4 +200,3 @@ fn rect_close(a: Rect, b: Rect) -> bool {
         && (a.w - b.w).abs() <= 0.01
         && (a.h - b.h).abs() <= 0.01
 }
-

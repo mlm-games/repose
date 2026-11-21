@@ -13,8 +13,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use repose_core::*;
 use web_time::Instant;
 
-use crate::subcompose::box_with_constraints_with_key;
 use crate::ViewExt;
+use crate::subcompose::box_with_constraints_with_key;
 
 /// Configuration for [`HorizontalPager`] and [`VerticalPager`].
 #[derive(Clone)]
@@ -372,7 +372,11 @@ fn pager_pages(
     } else {
         (scope.max_height, scope.max_width)
     };
-    let extent = if extent.0.is_finite() { extent } else { Dp::ZERO };
+    let extent = if extent.0.is_finite() {
+        extent
+    } else {
+        Dp::ZERO
+    };
     let cross = if cross.0.is_finite() { cross } else { Dp::ZERO };
 
     let page_extent = Dp((extent.0 - start_padding.0 - end_padding.0).max(0.0));
@@ -476,7 +480,9 @@ fn pager_view(
     let count = state.page_count();
     let builder: Rc<dyn Fn(usize) -> View> = Rc::new(page_builder);
 
-    let mut modifier = Modifier::new().fill_max_size().then(config.modifier.clone());
+    let mut modifier = Modifier::new()
+        .fill_max_size()
+        .then(config.modifier.clone());
     if config.user_scroll_enabled {
         let (on_down, on_move, on_up, on_cancel) = pager_handlers(&state, &config, horizontal);
         modifier = modifier
@@ -488,19 +494,9 @@ fn pager_view(
 
     let content_state = state.clone();
     let content_config = config.clone();
-    box_with_constraints_with_key(
-        (position.to_bits(), count),
-        modifier,
-        move |scope| {
-            pager_pages(
-                &content_state,
-                &builder,
-                &content_config,
-                scope,
-                horizontal,
-            )
-        },
-    )
+    box_with_constraints_with_key((position.to_bits(), count), modifier, move |scope| {
+        pager_pages(&content_state, &builder, &content_config, scope, horizontal)
+    })
 }
 
 /// A horizontally swipable pager with drag-following pages and snapping.
@@ -544,4 +540,3 @@ pub fn VerticalPager(
 ) -> View {
     pager_view(state, page_builder, config, false)
 }
-

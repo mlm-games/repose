@@ -312,9 +312,9 @@ fn shadow_falloff_matches_a_gaussian() {
                     offset_px: (Px::ZERO, Px(0.0)),
                     color: Color::from_rgba(0, 0, 0, 255),
                     shape_px: [Px::ZERO; 4],
-                spread_px: Px::ZERO,
-                inset: false,
-},
+                    spread_px: Px::ZERO,
+                    inset: false,
+                },
             ],
         };
         let px = off.render_rgba(&scene, None).expect("render");
@@ -404,9 +404,9 @@ fn shadow_shape_rounds_an_unclipped_layer() {
                 offset_px: (Px::ZERO, Px::ZERO),
                 color: Color::from_rgba(0, 0, 0, 255),
                 shape_px: shape.map(Px),
-            spread_px: Px::ZERO,
-            inset: false,
-},
+                spread_px: Px::ZERO,
+                inset: false,
+            },
         ],
     };
     // Just outside each top corner, where a square silhouette still has mass

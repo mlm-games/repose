@@ -330,10 +330,7 @@ impl TouchGestureState {
             // event that jumps past slop makes the list lurch on frame one.
             let dist = (dx * dx + dy * dy).sqrt();
             let excess = ((dist - slop) / dist).max(0.0);
-            self.prev_touch_px = Some((
-                pending_pos.x + dx * excess,
-                pending_pos.y + dy * excess,
-            ));
+            self.prev_touch_px = Some((pending_pos.x + dx * excess, pending_pos.y + dy * excess));
         }
 
         if let Some(prev) = self.prev_touch_px {

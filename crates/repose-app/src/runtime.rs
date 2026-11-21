@@ -1746,10 +1746,9 @@ impl ReposeRuntime {
         } else {
             TAP_SLOP_DP
         };
-        if self
-            .press_origin
-            .is_some_and(|(oid, x0, y0)| oid == cid && moved_past_slop(x0, y0, pos, slop, self.scale))
-        {
+        if self.press_origin.is_some_and(|(oid, x0, y0)| {
+            oid == cid && moved_past_slop(x0, y0, pos, slop, self.scale)
+        }) {
             return true;
         }
         mouse
@@ -2321,10 +2320,8 @@ impl ReposeRuntime {
                         self.key_pressed.insert(event.key.clone(), fid);
                         self.sync_key_pressed_mirror();
                         if hit.on_long_click.is_some() {
-                            self.key_long_press.insert(
-                                event.key.clone(),
-                                (fid, web_time::Instant::now(), false),
-                            );
+                            self.key_long_press
+                                .insert(event.key.clone(), (fid, web_time::Instant::now(), false));
                         } else {
                             self.key_long_press.remove(&event.key);
                         }
@@ -4016,7 +4013,10 @@ fn dispatch_scroll(
     let mut remaining = delta;
     let mut first_consumer: Option<u64> = None;
     if let Some(cid) = scroll_capture
-        && let Some(hit) = frame.hit_regions.iter().find(|h| h.id == cid && !h.disabled)
+        && let Some(hit) = frame
+            .hit_regions
+            .iter()
+            .find(|h| h.id == cid && !h.disabled)
         && let Some(leftover) = run_scroll_handler(hit, delta, source)
     {
         if (delta.x - leftover.x).abs() > 0.001 || (delta.y - leftover.y).abs() > 0.001 {
@@ -4033,7 +4033,11 @@ fn dispatch_scroll(
         if Some(id) == scroll_capture {
             continue;
         }
-        let Some(hit) = frame.hit_regions.iter().find(|hit| hit.id == id && !hit.disabled) else {
+        let Some(hit) = frame
+            .hit_regions
+            .iter()
+            .find(|hit| hit.id == id && !hit.disabled)
+        else {
             continue;
         };
         if remaining.x.abs() <= 0.001 && remaining.y.abs() <= 0.001 {

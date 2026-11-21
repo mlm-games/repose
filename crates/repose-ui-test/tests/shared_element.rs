@@ -14,8 +14,7 @@ fn movable_content_preserves_state_across_locations() {
     let movable = MovableContent::new(|label: &'static str| {
         let count = remember_mutable(|| 0u32);
         count.update(|value| *value += 1);
-        Text(format!("{label}:{}", *count.get()))
-            .modifier(Modifier::new().test_tag("movable"))
+        Text(format!("{label}:{}", *count.get())).modifier(Modifier::new().test_tag("movable"))
     });
 
     let content = {
@@ -23,11 +22,9 @@ fn movable_content_preserves_state_across_locations() {
         let movable = movable.clone();
         move || {
             if moved.get() {
-                RBox(Modifier::new().size(Dp(200.0), Dp(100.0)))
-                    .child(movable.invoke("moved"))
+                RBox(Modifier::new().size(Dp(200.0), Dp(100.0))).child(movable.invoke("moved"))
             } else {
-                RBox(Modifier::new().size(Dp(100.0), Dp(100.0)))
-                    .child(movable.invoke("start"))
+                RBox(Modifier::new().size(Dp(100.0), Dp(100.0))).child(movable.invoke("start"))
             }
         }
     };
@@ -69,8 +66,7 @@ fn shared_element_animates_to_its_new_layout_position() {
         let moved = moved.clone();
         move || {
             let x = if moved.get() { 100.0 } else { 0.0 };
-            RBox(Modifier::new().size(Dp(300.0), Dp(100.0)))
-                .child(moving_box(&state, x, "moving"))
+            RBox(Modifier::new().size(Dp(300.0), Dp(100.0))).child(moving_box(&state, x, "moving"))
         }
     };
     let ui = UiTest::new((300, 100), content);

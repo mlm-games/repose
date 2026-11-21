@@ -266,8 +266,18 @@ fn compose_primary_transition<K: NavKey>(
         target,
         transition.spec,
     );
-    let slide = if dir == TransitionDir::Push { 1.0 - t } else { t };
-    let dx = slide * transition.slide_px * if dir == TransitionDir::Push { 1.0 } else { -1.0 };
+    let slide = if dir == TransitionDir::Push {
+        1.0 - t
+    } else {
+        t
+    };
+    let dx = slide
+        * transition.slide_px
+        * if dir == TransitionDir::Push {
+            1.0
+        } else {
+            -1.0
+        };
     let alpha = if transition.fade {
         0.75 + 0.25 * (1.0 - slide)
     } else {
@@ -318,7 +328,8 @@ fn compose_scenes<K: NavKey>(
         return area_view;
     }
 
-    let mut layered = ZStack(Modifier::new().fill_max_size().overflow(Overflow::Clip)).child(area_view);
+    let mut layered =
+        ZStack(Modifier::new().fill_max_size().overflow(Overflow::Clip)).child(area_view);
     for scene in dialogs {
         let id = scene.top().unwrap_or(0);
         let t = animate_f32_from(

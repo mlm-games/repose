@@ -1,5 +1,5 @@
-use crate::units::Sp;
 use crate::Color;
+use crate::units::Sp;
 use std::fmt::Debug;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -1489,7 +1489,13 @@ impl AnnotatedStringBuilder {
 
     /// Apply a style to a range of already-appended text.
     /// Annotate a range of already-appended text as a clickable link.
-    pub fn add_link(&mut self, start: usize, end: usize, url: impl Into<Arc<str>>, style: SpanStyle) -> &mut Self {
+    pub fn add_link(
+        &mut self,
+        start: usize,
+        end: usize,
+        url: impl Into<Arc<str>>,
+        style: SpanStyle,
+    ) -> &mut Self {
         if start < end && end <= self.text.len() {
             self.spans.push(TextSpan {
                 start,

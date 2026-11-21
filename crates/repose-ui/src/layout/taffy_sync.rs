@@ -814,7 +814,10 @@ impl LayoutEngine {
             // below the incoming minimum; Taffy supplies the "at least min"
             // half through the resolved style size/min-size, so here we only
             // need to stop the default cross-axis stretch and align the child.
-            let column = matches!(s.flex_direction, FlexDirection::Column | FlexDirection::ColumnReverse);
+            let column = matches!(
+                s.flex_direction,
+                FlexDirection::Column | FlexDirection::ColumnReverse
+            );
             if matches!(kind, ViewKind::ZStack) {
                 // Grid: align-items is the block axis, justify-items the inline axis.
                 let (vertical, horizontal) = wrap_content_axes(alignment);
@@ -826,8 +829,8 @@ impl LayoutEngine {
                 s.justify_content = Some(main);
             }
             if unbounded {
-                s.max_size.width = taffy::LengthPercentageAuto::Auto;
-                s.max_size.height = taffy::LengthPercentageAuto::Auto;
+                s.max_size.width = taffy::LengthPercentageAuto::auto();
+                s.max_size.height = taffy::LengthPercentageAuto::auto();
                 s.flex_shrink = 0.0;
             }
         }

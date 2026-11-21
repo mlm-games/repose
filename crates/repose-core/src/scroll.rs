@@ -431,10 +431,7 @@ impl ScrollPhysics {
     /// velocity tracker stops sampling after ~40ms and reports zero.
     pub(crate) fn settle_after_touch(&mut self) {
         let active = touch_gesture_active();
-        if self.touch_active
-            && !active
-            && self.last_input_t.elapsed().as_millis() > 40
-        {
+        if self.touch_active && !active && self.last_input_t.elapsed().as_millis() > 40 {
             self.vel = 0.0;
             self.animating = false;
             self.input_pending = false;
@@ -877,12 +874,8 @@ impl ScrollState {
                         x: 0.0,
                         y: available.y - leftover_y,
                     };
-                let after_parent = run_post_scroll(
-                    &state,
-                    consumed,
-                    result,
-                    NestedScrollSource::UserInput,
-                );
+                let after_parent =
+                    run_post_scroll(&state, consumed, result, NestedScrollSource::UserInput);
                 let final_y = this.apply_overscroll(after_parent.y);
                 Vec2 {
                     x: after_parent.x,
@@ -1197,12 +1190,8 @@ impl HorizontalScrollState {
                         x: available.x - leftover_x,
                         y: 0.0,
                     };
-                let after_parent = run_post_scroll(
-                    &state,
-                    consumed,
-                    result,
-                    NestedScrollSource::UserInput,
-                );
+                let after_parent =
+                    run_post_scroll(&state, consumed, result, NestedScrollSource::UserInput);
                 let final_x = this.apply_overscroll(after_parent.x);
                 Vec2 {
                     x: final_x,
@@ -1665,12 +1654,8 @@ impl ScrollStateXY {
                 let pre_consumed = d - available;
                 let result = this.apply_delta_with_source(available, source);
                 let consumed = pre_consumed + (available - result);
-                let after_parent = run_post_scroll(
-                    &state,
-                    consumed,
-                    result,
-                    NestedScrollSource::UserInput,
-                );
+                let after_parent =
+                    run_post_scroll(&state, consumed, result, NestedScrollSource::UserInput);
                 this.apply_overscroll(after_parent)
             })
         } as Rc<dyn Fn(Vec2, ScrollSource) -> Vec2>;
@@ -1767,7 +1752,12 @@ pub fn run_post_scroll_zero(
     connection: &RefCell<Option<NestedScrollConnection>>,
     available: Vec2,
 ) -> Vec2 {
-    run_post_scroll(connection, Vec2::ZERO, available, NestedScrollSource::UserInput)
+    run_post_scroll(
+        connection,
+        Vec2::ZERO,
+        available,
+        NestedScrollSource::UserInput,
+    )
 }
 
 #[cfg(test)]

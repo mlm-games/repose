@@ -462,7 +462,9 @@ fn facet_hash_modifier(modifier: &Modifier, hashers: &mut FacetHashers) {
     hash_opt_dp_value!(FACET_LAYOUT, modifier.offset_right);
     hash_opt_dp_value!(FACET_LAYOUT, modifier.offset_top);
     hash_opt_dp_value!(FACET_LAYOUT, modifier.offset_bottom);
-    hashers.hash(FACET_LAYOUT, |h| hash_opt_dp_pair(modifier.layout_offset, h));
+    hashers.hash(FACET_LAYOUT, |h| {
+        hash_opt_dp_pair(modifier.layout_offset, h)
+    });
     hashers.hash(FACET_LAYOUT, |h| {
         hash_opt_dp_pair(modifier.absolute_layout_offset, h)
     });

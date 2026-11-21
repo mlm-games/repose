@@ -392,9 +392,7 @@ impl PointerInputHandler for TapGestures {
                         long_fired, first, ..
                     } => {
                         cancel(&self.tick_key);
-                        if !long_fired
-                            && let Some(on_double_tap) = &self.config.on_double_tap
-                        {
+                        if !long_fired && let Some(on_double_tap) = &self.config.on_double_tap {
                             on_double_tap(TapEvent {
                                 id: first.id,
                                 position: event.position,

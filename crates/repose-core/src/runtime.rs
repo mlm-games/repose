@@ -1792,7 +1792,10 @@ impl Scheduler {
             Some(order) => {
                 let focusable: FxHashSet<u64> =
                     hits.iter().filter(|h| h.focusable).map(|h| h.id).collect();
-                order.into_iter().filter(|id| focusable.contains(id)).collect()
+                order
+                    .into_iter()
+                    .filter(|id| focusable.contains(id))
+                    .collect()
             }
             None => hits.iter().filter(|h| h.focusable).map(|h| h.id).collect(),
         };

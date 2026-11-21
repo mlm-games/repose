@@ -585,7 +585,9 @@ pub fn Slider(
                     return false;
                 }
                 if ke.event_type == KeyEventType::Up {
-                    if key_changed.replace(false) && let Some(ref cb) = on_finished {
+                    if key_changed.replace(false)
+                        && let Some(ref cb) = on_finished
+                    {
                         (cb)();
                     }
                     return true;
@@ -1050,7 +1052,9 @@ pub fn RangeSlider(
                     return false;
                 }
                 if ke.event_type == KeyEventType::Up {
-                    if key_changed.replace(false) && let Some(ref cb) = on_finished {
+                    if key_changed.replace(false)
+                        && let Some(ref cb) = on_finished
+                    {
                         (cb)();
                     }
                     return true;

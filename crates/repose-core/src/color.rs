@@ -464,11 +464,7 @@ impl Brush {
     }
 
     /// Multi-stop angular sweep around `center` in shape-local px.
-    pub fn sweep_gradient_stops(
-        center: Vec2,
-        stops: &[(f32, Color)],
-        tile_mode: TileMode,
-    ) -> Self {
+    pub fn sweep_gradient_stops(center: Vec2, stops: &[(f32, Color)], tile_mode: TileMode) -> Self {
         Brush::SweepStops {
             center,
             stops: Self::build_stops(stops),

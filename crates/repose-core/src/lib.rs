@@ -122,7 +122,9 @@ pub mod indication;
 pub mod input;
 pub mod locals;
 pub mod modifier;
+pub mod modifier_node;
 pub mod nested_scroll;
+pub mod pointer;
 pub mod prelude;
 pub mod present_mode;
 pub mod reactive;
@@ -134,8 +136,6 @@ pub mod scope;
 pub mod scope_cache;
 pub mod scroll;
 pub mod semantics;
-pub mod modifier_node;
-pub mod pointer;
 pub mod shared;
 pub mod shortcuts;
 pub mod signal;
@@ -167,6 +167,10 @@ pub use image_intrinsic::{
 };
 pub use locals::*;
 pub use modifier::*;
+pub use modifier_node::{ModifierNode, ModifierNodeElement, ModifierNodeHandle};
+pub use pointer::{
+    DragEnd, DragGestures, DragStart, DragUpdate, PointerInputHandler, TapEvent, TapGestures,
+};
 pub use prelude::*;
 pub use present_mode::*;
 pub use reactive::*;
@@ -175,10 +179,6 @@ pub use render_context::{ImageHandleGuard, RenderCommand, RenderContext};
 pub use runtime::*;
 pub use runtime::{FocusDirection, FocusManager, FocusRequester, take_focus_request};
 pub use semantics::*;
-pub use modifier_node::{ModifierNode, ModifierNodeElement, ModifierNodeHandle};
-pub use pointer::{
-    DragEnd, DragGestures, DragStart, DragUpdate, PointerInputHandler, TapEvent, TapGestures,
-};
 pub use shared::{MovableContent, SharedElementState};
 pub use signal::*;
 pub use state::*;

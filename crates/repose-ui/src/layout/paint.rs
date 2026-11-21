@@ -485,7 +485,11 @@ impl LayoutEngine {
             }
             let current = bundle.state.prepare(bundle.world_rect);
             let settled = rects_close(current, bundle.world_rect) && !bundle.state.is_animating();
-            winners.push((index, current, counts.get(&id).copied() == Some(1) && settled));
+            winners.push((
+                index,
+                current,
+                counts.get(&id).copied() == Some(1) && settled,
+            ));
         }
 
         let mut splices: Vec<(usize, Rect)> = winners
@@ -1409,10 +1413,7 @@ impl LayoutEngine {
 
         // Draw background (always)
         if let Some(bg) = modifier.background {
-            let bg_alpha = modifier
-                .background_alpha
-                .unwrap_or(1.0)
-                .clamp(0.0, 1.0);
+            let bg_alpha = modifier.background_alpha.unwrap_or(1.0).clamp(0.0, 1.0);
             scene.nodes.push(SceneNode::Rect {
                 rect,
                 brush: mul_alpha_brush(bg, alpha_accum * bg_alpha),

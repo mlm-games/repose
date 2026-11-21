@@ -1987,10 +1987,14 @@ impl Modifier {
     ///
     /// The node survives recomposition while the element type and key stay the
     /// same; `update` runs instead of rebuilding it.
-    pub fn node(mut self, element: impl crate::modifier_node::ModifierNodeElement + 'static) -> Self {
-        self.nodes.push(crate::modifier_node::ModifierNodeHandle::new(
-            std::rc::Rc::new(element),
-        ));
+    pub fn node(
+        mut self,
+        element: impl crate::modifier_node::ModifierNodeElement + 'static,
+    ) -> Self {
+        self.nodes
+            .push(crate::modifier_node::ModifierNodeHandle::new(
+                std::rc::Rc::new(element),
+            ));
         self
     }
     /// [`node`](Self::node) for an element that is already shared.

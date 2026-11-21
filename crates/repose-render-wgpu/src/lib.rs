@@ -3246,19 +3246,20 @@ impl WgpuSceneRenderer {
             mapped_at_creation: false,
         });
 
-        let shape_stops_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("shape gradient stops layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Storage { read_only: true },
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
+        let shape_stops_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("shape gradient stops layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
         let shape_stops_buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("shape gradient stops"),
             size: (MAX_SHAPE_GRADIENT_TABLES as u64)
@@ -7457,7 +7458,10 @@ fn stop_endpoints(stops: &GradientStops) -> ([f32; 4], [f32; 4]) {
     match slice.first() {
         Some(first) => (
             first.color.to_linear(),
-            slice.last().map(|s| s.color.to_linear()).unwrap_or(first.color.to_linear()),
+            slice
+                .last()
+                .map(|s| s.color.to_linear())
+                .unwrap_or(first.color.to_linear()),
         ),
         None => ([0.0; 4], [0.0; 4]),
     }
@@ -7703,8 +7707,12 @@ fn brush_to_instance_fields(brush: &Brush) -> (u32, [f32; 4], [f32; 4], [f32; 2]
             [0.0, 0.0],
             [0.0, 1.0],
         ),
-        Brush::LinearStops { start, end, stops, .. }
-        | Brush::LinearNormalizedStops { start, end, stops, .. } => {
+        Brush::LinearStops {
+            start, end, stops, ..
+        }
+        | Brush::LinearNormalizedStops {
+            start, end, stops, ..
+        } => {
             let (color0, color1) = stop_endpoints(stops);
             (1u32, color0, color1, [start.x, start.y], [end.x, end.y])
         }
@@ -9909,8 +9917,16 @@ impl WgpuSceneRenderer {
                         current_target_size.0,
                         current_target_size.1,
                     );
-                    let (brush_type, grad_kind, color0, color1, grad_p0, grad_p1, tile_mode, stop_table) =
-                        brush_to_shape_fields(brush, rect, current_transform, &mut shape_stops);
+                    let (
+                        brush_type,
+                        grad_kind,
+                        color0,
+                        color1,
+                        grad_p0,
+                        grad_p1,
+                        tile_mode,
+                        stop_table,
+                    ) = brush_to_shape_fields(brush, rect, current_transform, &mut shape_stops);
                     batch.rects.push(RectInstance {
                         xywh: ndc,
                         radii: radius.map(|r| r.0),
@@ -9919,11 +9935,7 @@ impl WgpuSceneRenderer {
                         fwd_mat,
                         grad: [grad_p0[0], grad_p0[1], grad_p1[0], grad_p1[1]],
                         bits: pack_shape_bits_with_stops(
-                            brush_type,
-                            grad_kind,
-                            tile_mode,
-                            0,
-                            stop_table,
+                            brush_type, grad_kind, tile_mode, 0, stop_table,
                         ),
                         _pad: [0.0; 3],
                     });
@@ -9945,8 +9957,16 @@ impl WgpuSceneRenderer {
                         current_target_size.0,
                         current_target_size.1,
                     );
-                    let (brush_type, grad_kind, color0, color1, grad_p0, grad_p1, tile_mode, stop_table) =
-                        brush_to_shape_fields(brush, rect, current_transform, &mut shape_stops);
+                    let (
+                        brush_type,
+                        grad_kind,
+                        color0,
+                        color1,
+                        grad_p0,
+                        grad_p1,
+                        tile_mode,
+                        stop_table,
+                    ) = brush_to_shape_fields(brush, rect, current_transform, &mut shape_stops);
                     batch.borders.push(BorderInstance {
                         xywh: ndc,
                         radii: radius.map(|r| r.0),
@@ -9955,11 +9975,7 @@ impl WgpuSceneRenderer {
                         fwd_mat,
                         grad: [grad_p0[0], grad_p0[1], grad_p1[0], grad_p1[1]],
                         bits: pack_shape_bits_with_stops(
-                            brush_type,
-                            grad_kind,
-                            tile_mode,
-                            0,
-                            stop_table,
+                            brush_type, grad_kind, tile_mode, 0, stop_table,
                         ),
                         stroke: width.0,
                         _pad: [0.0; 2],
@@ -9977,8 +9993,16 @@ impl WgpuSceneRenderer {
                         current_target_size.0,
                         current_target_size.1,
                     );
-                    let (brush_type, grad_kind, color0, color1, grad_p0, grad_p1, tile_mode, stop_table) =
-                        brush_to_shape_fields(brush, rect, current_transform, &mut shape_stops);
+                    let (
+                        brush_type,
+                        grad_kind,
+                        color0,
+                        color1,
+                        grad_p0,
+                        grad_p1,
+                        tile_mode,
+                        stop_table,
+                    ) = brush_to_shape_fields(brush, rect, current_transform, &mut shape_stops);
                     batch.ellipses.push(EllipseInstance {
                         xywh: ndc,
                         color0,
@@ -9986,11 +10010,7 @@ impl WgpuSceneRenderer {
                         fwd_mat,
                         grad: [grad_p0[0], grad_p0[1], grad_p1[0], grad_p1[1]],
                         bits: pack_shape_bits_with_stops(
-                            brush_type,
-                            grad_kind,
-                            tile_mode,
-                            0,
-                            stop_table,
+                            brush_type, grad_kind, tile_mode, 0, stop_table,
                         ),
                         _pad: [0.0; 1],
                     });
@@ -10016,8 +10036,16 @@ impl WgpuSceneRenderer {
                     );
                     let pad_px = width.0 * 0.5 + 2.0;
                     let pad = (pad_px / current_target_size.0.max(1.0)) * 2.0;
-                    let (brush_type, grad_kind, color0, color1, grad_p0, grad_p1, tile_mode, stop_table) =
-                        brush_to_shape_fields(brush, rect, current_transform, &mut shape_stops);
+                    let (
+                        brush_type,
+                        grad_kind,
+                        color0,
+                        color1,
+                        grad_p0,
+                        grad_p1,
+                        tile_mode,
+                        stop_table,
+                    ) = brush_to_shape_fields(brush, rect, current_transform, &mut shape_stops);
                     batch.e_borders.push(EllipseBorderInstance {
                         xywh: ndc,
                         color0,
@@ -10025,11 +10053,7 @@ impl WgpuSceneRenderer {
                         fwd_mat,
                         grad: [grad_p0[0], grad_p0[1], grad_p1[0], grad_p1[1]],
                         bits: pack_shape_bits_with_stops(
-                            brush_type,
-                            grad_kind,
-                            tile_mode,
-                            0,
-                            stop_table,
+                            brush_type, grad_kind, tile_mode, 0, stop_table,
                         ),
                         stroke: width.0,
                         pad,
@@ -10083,8 +10107,16 @@ impl WgpuSceneRenderer {
                         StrokeCap::Round => 1.0,
                         StrokeCap::Square => 2.0,
                     };
-                    let (brush_type, grad_kind, color0, color1, grad_p0, grad_p1, tile_mode, stop_table) =
-                        brush_to_shape_fields(brush, rect, current_transform, &mut shape_stops);
+                    let (
+                        brush_type,
+                        grad_kind,
+                        color0,
+                        color1,
+                        grad_p0,
+                        grad_p1,
+                        tile_mode,
+                        stop_table,
+                    ) = brush_to_shape_fields(brush, rect, current_transform, &mut shape_stops);
                     let (start, sweep) = if *sweep_angle < 0.0 {
                         (*start_angle + *sweep_angle, -*sweep_angle)
                     } else {

@@ -391,11 +391,7 @@ impl UiNode<'_> {
 
     pub fn assert_is_enabled(&self) -> &Self {
         let node = self.one();
-        assert!(
-            node.enabled,
-            "node {} is disabled",
-            self.matcher.describe()
-        );
+        assert!(node.enabled, "node {} is disabled", self.matcher.describe());
         self
     }
 
@@ -433,8 +429,14 @@ impl UiNode<'_> {
         let pointer = self.test.next_pointer();
         let mut input = TouchInput {
             test: self.test,
-            origin: Vec2 { x: rect.x, y: rect.y },
-            size: Vec2 { x: rect.w, y: rect.h },
+            origin: Vec2 {
+                x: rect.x,
+                y: rect.y,
+            },
+            size: Vec2 {
+                x: rect.w,
+                y: rect.h,
+            },
             position: Vec2::default(),
             pointer,
             down: false,
@@ -505,7 +507,8 @@ impl TouchInput<'_> {
     pub fn up(&mut self) {
         assert!(self.down, "up called while touch is up");
         self.down = false;
-        self.test.touch_release(self.pointer, self.world(self.position));
+        self.test
+            .touch_release(self.pointer, self.world(self.position));
     }
 
     pub fn cancel(&mut self) {

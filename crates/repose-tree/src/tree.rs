@@ -874,9 +874,7 @@ impl ViewTree {
                 node.kind = view.kind.clone();
             }
             let old_modifier = node.modifier.clone();
-            if modifier_changed
-                || !old_modifier.nodes.is_empty()
-                || !view.modifier.nodes.is_empty()
+            if modifier_changed || !old_modifier.nodes.is_empty() || !view.modifier.nodes.is_empty()
             {
                 let mut next = view.modifier.clone();
                 next.adopt_nodes_from(&old_modifier);
