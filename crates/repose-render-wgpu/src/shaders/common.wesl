@@ -7,16 +7,22 @@ struct Globals {
 
 const MAX_GRADIENT_STOPS: u32 = 8u;
 
+const MAX_SHAPE_GRADIENT_TABLES: u32 = 64u;
+
 struct ShapeGradientStops {
     colors: array<vec4<f32>, 8>,
-    offsets: array<f32, 8>,
+    offsets: array<vec4<f32>, 2>,
     count: u32,
     _pad: u32,
     _pad1: u32,
     _pad2: u32,
 };
 
-@group(1) @binding(0) var<storage, read> SHAPE_STOPS: array<ShapeGradientStops>;
+@group(1) @binding(0) var<uniform> SHAPE_STOPS: array<ShapeGradientStops, 64>;
+
+fn stop_offset_at(stops: ShapeGradientStops, i: u32) -> f32 {
+    return stops.offsets[i / 4u][i % 4u];
+}
 
 fn brush_type_of(bits: u32) -> u32 {
     return bits & 3u;
@@ -51,17 +57,17 @@ fn eval_shape_stops(t: f32, table: u32) -> vec4<f32> {
     if count == 0u {
         return vec4<f32>(0.0);
     }
-    if count == 1u || t <= stops.offsets[0] {
+    if count == 1u || t <= stop_offset_at(stops, 0u) {
         return stops.colors[0];
     }
     let last = count - 1u;
-    if t >= stops.offsets[last] {
+    if t >= stop_offset_at(stops, last) {
         return stops.colors[last];
     }
     for (var i = 0u; i < last; i = i + 1u) {
-        if t < stops.offsets[i + 1u] {
-            let lo = stops.offsets[i];
-            let span = max(stops.offsets[i + 1u] - lo, 1e-6);
+        if t < stop_offset_at(stops, i + 1u) {
+            let lo = stop_offset_at(stops, i);
+            let span = max(stop_offset_at(stops, i + 1u) - lo, 1e-6);
             let f = clamp((t - lo) / span, 0.0, 1.0);
             return mix(stops.colors[i], stops.colors[i + 1u], f);
         }

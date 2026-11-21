@@ -211,14 +211,14 @@ fn make_globals(target_w: f32, target_h: f32) -> Globals {
     }
 }
 
-const MAX_SHAPE_GRADIENT_TABLES: u32 = 4096;
+const MAX_SHAPE_GRADIENT_TABLES: u32 = 64;
 
-/// Storage-table entry matching `ShapeGradientStops` in common.wesl.
+/// Uniform-table entry matching `ShapeGradientStops` in common.wesl.
 #[repr(C, align(16))]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct ShapeGradientStopsGpu {
     colors: [[f32; 4]; 8],
-    offsets: [f32; 8],
+    offsets: [[f32; 4]; 2],
     count: u32,
     _pad: [u32; 3],
 }
@@ -227,12 +227,8 @@ impl ShapeGradientStopsGpu {
     fn from_stops(stops: &repose_core::GradientStops) -> Self {
         let mut out = <Self as bytemuck::Zeroable>::zeroed();
         let packed = pack_gradient_stops(stops);
-        for (slot, color) in out.colors.iter_mut().zip(packed.0.iter()) {
-            *slot = *color;
-        }
-        for (slot, group) in out.offsets.chunks_exact_mut(4).zip(packed.1.iter()) {
-            slot.copy_from_slice(group);
-        }
+        out.colors = packed.0;
+        out.offsets = packed.1;
         out.count = packed.2.min(repose_core::MAX_GRADIENT_STOPS as u32);
         out
     }
@@ -3451,7 +3447,7 @@ impl WgpuSceneRenderer {
                     binding: 0,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
                         min_binding_size: None,
                     },
@@ -3462,7 +3458,7 @@ impl WgpuSceneRenderer {
             label: Some("shape gradient stops"),
             size: (MAX_SHAPE_GRADIENT_TABLES as u64)
                 * (std::mem::size_of::<ShapeGradientStopsGpu>() as u64),
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         let shape_stops_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
