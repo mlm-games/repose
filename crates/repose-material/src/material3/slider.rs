@@ -324,8 +324,11 @@ pub fn Slider(
     let active_track_visuals = config.active_track_visuals.clone();
     let inactive_track_visuals = config.inactive_track_visuals.clone();
     let thumb_visuals = config.thumb_visuals.clone();
+    // Compose's Slider track uses fillMaxWidth(), so the slider grows into
+    // whatever horizontal space the parent gives it. Keep the 200dp floor.
     let mut host = Modifier::new()
         .min_width(Dp(200.0))
+        .fill_max_width()
         .height(Dp(44.0))
         .interaction_source(&sl_source);
     if !is_enabled {
@@ -718,8 +721,11 @@ pub fn RangeSlider(
     let active_track_visuals = config.active_track_visuals.clone();
     let inactive_track_visuals = config.inactive_track_visuals.clone();
     let thumb_visuals = config.thumb_visuals.clone();
+    // Compose's Slider track uses fillMaxWidth(), so the slider grows into
+    // whatever horizontal space the parent gives it. Keep the 200dp floor.
     let mut host = Modifier::new()
         .min_width(Dp(200.0))
+        .fill_max_width()
         .height(Dp(44.0))
         .interaction_source(&sl_source);
     if !is_enabled {
