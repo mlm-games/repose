@@ -314,6 +314,8 @@ pub(crate) struct LazyAxis {
     /// Rubber-band stretch while the axis is pinned past an edge.
     pub(crate) overscroll: Signal<f32>,
     overscroll_enabled: Cell<bool>,
+    /// Velocity of the last integrating fling step (px/s).
+    last_axis_velocity: Cell<f32>,
 }
 
 impl LazyAxis {
@@ -324,6 +326,7 @@ impl LazyAxis {
             content: signal(0.0),
             overscroll: signal(0.0),
             overscroll_enabled: Cell::new(true),
+            last_axis_velocity: Cell::new(0.0),
         }
     }
 
@@ -427,21 +430,42 @@ impl LazyAxis {
         )
     }
 
-    pub(crate) fn tick(&self, content_px: f32, physics: &RefCell<ScrollPhysics>, dt: f32) -> bool {
+    /// Returns whether the axis is still active plus the velocity a fling had
+    /// left when it clamped at a boundary, for nested-scroll parent chaining.
+    pub(crate) fn tick(
+        &self,
+        content_px: f32,
+        physics: &RefCell<ScrollPhysics>,
+        dt: f32,
+    ) -> (bool, Option<f32>) {
         if repose_core::scroll::tick_os_axis(&self.overscroll, self.overscroll_enabled.get(), dt) {
-            return true;
+            return (true, None);
         }
         let max_offset = (content_px - self.viewport.get()).max(0.0);
+        let before = self.offset.get();
+        let was_animating = physics.borrow().is_animating();
         let mut p = physics.borrow_mut();
-        if let Some(new_off) = p.tick_integrate(self.offset.get(), 0.0, max_offset) {
+        if let Some(new_off) = p.tick_integrate(before, 0.0, max_offset) {
+            if dt > 0.0 {
+                self.last_axis_velocity.set((new_off - before) / dt);
+            }
             drop(p);
             self.offset.set(new_off);
             // Repose only composes on demand, so a live fling has to ask for
             // the next frame itself or it freezes after one integration.
             request_frame();
-            true
+            (true, None)
         } else {
-            false
+            let clamped = if was_animating
+                && (before <= 0.0 || before >= max_offset)
+                && self.last_axis_velocity.get().abs() > 0.5
+            {
+                Some(self.last_axis_velocity.get())
+            } else {
+                None
+            };
+            drop(p);
+            (false, clamped)
         }
     }
 }
@@ -461,6 +485,18 @@ pub(crate) struct LazyScrollCore {
     uniform_main: Cell<f32>,
     visible: Signal<(usize, usize)>,
     item_count: Cell<usize>,
+    /// The key that was first visible on the last composition, plus the
+    /// distance from that item's start to the viewport start. Mirrors Compose's
+    /// `LazyListScrollPosition.lastKnownFirstItemKey`.
+    anchor: Cell<Option<(u64, f32)>>,
+    /// Velocity handed over by a child through post-fling dispatch, integrated
+    /// by this container until it stops or clamps at a boundary.
+    pending_fling: Rc<Cell<f32>>,
+    /// Velocity estimated from the last integrating fling step, used to hand a
+    /// clamped fling to the nested-scroll parent.
+    last_axis_velocity: Cell<f32>,
+    /// Guards against dispatching the same clamped fling more than once.
+    fling_dispatched: Rc<Cell<bool>>,
 }
 
 impl LazyScrollCore {
@@ -477,6 +513,10 @@ impl LazyScrollCore {
             uniform_main: Cell::new(0.0),
             visible: signal((0, 0)),
             item_count: Cell::new(0),
+            anchor: Cell::new(None),
+            pending_fling: Rc::new(Cell::new(0.0)),
+            last_axis_velocity: Cell::new(0.0),
+            fling_dispatched: Rc::new(Cell::new(false)),
         }
     }
 
@@ -513,11 +553,30 @@ impl LazyScrollCore {
         self.visible.clone()
     }
 
+    pub(crate) fn anchor(&self) -> Option<(u64, f32)> {
+        self.anchor.get()
+    }
+
+    pub(crate) fn set_anchor(&self, key: u64, inner_px: f32) {
+        self.anchor.set(Some((key, inner_px)));
+    }
+
+    pub(crate) fn clear_anchor(&self) {
+        self.anchor.set(None);
+    }
+
+    /// Move the offset without invalidating the key anchor: this is the
+    /// per-composition correction, not an explicit scroll.
+    pub(crate) fn set_offset_anchored(&self, off: f32, content: f32) {
+        self.axis.set_offset(off, content);
+    }
+
     pub(crate) fn uniform_offset_for_index(&self, index: usize) -> f32 {
         self.pad_main.get() + index as f32 * (self.uniform_main.get() + self.spacing_main.get())
     }
 
     pub(crate) fn animate_offset_to(&self, target_px: f32, content_px: f32) {
+        self.clear_anchor();
         let max = (content_px - self.axis.viewport.get()).max(0.0);
         let target = target_px.clamp(0.0, max);
         let mut anim = repose_core::animation::AnimatedValue::new(
@@ -542,25 +601,52 @@ impl LazyScrollCore {
         let axis = Rc::clone(&self.axis);
         let physics = Rc::clone(&self.physics);
         let parent = Rc::clone(&self.parent_connection);
-        NestedScrollConnection::new().on_post_scroll(
-            move |_consumed: Vec2, available: Vec2, _source: NestedScrollSource| -> Vec2 {
-                if available.y.abs() < 0.001 {
-                    return Vec2::ZERO;
-                }
-                let leftover = axis.scroll_nested(available.y, axis.content.get(), &physics);
-                let after = repose_core::scroll::run_post_scroll(
-                    &parent,
+        let fling_target = Rc::clone(&self.pending_fling);
+        let fling_guard = Rc::clone(&self.fling_dispatched);
+        NestedScrollConnection::new()
+            .on_post_scroll(
+                move |consumed: Vec2, available: Vec2, source: NestedScrollSource| -> Vec2 {
+                    if available.y.abs() < 0.001 {
+                        return Vec2::ZERO;
+                    }
+                    let leftover = axis.scroll_nested(available.y, axis.content.get(), &physics);
+                    let own_consumed = available.y - leftover;
+                    let after = repose_core::scroll::run_post_scroll(
+                        &parent,
+                        Vec2 {
+                            x: consumed.x,
+                            y: consumed.y + own_consumed,
+                        },
+                        Vec2 {
+                            x: available.x,
+                            y: leftover,
+                        },
+                        source,
+                    );
                     Vec2 {
-                        x: available.x,
-                        y: leftover,
-                    },
-                );
-                Vec2 {
-                    x: available.x - after.x,
-                    y: available.y - after.y,
-                }
-            },
-        )
+                        x: available.x - after.x,
+                        y: available.y - after.y,
+                    }
+                },
+            )
+            .on_post_fling(
+                move |_consumed: Vec2, available: Vec2, _source: NestedScrollSource| -> Vec2 {
+                    if available.x.abs() < 0.001 && available.y.abs() < 0.001 {
+                        return Vec2::ZERO;
+                    }
+                    let velocity = if available.x.abs() > available.y.abs() {
+                        available.x
+                    } else {
+                        available.y
+                    };
+                    if velocity.abs() >= 50.0 {
+                        fling_target.set(velocity.clamp(-8000.0, 8000.0));
+                        fling_guard.set(false);
+                        request_frame();
+                    }
+                    available
+                },
+            )
     }
 
     pub(crate) fn set_cache_revision(&self, revision: impl Fn(u64) -> u64 + 'static) {
@@ -596,6 +682,7 @@ impl LazyScrollCore {
     }
 
     pub(crate) fn scroll_immediate(&self, delta_px: f32, content_px: f32) -> f32 {
+        self.fling_dispatched.set(false);
         self.axis
             .scroll_immediate(delta_px, content_px, &self.physics)
     }
@@ -627,7 +714,52 @@ impl LazyScrollCore {
         if finished {
             self.anim.borrow_mut().take();
         }
-        self.axis.tick(content_px, &self.physics, dt)
+        let mut pending_active = false;
+        let pending = self.pending_fling.get();
+        if pending.abs() > 0.5 {
+            let max = (content_px - self.axis.viewport.get()).max(0.0);
+            let before = self.axis.offset.get();
+            let target = (before + pending * dt).clamp(0.0, max);
+            let moved = target - before;
+            self.axis.offset.set(target);
+            request_frame();
+            if moved.abs() < 0.01 && (before <= 0.0 || before >= max) {
+                self.dispatch_post_fling(pending);
+                self.pending_fling.set(0.0);
+            } else {
+                let speed = pending.abs();
+                let t = (speed / 4000.0).min(1.0);
+                let decay = (0.85_f32 + t * 0.10).powf(dt * 60.0);
+                let next = pending * decay;
+                let next = if next.abs() < 15.0 { 0.0 } else { next };
+                self.pending_fling.set(next);
+                pending_active = next != 0.0;
+            }
+        }
+        let (active, clamped) = self.axis.tick(content_px, &self.physics, dt);
+        if let Some(velocity) = clamped {
+            self.dispatch_post_fling(velocity);
+        }
+        active || pending_active
+    }
+
+    /// Hand a clamped fling's remaining velocity to this container's nested
+    /// parent. The guard keeps a single fling from being forwarded twice.
+    fn dispatch_post_fling(&self, velocity: f32) {
+        if self.fling_dispatched.get() || velocity.abs() < 0.5 {
+            return;
+        }
+        if let Some(ref parent) = *self.parent_connection.borrow() {
+            self.fling_dispatched.set(true);
+            parent.dispatch_post_fling(
+                Vec2::ZERO,
+                Vec2 {
+                    x: 0.0,
+                    y: velocity,
+                },
+                NestedScrollSource::SideEffect,
+            );
+        }
     }
 }
 
@@ -762,6 +894,7 @@ impl LazyColumnState {
 
     pub fn scroll_to_item(&self, index: usize, extra_offset_px: f32) {
         if let Some(top) = self.offset_for_index(index) {
+            self.core.clear_anchor();
             self.core
                 .set_offset(top + extra_offset_px, self.core.axis.content.get());
         }
@@ -960,6 +1093,7 @@ impl LazyRowState {
 
     pub fn scroll_to_item(&self, index: usize, extra_offset_px: f32) {
         if let Some(left) = self.offset_for_index(index) {
+            self.core.clear_anchor();
             self.core
                 .set_offset(left + extra_offset_px, self.core.axis.content.get());
         }

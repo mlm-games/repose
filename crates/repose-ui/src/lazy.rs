@@ -6,6 +6,10 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+/// Number of disposed items whose keyed scopes stay alive for reuse, matching
+/// Compose's `MaxItemsToRetainForReuse`. Keeps the retained memory bounded.
+const ITEM_RETAIN_BUFFER: usize = 7;
+
 fn item_scope_key(state_id: usize, key: u64) -> String {
     format!("lazy_{:x}_item_{}", state_id, key)
 }
@@ -92,23 +96,23 @@ where
         user_scroll_enabled,
         spacing,
         sticky_keys,
-        content_type,
+        content_type: _,
     } = config;
 
-    let mut items = items;
+    let items = items;
     let src_len = items.len();
-    if reverse_layout {
-        items.reverse();
-    }
-    let to_data_idx = |visual_i: usize| {
+    let data_idx_of = |visual_i: usize| {
         if reverse_layout {
             src_len.saturating_sub(1).saturating_sub(visual_i)
         } else {
             visual_i
         }
     };
+    let item_at = |visual_i: usize| items.get(data_idx_of(visual_i));
 
-    let current_keys: Vec<u64> = items.iter().map(&get_key).collect();
+    let current_keys: Vec<u64> = (0..src_len)
+        .map(|visual_i| get_key(item_at(visual_i).expect("visual index is in range")))
+        .collect();
     let mut current_key_set: std::collections::HashSet<u64> =
         current_keys.iter().copied().collect();
     if current_key_set.len() != items.len() {
@@ -130,12 +134,11 @@ where
     state.set_item_metrics(spacing_px, uniform_height_px.unwrap_or(0.0));
     let stride_px = uniform_height_px.map(|h| h + spacing_px);
     let geometry = uniform_height_dp.is_none().then(|| {
-        let heights_px: Vec<f32> = items
-            .iter()
-            .enumerate()
-            .map(|(i, item)| {
+        let heights_px: Vec<f32> = (0..src_len)
+            .map(|visual_i| {
+                let item = item_at(visual_i).expect("visual index is in range");
                 let h = Dp(item_height.get(item).max(1.0)).to_px().0;
-                if i + 1 < items.len() {
+                if visual_i + 1 < src_len {
                     h + spacing_px
                 } else {
                     h
@@ -155,9 +158,34 @@ where
                 .unwrap_or(0.0)
         });
     let content_height_px = items_total_px + padding_top_px + padding_bottom_px;
-
-    let scroll_offset_px = state.core.axis.offset.get();
     let viewport_height_px = state.core.axis.viewport.get();
+    let max_offset_px = (content_height_px - viewport_height_px).max(0.0);
+
+    let item_top_px = |index: usize| -> f32 {
+        if let Some(geometry) = geometry.as_ref() {
+            padding_top_px + geometry.top(index)
+        } else {
+            let height = uniform_height_px.unwrap_or(1.0);
+            padding_top_px + height * index as f32 + spacing_px * index as f32
+        }
+    };
+    if let Some((anchor_key, inner_px)) = state.core.anchor() {
+        if let Some(index) = current_keys.iter().position(|&key| key == anchor_key) {
+            let anchored_paint = item_top_px(index) + inner_px;
+            let offset = if reverse_layout {
+                max_offset_px - anchored_paint
+            } else {
+                anchored_paint
+            };
+            state.core.set_offset_anchored(offset, content_height_px);
+        }
+    }
+
+    let scroll_offset_px = if reverse_layout {
+        max_offset_px - state.core.axis.paint_offset()
+    } else {
+        state.core.axis.paint_offset()
+    };
     let padded_visible_start = scroll_offset_px - padding_top_px;
     let padded_visible_end = (scroll_offset_px + viewport_height_px) - padding_top_px;
     let (first_visible, last_visible) = if let Some(geometry) = geometry.as_ref() {
@@ -181,8 +209,13 @@ where
         (0, 0)
     };
     state.set_visible_range(first_visible, last_visible);
+    if let Some(&key) = current_keys.get(first_visible) {
+        state
+            .core
+            .set_anchor(key, scroll_offset_px - item_top_px(first_visible));
+    }
 
-    let buffer = 2usize;
+    let buffer = ITEM_RETAIN_BUFFER;
     let first_with_buffer = first_visible.saturating_sub(buffer);
     let last_with_buffer = last_visible.saturating_add(buffer).min(items.len());
 
@@ -210,8 +243,6 @@ where
         }
         active
     };
-    let content_type_of =
-        |data_index: usize| -> u64 { content_type.as_ref().map(|f| f(data_index)).unwrap_or(0) };
     let mut entering = std::collections::HashSet::new();
     let animation_id = state_id as u64;
     let animation_spec = animate_spec;
@@ -229,12 +260,14 @@ where
     if let (Some(state_slot), Some(spec)) = (&animation_slot, animation_spec) {
         let mut animation = state_slot.borrow_mut();
         let had_prev = !animation.prev_keys.is_empty();
-        for (index, item) in items.iter().enumerate() {
-            let key = current_keys[index];
-            let (top_px, height_px) = current_geometry(index);
-            animation
-                .item_cache
-                .insert(key, (item.clone(), to_data_idx(index), top_px, height_px));
+        for visual_i in 0..src_len {
+            let key = current_keys[visual_i];
+            let item = item_at(visual_i).expect("visual index is in range");
+            let (top_px, height_px) = current_geometry(visual_i);
+            animation.item_cache.insert(
+                key,
+                (item.clone(), data_idx_of(visual_i), top_px, height_px),
+            );
         }
         if had_prev {
             entering.extend(
@@ -352,12 +385,12 @@ where
         }
     }
     for visual_index in first_with_buffer..last_with_buffer {
-        let Some(item) = items.get(visual_index) else {
+        let Some(item) = item_at(visual_index) else {
             continue;
         };
         let key = current_keys[visual_index];
         let height_dp = uniform_height_dp.unwrap_or_else(|| item_height.get(item).max(1.0));
-        let data_index = to_data_idx(visual_index);
+        let data_index = data_idx_of(visual_index);
         let is_entering = entering.contains(&key);
         let alpha = if is_entering {
             animation_spec.map_or(1.0, |spec| {
@@ -396,10 +429,9 @@ where
             ));
             continue;
         }
-        let ct_suffix = content_type_of(data_index);
         if is_entering {
             combined_children.push(scoped_item_with_key(
-                format!("lazy_{state_id:x}_item_{key}_{ct_suffix}"),
+                item_scope_key(state_id, key),
                 key,
                 revision,
                 move || {
@@ -414,7 +446,7 @@ where
             ));
         } else {
             combined_children.push(scoped_item_with_key(
-                format!("lazy_{state_id:x}_item_{key}_{ct_suffix}"),
+                item_scope_key(state_id, key),
                 key,
                 revision,
                 move || {
@@ -428,7 +460,7 @@ where
     let bottom_start_px = if last_with_buffer >= items.len() {
         total_items_height_px
     } else {
-        current_geometry(last_with_buffer).0 - padding_top_px
+        (current_geometry(last_with_buffer).0 - padding_top_px - spacing_px).max(0.0)
     };
     let remaining_px = (total_items_height_px - bottom_start_px).max(0.0);
     if remaining_px > 0.0 {
@@ -476,7 +508,16 @@ where
                 x: d.x,
                 y: leftover_y_px,
             };
-            let after_parent = run_post_scroll(&st.core.parent_connection, result);
+            let consumed = repose_core::Vec2 {
+                x: d.x - result.x,
+                y: d.y - result.y,
+            };
+            let after_parent = run_post_scroll(
+                &st.core.parent_connection,
+                consumed,
+                result,
+                NestedScrollSource::UserInput,
+            );
             repose_core::Vec2 {
                 x: after_parent.x,
                 y: st.apply_overscroll(after_parent.y, ch),
@@ -497,15 +538,29 @@ where
 
     let get_scroll = {
         let st = state.clone();
-        Rc::new(move || -> f32 { st.core.axis.paint_offset() })
+        Rc::new(move || -> f32 {
+            let paint = st.core.axis.paint_offset();
+            if reverse_layout {
+                let max = (st.core.axis.content.get() - st.core.axis.viewport.get()).max(0.0);
+                max - paint
+            } else {
+                paint
+            }
+        })
     };
 
     let set_scroll = {
         let st = state.clone();
         Rc::new(move |off_px: f32| {
+            st.core.clear_anchor();
             let ch = st.core.axis.content.get();
             let ch = if ch > 0.0 { ch } else { content_height_px };
-            st.set_offset(off_px, ch);
+            let off = if reverse_layout {
+                (ch - st.core.axis.viewport.get()).max(0.0) - off_px
+            } else {
+                off_px
+            };
+            st.set_offset(off, ch);
         })
     };
 
@@ -546,19 +601,41 @@ where
     };
     let binding = ScrollAxisBinding {
         on_scroll,
+        on_scroll_with_source: None,
         set_viewport_main: Some(set_viewport),
         set_content_main: Some(Rc::new(move |h| measured_h_px(h))),
         get_offset_main: Some(get_scroll),
         set_offset_main: Some(set_scroll),
-        reversed: false,
+        reversed: reverse_layout,
         show_scrollbar: user_scroll_enabled,
         tick: tick_scroll,
         set_nested_scroll_parent: Some(set_nested_scroll_parent),
     };
     let sticky_pinned = sticky_active.and_then(|vi| {
-        let data_index = to_data_idx(vi);
-        let item = items.get(vi)?.clone();
+        let data_index = data_idx_of(vi);
+        let item = items.get(data_index)?.clone();
+        let key = current_keys[vi];
         let height_dp = uniform_height_dp.unwrap_or_else(|| item_height.get(&item).max(1.0));
+        let revision = if uniform_height_dp.is_some() {
+            state.cache_revision_for_uniform(
+                key,
+                &item as *const T as usize,
+                Dp(height_dp).to_px().0,
+                0,
+            )
+        } else {
+            state.cache_revision_for_with(
+                key,
+                &item as *const T as usize,
+                Dp(height_dp).to_px().0,
+                0,
+            )
+        };
+        let sticky_view =
+            scoped_item_with_key(item_scope_key(state_id, key), key, revision, move || {
+                crate::Box(Modifier::new().fill_max_width().height(Dp(height_dp)))
+                    .child(item_builder(item, data_index))
+            });
         Some(
             crate::Box(
                 Modifier::new()
@@ -567,7 +644,7 @@ where
                     .fill_max_width()
                     .height(Dp(height_dp)),
             )
-            .child(item_builder(item, data_index)),
+            .child(sticky_view),
         )
     });
     match sticky_pinned {
@@ -663,7 +740,7 @@ where
     let viewport_height_px = state.core.axis.viewport.get();
 
     let padded_offset = scroll_offset_px - padding_top_px;
-    let buffer_rows = 2usize;
+    let buffer_rows = ITEM_RETAIN_BUFFER;
     let first_row = ((padded_offset / stride_px).floor().max(0.0)) as usize;
     let first_row = first_row.saturating_sub(buffer_rows).min(total_rows);
     let last_row = (((padded_offset + viewport_height_px) / stride_px).ceil() as usize
@@ -747,7 +824,13 @@ where
                 x: d.x,
                 y: st.scroll_immediate(d.y, ch),
             };
-            let after_parent = run_post_scroll(&st.core.parent_connection, result);
+            let consumed = d - result;
+            let after_parent = run_post_scroll(
+                &st.core.parent_connection,
+                consumed,
+                result,
+                NestedScrollSource::UserInput,
+            );
             Vec2 {
                 x: after_parent.x,
                 y: st.apply_overscroll(after_parent.y, ch),
@@ -768,14 +851,29 @@ where
 
     let get_scroll = {
         let st = state.clone();
-        Rc::new(move || -> f32 { st.core.axis.paint_offset() })
+        Rc::new(move || -> f32 {
+            let paint = st.core.axis.paint_offset();
+            if reverse_layout {
+                let max = (st.core.axis.content.get() - st.core.axis.viewport.get()).max(0.0);
+                max - paint
+            } else {
+                paint
+            }
+        })
     };
 
     let set_scroll = {
         let st = state.clone();
         Rc::new(move |off: f32| {
+            st.core.clear_anchor();
             let ch = st.core.axis.content.get();
-            st.set_offset(off, if ch > 0.0 { ch } else { content_height_px });
+            let ch = if ch > 0.0 { ch } else { content_height_px };
+            let off = if reverse_layout {
+                (ch - st.core.axis.viewport.get()).max(0.0) - off
+            } else {
+                off
+            };
+            st.set_offset(off, ch);
         })
     };
 
@@ -819,11 +917,12 @@ where
     View::new(0, ViewKind::Box)
         .modifier(modifier.vertical_scroll(ScrollAxisBinding {
             on_scroll,
+            on_scroll_with_source: None,
             set_viewport_main: Some(set_viewport),
             set_content_main: Some(Rc::new(move |h| measured_h(h))),
             get_offset_main: Some(get_scroll),
             set_offset_main: Some(set_scroll),
-            reversed: false,
+            reversed: reverse_layout,
             show_scrollbar: user_scroll_enabled,
             tick: tick_scroll,
             set_nested_scroll_parent: Some(set_nested_scroll_parent),
@@ -887,11 +986,16 @@ where
     };
 
     let padding_left_px = content_padding.left.to_px().0;
-    let scroll_offset_px = state.core.axis.offset.get();
     let viewport_width_px = state.core.axis.viewport.get();
+    let max_offset_px = (content_width_px - viewport_width_px).max(0.0);
+    let scroll_offset_px = if reverse_layout {
+        max_offset_px - state.core.axis.paint_offset()
+    } else {
+        state.core.axis.paint_offset()
+    };
 
     let padded_offset = scroll_offset_px - padding_left_px;
-    let buffer_cols = 2usize;
+    let buffer_cols = ITEM_RETAIN_BUFFER;
     let first_col = ((padded_offset / stride_px).floor().max(0.0)) as usize;
     let first_col = first_col.saturating_sub(buffer_cols).min(total_cols);
     let last_col = (((padded_offset + viewport_width_px) / stride_px).ceil() as usize
@@ -997,7 +1101,13 @@ where
                 x: st.scroll_immediate(d.x, cw),
                 y: d.y,
             };
-            let after_parent = run_post_scroll(&st.core.parent_connection, result);
+            let consumed = d - result;
+            let after_parent = run_post_scroll(
+                &st.core.parent_connection,
+                consumed,
+                result,
+                NestedScrollSource::UserInput,
+            );
             Vec2 {
                 x: st.apply_overscroll(after_parent.x, cw),
                 y: after_parent.y,
@@ -1029,14 +1139,29 @@ where
 
     let get_scroll = {
         let st = state.clone();
-        Rc::new(move || -> f32 { st.core.axis.paint_offset() })
+        Rc::new(move || -> f32 {
+            let paint = st.core.axis.paint_offset();
+            if reverse_layout {
+                let max = (st.core.axis.content.get() - st.core.axis.viewport.get()).max(0.0);
+                max - paint
+            } else {
+                paint
+            }
+        })
     };
 
     let set_scroll = {
         let st = state.clone();
         Rc::new(move |x: f32| {
+            st.core.clear_anchor();
             let cw = st.core.axis.content.get();
-            st.set_offset(x, if cw > 0.0 { cw } else { content_width_px });
+            let cw = if cw > 0.0 { cw } else { content_width_px };
+            let off = if reverse_layout {
+                (cw - st.core.axis.viewport.get()).max(0.0) - x
+            } else {
+                x
+            };
+            st.set_offset(off, cw);
         })
     };
 
@@ -1070,11 +1195,12 @@ where
     View::new(0, ViewKind::Box)
         .modifier(modifier.horizontal_scroll(ScrollAxisBinding {
             on_scroll,
+            on_scroll_with_source: None,
             set_viewport_main: Some(set_viewport_w),
             set_content_main: Some(set_content_w),
             get_offset_main: Some(get_scroll),
             set_offset_main: Some(set_scroll),
-            reversed: false,
+            reversed: reverse_layout,
             show_scrollbar: user_scroll_enabled,
             tick: tick_scroll,
             set_nested_scroll_parent: Some(set_nested_scroll_parent),
@@ -1117,7 +1243,7 @@ where
         user_scroll_enabled,
         spacing,
         sticky_keys,
-        content_type,
+        content_type: _,
     } = config;
 
     let items = items;
@@ -1142,11 +1268,37 @@ where
     state.set_item_metrics(spacing_px, item_w_px);
     state.set_item_count(items.len());
 
-    let scroll_offset_px = state.core.axis.offset.get();
     let viewport_width_px = state.core.axis.viewport.get();
+    let max_offset_px = (content_width_px - viewport_width_px).max(0.0);
+    let left_at = |i: usize| padding_left_px + i as f32 * stride_px;
+    if let Some((anchor_key, inner_px)) = state.core.anchor() {
+        let index = if reverse_layout {
+            src_len
+                .checked_sub(1)
+                .and_then(|last| last.checked_sub(anchor_key as usize))
+        } else {
+            Some(anchor_key as usize)
+        };
+        if let Some(index) = index
+            && index < src_len
+            && to_data_idx(index) as u64 == anchor_key
+        {
+            let anchored_paint = left_at(index) + inner_px;
+            let offset = if reverse_layout {
+                max_offset_px - anchored_paint
+            } else {
+                anchored_paint
+            };
+            state.core.set_offset_anchored(offset, content_width_px);
+        }
+    }
+    let scroll_offset_px = if reverse_layout {
+        max_offset_px - state.core.axis.paint_offset()
+    } else {
+        state.core.axis.paint_offset()
+    };
 
     let padded_offset = scroll_offset_px - padding_left_px;
-    let left_at = |i: usize| padding_left_px + i as f32 * stride_px;
     let first_visible = if padded_offset <= 0.0 {
         0
     } else {
@@ -1154,8 +1306,14 @@ where
     };
     let last_visible = ((padded_offset + viewport_width_px) / stride_px).ceil() as usize + 2;
     state.set_visible_range(first_visible, last_visible.min(src_len));
+    if first_visible < src_len {
+        state.core.set_anchor(
+            to_data_idx(first_visible) as u64,
+            scroll_offset_px - left_at(first_visible),
+        );
+    }
 
-    let buffer = 2usize;
+    let buffer = ITEM_RETAIN_BUFFER;
     let first_with_buffer = first_visible.saturating_sub(buffer);
 
     let mut children = Vec::new();
@@ -1189,9 +1347,6 @@ where
         }
         active
     };
-    let content_type_of =
-        |data_index: usize| -> u64 { content_type.as_ref().map(|f| f(data_index)).unwrap_or(0) };
-
     let state_id = Rc::as_ptr(&state) as usize;
     for i in first_with_buffer..last_visible {
         if i >= src_len {
@@ -1218,9 +1373,8 @@ where
                 item_w_px,
                 0,
             );
-            let ct_suffix = content_type_of(data_i);
             children.push(scoped_item_with_key(
-                format!("lazy_{state_id:x}_item_{data_i}_{ct_suffix}"),
+                item_scope_key(state_id, data_i as u64),
                 data_i as u64,
                 revision,
                 || item_builder(item.clone(), data_i),
@@ -1229,7 +1383,7 @@ where
     }
 
     if last_visible < items.len() {
-        let bottom_start = left_at(last_visible) - padding_left_px;
+        let bottom_start = (left_at(last_visible) - padding_left_px - spacing_px).max(0.0);
         let remaining_px = (items_width_px - bottom_start).max(0.0);
         children.push(crate::Box(
             Modifier::new()
@@ -1257,7 +1411,13 @@ where
                 x: st.scroll_immediate(d.x, cw),
                 y: d.y,
             };
-            let after_parent = run_post_scroll(&st.core.parent_connection, result);
+            let consumed = d - result;
+            let after_parent = run_post_scroll(
+                &st.core.parent_connection,
+                consumed,
+                result,
+                NestedScrollSource::UserInput,
+            );
             Vec2 {
                 x: st.apply_overscroll(after_parent.x, cw),
                 y: after_parent.y,
@@ -1289,14 +1449,29 @@ where
 
     let get_scroll = {
         let st = state.clone();
-        Rc::new(move || -> f32 { st.core.axis.paint_offset() })
+        Rc::new(move || -> f32 {
+            let paint = st.core.axis.paint_offset();
+            if reverse_layout {
+                let max = (st.core.axis.content.get() - st.core.axis.viewport.get()).max(0.0);
+                max - paint
+            } else {
+                paint
+            }
+        })
     };
 
     let set_scroll = {
         let st = state.clone();
         Rc::new(move |x: f32| {
+            st.core.clear_anchor();
             let cw = st.core.axis.content.get();
-            st.set_offset(x, if cw > 0.0 { cw } else { content_width_px });
+            let cw = if cw > 0.0 { cw } else { content_width_px };
+            let off = if reverse_layout {
+                (cw - st.core.axis.viewport.get()).max(0.0) - x
+            } else {
+                x
+            };
+            st.set_offset(off, cw);
         })
     };
 
@@ -1329,11 +1504,12 @@ where
     };
     let binding = ScrollAxisBinding {
         on_scroll,
+        on_scroll_with_source: None,
         set_viewport_main: Some(set_viewport_w),
         set_content_main: Some(set_content_w),
         get_offset_main: Some(get_scroll),
         set_offset_main: Some(set_scroll),
-        reversed: false,
+        reversed: reverse_layout,
         show_scrollbar: user_scroll_enabled,
         tick: tick_scroll,
         set_nested_scroll_parent: Some(set_nested_scroll_parent),
@@ -1341,6 +1517,14 @@ where
     let sticky_pinned = sticky_active.and_then(|vi| {
         let data_i = to_data_idx(vi);
         let item = items.get(data_i)?.clone();
+        let revision =
+            state.cache_revision_for_with(data_i as u64, &item as *const T as usize, item_w_px, 0);
+        let sticky_view = scoped_item_with_key(
+            item_scope_key(state_id, data_i as u64),
+            data_i as u64,
+            revision,
+            move || item_builder(item, data_i),
+        );
         Some(
             crate::Box(
                 Modifier::new()
@@ -1349,7 +1533,7 @@ where
                     .fill_max_height()
                     .width(Dp(item_width_dp)),
             )
-            .child(item_builder(item, data_i)),
+            .child(sticky_view),
         )
     });
     match sticky_pinned {
@@ -1452,22 +1636,22 @@ where
     let gap_dp = modifier.row_gap.or(modifier.gap).unwrap_or(Dp::ZERO);
     let gap_px = gap_dp.to_px().0;
 
-    let mut items = items;
+    let items = items;
     let src_len = items.len();
-    if reverse_layout {
-        items.reverse();
-    }
-    let to_data_idx = |visual_i: usize| {
+    let data_idx_of = |visual_i: usize| {
         if reverse_layout {
             src_len.saturating_sub(1).saturating_sub(visual_i)
         } else {
             visual_i
         }
     };
+    let item_at = |visual_i: usize| items.get(data_idx_of(visual_i));
 
-    let heights_px: Vec<f32> = items
-        .iter()
-        .map(|it| Dp(item_height_dp(it).max(1.0)).to_px().0)
+    let heights_px: Vec<f32> = (0..src_len)
+        .map(|visual_i| {
+            let item = item_at(visual_i).expect("visual index is in range");
+            Dp(item_height_dp(item).max(1.0)).to_px().0
+        })
         .collect();
     let staggered = compute_staggered_placements(&heights_px, columns, gap_px);
     let placements = &staggered.placements;
@@ -1477,10 +1661,15 @@ where
         + content_padding.bottom.to_px().0;
 
     let padding_top_px = content_padding.top.to_px().0;
-    let scroll_offset_px = state.core.axis.offset.get();
     let viewport_height_px = state.core.axis.viewport.get();
+    let max_offset_px = (total_content_height_px - viewport_height_px).max(0.0);
+    let scroll_offset_px = if reverse_layout {
+        max_offset_px - state.core.axis.paint_offset()
+    } else {
+        state.core.axis.paint_offset()
+    };
 
-    let buffer = 2;
+    let buffer = ITEM_RETAIN_BUFFER;
     let mut first_visible = usize::MAX;
     let mut last_visible = 0usize;
     let mut any_visible = false;
@@ -1534,29 +1723,29 @@ where
                         .height(Dp(Px(spacer_y).to_dp().0.max(0.0))),
                 ));
             }
-            if let Some(item) = items.get(i) {
+            if let Some(item) = item_at(i) {
                 let h_dp = Px(p.h_px).to_dp().0.max(1.0);
                 let vis_top = p.y_px + padding_top_px;
                 let vis_bot = vis_top + p.h_px;
                 let in_view =
                     vis_bot > scroll_offset_px && vis_top < scroll_offset_px + viewport_height_px;
-                let data_i = to_data_idx(i);
-                if in_view {
-                    let revision = state.cache_revision_for_with(
-                        data_i as u64,
-                        item as *const T as usize,
-                        p.h_px,
-                        0,
-                    );
-                    col_child.push(scoped_item(data_i as u64, state_id, revision, || {
-                        crate::Box(Modifier::new().fill_max_width().height(Dp(h_dp)))
-                            .child(item_builder(item.clone(), data_i))
-                    }));
-                } else {
-                    col_child.push(crate::Box(
-                        Modifier::new().fill_max_width().height(Dp(h_dp)),
-                    ));
-                }
+                let alpha = if in_view { 1.0 } else { 0.0 };
+                let data_i = data_idx_of(i);
+                let revision = state.cache_revision_for_with(
+                    data_i as u64,
+                    item as *const T as usize,
+                    p.h_px,
+                    alpha.to_bits(),
+                );
+                col_child.push(scoped_item(data_i as u64, state_id, revision, || {
+                    crate::Box(
+                        Modifier::new()
+                            .fill_max_width()
+                            .height(Dp(h_dp))
+                            .alpha(alpha),
+                    )
+                    .child(item_builder(item.clone(), data_i))
+                }));
             }
             prev_y = p.y_px + p.h_px + padding_top_px;
         }
@@ -1598,7 +1787,13 @@ where
                 x: d.x,
                 y: st.scroll_immediate(d.y, ch),
             };
-            let after_parent = run_post_scroll(&st.core.parent_connection, result);
+            let consumed = d - result;
+            let after_parent = run_post_scroll(
+                &st.core.parent_connection,
+                consumed,
+                result,
+                NestedScrollSource::UserInput,
+            );
             Vec2 {
                 x: after_parent.x,
                 y: st.apply_overscroll(after_parent.y, ch),
@@ -1619,13 +1814,27 @@ where
 
     let get_scroll = {
         let st = state.clone();
-        Rc::new(move || -> f32 { st.core.axis.paint_offset() })
+        Rc::new(move || -> f32 {
+            let paint = st.core.axis.paint_offset();
+            if reverse_layout {
+                let max = (st.core.axis.content.get() - st.core.axis.viewport.get()).max(0.0);
+                max - paint
+            } else {
+                paint
+            }
+        })
     };
 
     let set_scroll = {
         let st = state.clone();
         Rc::new(move |off: f32| {
+            st.core.clear_anchor();
             let ch = st.core.axis.content.get().max(0.0);
+            let off = if reverse_layout {
+                (ch - st.core.axis.viewport.get()).max(0.0) - off
+            } else {
+                off
+            };
             st.set_offset(off, ch);
         })
     };
@@ -1669,11 +1878,12 @@ where
     View::new(0, ViewKind::Box)
         .modifier(modifier.vertical_scroll(ScrollAxisBinding {
             on_scroll,
+            on_scroll_with_source: None,
             set_viewport_main: Some(set_viewport),
             set_content_main: Some(Rc::new(move |h| measured_h(h))),
             get_offset_main: Some(get_scroll),
             set_offset_main: Some(set_scroll),
-            reversed: false,
+            reversed: reverse_layout,
             show_scrollbar: user_scroll_enabled,
             tick: tick_scroll,
             set_nested_scroll_parent: Some(set_nested_scroll_parent),
