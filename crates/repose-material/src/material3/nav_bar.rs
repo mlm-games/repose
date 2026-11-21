@@ -131,7 +131,12 @@ pub fn NavigationBar(
                         .interaction_source
                         .clone()
                         .map(Rc::new)
-                        .unwrap_or_else(|| remember(MutableInteractionSource::new));
+                        .unwrap_or_else(|| {
+                            remember_with_key(
+                                format!("nb_src_{}_{}", id, i),
+                                MutableInteractionSource::new,
+                            )
+                        });
 
                     let item_width =
                         remember_state_with_key(format!("nb_w_{}_{}", id, i), || 0.0f32);
