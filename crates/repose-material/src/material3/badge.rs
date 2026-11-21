@@ -99,7 +99,7 @@ pub fn BadgedBox(badge: View, content: View, config: BadgedBoxConfig) -> View {
         content,
         Box(Modifier::new()
             .absolute()
-            .offset(None, Some(top), Some(right), None)
+            .inset(None, Some(top), Some(right), None)
             .flex_shrink(0.0)
             .hit_passthrough())
         .child(badge),

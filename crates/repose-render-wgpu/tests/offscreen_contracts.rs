@@ -238,6 +238,8 @@ fn graphics_layer_shadow_draws_before_the_layer_composite() {
                 offset_px: (Px::ZERO, Px(4.0)),
                 color: Color::from_rgba(0, 0, 0, 255),
                 shape_px: [Px::ZERO; 4],
+                spread_px: Px::ZERO,
+                inset: false,
             },
             SceneNode::PopTransform,
         ],
@@ -310,7 +312,9 @@ fn shadow_falloff_matches_a_gaussian() {
                     offset_px: (Px::ZERO, Px(0.0)),
                     color: Color::from_rgba(0, 0, 0, 255),
                     shape_px: [Px::ZERO; 4],
-                },
+                spread_px: Px::ZERO,
+                inset: false,
+},
             ],
         };
         let px = off.render_rgba(&scene, None).expect("render");
@@ -400,7 +404,9 @@ fn shadow_shape_rounds_an_unclipped_layer() {
                 offset_px: (Px::ZERO, Px::ZERO),
                 color: Color::from_rgba(0, 0, 0, 255),
                 shape_px: shape.map(Px),
-            },
+            spread_px: Px::ZERO,
+            inset: false,
+},
         ],
     };
     // Just outside each top corner, where a square silhouette still has mass
@@ -593,6 +599,8 @@ fn blur_and_shadow_on_one_layer_keep_their_content() {
         offset_px: (Px::ZERO, Px(4.0)),
         color: Color::from_rgba(0, 0, 255, 255),
         shape_px: [Px::ZERO; 4],
+        spread_px: Px::ZERO,
+        inset: false,
     });
     let px = off.render_rgba(&bg(both), None).expect("render");
     let centre = &px[(100 * 200 + 100) * 4..(100 * 200 + 100) * 4 + 4];

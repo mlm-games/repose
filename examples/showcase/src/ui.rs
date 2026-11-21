@@ -562,7 +562,7 @@ pub fn ShortcutHud(note: String, fired: bool) -> View {
 
     Box(Modifier::new()
         .absolute()
-        .offset(None, None, Some(Dp(16.0)), Some(Dp(16.0)))
+        .inset(None, None, Some(Dp(16.0)), Some(Dp(16.0)))
         .padding(Dp(10.0))
         .background(th.surface_container_high.with_alpha(232))
         .border(Dp(1.0), th.outline_variant, radius::LG)

@@ -790,7 +790,7 @@ fn outlined_field_decoration(
                         bottom: Dp(0.0),
                     })
                     .absolute()
-                    .offset(None, Some(label_y), None, None))
+                    .inset(None, Some(label_y), None, None))
                 .child(
                     Text(lbl.as_ref().to_string())
                         .color(label_color)
@@ -1129,7 +1129,7 @@ pub fn TextField(
                 .fill_max_width()
                 .height(Dp(indicator_w))
                 .absolute()
-                .offset(None, None, None, Some(Dp(0.0)))
+                .inset(None, None, None, Some(Dp(0.0)))
                 .background(indicator_color)),
             // Floating label inside the stack. Absolute positioning takes it out
             // of the flow, so nothing else constrains it: without an explicit
@@ -1145,7 +1145,7 @@ pub fn TextField(
                         bottom: Dp(0.0),
                     })
                     .absolute()
-                    .offset(None, Some(label_y), None, None))
+                    .inset(None, Some(label_y), None, None))
                 .child(
                     Text(lbl.as_ref().to_string())
                         .color(label_color)

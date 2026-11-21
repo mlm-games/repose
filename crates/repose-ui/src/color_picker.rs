@@ -248,7 +248,7 @@ pub fn ColorPicker(color: Color, on_change: impl Fn(Color) + 'static) -> View {
             .child(Box(Modifier::new())),
             Box(Modifier::new()
                 .absolute()
-                .offset(Some(slider_w * hue_frac - thumb_w * 0.5), None, None, None)
+                .inset(Some(slider_w * hue_frac - thumb_w * 0.5), None, None, None)
                 .width(thumb_w)
                 .height(slider_h)
                 .background(Color::WHITE)
@@ -279,7 +279,7 @@ pub fn ColorPicker(color: Color, on_change: impl Fn(Color) + 'static) -> View {
             .child(Box(Modifier::new())),
             Box(Modifier::new()
                 .absolute()
-                .offset(Some(slider_w * sat_frac - thumb_w * 0.5), None, None, None)
+                .inset(Some(slider_w * sat_frac - thumb_w * 0.5), None, None, None)
                 .width(thumb_w)
                 .height(slider_h)
                 .background(Color::WHITE)
@@ -310,7 +310,7 @@ pub fn ColorPicker(color: Color, on_change: impl Fn(Color) + 'static) -> View {
             .child(Box(Modifier::new())),
             Box(Modifier::new()
                 .absolute()
-                .offset(Some(slider_w * val_frac - thumb_w * 0.5), None, None, None)
+                .inset(Some(slider_w * val_frac - thumb_w * 0.5), None, None, None)
                 .width(thumb_w)
                 .height(slider_h)
                 .background(Color::WHITE)

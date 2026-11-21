@@ -533,14 +533,14 @@ pub fn DockArea(
     };
 
     ZStack(modifier.fill_max_size()).child((
-        Box(Modifier::new().absolute().offset(
+        Box(Modifier::new().absolute().inset(
             Some(Dp(0.0)),
             Some(Dp(0.0)),
             Some(Dp(0.0)),
             Some(Dp(0.0)),
         ))
         .child(float_target),
-        Box(Modifier::new().absolute().offset(
+        Box(Modifier::new().absolute().inset(
             Some(Dp(0.0)),
             Some(Dp(0.0)),
             Some(Dp(0.0)),
@@ -822,7 +822,7 @@ fn render_tabs(
         )),
         Box(Modifier::new()
             .absolute()
-            .offset(
+            .inset(
                 Some(PANEL_PAD),
                 Some(PANEL_PAD + TAB_BAR_H),
                 Some(PANEL_PAD),
@@ -883,7 +883,7 @@ fn dock_drop_overlay(node_id: u64, dock: &DockHandle, key_prefix: &str) -> View 
         DropZone::Left,
         Modifier::new()
             .absolute()
-            .offset(Some(Dp(0.0)), Some(Dp(0.0)), None, Some(Dp(0.0)))
+            .inset(Some(Dp(0.0)), Some(Dp(0.0)), None, Some(Dp(0.0)))
             .width(zone_dp),
     );
 
@@ -891,7 +891,7 @@ fn dock_drop_overlay(node_id: u64, dock: &DockHandle, key_prefix: &str) -> View 
         DropZone::Right,
         Modifier::new()
             .absolute()
-            .offset(None, Some(Dp(0.0)), Some(Dp(0.0)), Some(Dp(0.0)))
+            .inset(None, Some(Dp(0.0)), Some(Dp(0.0)), Some(Dp(0.0)))
             .width(zone_dp),
     );
 
@@ -899,7 +899,7 @@ fn dock_drop_overlay(node_id: u64, dock: &DockHandle, key_prefix: &str) -> View 
         DropZone::Top,
         Modifier::new()
             .absolute()
-            .offset(Some(zone_dp), Some(Dp(0.0)), Some(zone_dp), None)
+            .inset(Some(zone_dp), Some(Dp(0.0)), Some(zone_dp), None)
             .height(zone_dp),
     );
 
@@ -907,13 +907,13 @@ fn dock_drop_overlay(node_id: u64, dock: &DockHandle, key_prefix: &str) -> View 
         DropZone::Bottom,
         Modifier::new()
             .absolute()
-            .offset(Some(zone_dp), None, Some(zone_dp), Some(Dp(0.0)))
+            .inset(Some(zone_dp), None, Some(zone_dp), Some(Dp(0.0)))
             .height(zone_dp),
     );
 
     let center = mk_zone(
         DropZone::Center,
-        Modifier::new().absolute().offset(
+        Modifier::new().absolute().inset(
             Some(zone_dp),
             Some(zone_dp),
             Some(zone_dp),
@@ -974,7 +974,7 @@ fn dock_drop_preview(zone: DropZone) -> View {
     match zone {
         DropZone::Center => card(
             "Add as tab",
-            Modifier::new().absolute().offset(
+            Modifier::new().absolute().inset(
                 Some(Dp(14.0)),
                 Some(Dp(14.0)),
                 Some(Dp(14.0)),
@@ -1138,7 +1138,7 @@ fn render_split(
             .clip_rounded(Dp(4.0)))
         .child(Box(Modifier::new()
             .width(Dp(4.0))
-            .offset(None, Some(Dp(24.0)), None, Some(Dp(24.0)))
+            .inset(None, Some(Dp(24.0)), None, Some(Dp(24.0)))
             .background(grabber_color))),
         SplitDir::Vertical => Box(Modifier::new()
             .fill_max_size()
@@ -1146,7 +1146,7 @@ fn render_split(
             .clip_rounded(Dp(4.0)))
         .child(Box(Modifier::new()
             .height(Dp(4.0))
-            .offset(Some(Dp(24.0)), None, Some(Dp(24.0)), None)
+            .inset(Some(Dp(24.0)), None, Some(Dp(24.0)), None)
             .background(grabber_color))),
     };
 

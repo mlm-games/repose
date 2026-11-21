@@ -312,7 +312,7 @@ fn top_app_bar_layout(
             .child((nav, Box(Modifier::new().weight(1.0)), actions_row)),
             Box(Modifier::new()
                 .absolute()
-                .offset(Some(Dp(0.0)), Some(Dp(0.0)), Some(Dp(0.0)), Some(Dp(0.0)))
+                .inset(Some(Dp(0.0)), Some(Dp(0.0)), Some(Dp(0.0)), Some(Dp(0.0)))
                 .fill_max_width()
                 .justify_content(JustifyContent::CENTER)
                 .align_items(AlignItems::CENTER)

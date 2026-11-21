@@ -2205,6 +2205,8 @@ pub fn paint_draw_commands(
                         offset_px: *offset_px,
                         color: alpha_color(*color, alpha),
                         shape_px: *shape_px,
+                        spread_px: Px::ZERO,
+                        inset: false,
                     });
                 }
             }

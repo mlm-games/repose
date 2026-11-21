@@ -162,7 +162,7 @@ pub fn NavigationBar(
                     let pill_dy = Dp(14.0);
                     let pill_m = Modifier::new()
                         .absolute()
-                        .offset(
+                        .inset(
                             Some((Dp(24.0) - config.indicator_width) / 2.0),
                             Some((Dp(24.0) - config.indicator_height) / 2.0),
                             None,
@@ -188,7 +188,7 @@ pub fn NavigationBar(
                         }));
                     let bg_m = Modifier::new()
                         .absolute()
-                        .offset(
+                        .inset(
                             Some((Dp(24.0) - config.indicator_width) / 2.0),
                             Some((Dp(24.0) - config.indicator_height) / 2.0),
                             None,

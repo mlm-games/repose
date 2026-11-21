@@ -776,7 +776,7 @@ mod layer_tests {
             Modifier::new()
                 .size(Dp(40.0), Dp(40.0))
                 .absolute()
-                .offset(Some(Dp(40.0)), Some(Dp(30.0)), None, None)
+                .inset(Some(Dp(40.0)), Some(Dp(30.0)), None, None)
                 .graphics_layer(0.5)
                 .scale(0.8),
         )
@@ -2508,7 +2508,7 @@ fn zstack_without_a_box_pins_layers_to_its_origin() {
         RBox(
             Modifier::new()
                 .absolute()
-                .offset(Some(Dp(200.0)), Some(Dp(150.0)), None, None),
+                .inset(Some(Dp(200.0)), Some(Dp(150.0)), None, None),
         )
         .child(
             ZStack(Modifier::new()).child(RBox(

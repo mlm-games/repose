@@ -90,7 +90,7 @@ pub fn ModalNavigationDrawer(
 
     let mut drawer_m = Modifier::new()
         .absolute()
-        .offset(
+        .inset(
             Some(Dp(drawer_offset)),
             Some(Dp::ZERO),
             None,
@@ -155,7 +155,7 @@ pub fn DismissibleNavigationDrawer(
 
     let mut drawer_m = Modifier::new()
         .absolute()
-        .offset(
+        .inset(
             Some(Dp(drawer_offset)),
             Some(Dp::ZERO),
             None,

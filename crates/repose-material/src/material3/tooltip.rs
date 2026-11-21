@@ -442,7 +442,7 @@ fn tooltip_caret(
     Some(
         Box(Modifier::new()
             .absolute()
-            .offset(Some(Dp(left)), Some(Dp(top)), None, None)
+            .inset(Some(Dp(left)), Some(Dp(top)), None, None)
             .hit_passthrough())
         .child(caret),
     )
@@ -851,7 +851,7 @@ pub fn TooltipBox(
                     }
                     let popup = Box(Modifier::new()
                         .absolute()
-                        .offset(Some(Dp(x.max(0.0))), Some(Dp(y)), None, None)
+                        .inset(Some(Dp(x.max(0.0))), Some(Dp(y)), None, None)
                         .hit_passthrough()
                         .alpha(frame_alpha)
                         .scale(scale))

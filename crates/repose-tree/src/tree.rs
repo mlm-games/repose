@@ -316,6 +316,19 @@ fn modifier_identity_change(old: &Modifier, new: &Modifier) -> IdentityChange {
     {
         change.paint = true;
     }
+    if old.layout_offset != new.layout_offset
+        || old.absolute_layout_offset != new.absolute_layout_offset
+        || old.wrap_content != new.wrap_content
+    {
+        change.layout = true;
+    }
+    if old.visible != new.visible {
+        change.layout = true;
+        change.paint = true;
+    }
+    if old.background_alpha != new.background_alpha {
+        change.paint = true;
+    }
     change
 }
 

@@ -493,6 +493,10 @@ pub enum SceneNode {
         /// Corner radii shaping the shadow silhouette, in px. All zero = the
         /// silhouette follows the layer alpha unchanged.
         shape_px: [Px; 4],
+        /// Outward expansion of the shadow silhouette in px.
+        spread_px: Px,
+        /// Inset shadows clip to the inside of the silhouette.
+        inset: bool,
     },
     /// Arc stroke
     Arc {

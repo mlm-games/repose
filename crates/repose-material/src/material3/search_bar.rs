@@ -1517,7 +1517,7 @@ fn expanded_full_screen_search_bar(
                     };
                     let surface = Box(Modifier::new()
                         .absolute()
-                        .offset(Some(Dp(surf_x)), Some(Dp(surf_y)), None, None)
+                        .inset(Some(Dp(surf_x)), Some(Dp(surf_y)), None, None)
                         .size(Dp(surf_w), Dp(surf_h))
                         .background(surface_bg)
                         .clip_rounded(Dp(config.collapsed_shape_radius.0 * (1.0 - alpha)))
@@ -1541,7 +1541,7 @@ fn expanded_full_screen_search_bar(
                     );
                     let field = Box(Modifier::new()
                         .absolute()
-                        .offset(
+                        .inset(
                             Some(Dp(center_x - input_w / 2.0)),
                             Some(Dp(animated_offset_y + animated_top_pad)),
                             None,
@@ -1576,7 +1576,7 @@ fn expanded_full_screen_search_bar(
                     };
                     let content_box = Box(Modifier::new()
                         .absolute()
-                        .offset(Some(Dp(surf_x)), Some(Dp(content_y)), None, None)
+                        .inset(Some(Dp(surf_x)), Some(Dp(content_y)), None, None)
                         .size(Dp(surf_w), Dp(content_h))
                         .alpha(body_alpha)
                         .padding_values(PaddingValues {
@@ -1870,7 +1870,7 @@ fn expanded_docked_search_bar(
                     let positioned = Box(modifier
                         .clone()
                         .absolute()
-                        .offset(Some(popup_left), Some(popup_top), None, None)
+                        .inset(Some(popup_left), Some(popup_top), None, None)
                         .width(docked_width)
                         .focus_group()
                         .on_preview_key_event({

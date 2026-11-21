@@ -1244,6 +1244,9 @@ pub struct HitRegion {
     pub on_pointer_leave: Option<Rc<dyn Fn(crate::input::PointerEvent)>>,
     pub z_index: f32,
     pub disabled: bool,
+    /// Carried from [`Modifier::visible`](crate::Modifier::visible). `None` and
+    /// `Some(true)` are visible; `Some(false)` must not receive pointer events.
+    pub visible: Option<bool>,
     pub on_text_change: Option<Rc<dyn Fn(String)>>,
     pub on_text_submit: Option<Rc<dyn Fn(String)>>,
     /// If this hit region belongs to a TextField, this persistent key is used
@@ -1383,6 +1386,7 @@ impl HitRegion {
             on_drop: m.on_drop.clone(),
             drag_preview: m.drag_preview.clone(),
             disabled: m.disabled,
+            visible: m.visible,
             tf_enabled: true,
             tf_read_only: false,
             test_tag: m.semantics.as_ref().and_then(|s| s.test_tag.clone()),
@@ -1402,7 +1406,7 @@ pub fn route_action_to_point(
 ) -> bool {
     let mut best: Option<&HitRegion> = None;
     for h in hits {
-        if h.disabled || h.on_action.is_none() {
+        if h.disabled || h.visible == Some(false) || h.on_action.is_none() {
             continue;
         }
         let r = h.rect;
@@ -1423,6 +1427,7 @@ pub fn route_action_to_point(
             break;
         };
         if !h.disabled
+            && h.visible != Some(false)
             && let Some(cb) = &h.on_action
             && cb(action.clone())
         {

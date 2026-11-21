@@ -348,7 +348,7 @@ where
                         crate::Box(
                             Modifier::new()
                                 .absolute()
-                                .offset(Some(Dp::ZERO), Some(Dp(top)), None, None)
+                                .inset(Some(Dp::ZERO), Some(Dp(top)), None, None)
                                 .fill_max_width()
                                 .height(Dp(height))
                                 .alpha(alpha),
@@ -640,7 +640,7 @@ where
             crate::Box(
                 Modifier::new()
                     .absolute()
-                    .offset(None, Some(Dp::ZERO), None, None)
+                    .inset(None, Some(Dp::ZERO), None, None)
                     .fill_max_width()
                     .height(Dp(height_dp)),
             )
@@ -1529,7 +1529,7 @@ where
             crate::Box(
                 Modifier::new()
                     .absolute()
-                    .offset(Some(Dp::ZERO), None, None, None)
+                    .inset(Some(Dp::ZERO), None, None, None)
                     .fill_max_height()
                     .width(Dp(item_width_dp)),
             )

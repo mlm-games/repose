@@ -129,14 +129,14 @@ fn scaffold_inner(content: impl Fn(PaddingValues) -> View, config: ScaffoldConfi
             top_height,
             Modifier::new()
                 .absolute()
-                .offset(Some(Dp::ZERO), Some(itop), Some(Dp::ZERO), None),
+                .inset(Some(Dp::ZERO), Some(itop), Some(Dp::ZERO), None),
         )
     });
     let bottom_bar = config.bottom_bar.map(|bar| {
         measured_bar(
             bar,
             bottom_height,
-            Modifier::new().absolute().offset(
+            Modifier::new().absolute().inset(
                 Some(Dp::ZERO),
                 None,
                 Some(Dp::ZERO),
@@ -153,7 +153,7 @@ fn scaffold_inner(content: impl Fn(PaddingValues) -> View, config: ScaffoldConfi
     let fab = config.floating_action_button.map(|fab| {
         let bottom = bottom_reserved + ScaffoldDefaults::FAB_MARGIN;
         let modifier = match config.fab_position {
-            FabPosition::End => Modifier::new().absolute().offset(
+            FabPosition::End => Modifier::new().absolute().inset(
                 None,
                 None,
                 Some(ScaffoldDefaults::FAB_MARGIN + iright),
@@ -163,7 +163,7 @@ fn scaffold_inner(content: impl Fn(PaddingValues) -> View, config: ScaffoldConfi
                 .absolute()
                 .fill_max_width()
                 .align_self(AlignSelf::CENTER)
-                .offset(None, None, None, Some(bottom)),
+                .inset(None, None, None, Some(bottom)),
         };
         Box(modifier.on_size_changed({
             let measured = fab_height.clone();

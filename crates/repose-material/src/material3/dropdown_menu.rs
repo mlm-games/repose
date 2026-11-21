@@ -390,7 +390,7 @@ pub fn DropdownMenu(
 
                     let mut offset_modifier = Modifier::new();
                     if place_below {
-                        offset_modifier = offset_modifier.offset(
+                        offset_modifier = offset_modifier.inset(
                             Some(Dp(popup_x)),
                             Some(Dp(rect.y + rect.h + config.offset_y.0)),
                             None,
@@ -399,7 +399,7 @@ pub fn DropdownMenu(
                     } else {
                         let menu_bottom_y = rect.y + config.offset_y.0;
                         let offset_bottom = (win_h - menu_bottom_y).max(0.0);
-                        offset_modifier = offset_modifier.offset(
+                        offset_modifier = offset_modifier.inset(
                             Some(Dp(popup_x)),
                             None,
                             None,
@@ -922,7 +922,7 @@ fn render_dropdown_submenu(
                 let popup = Box(Modifier::new()
                     .absolute()
                     .z_index(DDM_SUBMENU_CARD_Z)
-                    .offset(Some(Dp(x)), Some(Dp(y)), None, None)
+                    .inset(Some(Dp(x)), Some(Dp(y)), None, None)
                     .scale(scale)
                     .alpha(alpha)
                     .transform_origin(0.0, 0.0))

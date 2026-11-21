@@ -314,6 +314,7 @@ fn scale_brush_alpha(brush: Brush, alpha: f32) -> Brush {
             start_color: scale_color_alpha(start_color, alpha),
             end_color: scale_color_alpha(end_color, alpha),
         },
+        other => other,
     }
 }
 

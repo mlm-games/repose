@@ -91,14 +91,14 @@ macro_rules! impl_option_fields {
             /// Useful for creating reusable modifier templates.
             pub fn then(mut self, other: Self) -> Self {
                 merge_opts!(self, other;
-                    key, size, width, height, required_size,
+                    key, size, width, height, required_size, wrap_content,
                     padding, padding_values,
                     min_width, min_height, max_width, max_height,
                     required_min_width, required_max_width,
                     required_min_height, required_max_height,
                     default_min_width, default_min_height,
                     fill_max, fill_max_w, fill_max_h,
-                    background, state_colors, state_elevation, border,
+                    background, background_alpha, state_colors, state_elevation, border,
                     flex_grow, flex_shrink, flex_basis, flex_wrap, flex_dir,
                     flex_line_count,
                     gap, row_gap, column_gap,
@@ -120,6 +120,7 @@ macro_rules! impl_option_fields {
                     grid, grid_col_span, grid_row_span,
                     position_type,
                     offset_left, offset_right, offset_top, offset_bottom,
+                    layout_offset, absolute_layout_offset,
                     margin_left, margin_right, margin_top, margin_bottom,
                     aspect_ratio, intrinsic_width, intrinsic_height,
                     fit_content_width, fit_content_height,
@@ -132,6 +133,7 @@ macro_rules! impl_option_fields {
                     drag_preview,
                     on_action, cursor, animate_content_size, focus_requester, on_focus_changed,
                     interaction_source, text_input, text_selection,
+                    visible,
                 );
                         merge_flags!(self, other;
                     hit_passthrough, input_blocker, repaint_boundary, click, disabled,
@@ -250,14 +252,18 @@ pub struct LayoutConstraints {
 /// Drop-shadow parameters applied to a graphics layer.
 ///
 /// `blur_radius` is the Gaussian blur radius in [`Dp`] (1.0 = subtle, 8.0 = soft,
-/// 16.0 = very diffuse). `offset_y` is the vertical offset of the shadow in [`Dp`]
-/// (positive = below the layer). `color` is the shadow color (premultiplied
-/// alpha controls shadow darkness).
-#[derive(Clone, Copy, Debug)]
+/// 16.0 = very diffuse). `offset_x`/`offset_y` are the shadow offsets in [`Dp`].
+/// `spread` grows (or, when negative, shrinks) the silhouette before blurring.
+/// `inset` draws the shadow inside the silhouette (Compose inner shadow).
+/// `color` is the shadow color (alpha controls shadow darkness).
+#[derive(Clone, Copy, Debug, Default)]
 pub struct ShadowSpec {
     pub blur_radius: Dp,
+    pub offset_x: Dp,
     pub offset_y: Dp,
     pub color: Color,
+    pub spread: Dp,
+    pub inset: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -662,6 +668,10 @@ pub struct Modifier {
     pub size: Option<DpSize>,
     pub width: Option<Dp>,
     pub height: Option<Dp>,
+    /// Size this node to its content, aligned with `align`. The flag is
+    /// `unbounded`: when true the content is measured with infinite constraints.
+    /// Consumed by the layout engine; `None` keeps the normal sizing rules.
+    pub wrap_content: Option<(Alignment, bool)>,
     pub required_size: Option<DpSize>,
     pub fill_max: Option<f32>,
     pub fill_max_w: Option<f32>,
@@ -685,6 +695,9 @@ pub struct Modifier {
     pub default_min_width: Option<Dp>,
     pub default_min_height: Option<Dp>,
     pub background: Option<Brush>,
+    /// Multiplies the alpha of the background brush/color when painting.
+    /// Values outside `0.0..=1.0` are clamped by the painter.
+    pub background_alpha: Option<f32>,
     pub state_colors: Option<StateColors>,
     pub state_elevation: Option<StateElevation>,
 
@@ -728,6 +741,9 @@ pub struct Modifier {
     pub click: bool,
     /// When true, the component ignores pointer events and appears disabled.
     pub disabled: bool,
+    /// When `Some(false)` the node measures to zero and paints nothing.
+    /// `None` means visible.
+    pub visible: Option<bool>,
     /// When Some(true), the component can receive keyboard focus regardless of interactivity.
     /// When Some(false), the component cannot receive focus even if interactive.
     /// When None, focusability is determined implicitly by interactivity (click/pointer/dnd handlers).
@@ -816,6 +832,12 @@ pub struct Modifier {
     pub offset_right: Option<Dp>,
     pub offset_top: Option<Dp>,
     pub offset_bottom: Option<Dp>,
+    /// RTL-aware translation applied after layout: `(x, y)`. `x` flips with
+    /// the layout direction. Set by [`Modifier::offset`].
+    pub layout_offset: Option<(Dp, Dp)>,
+    /// Translation applied after layout that never flips for RTL: `(x, y)`.
+    /// Set by [`Modifier::absolute_offset`].
+    pub absolute_layout_offset: Option<(Dp, Dp)>,
 
     pub margin_left: Option<Dp>,
     pub margin_right: Option<Dp>,
@@ -916,6 +938,8 @@ impl std::fmt::Debug for Modifier {
             width,
             height,
             required_size,
+            wrap_content,
+            visible,
             padding,
             padding_values,
             min_width,
@@ -932,6 +956,7 @@ impl std::fmt::Debug for Modifier {
             fill_max_w,
             fill_max_h,
             background,
+            background_alpha,
             state_colors,
             state_elevation,
             border,
@@ -961,6 +986,8 @@ impl std::fmt::Debug for Modifier {
             offset_right,
             offset_top,
             offset_bottom,
+            layout_offset,
+            absolute_layout_offset,
             margin_left,
             margin_right,
             margin_top,
@@ -1112,6 +1139,21 @@ impl Modifier {
     pub fn size(mut self, w: Dp, h: Dp) -> Self {
         self.size = Some(DpSize::new(w, h));
         self
+    }
+    /// Measure this node from its content, aligning the result with `align`.
+    /// When `unbounded` is true the content is measured with infinite
+    /// constraints in the wrapped dimension. Consumed by the layout engine.
+    pub fn wrap_content_size(mut self, align: Alignment, unbounded: bool) -> Self {
+        self.wrap_content = Some((align, unbounded));
+        self
+    }
+    /// Content-driven width, aligned horizontally.
+    pub fn wrap_content_width(self, align: Alignment, unbounded: bool) -> Self {
+        self.wrap_content_size(align, unbounded)
+    }
+    /// Content-driven height, aligned vertically.
+    pub fn wrap_content_height(self, align: Alignment, unbounded: bool) -> Self {
+        self.wrap_content_size(align, unbounded)
     }
     pub fn width(mut self, w: Dp) -> Self {
         self.width = Some(w);
@@ -1270,6 +1312,11 @@ impl Modifier {
     /// Set a brush (solid, gradient, etc.) background.
     pub fn background_brush(mut self, brush: Brush) -> Self {
         self.background = Some(brush);
+        self
+    }
+    /// Multiply the background brush/color alpha when painting.
+    pub fn background_alpha(mut self, alpha: f32) -> Self {
+        self.background_alpha = Some(alpha);
         self
     }
     pub fn border(mut self, width: Dp, color: Color, radius: Dp) -> Self {
@@ -1465,6 +1512,16 @@ impl Modifier {
     pub fn enabled(mut self, enabled: bool) -> Self {
         self.disabled = !enabled;
         self
+    }
+    /// Control visibility. An invisible node measures to zero and paints
+    /// nothing. Nodes are visible by default.
+    pub fn visible(mut self, visible: bool) -> Self {
+        self.visible = Some(visible);
+        self
+    }
+    /// Resolved visibility: `true` unless explicitly set to `false`.
+    pub fn is_visible(&self) -> bool {
+        self.visible.unwrap_or(true)
     }
     /// Set explicit focusability for this component.
     /// When `true`, the component can receive keyboard focus even without
@@ -2008,8 +2065,11 @@ impl Modifier {
     pub fn shadow(mut self, blur_radius: Dp, offset_y: Dp) -> Self {
         self.shadow = Some(ShadowSpec {
             blur_radius: Dp(blur_radius.0.max(0.0)),
+            offset_x: Dp::ZERO,
             offset_y,
             color: Color(0, 0, 0, 64),
+            spread: Dp::ZERO,
+            inset: false,
         });
         self
     }
@@ -2017,10 +2077,46 @@ impl Modifier {
     pub fn shadow_with_color(mut self, blur_radius: Dp, offset_y: Dp, color: Color) -> Self {
         self.shadow = Some(ShadowSpec {
             blur_radius: Dp(blur_radius.0.max(0.0)),
+            offset_x: Dp::ZERO,
             offset_y,
             color,
+            spread: Dp::ZERO,
+            inset: false,
         });
         self
+    }
+    /// Full Compose-style shadow: `(offset_x, offset_y)` translate the
+    /// silhouette, `blur` is the Gaussian radius, `spread` grows it, and
+    /// `inset` draws the shadow inside the shape.
+    pub fn drop_shadow(
+        mut self,
+        offset_x: Dp,
+        offset_y: Dp,
+        blur: Dp,
+        spread: Dp,
+        color: Color,
+        inset: bool,
+    ) -> Self {
+        self.shadow = Some(ShadowSpec {
+            blur_radius: Dp(blur.0.max(0.0)),
+            offset_x,
+            offset_y,
+            color,
+            spread,
+            inset,
+        });
+        self
+    }
+    /// Shadow drawn inside the silhouette. See [`drop_shadow`](Self::drop_shadow).
+    pub fn inner_shadow(
+        self,
+        offset_x: Dp,
+        offset_y: Dp,
+        blur: Dp,
+        spread: Dp,
+        color: Color,
+    ) -> Self {
+        self.drop_shadow(offset_x, offset_y, blur, spread, color, true)
     }
     /// Material-style elevation. Auto-scales blur and offset by `level` ([`Dp`])
     /// and uses a default shadow color. Level 0 = no shadow. 4 = subtle;
@@ -2032,8 +2128,11 @@ impl Modifier {
         }
         self.shadow = Some(ShadowSpec {
             blur_radius: Dp(level.0 * 2.0),
+            offset_x: Dp::ZERO,
             offset_y: Dp(level.0 * 0.5),
             color: Color(0, 0, 0, (level.0 * 8.0).clamp(8.0, 80.0) as u8),
+            spread: Dp::ZERO,
+            inset: false,
         });
         self
     }
@@ -2046,8 +2145,11 @@ impl Modifier {
         }
         self.shadow = Some(ShadowSpec {
             blur_radius: Dp(level.0 * 2.0),
+            offset_x: Dp::ZERO,
             offset_y: Dp(level.0 * 0.5),
             color,
+            spread: Dp::ZERO,
+            inset: false,
         });
         self
     }
@@ -2087,18 +2189,18 @@ impl Modifier {
     ///
     /// Load-bearing for hand-placed overlays: without it taffy ignores the
     /// offsets and every absolutely-placed sibling stacks at the same
-    /// in-flow spot. Pair with `.size(...)` + `.offset(Some(x), Some(y),
+    /// in-flow spot. Pair with `.size(...)` + `.inset(Some(x), Some(y),
     /// None, None)` to pin a box at an exact point (e.g. world-anchored
     /// actor surfaces over a viewport).
     pub fn absolute(mut self) -> Self {
         self.position_type = Some(PositionType::Absolute);
         self
     }
-    /// In-flow offsets are ignored unless paired with
+    /// In-flow edge offsets are ignored unless paired with
     /// [`absolute`](Self::absolute): taffy only applies these to
     /// out-of-flow nodes. Each side is independent; `None` leaves that
-    /// edge to default flow placement.
-    pub fn offset(
+    /// edge to default flow placement. This is the CSS-style edge inset API.
+    pub fn inset(
         mut self,
         left: Option<Dp>,
         top: Option<Dp>,
@@ -2109,6 +2211,18 @@ impl Modifier {
         self.offset_top = top;
         self.offset_right = right;
         self.offset_bottom = bottom;
+        self
+    }
+    /// Translate the node by `(x, y)` after layout. Setting this field
+    /// does not take the node out of flow; use [`absolute`](Self::absolute)
+    /// for that. The horizontal offset is mirrored under RTL layouts.
+    pub fn offset(mut self, x: Dp, y: Dp) -> Self {
+        self.layout_offset = Some((x, y));
+        self
+    }
+    /// Translate the node by `(x, y)` after layout without RTL mirroring.
+    pub fn absolute_offset(mut self, x: Dp, y: Dp) -> Self {
+        self.absolute_layout_offset = Some((x, y));
         self
     }
     pub fn offset_left(mut self, v: Dp) -> Self {

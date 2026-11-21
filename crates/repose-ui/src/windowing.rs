@@ -702,7 +702,7 @@ pub fn WindowHost(
             let mut window_view = Box(Modifier::new()
                 .key(key_for(window_id, 1))
                 .absolute()
-                .offset(Some(window_pos.x), Some(window_pos.y), None, None)
+                .inset(Some(window_pos.x), Some(window_pos.y), None, None)
                 .size(window_size.width, window_size.height)
                 .background(th.surface_container_high)
                 .border(Dp(1.0), border_color, th.shapes.medium)
@@ -717,7 +717,7 @@ pub fn WindowHost(
 
     Column(host_mod).child((
         content,
-        Box(Modifier::new().absolute().offset(
+        Box(Modifier::new().absolute().inset(
             Some(Dp::ZERO),
             Some(Dp::ZERO),
             Some(Dp::ZERO),
@@ -758,35 +758,35 @@ fn build_resize_handles(host: &WindowHostHandle, window_id: u64) -> View {
 fn handle_mod_left() -> Modifier {
     Modifier::new()
         .absolute()
-        .offset(Some(Dp::ZERO), Some(Dp::ZERO), None, Some(Dp::ZERO))
+        .inset(Some(Dp::ZERO), Some(Dp::ZERO), None, Some(Dp::ZERO))
         .width(RESIZE_HANDLE)
 }
 
 fn handle_mod_right() -> Modifier {
     Modifier::new()
         .absolute()
-        .offset(None, Some(Dp::ZERO), Some(Dp::ZERO), Some(Dp::ZERO))
+        .inset(None, Some(Dp::ZERO), Some(Dp::ZERO), Some(Dp::ZERO))
         .width(RESIZE_HANDLE)
 }
 
 fn handle_mod_top() -> Modifier {
     Modifier::new()
         .absolute()
-        .offset(Some(Dp::ZERO), Some(Dp::ZERO), Some(Dp::ZERO), None)
+        .inset(Some(Dp::ZERO), Some(Dp::ZERO), Some(Dp::ZERO), None)
         .height(RESIZE_HANDLE)
 }
 
 fn handle_mod_bottom() -> Modifier {
     Modifier::new()
         .absolute()
-        .offset(Some(Dp::ZERO), None, Some(Dp::ZERO), Some(Dp::ZERO))
+        .inset(Some(Dp::ZERO), None, Some(Dp::ZERO), Some(Dp::ZERO))
         .height(RESIZE_HANDLE)
 }
 
 fn handle_mod_corner(left: bool, top: bool) -> Modifier {
     Modifier::new()
         .absolute()
-        .offset(
+        .inset(
             if left { Some(Dp::ZERO) } else { None },
             if top { Some(Dp::ZERO) } else { None },
             if left { None } else { Some(Dp::ZERO) },

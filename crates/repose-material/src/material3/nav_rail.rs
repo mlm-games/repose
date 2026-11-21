@@ -183,7 +183,7 @@ pub fn NavigationRail(
         // Pill background - now pill-sized, not full item
         let bg_m = Modifier::new()
             .absolute()
-            .offset(
+            .inset(
                 Some((Dp(24.0) - config.indicator_width) / 2.0),
                 Some((Dp(24.0) - config.indicator_height) / 2.0),
                 None,
@@ -198,7 +198,7 @@ pub fn NavigationRail(
         let dx = (Dp(*item_width.borrow()) - config.indicator_width) / 2.0;
         let pill_m = Modifier::new()
             .absolute()
-            .offset(
+            .inset(
                 Some((Dp(24.0) - config.indicator_width) / 2.0),
                 Some((Dp(24.0) - config.indicator_height) / 2.0),
                 None,
@@ -235,7 +235,7 @@ pub fn NavigationRail(
                         .map(|b| {
                             Box(Modifier::new()
                                 .absolute()
-                                .offset(None, None, None, Some(Dp(0.0))))
+                                .inset(None, None, None, Some(Dp(0.0))))
                             .child(b)
                         })
                         .unwrap_or(Box(Modifier::new())),

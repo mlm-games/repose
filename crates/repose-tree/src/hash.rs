@@ -2,7 +2,7 @@
 
 use rapidhash::fast::RapidHasher;
 use repose_core::{
-    Brush, Color, Dp, Modifier, Px, Sp, TextOverflow, View, ViewKind,
+    Brush, Color, Dp, GradientStops, Modifier, Px, Sp, TextOverflow, View, ViewKind,
     animation::{AnimationSpec, Easing},
     scroll::ScrollBinding,
     text::{Shadow, SpanStyle, TextStyle},
@@ -334,6 +334,14 @@ fn facet_hash_modifier(modifier: &Modifier, hashers: &mut FacetHashers) {
     }
     hash_opt_dp_value!(FACET_LAYOUT, modifier.width);
     hash_opt_dp_value!(FACET_LAYOUT, modifier.height);
+    hashers.hash(FACET_LAYOUT, |h| match modifier.wrap_content {
+        Some((align, unbounded)) => {
+            1u8.hash(h);
+            std::mem::discriminant(&align).hash(h);
+            unbounded.hash(h);
+        }
+        None => 0u8.hash(h),
+    });
     match modifier.required_size {
         Some(size) => hashers.hash(FACET_LAYOUT, |h| {
             hash_dp(size.width, h);
@@ -370,6 +378,7 @@ fn facet_hash_modifier(modifier: &Modifier, hashers: &mut FacetHashers) {
     } else {
         hashers.hash(FACET_PAINT, |h| 0u8.hash(h));
     }
+    hash_opt_f32_value!(FACET_PAINT, modifier.background_alpha);
     if let Some(border) = &modifier.border {
         hashers.hash(FACET_PAINT, |h| {
             hash_dp(border.width, h);
@@ -453,6 +462,10 @@ fn facet_hash_modifier(modifier: &Modifier, hashers: &mut FacetHashers) {
     hash_opt_dp_value!(FACET_LAYOUT, modifier.offset_right);
     hash_opt_dp_value!(FACET_LAYOUT, modifier.offset_top);
     hash_opt_dp_value!(FACET_LAYOUT, modifier.offset_bottom);
+    hashers.hash(FACET_LAYOUT, |h| hash_opt_dp_pair(modifier.layout_offset, h));
+    hashers.hash(FACET_LAYOUT, |h| {
+        hash_opt_dp_pair(modifier.absolute_layout_offset, h)
+    });
     if let Some(grid) = &modifier.grid {
         hashers.hash(FACET_LAYOUT, |h| {
             grid.columns.hash(h);
@@ -487,6 +500,7 @@ fn facet_hash_modifier(modifier: &Modifier, hashers: &mut FacetHashers) {
         modifier.focusable.hash(h);
         modifier.hit_passthrough.hash(h);
     });
+    hashers.hash(FACET_LAYOUT_MEASUREMENT_PAINT, |h| modifier.visible.hash(h));
     hashers.hash(FACET_LAYOUT, |h| modifier.propagate_min.hash(h));
     hashers.hash(FACET_PAINT, |h| modifier.focus_group.hash(h));
     if let Some(blur) = &modifier.blur {
@@ -529,8 +543,11 @@ fn facet_hash_modifier(modifier: &Modifier, hashers: &mut FacetHashers) {
     if let Some(shadow) = &modifier.shadow {
         hashers.hash(FACET_PAINT, |h| {
             hash_dp(shadow.blur_radius, h);
+            hash_dp(shadow.offset_x, h);
             hash_dp(shadow.offset_y, h);
+            hash_dp(shadow.spread, h);
             hash_color(&shadow.color, h);
+            shadow.inset.hash(h);
         });
     } else {
         hashers.hash(FACET_PAINT, |h| 0u8.hash(h));
@@ -1469,6 +1486,17 @@ fn hash_opt_dp(v: Option<Dp>, hasher: &mut impl Hasher) {
     }
 }
 
+fn hash_opt_dp_pair(v: Option<(Dp, Dp)>, hasher: &mut impl Hasher) {
+    match v {
+        Some((x, y)) => {
+            1u8.hash(hasher);
+            hash_dp(x, hasher);
+            hash_dp(y, hasher);
+        }
+        None => 0u8.hash(hasher),
+    }
+}
+
 fn hash_sp(v: Sp, hasher: &mut impl Hasher) {
     hash_f32(v.0, hasher);
 }
@@ -1490,6 +1518,14 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
     }
     hash_opt_dp(m.width, hasher);
     hash_opt_dp(m.height, hasher);
+    match m.wrap_content {
+        Some((align, unbounded)) => {
+            1u8.hash(hasher);
+            std::mem::discriminant(&align).hash(hasher);
+            unbounded.hash(hasher);
+        }
+        None => 0u8.hash(hasher),
+    }
     match m.required_size {
         Some(size) => {
             1u8.hash(hasher);
@@ -1530,6 +1566,7 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
         }
         None => 0u8.hash(hasher),
     }
+    hash_opt_f32(m.background_alpha, hasher);
     match &m.border {
         Some(border) => {
             1u8.hash(hasher);
@@ -1600,6 +1637,8 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
     hash_opt_dp(m.offset_right, hasher);
     hash_opt_dp(m.offset_top, hasher);
     hash_opt_dp(m.offset_bottom, hasher);
+    hash_opt_dp_pair(m.layout_offset, hasher);
+    hash_opt_dp_pair(m.absolute_layout_offset, hasher);
     match &m.grid {
         Some(grid) => {
             1u8.hash(hasher);
@@ -1632,6 +1671,7 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
     m.hit_passthrough.hash(hasher);
     m.propagate_min.hash(hasher);
     m.focus_group.hash(hasher);
+    m.visible.hash(hasher);
     match &m.blur {
         Some(blur) => {
             1u8.hash(hasher);
@@ -1672,8 +1712,11 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
         Some(shadow) => {
             1u8.hash(hasher);
             hash_dp(shadow.blur_radius, hasher);
+            hash_dp(shadow.offset_x, hasher);
             hash_dp(shadow.offset_y, hasher);
+            hash_dp(shadow.spread, hasher);
             hash_color(&shadow.color, hasher);
+            shadow.inset.hash(hasher);
         }
         None => 0u8.hash(hasher),
     }
@@ -1878,7 +1921,64 @@ fn hash_brush(b: &Brush, hasher: &mut impl Hasher) {
             hash_color(start_color, hasher);
             hash_color(end_color, hasher);
         }
+        Brush::LinearStops {
+            start,
+            end,
+            stops,
+            tile_mode,
+        } => {
+            hash_f32(start.x, hasher);
+            hash_f32(start.y, hasher);
+            hash_f32(end.x, hasher);
+            hash_f32(end.y, hasher);
+            hash_gradient_stops(stops, hasher);
+            std::mem::discriminant(tile_mode).hash(hasher);
+        }
+        Brush::LinearNormalizedStops {
+            start,
+            end,
+            stops,
+            tile_mode,
+        } => {
+            hash_f32(start.x, hasher);
+            hash_f32(start.y, hasher);
+            hash_f32(end.x, hasher);
+            hash_f32(end.y, hasher);
+            hash_gradient_stops(stops, hasher);
+            std::mem::discriminant(tile_mode).hash(hasher);
+        }
+        Brush::RadialStops {
+            center,
+            radius,
+            stops,
+            tile_mode,
+        } => {
+            hash_f32(center.x, hasher);
+            hash_f32(center.y, hasher);
+            hash_f32(*radius, hasher);
+            hash_gradient_stops(stops, hasher);
+            std::mem::discriminant(tile_mode).hash(hasher);
+        }
+        Brush::SweepStops {
+            center,
+            stops,
+            tile_mode,
+        } => {
+            hash_f32(center.x, hasher);
+            hash_f32(center.y, hasher);
+            hash_gradient_stops(stops, hasher);
+            std::mem::discriminant(tile_mode).hash(hasher);
+        }
         _ => {}
+    }
+}
+
+fn hash_gradient_stops(stops: &GradientStops, hasher: &mut impl Hasher) {
+    let slice = stops.as_slice();
+    slice.len().hash(hasher);
+    for stop in slice {
+        hash_f32(stop.offset, hasher);
+        hash_color(&stop.color, hasher);
     }
 }
 

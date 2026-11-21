@@ -667,7 +667,7 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
             .align_items(AlignItems::CENTER)
             .justify_content(JustifyContent::CENTER)
             .absolute()
-            .offset(Some(Dp(thumb_left)), Some(thumb_top), None, None))
+            .inset(Some(Dp(thumb_left)), Some(thumb_top), None, None))
         .child(
             config
                 .thumb_content
@@ -698,7 +698,7 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
                 ..Default::default()
             }))
             .absolute()
-            .offset(
+            .inset(
                 Some(Dp(thumb_left + thumb_d * 0.5 - 20.0)),
                 Some(track_h * 0.5 - Dp(20.0)),
                 None,

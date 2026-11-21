@@ -522,7 +522,7 @@ pub fn screen(global_windows: Rc<RefCell<WindowManagerState>>) -> View {
                 )),
                 Box(Modifier::new()
                     .absolute()
-                    .offset(Some(Dp(16.0)), Some(Dp(120.0)), None, None)
+                    .inset(Some(Dp(16.0)), Some(Dp(120.0)), None, None)
                     .size(Dp(120.0), Dp(68.0))
                     .background(theme().primary.with_alpha(40))
                     .border(Dp(1.0), theme().primary, Dp(10.0))
@@ -535,7 +535,7 @@ pub fn screen(global_windows: Rc<RefCell<WindowManagerState>>) -> View {
                 ),
                 Box(Modifier::new()
                     .absolute()
-                    .offset(Some(Dp(160.0)), Some(Dp(80.0)), None, None)
+                    .inset(Some(Dp(160.0)), Some(Dp(80.0)), None, None)
                     .size(Dp(160.0), Dp(90.0))
                     .background(theme().surface)
                     .border(Dp(1.0), theme().outline, Dp(10.0))

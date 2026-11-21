@@ -1,4 +1,4 @@
-use crate::Vec2;
+use crate::{GradientStop, GradientStops, Vec2};
 
 /// Y′CbCr or RGB signal range.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -355,6 +355,39 @@ pub enum Brush {
         start_color: Color,
         end_color: Color,
     },
+
+    /// Multi-stop linear gradient in shape-local px with an explicit tile mode.
+    /// Two stops at offsets 0 and 1 match [`Brush::Linear`].
+    LinearStops {
+        start: Vec2,
+        end: Vec2,
+        stops: GradientStops,
+        tile_mode: TileMode,
+    },
+
+    /// Multi-stop linear gradient with endpoints normalized to the shape bounds.
+    /// Two stops at offsets 0 and 1 match [`Brush::LinearNormalized`].
+    LinearNormalizedStops {
+        start: Vec2,
+        end: Vec2,
+        stops: GradientStops,
+        tile_mode: TileMode,
+    },
+
+    /// Multi-stop radial gradient with an explicit tile mode.
+    RadialStops {
+        center: Vec2,
+        radius: f32,
+        stops: GradientStops,
+        tile_mode: TileMode,
+    },
+
+    /// Multi-stop angular sweep with an explicit tile mode.
+    SweepStops {
+        center: Vec2,
+        stops: GradientStops,
+        tile_mode: TileMode,
+    },
 }
 
 /// Out-of-bounds behavior for gradient brushes, mirroring Compose `TileMode`.
@@ -372,6 +405,75 @@ pub enum TileMode {
 impl From<Color> for Brush {
     fn from(c: Color) -> Self {
         Brush::Solid(c)
+    }
+}
+
+impl Brush {
+    fn build_stops(stops: &[(f32, Color)]) -> GradientStops {
+        let mut table = GradientStops::default();
+        for &(offset, color) in stops {
+            table.push(GradientStop { offset, color });
+        }
+        table
+    }
+
+    /// Multi-stop linear gradient with endpoints in shape-local px.
+    /// Stops beyond [`crate::MAX_GRADIENT_STOPS`] are ignored.
+    pub fn linear_gradient_stops(
+        start: Vec2,
+        end: Vec2,
+        stops: &[(f32, Color)],
+        tile_mode: TileMode,
+    ) -> Self {
+        Brush::LinearStops {
+            start,
+            end,
+            stops: Self::build_stops(stops),
+            tile_mode,
+        }
+    }
+
+    /// Multi-stop linear gradient with endpoints normalized to `0..=1`.
+    pub fn linear_gradient_normalized_stops(
+        start: Vec2,
+        end: Vec2,
+        stops: &[(f32, Color)],
+        tile_mode: TileMode,
+    ) -> Self {
+        Brush::LinearNormalizedStops {
+            start,
+            end,
+            stops: Self::build_stops(stops),
+            tile_mode,
+        }
+    }
+
+    /// Multi-stop radial gradient around `center` in shape-local px.
+    pub fn radial_gradient_stops(
+        center: Vec2,
+        radius: f32,
+        stops: &[(f32, Color)],
+        tile_mode: TileMode,
+    ) -> Self {
+        Brush::RadialStops {
+            center,
+            radius,
+            stops: Self::build_stops(stops),
+            tile_mode,
+        }
+    }
+
+    /// Multi-stop angular sweep around `center` in shape-local px.
+    pub fn sweep_gradient_stops(
+        center: Vec2,
+        stops: &[(f32, Color)],
+        tile_mode: TileMode,
+    ) -> Self {
+        Brush::SweepStops {
+            center,
+            stops: Self::build_stops(stops),
+            tile_mode,
+        }
     }
 }
 
