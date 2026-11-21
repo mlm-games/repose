@@ -4654,14 +4654,24 @@ mod focus_click_tests {
     fn frame_with_field_and_button() -> Frame {
         let field = HitRegion {
             id: 1,
-            rect: Rect { x: 0.0, y: 0.0, w: 100.0, h: 40.0 },
+            rect: Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 100.0,
+                h: 40.0,
+            },
             focusable: true,
             tf_enabled: false,
             ..Default::default()
         };
         let button = HitRegion {
             id: 2,
-            rect: Rect { x: 0.0, y: 60.0, w: 100.0, h: 40.0 },
+            rect: Rect {
+                x: 0.0,
+                y: 60.0,
+                w: 100.0,
+                h: 40.0,
+            },
             focusable: true,
             on_click: Some(Rc::new(|| {})),
             ..Default::default()
