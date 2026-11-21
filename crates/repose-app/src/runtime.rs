@@ -229,6 +229,9 @@ pub struct ReposeRuntime {
     key_pressed: HashMap<Key, u64>,
     down_keys: HashSet<Key>,
     pub last_focus: Option<u64>,
+    /// Bounds of the focused hit in the last frame, used to fire
+    /// `on_focused_bounds_changed` only on real changes.
+    last_focused_bounds: Option<repose_core::Rect>,
     /// Polled physical-key state, keyed by debug name (`KeyCode::KeyW`,
     /// `Digit1`, ...). Platform runners report every `KeyboardInput`
     /// press/release here so games can poll held keys GML-style
@@ -327,6 +330,7 @@ impl ReposeRuntime {
             key_pressed: HashMap::new(),
             down_keys: HashSet::new(),
             last_focus: None,
+            last_focused_bounds: None,
             held_keys: HashSet::new(),
             held_mouse: HashSet::new(),
             last_up: None,
@@ -430,6 +434,21 @@ impl ReposeRuntime {
         repose_ui::scrollbar_repeat::poll_track_repeat();
     }
 
+    /// Resolve queued bring-into-view requests against the last painted frame
+    /// and mutate scroll state before the next frame is composed.
+    fn process_bring_into_view_requests(&mut self) {
+        let queued = repose_core::runtime::drain_bring_into_view_requests();
+        if queued.is_empty() {
+            return;
+        }
+        let Some(frame) = self.frame_cache.clone() else {
+            return;
+        };
+        for id in queued {
+            bring_target_into_view(&frame.hit_regions, id);
+        }
+    }
+
     /// Compose and layout a frame, returning the output for rendering.
     ///
     /// Call `tick_animations` before this and `cache_frame` after (once you
@@ -440,6 +459,7 @@ impl ReposeRuntime {
     {
         let _dnd_guard = self.dnd_context.enter();
         let _event_scope = crate::lifecycle::enter_dispatchers(self.event_dispatchers());
+        self.process_bring_into_view_requests();
         self.poll_long_press();
         self.flush_pending_click();
         self.poll_key_long_press();
@@ -650,6 +670,7 @@ impl ReposeRuntime {
         self.prune_textfield_states(&frame);
         self.ensure_focused_state_in_frame(&frame);
         self.reconcile_hover_from_mouse_pos(&frame);
+        self.dispatch_focused_bounds_callbacks(&frame);
         repose_core::dnd::set_shared_dnd_frame(Some(frame));
         repose_core::dnd::set_dnd_scale(scale);
     }
@@ -704,6 +725,31 @@ impl ReposeRuntime {
             let st = ensure_tf_state(&mut self.textfield_states, key, hit.tf_value.as_str());
             st.borrow_mut().apply_controlled_value(&hit.tf_value);
         }
+    }
+
+    /// Fire `on_focused_bounds_changed` on every hit region that installed the
+    /// callback, passing the focused element's rect in physical pixels. Fires
+    /// only when focus or the focused bounds actually changed.
+    fn dispatch_focused_bounds_callbacks(&mut self, frame: &Frame) {
+        let focused = self.sched.focused;
+        let bounds = focused.and_then(|id| {
+            frame
+                .hit_regions
+                .iter()
+                .find(|h| h.id == id)
+                .map(|h| h.rect)
+        });
+        if bounds == self.last_focused_bounds {
+            return;
+        }
+        for hit in &frame.hit_regions {
+            if let Some(cb) = &hit.on_focused_bounds_changed
+                && let Some(rect) = bounds
+            {
+                cb(rect);
+            }
+        }
+        self.last_focused_bounds = bounds;
     }
 
     /// Cache a composed [`FrameOutput`] for hit-testing: rebuilds the retained
@@ -4056,6 +4102,48 @@ fn dispatch_scroll(
         (true, first_consumer)
     } else {
         (false, None)
+    }
+}
+
+/// Walk a target's hit-region ancestors and dispatch the scroll delta each
+/// scroll container needs to reveal it. The target rect is translated by the
+/// delta each ancestor actually consumes so higher containers see the updated
+/// position.
+fn bring_target_into_view(hits: &[HitRegion], target_id: u64) {
+    let Some(target) = hits
+        .iter()
+        .find(|h| h.id == target_id && !h.disabled && h.visible != Some(false))
+    else {
+        return;
+    };
+    let mut rect = target.rect;
+    let mut current = target.parent;
+    let mut seen = HashSet::new();
+    while let Some(id) = current {
+        if !seen.insert(id) {
+            break;
+        }
+        let Some(hit) = hits.iter().find(|h| h.id == id) else {
+            break;
+        };
+        if hit.on_scroll.is_some() || hit.on_scroll_with_source.is_some() {
+            let delta = repose_core::scroll::scroll_delta_to_reveal(
+                rect,
+                hit.rect,
+                repose_core::scroll::ScrollAxis::Both,
+            );
+            if delta.x.abs() > 0.5 || delta.y.abs() > 0.5 {
+                if let Some(leftover) =
+                    run_scroll_handler(hit, delta, repose_core::input::ScrollSource::Wheel)
+                {
+                    let consumed_x = delta.x - leftover.x;
+                    let consumed_y = delta.y - leftover.y;
+                    rect.x -= consumed_x;
+                    rect.y -= consumed_y;
+                }
+            }
+        }
+        current = hit.parent;
     }
 }
 

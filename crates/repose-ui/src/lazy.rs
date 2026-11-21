@@ -45,6 +45,47 @@ where
     scoped_item_with_key(item_scope_key(state_id, key), key, revision, build)
 }
 
+/// Offset that visually keeps an item at its previous screen position while
+/// its layout slot moves. Mirrors Compose's `LazyItemScope.animateItem()`.
+///
+/// `screen_top` is the item's top relative to the viewport, so scroll anchoring
+/// that cancels a layout shift also cancels the animation (no double move).
+/// The offset is animated back to zero with the existing animation driver.
+fn item_placement_offset(
+    positions: &RefCell<HashMap<u64, f32>>,
+    animation_id: u64,
+    key: u64,
+    screen_top: f32,
+    spec: AnimationSpec,
+) -> f32 {
+    let shift = {
+        let mut map = positions.borrow_mut();
+        let previous = map.insert(key, screen_top);
+        previous.map_or(0.0, |previous| previous - screen_top)
+    };
+    let anim_key = format!("_lz_item_place:{animation_id}:{key}");
+    let anim = remember_with_key(&anim_key, || {
+        Rc::new(RefCell::new(AnimatedValue::new(0.0, spec)))
+    });
+    animation_driver::touch(&anim_key);
+    let registered = animation_driver::is_registered(&anim_key);
+    let mut value = anim.borrow_mut();
+    if shift.abs() > 0.5 {
+        value.snap_to(shift);
+        value.set_spec(spec);
+        value.set_target(0.0);
+        request_frame();
+    }
+    if !registered {
+        let driver_anim = anim.clone();
+        animation_driver::register(
+            anim_key.clone(),
+            Rc::new(RefCell::new(move || driver_anim.borrow_mut().update())),
+        );
+    }
+    *value.get()
+}
+
 struct ExitingItem<T> {
     key: u64,
     item: T,
@@ -91,6 +132,7 @@ where
         modifier,
         state,
         animate_spec,
+        animate_item,
         content_padding,
         reverse_layout,
         user_scroll_enabled,
@@ -247,6 +289,12 @@ where
     let animation_id = state_id as u64;
     let animation_spec = animate_spec;
 
+    let placement_positions = animate_item.map(|_| {
+        remember_with_key(format!("_lz_item_places:{animation_id}"), || {
+            RefCell::new(HashMap::<u64, f32>::new())
+        })
+    });
+
     let animation_slot = animation_spec.map(|_| {
         remember(|| {
             RefCell::new(AnimState::<T> {
@@ -391,6 +439,13 @@ where
         let key = current_keys[visual_index];
         let height_dp = uniform_height_dp.unwrap_or_else(|| item_height.get(item).max(1.0));
         let data_index = data_idx_of(visual_index);
+        let placement_offset_px = match (&placement_positions, animate_item) {
+            (Some(positions), Some(spec)) => {
+                let screen_top = current_geometry(visual_index).0 - scroll_offset_px;
+                item_placement_offset(positions, animation_id, key, screen_top, spec)
+            }
+            _ => 0.0,
+        };
         let is_entering = entering.contains(&key);
         let alpha = if is_entering {
             animation_spec.map_or(1.0, |spec| {
@@ -399,7 +454,13 @@ where
         } else {
             1.0
         };
-        let variation = is_entering.then_some(alpha.to_bits() as u64).unwrap_or(0);
+        let variation = is_entering.then_some(alpha.to_bits() as u64).unwrap_or(0)
+            ^ (placement_offset_px.to_bits() as u64);
+        let placement_offset_dp = if animate_item.is_some() {
+            Dp(Px(placement_offset_px).to_dp().0)
+        } else {
+            Dp::ZERO
+        };
         let revision = if uniform_height_dp.is_some() {
             state.cache_revision_for_uniform(
                 key,
@@ -425,7 +486,9 @@ where
         }
         if Some(visual_index) == sticky_active {
             combined_children.push(crate::Box(
-                Modifier::new().fill_max_width().height(Dp(height_dp)),
+                Modifier::new()
+                    .fill_parent_max_width()
+                    .height(Dp(height_dp)),
             ));
             continue;
         }
@@ -437,9 +500,10 @@ where
                 move || {
                     crate::Box(
                         Modifier::new()
-                            .fill_max_width()
+                            .fill_parent_max_width()
                             .height(Dp(height_dp))
-                            .alpha(alpha),
+                            .alpha(alpha)
+                            .absolute_offset(Dp::ZERO, placement_offset_dp),
                     )
                     .child(item_builder_ref(item.clone(), data_index))
                 },
@@ -450,8 +514,13 @@ where
                 key,
                 revision,
                 move || {
-                    crate::Box(Modifier::new().fill_max_width().height(Dp(height_dp)))
-                        .child(item_builder_ref(item.clone(), data_index))
+                    crate::Box(
+                        Modifier::new()
+                            .fill_parent_max_width()
+                            .height(Dp(height_dp))
+                            .absolute_offset(Dp::ZERO, placement_offset_dp),
+                    )
+                    .child(item_builder_ref(item.clone(), data_index))
                 },
             ));
         }
@@ -1238,6 +1307,7 @@ where
     let LazyRowConfig {
         modifier,
         state,
+        animate_item,
         content_padding,
         reverse_layout,
         user_scroll_enabled,
@@ -1348,6 +1418,12 @@ where
         active
     };
     let state_id = Rc::as_ptr(&state) as usize;
+    let animation_id = state_id as u64;
+    let placement_positions = animate_item.map(|_| {
+        remember_with_key(format!("_lz_row_places:{animation_id}"), || {
+            RefCell::new(HashMap::<u64, f32>::new())
+        })
+    });
     for i in first_with_buffer..last_visible {
         if i >= src_len {
             continue;
@@ -1367,18 +1443,45 @@ where
             continue;
         }
         if let Some(item) = items.get(data_i) {
+            let key = data_i as u64;
+            let placement_offset_px = match (&placement_positions, animate_item) {
+                (Some(positions), Some(spec)) => {
+                    let screen_left = left_at(i) - scroll_offset_px;
+                    item_placement_offset(positions, animation_id, key, screen_left, spec)
+                }
+                _ => 0.0,
+            };
+            let variation = placement_offset_px.to_bits() as u64;
             let revision = state.cache_revision_for_with(
-                data_i as u64,
+                key,
                 &items[data_i] as *const T as usize,
                 item_w_px,
-                0,
+                variation,
             );
-            children.push(scoped_item_with_key(
-                item_scope_key(state_id, data_i as u64),
-                data_i as u64,
-                revision,
-                || item_builder(item.clone(), data_i),
-            ));
+            if animate_item.is_some() {
+                let offset_dp = Dp(Px(placement_offset_px).to_dp().0);
+                children.push(scoped_item_with_key(
+                    item_scope_key(state_id, key),
+                    key,
+                    revision,
+                    move || {
+                        crate::Box(
+                            Modifier::new()
+                                .fill_parent_max_height()
+                                .width(Dp(item_width_dp))
+                                .absolute_offset(offset_dp, Dp::ZERO),
+                        )
+                        .child(item_builder(item.clone(), data_i))
+                    },
+                ));
+            } else {
+                children.push(scoped_item_with_key(
+                    item_scope_key(state_id, key),
+                    key,
+                    revision,
+                    || item_builder(item.clone(), data_i),
+                ));
+            }
         }
     }
 

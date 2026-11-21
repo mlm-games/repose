@@ -60,10 +60,14 @@ pub(crate) fn focus_radius(modifier: &Modifier) -> [Dp; 4] {
     modifier.clip_rounded.unwrap_or([Dp(6.0); 4])
 }
 
-/// Associate a `FocusRequester` (if present on the modifier) with the view.
+/// Associate a `FocusRequester` / `BringIntoViewRequester` (if present on the
+/// modifier) with the view.
 pub(crate) fn set_focus_requester(modifier: &Modifier, view_id: u64) {
     if let Some(ref fr) = modifier.focus_requester {
         FocusManager::set_requester_target(fr, view_id);
+    }
+    if let Some(ref requester) = modifier.bring_into_view {
+        requester.set_target(view_id);
     }
 }
 

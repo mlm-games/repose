@@ -185,6 +185,10 @@ pub struct LazyColumnConfig {
     pub modifier: Modifier,
     pub state: Rc<LazyColumnState>,
     pub animate_spec: Option<AnimationSpec>,
+    /// Animate an item's position when its placement changes (insert, remove
+    /// or reorder) instead of snapping to the new slot. Equivalent to Compose's
+    /// `LazyItemScope.animateItem()`.
+    pub animate_item: Option<AnimationSpec>,
     pub content_padding: PaddingValues,
     pub reverse_layout: bool,
     pub user_scroll_enabled: bool,
@@ -199,6 +203,7 @@ impl Default for LazyColumnConfig {
             modifier: Modifier::new(),
             state: Rc::new(LazyColumnState::new()),
             animate_spec: None,
+            animate_item: None,
             content_padding: PaddingValues::default(),
             reverse_layout: false,
             user_scroll_enabled: true,
@@ -214,6 +219,9 @@ impl Default for LazyColumnConfig {
 pub struct LazyRowConfig {
     pub modifier: Modifier,
     pub state: Rc<LazyRowState>,
+    /// Animate an item's position when its placement changes (insert, remove
+    /// or reorder) instead of snapping to the new slot.
+    pub animate_item: Option<AnimationSpec>,
     pub content_padding: PaddingValues,
     pub reverse_layout: bool,
     pub user_scroll_enabled: bool,
@@ -227,6 +235,7 @@ impl Default for LazyRowConfig {
         Self {
             modifier: Modifier::new(),
             state: Rc::new(LazyRowState::new()),
+            animate_item: None,
             content_padding: PaddingValues::default(),
             reverse_layout: false,
             user_scroll_enabled: true,

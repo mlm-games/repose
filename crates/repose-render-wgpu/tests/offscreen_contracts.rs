@@ -133,6 +133,7 @@ fn transformed_graphics_layer_replays_clips_in_layer_coordinates() {
         origin_x: 0.0,
         origin_y: 0.0,
         perspective: [0.0, 0.0, 1.0],
+        ..Transform::default()
     };
     let rect = Rect {
         x: 300.0,
@@ -168,6 +169,9 @@ fn transformed_graphics_layer_replays_clips_in_layer_coordinates() {
             blur_radius_x: Px::ZERO,
             blur_radius_y: Px::ZERO,
             rectangle_edge: true,
+            blend_mode: Default::default(),
+            color_filter: Default::default(),
+            compositing_strategy: Default::default(),
         },
     );
     layer_nodes.insert(
@@ -220,6 +224,9 @@ fn graphics_layer_shadow_draws_before_the_layer_composite() {
                 blur_radius_x: Px::ZERO,
                 blur_radius_y: Px::ZERO,
                 rectangle_edge: true,
+                blend_mode: Default::default(),
+                color_filter: Default::default(),
+                compositing_strategy: Default::default(),
             },
             SceneNode::PushTransform {
                 transform: Transform::translate(-rect.x, -rect.y),
@@ -295,6 +302,9 @@ fn shadow_falloff_matches_a_gaussian() {
                     blur_radius_x: Px::ZERO,
                     blur_radius_y: Px::ZERO,
                     rectangle_edge: true,
+                    blend_mode: Default::default(),
+                    color_filter: Default::default(),
+                    compositing_strategy: Default::default(),
                 },
                 SceneNode::PushTransform {
                     transform: Transform::translate(-layer.x, -layer.y),
@@ -387,6 +397,9 @@ fn shadow_shape_rounds_an_unclipped_layer() {
                 blur_radius_x: Px::ZERO,
                 blur_radius_y: Px::ZERO,
                 rectangle_edge: true,
+                blend_mode: Default::default(),
+                color_filter: Default::default(),
+                compositing_strategy: Default::default(),
             },
             SceneNode::PushTransform {
                 transform: Transform::translate(-layer.x, -layer.y),
@@ -497,6 +510,9 @@ fn blur_does_not_square_the_group_alpha() {
                 blur_radius_x: Px(blur),
                 blur_radius_y: Px(blur),
                 rectangle_edge: true,
+                blend_mode: Default::default(),
+                color_filter: Default::default(),
+                compositing_strategy: Default::default(),
             },
             SceneNode::PushTransform {
                 transform: Transform::translate(-layer.x, -layer.y),
@@ -572,6 +588,9 @@ fn blur_and_shadow_on_one_layer_keep_their_content() {
                 blur_radius_x: Px(blur),
                 blur_radius_y: Px(blur),
                 rectangle_edge: true,
+                blend_mode: Default::default(),
+                color_filter: Default::default(),
+                compositing_strategy: Default::default(),
             },
             SceneNode::PushTransform {
                 transform: Transform::translate(-layer.x, -layer.y),

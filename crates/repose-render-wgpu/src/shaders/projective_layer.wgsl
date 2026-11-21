@@ -19,6 +19,7 @@ struct VSOut {
     @builtin(position) pos: vec4<f32>,
     @location(0) uv: vec2<f32>,
     @location(1) alpha: f32,
+    @location(2) @interpolate(flat) tint: vec3<f32>,
 };
 
 @vertex
@@ -30,6 +31,7 @@ fn vs_main(
     @location(4) uv_bounds: vec4<f32>,
     @location(5) w_row: vec4<f32>,
     @location(6) alpha: f32,
+    @location(7) tint: vec3<f32>,
     @builtin(vertex_index) v: u32,
 ) -> VSOut {
     // 6 vertices -> 4 corners: 0,1,2, 0,2,3.
@@ -54,6 +56,7 @@ fn vs_main(
     out.pos = vec4(corner * w, 0.0, w);
     out.uv = uv;
     out.alpha = alpha;
+    out.tint = tint;
     return out;
 }
 
@@ -66,5 +69,5 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
     // hardware). The layer sampler clamps, like the sharp composite path.
     let c = textureSample(layer_tex, layer_samp, in.uv);
     let a = c.a * in.alpha;
-    return vec4(c.rgb * in.alpha, a);
+    return vec4(c.rgb * in.tint * in.alpha, a);
 }

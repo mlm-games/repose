@@ -41,6 +41,12 @@ thread_local! {
     /// Focusable view ids in declaration/layout order, captured by paint before
     /// hit regions are reordered by z-index for hit testing.
     static FOCUS_ORDER: RefCell<Option<Vec<u64>>> = const { RefCell::new(None) };
+
+    /// Programmatic bring-into-view requests queued by `BringIntoViewRequester`.
+    /// Ids are drained once per frame by the app runtime and resolved against
+    /// the previous frame's hit regions before the next frame is composed.
+    static BRING_INTO_VIEW_REQUESTS: RefCell<std::collections::VecDeque<u64>> =
+        const { RefCell::new(std::collections::VecDeque::new()) };
 }
 
 pub const CLEAR_FOCUS_MARKER: u64 = u64::MAX;
@@ -281,6 +287,17 @@ pub fn drain_focus_requests() -> Vec<u64> {
     FOCUS_REQUESTS.with(|r| r.borrow_mut().drain(..).collect())
 }
 
+/// Enqueue a bring-into-view request for a view id. The request is consumed
+/// once, on the next frame, against the most recently painted hit regions.
+pub fn queue_bring_into_view(id: u64) {
+    BRING_INTO_VIEW_REQUESTS.with(|r| r.borrow_mut().push_back(id));
+}
+
+/// Drain all queued bring-into-view requests in FIFO order.
+pub fn drain_bring_into_view_requests() -> Vec<u64> {
+    BRING_INTO_VIEW_REQUESTS.with(|r| r.borrow_mut().drain(..).collect())
+}
+
 /// Currently captured focus target, if any.
 pub fn focus_capture() -> Option<u64> {
     FOCUS_CAPTURED.with(|c| *c.borrow())
@@ -378,6 +395,60 @@ impl FocusRequester {
 }
 
 impl Default for FocusRequester {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// A handle that can programmatically scroll a widget into view.
+///
+/// Create one via `remember(BringIntoViewRequester::new)`, attach it with
+/// `Modifier::bring_into_view(requester)`, and call [`request`](Self::request)
+/// to scroll the attached widget into view on the next frame. The runtime
+/// resolves the target against the current frame and walks its ancestor scroll
+/// containers, dispatching the scroll deltas needed to reveal it.
+#[derive(Clone)]
+pub struct BringIntoViewRequester {
+    /// Target view id, assigned during layout/paint by the modifier system.
+    pub target: Rc<RefCell<Option<u64>>>,
+}
+
+impl BringIntoViewRequester {
+    pub fn new() -> Self {
+        Self {
+            target: Rc::new(RefCell::new(None)),
+        }
+    }
+
+    /// Request that the associated widget be scrolled into view.
+    ///
+    /// Queued: the request is resolved on the next frame. If the modifier has
+    /// not been laid out yet the request is dropped.
+    pub fn request(&self) {
+        let _ = self.try_request();
+    }
+
+    /// Enqueue the request, reporting whether a target was available.
+    pub fn try_request(&self) -> bool {
+        let Some(id) = *self.target.borrow() else {
+            return false;
+        };
+        queue_bring_into_view(id);
+        true
+    }
+
+    /// Assign the view id this requester is attached to. Called by layout.
+    pub fn set_target(&self, id: u64) {
+        *self.target.borrow_mut() = Some(id);
+    }
+
+    /// Drop the current target (e.g. when the widget leaves the tree).
+    pub fn clear_target(&self) {
+        *self.target.borrow_mut() = None;
+    }
+}
+
+impl Default for BringIntoViewRequester {
     fn default() -> Self {
         Self::new()
     }
@@ -1315,6 +1386,15 @@ pub struct HitRegion {
     /// element is a descendant of a node with `focus_group: true`.
     pub focus_group_id: Option<u64>,
 
+    /// View id of a `BringIntoViewRequester` attached to this region. The
+    /// runtime uses it to resolve which view to reveal when `request()` fires.
+    pub bring_into_view_target: Option<u64>,
+
+    /// Called with the focused descendant's bounds (physical px) whenever
+    /// focus or those bounds change. Scroll containers install this to implement
+    /// focus-driven bring-into-view.
+    pub on_focused_bounds_changed: Option<Rc<dyn Fn(Rect)>>,
+
     /// IME keyboard hints, populated for text-field hit regions so the
     /// platform runner can configure the OS keyboard / IME on focus.
     pub keyboard_type: crate::text::KeyboardType,
@@ -1391,6 +1471,11 @@ impl HitRegion {
             drag_preview: m.drag_preview.clone(),
             disabled: m.disabled,
             visible: m.visible,
+            bring_into_view_target: m.bring_into_view.as_ref().map(|requester| {
+                requester.set_target(id);
+                id
+            }),
+            on_focused_bounds_changed: m.on_focused_bounds_changed.clone(),
             tf_enabled: true,
             tf_read_only: false,
             test_tag: m.semantics.as_ref().and_then(|s| s.test_tag.clone()),

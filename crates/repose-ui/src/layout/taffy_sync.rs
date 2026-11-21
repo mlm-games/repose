@@ -834,6 +834,36 @@ impl LayoutEngine {
                 s.flex_shrink = 0.0;
             }
         }
+
+        if m.match_parent_size {
+            s.position = Position::Absolute;
+            s.inset = taffy::geometry::Rect {
+                left: length(0.0_f32),
+                right: length(0.0_f32),
+                top: length(0.0_f32),
+                bottom: length(0.0_f32),
+            };
+            s.size.width = taffy::Dimension::auto();
+            s.size.height = taffy::Dimension::auto();
+            s.flex_basis = length(0.0_f32);
+            s.flex_shrink = 0.0;
+            s.flex_grow = 0.0;
+        }
+
+        if let Some((axis, _)) = m.fill_parent_max_size {
+            match axis {
+                ScrollAxis::Vertical => {
+                    s.min_size.height = percent(1.0_f32);
+                }
+                ScrollAxis::Horizontal => {
+                    s.min_size.width = percent(1.0_f32);
+                }
+                ScrollAxis::Both => {
+                    s.min_size.width = percent(1.0_f32);
+                    s.min_size.height = percent(1.0_f32);
+                }
+            }
+        }
         s
     }
 

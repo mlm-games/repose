@@ -128,6 +128,8 @@ pub struct LayoutEngine {
 
     pub(crate) paint_generation: u64,
 
+    pub(crate) graphics_scope_epoch: u64,
+
     /// Previous absolute rects for `on_globally_positioned` / `on_size_changed` callbacks.
     pub(crate) prev_observed_rects: FxHashMap<u64, repose_core::Rect>,
 

@@ -303,6 +303,32 @@ impl Color {
     }
 }
 
+/// Per-layer color transform applied when a graphics layer is composited.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ColorFilter {
+    None,
+    Tint(Color),
+    Blend {
+        color: Color,
+        mode: crate::BlendMode,
+    },
+}
+
+impl Default for ColorFilter {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
+/// How a graphics layer is composited into its parent.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum CompositingStrategy {
+    #[default]
+    Auto,
+    Offscreen,
+    ModulateAlpha,
+}
+
 /// Brush for filling shapes.
 ///
 /// This can be a solid color or a gradient. Higher‑level APIs (Modifier,

@@ -69,6 +69,12 @@ pub struct Transform {
     pub shear_x: f32,
     /// Vertical shear factor (`y += shear_y * x`), e.g. ASS `\fay`.
     pub shear_y: f32,
+    /// 3D rotation about the x axis in radians (Compose `rotationX`).
+    pub rotation_x: f32,
+    /// 3D rotation about the y axis in radians (Compose `rotationY`).
+    pub rotation_y: f32,
+    /// Camera distance for the perspective divide. `<= 0` is orthographic.
+    pub camera_distance: f32,
     /// Normalized transform origin in `[0, 1]` (0.5 = center).
     ///
     /// This is a *normalized* pivot, not an absolute point. It is only
@@ -103,6 +109,9 @@ impl Transform {
             rotate: 0.0,
             shear_x: 0.0,
             shear_y: 0.0,
+            rotation_x: 0.0,
+            rotation_y: 0.0,
+            camera_distance: 0.0,
             origin_x: 0.5,
             origin_y: 0.5,
             perspective: [0.0, 0.0, 1.0],
@@ -118,6 +127,9 @@ impl Transform {
             rotate: 0.0,
             shear_x: 0.0,
             shear_y: 0.0,
+            rotation_x: 0.0,
+            rotation_y: 0.0,
+            camera_distance: 0.0,
             origin_x: 0.5,
             origin_y: 0.5,
             perspective: [0.0, 0.0, 1.0],
@@ -160,11 +172,14 @@ impl Transform {
             && self.rotate == 0.0
             && self.shear_x == 0.0
             && self.shear_y == 0.0
+            && self.rotation_x == 0.0
+            && self.rotation_y == 0.0
     }
 
     /// Whether the projective row is non-trivial (true perspective).
     pub fn has_perspective(&self) -> bool {
         self.perspective != [0.0, 0.0, 1.0]
+            || ((self.rotation_x != 0.0 || self.rotation_y != 0.0) && self.camera_distance > 0.0)
     }
 
     /// Full homogeneous 3x3 map (row-major, 9 elements): the affine
@@ -174,10 +189,12 @@ impl Transform {
     /// Origin pivots are intentionally not folded in: the renderer consumes
     /// the affine parts origin-free (see `rect_to_instance_ndc`), so pivots
     /// must be baked into the rows by the producer (see
-    /// [`from_projective_rows`](Self::from_projective_rows)).
+    /// [`from_projective_rows`](Self::from_projective_rows)). The same applies
+    /// to `rotation_x`/`rotation_y`: bake the pivot by translating to it,
+    /// applying this matrix, then translating back.
     pub fn projective_matrix(&self) -> [f32; 9] {
         let m = self.linear();
-        [
+        let base = [
             m[0],
             m[1],
             self.translate_x,
@@ -187,7 +204,29 @@ impl Transform {
             self.perspective[0],
             self.perspective[1],
             self.perspective[2],
-        ]
+        ];
+        if self.rotation_x == 0.0 && self.rotation_y == 0.0 {
+            return base;
+        }
+        let (sa, ca) = (self.rotation_x.sin(), self.rotation_x.cos());
+        let (sb, cb) = (self.rotation_y.sin(), self.rotation_y.cos());
+        let inv_d = if self.camera_distance > 0.0 {
+            1.0 / self.camera_distance
+        } else {
+            0.0
+        };
+        let camera = [
+            cb,
+            sa * sb,
+            0.0,
+            0.0,
+            ca,
+            0.0,
+            sb * inv_d,
+            -sa * cb * inv_d,
+            1.0,
+        ];
+        Self::compose_projective(&camera, &base)
     }
 
     /// Build a transform from explicit homogeneous rows: `row0`/`row1` are the
@@ -208,6 +247,9 @@ impl Transform {
             rotate: rot,
             shear_x: hx,
             shear_y: hy,
+            rotation_x: 0.0,
+            rotation_y: 0.0,
+            camera_distance: 0.0,
             origin_x: 0.5,
             origin_y: 0.5,
             perspective,
@@ -219,16 +261,17 @@ impl Transform {
     /// the original sign so output stays finite; callers culling
     /// behind-camera content should test `w` via [`projective_w`](Self::projective_w).
     pub fn apply_projective(&self, p: Vec2) -> Vec2 {
-        let m = self.linear();
-        let x = m[0] * p.x + m[1] * p.y + self.translate_x;
-        let y = m[2] * p.x + m[3] * p.y + self.translate_y;
+        let m = self.projective_matrix();
+        let x = m[0] * p.x + m[1] * p.y + m[2];
+        let y = m[3] * p.x + m[4] * p.y + m[5];
         let w = self.projective_w(p);
         Vec2 { x: x / w, y: y / w }
     }
 
-    /// The homogeneous `w` of a point under this transform's projective row.
+    /// The homogeneous `w` of a point under this transform's projective map.
     pub fn projective_w(&self, p: Vec2) -> f32 {
-        let w = self.perspective[0] * p.x + self.perspective[1] * p.y + self.perspective[2];
+        let m = self.projective_matrix();
+        let w = m[6] * p.x + m[7] * p.y + m[8];
         if w.abs() < 1e-6 {
             if w < 0.0 { -1e-6 } else { 1e-6 }
         } else {
@@ -424,6 +467,9 @@ impl Transform {
             rotate,
             shear_x,
             shear_y,
+            rotation_x: 0.0,
+            rotation_y: 0.0,
+            camera_distance: 0.0,
             origin_x: self.origin_x,
             origin_y: self.origin_y,
             // Affine-only (see doc): callers must not push perspective here.
@@ -490,6 +536,9 @@ mod tests {
             rotate: rot,
             shear_x: hx,
             shear_y: hy,
+            rotation_x: 0.0,
+            rotation_y: 0.0,
+            camera_distance: 0.0,
             origin_x: 0.0,
             origin_y: 0.0,
             perspective: [0.0, 0.0, 1.0],

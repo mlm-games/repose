@@ -9,9 +9,10 @@ use std::sync::{Arc, Mutex, Weak};
 
 use repose_core::color::{ChromaSiting, ColorInfo, PixelFormat};
 use repose_core::{
-    Brush, Dp, FontStyle, GradientStops, ImageAlignment, ImageFilter, ImageFit, ImagePaintStyle,
-    ImageSourceRect, MAX_GRADIENT_STOPS, PathCommand, Px, ResolvedShape, Scene, SceneNode,
-    ShapePath, StrokeCap, TextPaintStyle, TileMode, Transform, Vec2,
+    BlendMode, Brush, ColorFilter, CompositingStrategy, Dp, FontStyle, GradientStops,
+    ImageAlignment, ImageFilter, ImageFit, ImagePaintStyle, ImageSourceRect, MAX_GRADIENT_STOPS,
+    PathCommand, Px, ResolvedShape, Scene, SceneNode, ShapePath, StrokeCap, TextPaintStyle,
+    TileMode, Transform, Vec2,
 };
 #[cfg(feature = "winit-surface")]
 use repose_core::{GlyphRasterConfig, PresentModePref, RenderBackend, request_frame};
@@ -733,6 +734,73 @@ fn fixed_function_blend(mode: repose_core::BlendMode) -> Option<wgpu::BlendState
     })
 }
 
+/// Filter color and `blend_layer.wgsl` filter mode (0 = none). A `Blend`
+/// filter reuses the blend-mode discriminants; `Tint` folds into the group
+/// color instead, so it needs no shader filter.
+fn color_filter_fields(filter: ColorFilter) -> ([f32; 4], u32) {
+    match filter {
+        ColorFilter::None => ([0.0; 4], 0),
+        ColorFilter::Tint(_) => ([0.0; 4], 0),
+        ColorFilter::Blend { color, mode } => (color.to_linear(), mode.shader_mode()),
+    }
+}
+
+/// Axis-aligned bounds of a rect under a full projective map, used to size
+/// isolation/snapshot regions for perspective layers.
+fn projected_rect(map: &[f32; 9], rect: repose_core::Rect) -> repose_core::Rect {
+    let corners = [
+        (rect.x, rect.y),
+        (rect.x + rect.w, rect.y),
+        (rect.x + rect.w, rect.y + rect.h),
+        (rect.x, rect.y + rect.h),
+    ];
+    let mut min_x = f32::INFINITY;
+    let mut min_y = f32::INFINITY;
+    let mut max_x = f32::NEG_INFINITY;
+    let mut max_y = f32::NEG_INFINITY;
+    for (x, y) in corners {
+        let w = map[6] * x + map[7] * y + map[8];
+        let w = if w.abs() < 1e-6 {
+            if w < 0.0 { -1e-6 } else { 1e-6 }
+        } else {
+            w
+        };
+        let px = (map[0] * x + map[1] * y + map[2]) / w;
+        let py = (map[3] * x + map[4] * y + map[5]) / w;
+        min_x = min_x.min(px);
+        min_y = min_y.min(py);
+        max_x = max_x.max(px);
+        max_y = max_y.max(py);
+    }
+    repose_core::Rect {
+        x: min_x,
+        y: min_y,
+        w: (max_x - min_x).max(0.0),
+        h: (max_y - min_y).max(0.0),
+    }
+}
+
+/// Group color applied at composite time: alpha modulation plus a `Tint`
+/// filter multiplied into rgba. A `Blend` filter is shader-only and handled
+/// separately. The 2D and projective paths both consume this.
+fn layer_group_color(alpha: f32, filter: ColorFilter) -> [f32; 4] {
+    let mut color = [1.0f32, 1.0, 1.0, alpha];
+    if let ColorFilter::Tint(tint) = filter {
+        let tint = tint.to_linear();
+        for i in 0..4 {
+            color[i] *= tint[i];
+        }
+    }
+    color
+}
+
+fn uv_for_layer(layer: &LayerTarget) -> (f32, f32) {
+    (
+        layer.rect_px.2 / layer.width.max(1) as f32,
+        layer.rect_px.3 / layer.height.max(1) as f32,
+    )
+}
+
 /// A bundle of render pipelines for a single sample-count target. Created
 /// twice: once with `sample_count = msaa_samples` for the surface pass, and
 /// once with `sample_count = 1` for graphics-layer render-to-texture passes
@@ -762,6 +830,9 @@ struct Pipelines {
     blur: wgpu::RenderPipeline,
     inset_shadow: wgpu::RenderPipeline,
     blur_content: wgpu::RenderPipeline,
+    /// Fixed-function blend variants of `blur_content`, indexed like
+    /// `FIXED_FUNCTION_BLENDS`, for layer composites that carry a blur.
+    blur_content_blends: [wgpu::RenderPipeline; FIXED_FUNCTION_BLENDS.len()],
     clip_bin: wgpu::RenderPipeline,
     clip_dec: wgpu::RenderPipeline,
     slug: Option<wgpu::RenderPipeline>,
@@ -789,6 +860,9 @@ struct Pipelines {
     /// graphics-layer texture through a 2D projective map. Drawn with a
     /// `ProjectiveInstance` from `projective_ring`.
     projective_layer: wgpu::RenderPipeline,
+    /// Fixed-function blend variants of `projective_layer`, indexed like
+    /// `FIXED_FUNCTION_BLENDS`.
+    projective_blends: [wgpu::RenderPipeline; FIXED_FUNCTION_BLENDS.len()],
 }
 
 /// Vertex attributes for an instance buffer, as `(shader_location, byte
@@ -1355,31 +1429,43 @@ impl Pipelines {
             cache: None,
         });
 
-        let blur_content = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("blur content pipeline"),
-            layout: Some(&blur_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &blur_shader,
-                entry_point: Some("vs_main"),
-                buffers: &[Some(blur_layout)],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &blur_shader,
-                entry_point: Some("fs_color"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: Some(stencil_for_content.clone()),
-            multisample: msaa_state,
-            multiview_mask: None,
-            cache: None,
-        });
+        let blur_content_pipeline = |label: &'static str, blend: wgpu::BlendState| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some(label),
+                layout: Some(&blur_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &blur_shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[Some(blur_layout.clone())],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &blur_shader,
+                    entry_point: Some("fs_color"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format,
+                        blend: Some(blend),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                }),
+                primitive: wgpu::PrimitiveState::default(),
+                depth_stencil: Some(stencil_for_content.clone()),
+                multisample: msaa_state,
+                multiview_mask: None,
+                cache: None,
+            })
+        };
+        let blur_content = blur_content_pipeline(
+            "blur content pipeline",
+            wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING,
+        );
+        let blur_content_blends: [wgpu::RenderPipeline; FIXED_FUNCTION_BLENDS.len()] =
+            std::array::from_fn(|index| {
+                let blend = fixed_function_blend(FIXED_FUNCTION_BLENDS[index])
+                    .unwrap_or(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING);
+                blur_content_pipeline("blur content pipeline (blend)", blend)
+            });
 
         // NV12 Image Pipeline
         let image_nv12_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -1716,36 +1802,53 @@ impl Pipelines {
                 },
                 wgpu::VertexAttribute {
                     shader_location: 6,
-                    offset: 64,
+                    offset: field_offset!(ProjectiveInstance, alpha),
                     format: wgpu::VertexFormat::Float32,
+                },
+                wgpu::VertexAttribute {
+                    shader_location: 7,
+                    offset: field_offset!(ProjectiveInstance, tint),
+                    format: wgpu::VertexFormat::Float32x3,
                 },
             ],
         };
-        let projective_layer = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("projective layer composite pipeline"),
-            layout: Some(&projective_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &projective_shader,
-                entry_point: Some("vs_main"),
-                buffers: &[Some(projective_vertex_layout)],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &projective_shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: Some(stencil_for_content.clone()),
-            multisample: msaa_state,
-            multiview_mask: None,
-            cache: None,
-        });
+        let projective_pipeline = |label: &'static str, blend: wgpu::BlendState| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some(label),
+                layout: Some(&projective_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &projective_shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[Some(projective_vertex_layout.clone())],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &projective_shader,
+                    entry_point: Some("fs_main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format,
+                        blend: Some(blend),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                }),
+                primitive: wgpu::PrimitiveState::default(),
+                depth_stencil: Some(stencil_for_content.clone()),
+                multisample: msaa_state,
+                multiview_mask: None,
+                cache: None,
+            })
+        };
+        let projective_layer = projective_pipeline(
+            "projective layer composite pipeline",
+            wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING,
+        );
+        let projective_blends: [wgpu::RenderPipeline; FIXED_FUNCTION_BLENDS.len()] =
+            std::array::from_fn(|index| {
+                let blend = fixed_function_blend(FIXED_FUNCTION_BLENDS[index])
+                    .unwrap_or(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING);
+                projective_pipeline("projective layer composite pipeline (blend)", blend)
+            });
 
         let blend_layer_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("blend_layer.wgsl"),
@@ -1768,27 +1871,37 @@ impl Pipelines {
             attributes: &[
                 wgpu::VertexAttribute {
                     shader_location: 0,
-                    offset: 0,
+                    offset: field_offset!(BlendInstance, xywh),
                     format: wgpu::VertexFormat::Float32x4,
                 },
                 wgpu::VertexAttribute {
                     shader_location: 1,
-                    offset: 16,
+                    offset: field_offset!(BlendInstance, uv),
                     format: wgpu::VertexFormat::Float32x4,
                 },
                 wgpu::VertexAttribute {
                     shader_location: 2,
-                    offset: 32,
+                    offset: field_offset!(BlendInstance, color),
                     format: wgpu::VertexFormat::Float32x4,
                 },
                 wgpu::VertexAttribute {
                     shader_location: 3,
-                    offset: 48,
+                    offset: field_offset!(BlendInstance, fwd_mat),
                     format: wgpu::VertexFormat::Float32x4,
                 },
                 wgpu::VertexAttribute {
                     shader_location: 4,
-                    offset: 64,
+                    offset: field_offset!(BlendInstance, filter_color),
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    shader_location: 5,
+                    offset: field_offset!(BlendInstance, mode),
+                    format: wgpu::VertexFormat::Uint32,
+                },
+                wgpu::VertexAttribute {
+                    shader_location: 6,
+                    offset: field_offset!(BlendInstance, filter_mode),
                     format: wgpu::VertexFormat::Uint32,
                 },
             ],
@@ -1835,6 +1948,7 @@ impl Pipelines {
             blur,
             inset_shadow,
             blur_content,
+            blur_content_blends,
             clip_bin,
             clip_dec,
             slug,
@@ -1845,8 +1959,73 @@ impl Pipelines {
             mesh_clip_inc,
             mesh_clip_dec,
             projective_layer,
+            projective_blends,
         }
     }
+}
+
+/// Whether a transform must be flattened through the projective pipeline.
+/// True for a non-trivial projective row (legacy `perspective` or a perspective
+/// 3D rotation), and also for a bare 3D rotation: its foreshortening lives in
+/// `projective_matrix()`'s linear part, which the 2D `linear()` fast path does
+/// not see. Pure 2D transforms (all new fields zero) return false and keep the
+/// existing instance fast path byte for byte.
+fn transform_is_projective(transform: &Transform) -> bool {
+    transform.rotation_x != 0.0 || transform.rotation_y != 0.0 || {
+        let m = transform.projective_matrix();
+        m[6] != 0.0 || m[7] != 0.0 || m[8] != 1.0
+    }
+}
+
+/// Build a `ProjectiveInstance` from a full 3x3 projective map and a source
+/// rect, projecting the four corners into the destination's NDC. Returns
+/// `None` when the whole rect lies behind the viewer.
+fn make_projective_instance(
+    map: &[f32; 9],
+    rect: repose_core::Rect,
+    fb_w: f32,
+    fb_h: f32,
+    uv: [f32; 4],
+    alpha: f32,
+    tint: [f32; 3],
+) -> Option<ProjectiveInstance> {
+    let corners = [
+        (rect.x, rect.y),
+        (rect.x + rect.w, rect.y),
+        (rect.x + rect.w, rect.y + rect.h),
+        (rect.x, rect.y + rect.h),
+    ];
+    let mut ndc = [[0.0f32; 2]; 4];
+    let mut ws = [1.0f32; 4];
+    let mut all_behind = true;
+    for (i, (x, y)) in corners.iter().enumerate() {
+        let w_raw = map[6] * x + map[7] * y + map[8];
+        let w = if w_raw.abs() < 1e-6 {
+            if w_raw < 0.0 { -1e-6 } else { 1e-6 }
+        } else {
+            w_raw
+        };
+        if w > 0.0 {
+            all_behind = false;
+        }
+        let px = (map[0] * x + map[1] * y + map[2]) / w;
+        let py = (map[3] * x + map[4] * y + map[5]) / w;
+        ndc[i] = [px / fb_w * 2.0 - 1.0, 1.0 - py / fb_h * 2.0];
+        ws[i] = w;
+    }
+    if all_behind {
+        return None;
+    }
+    Some(ProjectiveInstance {
+        c0: ndc[0],
+        c1: ndc[1],
+        c2: ndc[2],
+        c3: ndc[3],
+        uv,
+        w: ws,
+        alpha,
+        tint,
+    })
 }
 
 /// AABB of a rect under the *plain affine* part of a transform (linear +
@@ -1947,6 +2126,13 @@ struct LayerState {
     alpha: f32,
     blur: (f32, f32),
     rectangle_edge: bool,
+    blend_mode: BlendMode,
+    color_filter: ColorFilter,
+    compositing_strategy: CompositingStrategy,
+    /// Whether the layer's parent transform carries true perspective. When it
+    /// does the layer is flattened through a scratch texture with the
+    /// projective composite pipeline before the normal blend/filter composite.
+    projective: bool,
 }
 
 /// One translator-flattened perspective layer (see
@@ -2060,11 +2246,15 @@ enum Cmd {
     },
     /// Composite a previously-rendered graphics layer back into the
     /// current target as a textured quad. The quad's vertex buffer
-    /// lives in `self.glyph_color.ring` (a `GlyphInstance`).
+    /// lives in `self.glyph_color.ring` (a `GlyphInstance`). `blend` selects a
+    /// fixed-function blend pipeline; `color` is the group tint/alpha applied
+    /// to the layer at composite time.
     CompositeLayer {
         off: u64,
         cnt: u32,
         layer_id: u32,
+        blend: repose_core::BlendMode,
+        color: [f32; 4],
     },
     /// Separable gaussian blur, alpha channel only: the horizontal pass into a
     /// scratch layer, and the vertical pass that tints the result as a drop
@@ -2085,6 +2275,7 @@ enum Cmd {
         off: u64,
         cnt: u32,
         layer_id: u32,
+        blend: BlendMode,
     },
     /// Composite a flattened perspective layer through its projective map.
     /// The instance lives in `self.projective_ring` (a `ProjectiveInstance`
@@ -2094,6 +2285,7 @@ enum Cmd {
         off: u64,
         cnt: u32,
         layer_id: u32,
+        blend: BlendMode,
     },
     /// Draw a tessellated vector mesh (solid or gradient paint).
     VectorMesh {
@@ -2556,7 +2748,8 @@ struct ProjectiveInstance {
     uv: [f32; 4],
     w: [f32; 4],
     alpha: f32,
-    _pad: [f32; 3],
+    /// Group tint (linear RGB) multiplied into the layer color at composite.
+    tint: [f32; 3],
 }
 
 /// CPU-computed Y′CbCr -> R′G′B′ transform uploaded as a uniform buffer.
@@ -2612,8 +2805,11 @@ struct ClipInstance {
     fwd_mat: [f32; 4],
 }
 
-/// Backdrop-blend composite instance: a `GlyphInstance`-shaped quad plus
-/// the `BlendMode` discriminant consumed by `blend_layer.wgsl`.
+/// Backdrop-blend composite instance: a `GlyphInstance`-shaped quad plus the
+/// `BlendMode` discriminant consumed by `blend_layer.wgsl`. `color` carries the
+/// group tint/alpha applied to the source before blending; `filter_color` and
+/// `filter_mode` apply an optional color filter to the source first (mode 0 =
+/// none). Matches the WGSL `vs_main` inputs.
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct BlendInstance {
@@ -2621,8 +2817,9 @@ struct BlendInstance {
     uv: [f32; 4],
     color: [f32; 4],
     fwd_mat: [f32; 4],
+    filter_color: [f32; 4],
     mode: u32,
-    _pad: [f32; 3],
+    filter_mode: u32,
 }
 
 #[repr(C)]
@@ -6563,6 +6760,7 @@ impl WgpuSceneRenderer {
                 off,
                 cnt: 1,
                 layer_id: source_layer,
+                blend: BlendMode::Alpha,
             },
             None => return None,
         };
@@ -7864,7 +8062,10 @@ fn shape_path_aabb(
 /// matching the local vertices.
 fn brush_to_paint_desc(brush: &Brush, rect: repose_core::Rect) -> repose_core::PaintDesc {
     use repose_core::PaintDesc as P;
-    let scaled = |p: Vec2| Vec2::new(p.x * rect.w, p.y * rect.h);
+    let scaled = |p: Vec2| Vec2 {
+        x: p.x * rect.w,
+        y: p.y * rect.h,
+    };
     let stop_colors = |stops: &GradientStops| {
         let slice = stops.as_slice();
         let transparent = repose_core::Color::TRANSPARENT;
@@ -8746,55 +8947,26 @@ impl WgpuSceneRenderer {
         );
         passes.push(saved);
 
-        // Project the layer-rect corners (parent space) to NDC in the
-        // resumed (parent) target, keeping each corner's homogeneous w for
-        // perspective-correct sampling.
-        let (tw, th) = rec.saved_size;
-        let r = rec.layer_rect;
-        let corners = [
-            (r.x, r.y),
-            (r.x + r.w, r.y),
-            (r.x + r.w, r.y + r.h),
-            (r.x, r.y + r.h),
-        ];
-        let mut ndc = [[0.0f32; 2]; 4];
-        let mut ws = [1.0f32; 4];
-        let mut all_behind = true;
-        for (i, (x, y)) in corners.iter().enumerate() {
-            let w_raw = rec.map[6] * x + rec.map[7] * y + rec.map[8];
-            let w = if w_raw.abs() < 1e-6 {
-                if w_raw < 0.0 { -1e-6 } else { 1e-6 }
-            } else {
-                w_raw
-            };
-            if w > 0.0 {
-                all_behind = false;
-            }
-            let px = (rec.map[0] * x + rec.map[1] * y + rec.map[2]) / w;
-            let py = (rec.map[3] * x + rec.map[4] * y + rec.map[5]) / w;
-            ndc[i] = [px / tw * 2.0 - 1.0, 1.0 - py / th * 2.0];
-            ws[i] = w;
-        }
-        if all_behind {
-            // Entire subtree behind the viewer: nothing to composite (the
-            // layer pass still ran, but its output is correctly discarded).
-            return;
-        }
         let Some(layer) = self.layer_pool.get(&rec.layer_id) else {
             return;
         };
         let uv_u1 = layer.rect_px.2 / layer.width.max(1) as f32;
         let uv_v1 = layer.rect_px.3 / layer.height.max(1) as f32;
-        let inst = ProjectiveInstance {
-            c0: ndc[0],
-            c1: ndc[1],
-            c2: ndc[2],
-            c3: ndc[3],
-            uv: [0.0, 0.0, uv_u1, uv_v1],
-            w: ws,
-            alpha: 1.0,
-            _pad: [0.0; 3],
+        let (tw, th) = rec.saved_size;
+        let Some(inst) = make_projective_instance(
+            &rec.map,
+            rec.layer_rect,
+            tw,
+            th,
+            [0.0, 0.0, uv_u1, uv_v1],
+            1.0,
+            [1.0, 1.0, 1.0],
+        ) else {
+            // Entire subtree behind the viewer: nothing to composite (the
+            // layer pass still ran, but its output is correctly discarded).
+            return;
         };
+        debug_assert_eq!(std::mem::size_of::<ProjectiveInstance>(), 80);
         if self
             .projective_ring
             .grow_to_fit(
@@ -8814,6 +8986,7 @@ impl WgpuSceneRenderer {
             off,
             cnt: 1,
             layer_id: rec.layer_id,
+            blend: BlendMode::Alpha,
         });
     }
 
@@ -9029,9 +9202,10 @@ impl WgpuSceneRenderer {
             })
             .map(|(key, entry)| (*key, entry.gpu.clone()))
         {
+            let touch = self.next_cache_touch();
             if let Some(entry) = self.mesh_cache.get_mut(&key) {
                 entry.last_used_frame = self.frame_index;
-                entry.last_touch_frame = self.next_cache_touch();
+                entry.last_touch_frame = touch;
             }
             return Some(cached);
         }
@@ -9128,6 +9302,8 @@ impl WgpuSceneRenderer {
         &mut self,
         bounds: repose_core::Rect,
         blend: repose_core::BlendMode,
+        color: [f32; 4],
+        color_filter: ColorFilter,
         current_transform: &repose_core::Transform,
         current_pass: &mut Pass,
         active_clips: &[ActiveClip],
@@ -9147,16 +9323,16 @@ impl WgpuSceneRenderer {
             f32,
             &mut wgpu::CommandEncoder,
         ),
-    ) {
+    ) -> Option<Cmd> {
         if scissor.2 == 0 || scissor.3 == 0 || active_clips.iter().any(ActiveClip::blocked) {
-            return;
+            return None;
         }
         let parent_target = current_pass.target;
         let (parent_w, parent_h) = match parent_target {
             PassTarget::Surface => (fb_w, fb_h),
             PassTarget::Layer(id) => match self.layer_pool.get(&id) {
                 Some(layer) => (layer.width as f32, layer.height as f32),
-                None => return,
+                None => return None,
             },
         };
         let local_rect = intersect(
@@ -9177,7 +9353,7 @@ impl WgpuSceneRenderer {
             || local_rect.w > self.device.limits().max_texture_dimension_2d as f32
             || local_rect.h > self.device.limits().max_texture_dimension_2d as f32
         {
-            return;
+            return None;
         }
         let layer_rect = repose_core::Rect {
             x: local_rect.x.floor(),
@@ -9189,7 +9365,7 @@ impl WgpuSceneRenderer {
         let h = layer_rect.h;
         let local_rect = layer_rect;
         if ids_used.len() >= MAX_TRANSIENT_GRAPHICS_LAYERS {
-            return;
+            return None;
         }
         let layer_id = *id_head;
         *id_head = id_head.wrapping_add(1);
@@ -9205,7 +9381,7 @@ impl WgpuSceneRenderer {
         };
         if !self.alloc_blend_snapshot(layer_id, w as u32, h as u32, snapshot_format) {
             log::warn!("blend snapshot budget exhausted; blend skipped");
-            return;
+            return None;
         }
         let source_pass_id = *pass_id_head;
         *pass_id_head += 1;
@@ -9267,13 +9443,15 @@ impl WgpuSceneRenderer {
             let ndc_h = (local_rect.h / parent_h) * 2.0;
             [ndc_cx, ndc_cy, ndc_w, ndc_h]
         };
+        let (filter_color, filter_mode) = color_filter_fields(color_filter);
         let inst = BlendInstance {
             xywh: ndc,
             uv: [0.0, 0.0, 1.0, 1.0],
-            color: [1.0, 1.0, 1.0, 1.0],
+            color,
             fwd_mat: [1.0, 0.0, 0.0, 1.0],
+            filter_color,
             mode: blend.shader_mode(),
-            _pad: [0.0; 3],
+            filter_mode,
         };
         if self
             .blend_ring
@@ -9284,20 +9462,20 @@ impl WgpuSceneRenderer {
             )
             .is_err()
         {
-            return;
+            return None;
         }
         let bytes = bytemuck::bytes_of(&inst);
         let Ok(off) = self.blend_ring.alloc_write(&self.queue, bytes) else {
-            return;
+            return None;
         };
-        current_pass.cmds.push(Cmd::BlendLayer {
+        Some(Cmd::BlendLayer {
             off,
             cnt: 1,
             src_layer: layer_id,
             dst_layer: Some(layer_id),
             parent: parent_target,
             scissor,
-        });
+        })
     }
 
     /// [`Self::emit_isolated_blend_source`] for a `VectorMesh`: the isolation
@@ -9310,6 +9488,8 @@ impl WgpuSceneRenderer {
         transform: [f32; 6],
         paint: repose_core::PaintDesc,
         blend: repose_core::BlendMode,
+        color: [f32; 4],
+        color_filter: ColorFilter,
         current_transform: &repose_core::Transform,
         current_pass: &mut Pass,
         active_clips: &[ActiveClip],
@@ -9324,9 +9504,11 @@ impl WgpuSceneRenderer {
     ) {
         let affine = combine_mesh_affine(current_transform, transform);
         let bounds = mesh_aabb(&mesh, affine);
-        self.emit_isolated_blend_source(
+        let cmd = self.emit_isolated_blend_source(
             bounds,
             blend,
+            color,
+            color_filter,
             current_transform,
             current_pass,
             active_clips,
@@ -9349,6 +9531,9 @@ impl WgpuSceneRenderer {
                 );
             },
         );
+        if let Some(cmd) = cmd {
+            current_pass.cmds.push(cmd);
+        }
     }
 
     /// [`Self::emit_isolated_blend_source`] for an `ImageBlended` quad. The
@@ -9366,6 +9551,8 @@ impl WgpuSceneRenderer {
         tile: bool,
         filter: ImageFilter,
         blend: repose_core::BlendMode,
+        color: [f32; 4],
+        color_filter: ColorFilter,
         current_transform: &repose_core::Transform,
         current_pass: &mut Pass,
         active_clips: &[ActiveClip],
@@ -9379,9 +9566,11 @@ impl WgpuSceneRenderer {
         fb_h: f32,
     ) {
         let bounds = affine_aabb(current_transform, &draw_rect);
-        self.emit_isolated_blend_source(
+        let cmd = self.emit_isolated_blend_source(
             bounds,
             blend,
+            color,
+            color_filter,
             current_transform,
             current_pass,
             active_clips,
@@ -9416,6 +9605,9 @@ impl WgpuSceneRenderer {
                 }
             },
         );
+        if let Some(cmd) = cmd {
+            current_pass.cmds.push(cmd);
+        }
     }
 
     fn recycle_blend_snapshot(&mut self, snapshot: BlendSnapshot) {
@@ -10175,6 +10367,8 @@ impl WgpuSceneRenderer {
                             tile,
                             filter,
                             blend,
+                            [1.0, 1.0, 1.0, 1.0],
+                            ColorFilter::None,
                             current_transform,
                             &mut current_pass,
                             &active_clips,
@@ -11676,7 +11870,7 @@ impl WgpuSceneRenderer {
                 }
                 SceneNode::PushTransform { transform } => {
                     flush_batch!(); // flush before transform change
-                    if transform.has_perspective() {
+                    if transform_is_projective(transform) {
                         // True perspective cannot ride the affine fast path:
                         // flatten the subtree into an offscreen layer and
                         // composite it back projectively (CSS-style). See
@@ -11738,6 +11932,9 @@ impl WgpuSceneRenderer {
                     blur_radius_x,
                     blur_radius_y,
                     rectangle_edge,
+                    blend_mode,
+                    color_filter,
+                    compositing_strategy,
                 } => {
                     flush_batch!();
                     let width_f = rect.w.round();
@@ -11803,8 +12000,16 @@ impl WgpuSceneRenderer {
                         alpha: *alpha,
                         blur: (blur_radius_x.0, blur_radius_y.0),
                         rectangle_edge: *rectangle_edge,
+                        blend_mode: *blend_mode,
+                        color_filter: *color_filter,
+                        compositing_strategy: *compositing_strategy,
+                        projective: transform_is_projective(current_transform),
                     });
                     passes.push(saved);
+                    // BeginLayer always allocates the offscreen target, so
+                    // CompositingStrategy::Offscreen is satisfied here; Auto
+                    // and ModulateAlpha reuse the same allocation. Isolation
+                    // for Offscreen is decided at composite time in EndLayer.
                     if self.get_or_create_layer(*layer_id, width, height, *rect, false) {
                         self.producer_layer_ids.insert(*layer_id);
                     }
@@ -11866,84 +12071,284 @@ impl WgpuSceneRenderer {
                     if !visible(composite_rect, parent_clip) {
                         continue;
                     }
+                    let group_color = layer_group_color(state.alpha, state.color_filter);
+                    let needs_isolation = state.blend_mode.needs_isolation()
+                        || color_filter_fields(state.color_filter).1 != 0
+                        || matches!(state.compositing_strategy, CompositingStrategy::Offscreen);
+                    let scissor = to_scissor(
+                        &parent_clip,
+                        parent_width.max(1.0) as u32,
+                        parent_height.max(1.0) as u32,
+                    );
                     let mut composite = None;
-                    if state.blur.0 > 0.0 || state.blur.1 > 0.0 {
-                        flush_batch!();
-                        let pad_x = blur_pad(state.blur.0);
-                        let pad_y = blur_pad(state.blur.1);
-                        let rect = repose_core::Rect {
-                            x: local_layer_rect.x - pad_x,
-                            y: local_layer_rect.y - pad_y,
-                            w: local_layer_rect.w + pad_x * 2.0,
-                            h: local_layer_rect.h + pad_y * 2.0,
-                        };
-                        let ndc =
-                            to_ndc(rect.x, rect.y, rect.w, rect.h, parent_width, parent_height);
-                        let edge_mode = if state.rectangle_edge { 0 } else { 1 };
-                        let sigma = [blur_sigma(state.blur.0), blur_sigma(state.blur.1)];
-                        if let Some(scratch_id) = self.emit_separable_blur(
-                            *layer_id,
-                            BLUR_SLOT_CONTENT,
-                            sigma,
-                            (pad_x, pad_y),
-                            (0.0, 0.0),
-                            edge_mode,
-                            false,
-                            [0.0; 4],
-                            &mut passes,
-                            &mut current_pass,
-                            &mut next_pass_id,
-                            encoder,
-                        ) {
-                            let inst = BlurInstance {
-                                xywh: [
-                                    ndc[0] + ndc[2] * 0.5,
-                                    ndc[1] + ndc[3] * 0.5,
-                                    ndc[2],
-                                    ndc[3],
-                                ],
-                                uv: [0.0, 0.0, 1.0, 1.0],
-                                color: [1.0, 1.0, 1.0, state.alpha],
-                                sigma_px: sigma,
-                                fwd_mat: [1.0, 0.0, 0.0, 1.0],
-                                axis: 1,
-                                edge_mode,
-                                shape: [0.0; 4],
+
+                    if needs_isolation && state.blur.0 <= 0.0 && state.blur.1 <= 0.0 {
+                        if state.projective {
+                            // Flatten the projective quad into the isolation
+                            // layer first; the backdrop shader then samples it
+                            // as an ordinary axis-aligned source.
+                            let map = state.parent_transform.projective_matrix();
+                            let parent_bounds = repose_core::Rect {
+                                x: 0.0,
+                                y: 0.0,
+                                w: parent_width,
+                                h: parent_height,
                             };
-                            if let Some(off) = self.upload_blur_instance(&inst, encoder) {
-                                composite = Some(Cmd::CompositeBlur {
-                                    off,
-                                    cnt: 1,
-                                    layer_id: scratch_id,
-                                });
+                            let projected = projected_rect(&map, layer_rect);
+                            let intersected = intersect(projected, parent_bounds);
+                            let ox = intersected.x.floor();
+                            let oy = intersected.y.floor();
+                            let mut shifted = map;
+                            shifted[0] -= ox * map[6];
+                            shifted[1] -= ox * map[7];
+                            shifted[2] -= ox * map[8];
+                            shifted[3] -= oy * map[6];
+                            shifted[4] -= oy * map[7];
+                            shifted[5] -= oy * map[8];
+                            let uv_bounds = uv_for_layer(layer);
+                            let uv = [0.0, 0.0, uv_bounds.0, uv_bounds.1];
+                            composite = self.emit_isolated_blend_source(
+                                projected,
+                                state.blend_mode,
+                                group_color,
+                                state.color_filter,
+                                &state.parent_transform,
+                                &mut current_pass,
+                                &active_clips,
+                                &mut passes,
+                                &mut flatten_id_head,
+                                &mut next_pass_id,
+                                &mut flatten_ids_used,
+                                scissor,
+                                encoder,
+                                parent_width,
+                                parent_height,
+                                |slf, pass, _local, w, h, encoder| {
+                                    let Some(inst) = make_projective_instance(
+                                        &shifted,
+                                        layer_rect,
+                                        w,
+                                        h,
+                                        uv,
+                                        1.0,
+                                        [1.0, 1.0, 1.0],
+                                    ) else {
+                                        return;
+                                    };
+                                    if slf
+                                        .projective_ring
+                                        .grow_to_fit(
+                                            &slf.device,
+                                            encoder,
+                                            std::mem::size_of::<ProjectiveInstance>() as u64,
+                                        )
+                                        .is_err()
+                                    {
+                                        return;
+                                    }
+                                    let Ok(off) = slf
+                                        .projective_ring
+                                        .alloc_write(&slf.queue, bytemuck::bytes_of(&inst))
+                                    else {
+                                        return;
+                                    };
+                                    pass.cmds.push(Cmd::CompositeProjective {
+                                        off,
+                                        cnt: 1,
+                                        layer_id: *layer_id,
+                                        blend: BlendMode::Alpha,
+                                    });
+                                },
+                            );
+                        } else {
+                            let parent_bounds = repose_core::Rect {
+                                x: 0.0,
+                                y: 0.0,
+                                w: parent_width,
+                                h: parent_height,
+                            };
+                            let origin = intersect(local_layer_rect, parent_bounds);
+                            let ox = origin.x.floor();
+                            let oy = origin.y.floor();
+                            composite = self.emit_isolated_blend_source(
+                                local_layer_rect,
+                                state.blend_mode,
+                                group_color,
+                                state.color_filter,
+                                &state.parent_transform,
+                                &mut current_pass,
+                                &active_clips,
+                                &mut passes,
+                                &mut flatten_id_head,
+                                &mut next_pass_id,
+                                &mut flatten_ids_used,
+                                scissor,
+                                encoder,
+                                parent_width,
+                                parent_height,
+                                |slf, pass, _local, w, h, encoder| {
+                                    let ndc = to_ndc(
+                                        local_layer_rect.x - ox,
+                                        local_layer_rect.y - oy,
+                                        local_layer_rect.w,
+                                        local_layer_rect.h,
+                                        w,
+                                        h,
+                                    );
+                                    let inst = GlyphInstance {
+                                        xywh: [
+                                            ndc[0] + ndc[2] * 0.5,
+                                            ndc[1] + ndc[3] * 0.5,
+                                            ndc[2],
+                                            ndc[3],
+                                        ],
+                                        uv: [0.0, 1.0, 1.0, 0.0],
+                                        color: [1.0, 1.0, 1.0, 1.0],
+                                        fwd_mat: [1.0, 0.0, 0.0, 1.0],
+                                    };
+                                    if let Some((off, cnt)) = slf.glyph_color.upload(
+                                        &slf.device,
+                                        &slf.queue,
+                                        encoder,
+                                        &[inst],
+                                    ) {
+                                        pass.cmds.push(Cmd::CompositeLayer {
+                                            off,
+                                            cnt,
+                                            layer_id: *layer_id,
+                                            blend: BlendMode::Alpha,
+                                            color: [1.0, 1.0, 1.0, 1.0],
+                                        });
+                                    }
+                                },
+                            );
+                        }
+                    } else {
+                        if needs_isolation {
+                            log::warn!(
+                                "advanced layer blend/color-filter with content blur is not supported"
+                            );
+                        }
+                        if state.blur.0 > 0.0 || state.blur.1 > 0.0 {
+                            flush_batch!();
+                            let pad_x = blur_pad(state.blur.0);
+                            let pad_y = blur_pad(state.blur.1);
+                            let rect = repose_core::Rect {
+                                x: local_layer_rect.x - pad_x,
+                                y: local_layer_rect.y - pad_y,
+                                w: local_layer_rect.w + pad_x * 2.0,
+                                h: local_layer_rect.h + pad_y * 2.0,
+                            };
+                            let ndc =
+                                to_ndc(rect.x, rect.y, rect.w, rect.h, parent_width, parent_height);
+                            let edge_mode = if state.rectangle_edge { 0 } else { 1 };
+                            let sigma = [blur_sigma(state.blur.0), blur_sigma(state.blur.1)];
+                            if let Some(scratch_id) = self.emit_separable_blur(
+                                *layer_id,
+                                BLUR_SLOT_CONTENT,
+                                sigma,
+                                (pad_x, pad_y),
+                                (0.0, 0.0),
+                                edge_mode,
+                                false,
+                                [0.0; 4],
+                                &mut passes,
+                                &mut current_pass,
+                                &mut next_pass_id,
+                                encoder,
+                            ) {
+                                let inst = BlurInstance {
+                                    xywh: [
+                                        ndc[0] + ndc[2] * 0.5,
+                                        ndc[1] + ndc[3] * 0.5,
+                                        ndc[2],
+                                        ndc[3],
+                                    ],
+                                    uv: [0.0, 0.0, 1.0, 1.0],
+                                    color: group_color,
+                                    sigma_px: sigma,
+                                    fwd_mat: [1.0, 0.0, 0.0, 1.0],
+                                    axis: 1,
+                                    edge_mode,
+                                    shape: [0.0; 4],
+                                };
+                                if let Some(off) = self.upload_blur_instance(&inst, encoder) {
+                                    composite = Some(Cmd::CompositeBlur {
+                                        off,
+                                        cnt: 1,
+                                        layer_id: scratch_id,
+                                        blend: state.blend_mode,
+                                    });
+                                }
                             }
                         }
-                    }
-                    // No scratch (transient budget exhausted) leaves the layer
-                    // sharp rather than dropped.
-                    if composite.is_none() {
-                        let ndc = to_ndc(
-                            local_layer_rect.x,
-                            local_layer_rect.y,
-                            local_layer_rect.w,
-                            local_layer_rect.h,
-                            parent_width,
-                            parent_height,
-                        );
-                        let inst = GlyphInstance {
-                            xywh: [ndc[0] + ndc[2] * 0.5, ndc[1] + ndc[3] * 0.5, ndc[2], ndc[3]],
-                            uv: [0.0, 1.0, 1.0, 0.0],
-                            color: [1.0, 1.0, 1.0, state.alpha],
-                            fwd_mat: [1.0, 0.0, 0.0, 1.0],
-                        };
-                        composite = self
-                            .glyph_color
-                            .upload(&self.device, &self.queue, encoder, &[inst])
-                            .map(|(off, cnt)| Cmd::CompositeLayer {
-                                off,
-                                cnt,
-                                layer_id: *layer_id,
-                            });
+                        // No scratch (transient budget exhausted) leaves the layer
+                        // sharp rather than dropped.
+                        if composite.is_none() {
+                            let ndc = to_ndc(
+                                local_layer_rect.x,
+                                local_layer_rect.y,
+                                local_layer_rect.w,
+                                local_layer_rect.h,
+                                parent_width,
+                                parent_height,
+                            );
+                            if state.projective {
+                                let map = state.parent_transform.projective_matrix();
+                                let uv = uv_for_layer(layer);
+                                if let Some(inst) = make_projective_instance(
+                                    &map,
+                                    layer_rect,
+                                    parent_width,
+                                    parent_height,
+                                    [0.0, 0.0, uv.0, uv.1],
+                                    group_color[3],
+                                    [group_color[0], group_color[1], group_color[2]],
+                                ) && self
+                                    .projective_ring
+                                    .grow_to_fit(
+                                        &self.device,
+                                        encoder,
+                                        std::mem::size_of::<ProjectiveInstance>() as u64,
+                                    )
+                                    .is_ok()
+                                {
+                                    if let Ok(off) = self
+                                        .projective_ring
+                                        .alloc_write(&self.queue, bytemuck::bytes_of(&inst))
+                                    {
+                                        composite = Some(Cmd::CompositeProjective {
+                                            off,
+                                            cnt: 1,
+                                            layer_id: *layer_id,
+                                            blend: state.blend_mode,
+                                        });
+                                    }
+                                }
+                            } else {
+                                let inst = GlyphInstance {
+                                    xywh: [
+                                        ndc[0] + ndc[2] * 0.5,
+                                        ndc[1] + ndc[3] * 0.5,
+                                        ndc[2],
+                                        ndc[3],
+                                    ],
+                                    uv: [0.0, 1.0, 1.0, 0.0],
+                                    color: group_color,
+                                    fwd_mat: [1.0, 0.0, 0.0, 1.0],
+                                };
+                                composite = self
+                                    .glyph_color
+                                    .upload(&self.device, &self.queue, encoder, &[inst])
+                                    .map(|(off, cnt)| Cmd::CompositeLayer {
+                                        off,
+                                        cnt,
+                                        layer_id: *layer_id,
+                                        blend: state.blend_mode,
+                                        color: group_color,
+                                    });
+                            }
+                        }
                     }
                     if let Some(command) = composite {
                         if shadow_follows {
@@ -12152,6 +12557,8 @@ impl WgpuSceneRenderer {
                             *transform,
                             *paint,
                             *blend,
+                            [1.0, 1.0, 1.0, 1.0],
+                            ColorFilter::None,
                             current_transform,
                             &mut current_pass,
                             &active_clips,
@@ -13150,10 +13557,17 @@ impl WgpuSceneRenderer {
                         off,
                         cnt: n,
                         layer_id,
+                        blend,
+                        color: _,
                     } => {
                         if let Some(lt) = self.layer_pool.get(&layer_id).cloned() {
+                            let pipe = match FIXED_FUNCTION_BLENDS.iter().position(|m| *m == blend)
+                            {
+                                Some(index) => &pipes.image_blends[index],
+                                None => &pipes.image_rgba,
+                            };
                             draw_with_bind!(
-                                &pipes.image_rgba,
+                                pipe,
                                 self.glyph_color.ring,
                                 GlyphInstance,
                                 &lt.bind,
@@ -13188,10 +13602,16 @@ impl WgpuSceneRenderer {
                         off,
                         cnt: n,
                         layer_id,
+                        blend,
                     } => {
                         if let Some(lt) = self.layer_pool.get(&layer_id).cloned() {
+                            let pipe = match FIXED_FUNCTION_BLENDS.iter().position(|m| *m == blend)
+                            {
+                                Some(index) => &pipes.blur_content_blends[index],
+                                None => &pipes.blur_content,
+                            };
                             draw_with_bind!(
-                                &pipes.blur_content,
+                                pipe,
                                 self.blur_ring,
                                 BlurInstance,
                                 &lt.bind_linear,
@@ -13204,13 +13624,19 @@ impl WgpuSceneRenderer {
                         off,
                         cnt: n,
                         layer_id,
+                        blend,
                     } => {
                         if let Some(lt) = self.layer_pool.get(&layer_id).cloned() {
                             // The layer texture is sampled with the rgba
                             // (non-linear-filter) binding, like the sharp
                             // composite path.
+                            let pipe = match FIXED_FUNCTION_BLENDS.iter().position(|m| *m == blend)
+                            {
+                                Some(index) => &pipes.projective_blends[index],
+                                None => &pipes.projective_layer,
+                            };
                             draw_with_bind!(
-                                &pipes.projective_layer,
+                                pipe,
                                 self.projective_ring,
                                 ProjectiveInstance,
                                 &lt.bind,

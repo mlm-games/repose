@@ -291,6 +291,44 @@ pub fn rubber_band(amount: f32, max: f32) -> f32 {
     (1.0 - 1.0 / (1.0 + abs_val / max)) * max * amount.signum()
 }
 
+/// Scroll delta that brings `target` inside `viewport` on the given axes.
+///
+/// The returned `Vec2` is in the same coordinate space as the rects (physical
+/// pixels) and has the sign expected by `on_scroll`: a positive `y` moves
+/// content up, revealing targets below the viewport. Each axis contributes
+/// only when the target is actually outside the viewport on that axis, so a
+/// vertical-only scroller simply ignores the `x` component.
+pub fn scroll_delta_to_reveal(
+    target: crate::Rect,
+    viewport: crate::Rect,
+    axis: ScrollAxis,
+) -> Vec2 {
+    let mut delta = Vec2::ZERO;
+    if matches!(axis, ScrollAxis::Horizontal | ScrollAxis::Both) {
+        let target_right = target.x + target.w;
+        let viewport_right = viewport.x + viewport.w;
+        delta.x = if target_right > viewport_right {
+            (target_right - viewport_right).min((target.x - viewport.x).max(0.0))
+        } else if target.x < viewport.x {
+            (target.x - viewport.x).max(-(viewport_right - target_right).max(0.0))
+        } else {
+            0.0
+        };
+    }
+    if matches!(axis, ScrollAxis::Vertical | ScrollAxis::Both) {
+        let target_bottom = target.y + target.h;
+        let viewport_bottom = viewport.y + viewport.h;
+        delta.y = if target_bottom > viewport_bottom {
+            (target_bottom - viewport_bottom).min((target.y - viewport.y).max(0.0))
+        } else if target.y < viewport.y {
+            (target.y - viewport.y).max(-(viewport_bottom - target_bottom).max(0.0))
+        } else {
+            0.0
+        };
+    }
+    delta
+}
+
 /// Fold `leftover` into one axis's rubber band after the nested parent chain
 /// has declined it. Returns whatever is still unconsumed.
 pub fn os_scroll_axis(

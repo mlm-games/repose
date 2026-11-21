@@ -279,6 +279,7 @@ fn modifier_identity_change(old: &Modifier, new: &Modifier) -> IdentityChange {
         on_drop,
         on_action,
         painter,
+        graphics_layer_scope,
         indication,
         drag_preview,
         on_focus_changed,
@@ -288,6 +289,7 @@ fn modifier_identity_change(old: &Modifier, new: &Modifier) -> IdentityChange {
         change.paint = true;
     }
     if focus_requester_changed(&old.focus_requester, &new.focus_requester)
+        || old.bring_into_view.is_some() != new.bring_into_view.is_some()
         || interaction_source_changed(&old.interaction_source, &new.interaction_source)
         || text_selection_changed(&old.text_selection, &new.text_selection)
     {
@@ -327,6 +329,9 @@ fn modifier_identity_change(old: &Modifier, new: &Modifier) -> IdentityChange {
         change.paint = true;
     }
     if old.background_alpha != new.background_alpha {
+        change.paint = true;
+    }
+    if old.paint_order != new.paint_order {
         change.paint = true;
     }
     change
@@ -739,6 +744,7 @@ impl ViewTree {
             node.modifier.transform.is_some()
                 || node.modifier.alpha.is_some()
                 || node.modifier.graphics_layer.is_some()
+                || node.modifier.graphics_layer_scope.is_some()
         });
         if needs_scope_invalidate {
             self.mark_scope_descendants_dirty(id);
@@ -829,7 +835,11 @@ impl ViewTree {
             );
         let scope_effect_changed = node.modifier.transform != view.modifier.transform
             || node.modifier.alpha != view.modifier.alpha
-            || node.modifier.graphics_layer != view.modifier.graphics_layer;
+            || node.modifier.graphics_layer != view.modifier.graphics_layer
+            || rc_identity_changed(
+                &node.modifier.graphics_layer_scope,
+                &view.modifier.graphics_layer_scope,
+            );
         let kind_changed = !view_kind_equal(&node.kind, &view.kind);
         let modifier_changed = old_hashes.layout != hashes.layout
             || old_hashes.measurement != hashes.measurement

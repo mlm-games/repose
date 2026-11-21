@@ -1,7 +1,8 @@
 // `mode` values mirror `repose_core::BlendMode::shader_mode`: 4 = Overlay,
 // 7 = ColorDodge, 8 = ColorBurn, 9 = HardLight, 10 = SoftLight,
 // 11 = Difference, 12 = Exclusion, 13 = Hue, 14 = Saturation, 15 = Color,
-// 16 = Luminosity.
+// 16 = Luminosity. 0 is the source-over default. The high 16 bits of `modes`
+// carry the optional color-filter blend mode (0 = no filter).
 struct Globals {
     ndc_to_px: vec2<f32>,
     _pad: vec2<f32>,
@@ -13,8 +14,10 @@ struct VSOut {
     @location(0) @interpolate(flat) uv_rect: vec4<f32>,
     @location(1) xywh: vec4<f32>,
     @location(2) fwd_mat: vec4<f32>,
-    @location(3) @interpolate(flat) mode: u32,
+    @location(3) @interpolate(flat) modes: u32,
     @location(4) pos_ndc: vec2<f32>,
+    @location(5) @interpolate(flat) color: vec4<f32>,
+    @location(6) @interpolate(flat) filter_color: vec4<f32>,
 };
 
 @vertex
@@ -23,7 +26,9 @@ fn vs_main(
     @location(1) uv_rect: vec4<f32>,
     @location(2) color: vec4<f32>,
     @location(3) fwd_mat: vec4<f32>,
-    @location(4) mode: u32,
+    @location(4) filter_color: vec4<f32>,
+    @location(5) mode: u32,
+    @location(6) filter_mode: u32,
     @builtin(vertex_index) v: u32
 ) -> VSOut {
     var positions = array<vec2<f32>, 6>(
@@ -45,8 +50,10 @@ fn vs_main(
     out.uv_rect = uv_rect;
     out.xywh = xywh;
     out.fwd_mat = fwd_mat;
-    out.mode = mode;
+    out.modes = (filter_mode << 16u) | (mode & 0xFFFFu);
     out.pos_ndc = pos_ndc;
+    out.color = color;
+    out.filter_color = filter_color;
     return out;
 }
 
@@ -182,7 +189,7 @@ fn blend_channel(mode: u32, s: f32, d: f32) -> f32 {
         case 12u: { // Exclusion
             return d + s - 2.0 * d * s;
         }
-        default: {
+        default: { // 0 = source-over, blend result is just the source.
             return s;
         }
     }
@@ -216,8 +223,17 @@ fn blend_nonseparable(mode: u32, s: vec3<f32>, d: vec3<f32>) -> vec3<f32> {
     }
 }
 
+fn blend_color(mode: u32, s: vec3<f32>, d: vec3<f32>) -> vec3<f32> {
+    if (mode >= 13u) {
+        return blend_nonseparable(mode, s, d);
+    }
+    return blend_separable(mode, s, d);
+}
+
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
+    let mode = in.modes & 0xFFFFu;
+    let filter_mode = in.modes >> 16u;
     let half = 0.5 * in.xywh.zw;
     let rel = (in.pos_ndc - in.xywh.xy) / half;
     let det = max(
@@ -237,15 +253,25 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
     // backdrop share UV space: no screen-space mapping needed.
     let dst_uv = uv;
 
-    let src = unpremult(textureSample(src_tex, src_samp, uv));
-    let dst = unpremult(textureSample(dst_tex, dst_samp, dst_uv));
+    var src = unpremult(textureSample(src_tex, src_samp, uv));
+    // Group color: Tint multiplies layer rgba, group alpha modulates alpha.
+    src = vec4(src.rgb * in.color.rgb, src.a * in.color.a);
 
-    var blended: vec3<f32>;
-    if (in.mode >= 13u) {
-        blended = blend_nonseparable(in.mode, src.rgb, dst.rgb);
-    } else {
-        blended = blend_separable(in.mode, src.rgb, dst.rgb);
+    if (filter_mode != 0u) {
+        // Blend filter: composite the solid filter color over the layer
+        // before the layer is composited into the parent.
+        let fa = max(in.filter_color.a, 0.0);
+        let frgb = in.filter_color.rgb / max(fa, 1e-6);
+        let fb = blend_color(filter_mode, frgb, src.rgb);
+        let filter_a = fa + src.a * (1.0 - fa);
+        let premult = frgb * fa * (1.0 - src.a)
+            + fb * fa * src.a
+            + src.rgb * (1.0 - fa) * src.a;
+        src = vec4(premult / max(filter_a, 1e-6), filter_a);
     }
+
+    let dst = unpremult(textureSample(dst_tex, dst_samp, dst_uv));
+    let blended = blend_color(mode, src.rgb, dst.rgb);
     let src_a = src.a;
     let dst_a = dst.a;
     let out_a = src_a + dst_a * (1.0 - src_a);

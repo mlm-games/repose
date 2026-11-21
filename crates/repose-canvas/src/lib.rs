@@ -2170,6 +2170,9 @@ pub fn paint_draw_commands(
                         blur_radius_x: *blur_radius_x,
                         blur_radius_y: *blur_radius_y,
                         rectangle_edge: *rectangle_edge,
+                        blend_mode: Default::default(),
+                        color_filter: Default::default(),
+                        compositing_strategy: Default::default(),
                     });
                     // Layer content is addressed in layer-local pixels; the
                     // shift must use the same snapped origin or content lands

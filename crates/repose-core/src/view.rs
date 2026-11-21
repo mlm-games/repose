@@ -1,8 +1,9 @@
 use crate::shape::ResolvedShape;
 use crate::units::{Dp, Px, Sp};
 use crate::{
-    BaselineShift, Brush, ClipOp, Color, DrawStyle, FontStyle, FontSynthesis, FontWeight, Modifier,
-    Rect, TextAlign, TextDecoration, TextDirection, TextSpan, Transform, Vec2,
+    BaselineShift, Brush, ClipOp, Color, ColorFilter, CompositingStrategy, DrawStyle, FontStyle,
+    FontSynthesis, FontWeight, Modifier, Rect, TextAlign, TextDecoration, TextDirection, TextSpan,
+    Transform, Vec2,
 };
 use std::{fmt::Formatter, sync::Arc};
 
@@ -490,6 +491,8 @@ pub enum SceneNode {
     /// `blur_radius_x` / `blur_radius_y` are the gaussian blur radii in [`Px`]
     /// applied to the layer before compositing (zero = no blur on that axis).
     /// `rectangle_edge` true = clamp edge pixels (Rectangle). False = transparent out-of-bounds (Unbounded).
+    /// `blend_mode`, `color_filter` and `compositing_strategy` control how the
+    /// layer is composited; their defaults preserve plain source-over blending.
     BeginLayer {
         rect: Rect,
         layer_id: u32,
@@ -497,6 +500,9 @@ pub enum SceneNode {
         blur_radius_x: Px,
         blur_radius_y: Px,
         rectangle_edge: bool,
+        blend_mode: BlendMode,
+        color_filter: ColorFilter,
+        compositing_strategy: CompositingStrategy,
     },
     /// Closes the graphics layer opened by the matching `BeginLayer`.
     EndLayer {

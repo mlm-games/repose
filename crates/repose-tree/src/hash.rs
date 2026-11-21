@@ -451,6 +451,9 @@ fn facet_hash_modifier(modifier: &Modifier, hashers: &mut FacetHashers) {
             hash_f32(transform.rotate, h);
             hash_f32(transform.shear_x, h);
             hash_f32(transform.shear_y, h);
+            hash_f32(transform.rotation_x, h);
+            hash_f32(transform.rotation_y, h);
+            hash_f32(transform.camera_distance, h);
             hash_f32(transform.origin_x, h);
             hash_f32(transform.origin_y, h);
             for value in transform.perspective {
@@ -551,6 +554,25 @@ fn facet_hash_modifier(modifier: &Modifier, hashers: &mut FacetHashers) {
     hash_opt_dp_value!(FACET_LAYOUT, modifier.margin_right);
     hash_opt_dp_value!(FACET_LAYOUT, modifier.margin_bottom);
     hash_opt_f32_value!(FACET_PAINT, modifier.graphics_layer);
+    hashers.hash(FACET_PAINT, |h| {
+        if let Some(scope) = &modifier.graphics_layer_scope {
+            1u8.hash(h);
+            hash_rc_ptr_identity(scope, h);
+        } else {
+            0u8.hash(h);
+        }
+    });
+    hashers.hash(FACET_LAYOUT, |h| {
+        modifier.match_parent_size.hash(h);
+        if let Some((axis, enabled)) = modifier.fill_parent_max_size {
+            std::mem::discriminant(&axis).hash(h);
+            enabled.hash(h);
+        } else {
+            0u8.hash(h);
+        }
+        hash_opt_dp(modifier.padding_from_baseline, h);
+    });
+    hashers.hash(FACET_PAINT, |h| modifier.paint_order.hash(h));
     if let Some(shadow) = &modifier.shadow {
         hashers.hash(FACET_PAINT, |h| {
             hash_dp(shadow.blur_radius, h);
@@ -603,6 +625,8 @@ fn facet_hash_modifier(modifier: &Modifier, hashers: &mut FacetHashers) {
         modifier.on_drop.is_some().hash(h);
         modifier.on_action.is_some().hash(h);
         modifier.focus_requester.is_some().hash(h);
+        modifier.bring_into_view.is_some().hash(h);
+        modifier.on_focused_bounds_changed.is_some().hash(h);
         modifier.on_focus_changed.is_some().hash(h);
         modifier.interaction_source.is_some().hash(h);
         modifier.shared_element.is_some().hash(h);
@@ -1690,6 +1714,9 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
             hash_f32(transform.rotate, hasher);
             hash_f32(transform.shear_x, hasher);
             hash_f32(transform.shear_y, hasher);
+            hash_f32(transform.rotation_x, hasher);
+            hash_f32(transform.rotation_y, hasher);
+            hash_f32(transform.camera_distance, hasher);
             hash_f32(transform.origin_x, hasher);
             hash_f32(transform.origin_y, hasher);
             for value in transform.perspective {
@@ -1777,6 +1804,21 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
     hash_opt_dp(m.margin_right, hasher);
     hash_opt_dp(m.margin_bottom, hasher);
     hash_opt_f32(m.graphics_layer, hasher);
+    if let Some(scope) = &m.graphics_layer_scope {
+        1u8.hash(hasher);
+        hash_rc_ptr_identity(scope, hasher);
+    } else {
+        0u8.hash(hasher);
+    }
+    m.match_parent_size.hash(hasher);
+    if let Some((axis, enabled)) = m.fill_parent_max_size {
+        std::mem::discriminant(&axis).hash(hasher);
+        enabled.hash(hasher);
+    } else {
+        0u8.hash(hasher);
+    }
+    hash_opt_dp(m.padding_from_baseline, hasher);
+    m.paint_order.hash(hasher);
     match &m.shadow {
         Some(shadow) => {
             1u8.hash(hasher);

@@ -33,6 +33,7 @@ impl LayoutEngine {
         let start = web_time::Instant::now();
         repose_text::begin_frame();
         self.stats = LayoutStats::default();
+        self.graphics_scope_epoch = self.graphics_scope_epoch.wrapping_add(1);
 
         // 0a. Reset per-frame state
         self.focus_group_stack.clear();
@@ -375,6 +376,7 @@ impl LayoutEngine {
             next_view_id: 1,
             layer_id_counter: 0,
             paint_generation: 0,
+            graphics_scope_epoch: 0,
             prev_focused: None,
             focus_callbacks: FxHashMap::default(),
             focus_interaction_sources: FxHashMap::default(),
@@ -406,6 +408,11 @@ impl LayoutEngine {
             if let Some((x, y)) = m.absolute_layout_offset {
                 l.location.x += x.to_px().0;
                 l.location.y += y.to_px().0;
+            }
+            if let Some(p) = m.padding_from_baseline
+                && m.baseline_align.is_none()
+            {
+                l.location.y += p.to_px().0;
             }
         }
         l

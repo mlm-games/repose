@@ -350,7 +350,12 @@ impl LayoutEngine {
                     BaselineAlign::FirstBaseline => tb.first,
                     BaselineAlign::LastBaseline => tb.last,
                 };
-                parts.push((child, cl.location.y + b));
+                let pad = cnode
+                    .modifier
+                    .padding_from_baseline
+                    .map(|p| p.to_px().0)
+                    .unwrap_or(0.0);
+                parts.push((child, cl.location.y + b + pad));
             }
             if parts.is_empty() {
                 continue;
@@ -544,7 +549,53 @@ impl LayoutEngine {
         ctx: Option<&NodeContext>,
         text_cache: &mut FxHashMap<NodeId, TextLayout>,
         reverse_map: &FxHashMap<taffy::NodeId, NodeId>,
-        _tree: &ViewTree,
+        tree: &ViewTree,
+        font_px: &dyn Fn(Sp) -> f32,
+        px: &dyn Fn(Dp) -> f32,
+    ) -> taffy::geometry::Size<f32> {
+        let fill_axis = reverse_map
+            .get(&taffy_node)
+            .and_then(|id| tree.get(*id))
+            .and_then(|node| node.modifier.fill_parent_max_size)
+            .map(|(axis, _)| axis);
+
+        let mut size = Self::measure_node_inner(
+            known,
+            avail,
+            taffy_node,
+            ctx,
+            text_cache,
+            reverse_map,
+            tree,
+            font_px,
+            px,
+        );
+
+        if let Some(axis) = fill_axis {
+            let fill = |cur: f32, space: AvailableSpace| match space {
+                AvailableSpace::Definite(max) if max > 0.0 => max.max(cur),
+                _ => cur,
+            };
+            match axis {
+                ScrollAxis::Vertical => size.height = fill(size.height, avail.height),
+                ScrollAxis::Horizontal => size.width = fill(size.width, avail.width),
+                ScrollAxis::Both => {
+                    size.width = fill(size.width, avail.width);
+                    size.height = fill(size.height, avail.height);
+                }
+            }
+        }
+        size
+    }
+
+    fn measure_node_inner(
+        known: taffy::geometry::Size<Option<f32>>,
+        avail: taffy::geometry::Size<AvailableSpace>,
+        taffy_node: taffy::NodeId,
+        ctx: Option<&NodeContext>,
+        text_cache: &mut FxHashMap<NodeId, TextLayout>,
+        reverse_map: &FxHashMap<taffy::NodeId, NodeId>,
+        tree: &ViewTree,
         font_px: &dyn Fn(Sp) -> f32,
         px: &dyn Fn(Dp) -> f32,
     ) -> taffy::geometry::Size<f32> {

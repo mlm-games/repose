@@ -4,13 +4,14 @@ pub use crate::animation::{
     SystemClock, TestClock, ensure_system_clock, motion_duration_scale, set_clock,
     set_motion_duration_scale, with_motion_duration_scale,
 };
-pub use crate::color::{Brush, Color, LinearGradient, TileMode};
+pub use crate::color::{Brush, Color, ColorFilter, CompositingStrategy, LinearGradient, TileMode};
 pub use crate::dnd::*;
 pub use crate::effects::{Dispose, effect, effect_once, effect_once_with_key, on_unmount};
 pub use crate::error::*;
 pub use crate::frame_clock::{
     peek_frame_request, request_frame, request_present, take_frame_request, with_frame_nanos,
 };
+pub use crate::geometry::Transform;
 pub use crate::geometry::{Rect, Size, Vec2};
 pub use crate::indication::*;
 pub use crate::input::*;
@@ -26,8 +27,8 @@ pub use crate::locals::{
     with_window_size_class,
 };
 pub use crate::modifier::{
-    Border, Interaction, InteractionSource, Modifier, MutableInteractionSource, PressId,
-    StateColors, StateElevation,
+    Border, GraphicsLayerScope, Interaction, InteractionSource, Modifier, MutableInteractionSource,
+    PressId, StateColors, StateElevation,
 };
 pub use crate::modifier_node::{ModifierNode, ModifierNodeElement};
 pub use crate::nested_scroll::{NestedScrollConnection, NestedScrollSource};
@@ -36,8 +37,9 @@ pub use crate::pointer::{
 };
 pub use crate::render_api::{GlyphRasterConfig, RenderBackend};
 pub use crate::runtime::{
-    ComposeGuard, FocusDirection, FocusManager, FocusRequester, Frame, Scheduler, keyed, remember,
-    remember_auto, remember_state, remember_state_with_key, remember_with_key, take_focus_request,
+    BringIntoViewRequester, ComposeGuard, FocusDirection, FocusManager, FocusRequester, Frame,
+    Scheduler, keyed, remember, remember_auto, remember_state, remember_state_with_key,
+    remember_with_key, take_focus_request,
 };
 pub use crate::scope::{Scope, current_scope, scope_memo, scoped_effect, scoped_effect_once};
 pub use crate::scroll::{

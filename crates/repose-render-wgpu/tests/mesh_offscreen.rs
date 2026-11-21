@@ -97,6 +97,9 @@ fn bisect_layer_coordinate_space() {
                 blur_radius_x: Px(0.0),
                 blur_radius_y: Px(0.0),
                 rectangle_edge: true,
+                blend_mode: Default::default(),
+                color_filter: Default::default(),
+                compositing_strategy: Default::default(),
             },
             white_rect(cx, cy, 20.0, 20.0),
             SceneNode::EndLayer { layer_id: 7 },
@@ -482,6 +485,7 @@ fn flatten_with_ass_frx45_map() {
         origin_x: 0.5,
         origin_y: 0.5,
         perspective: [0.0, -0.0022627416, 1.4072934],
+        ..Transform::default()
     };
     let Some(px) = covered_of_sized(
         640,
@@ -637,6 +641,9 @@ fn blend_overlay_inside_layer_composites() {
             blur_radius_x: Px(0.0),
             blur_radius_y: Px(0.0),
             rectangle_edge: true,
+            blend_mode: Default::default(),
+            color_filter: Default::default(),
+            compositing_strategy: Default::default(),
         },
         SceneNode::Rect {
             rect: Rect {
@@ -686,6 +693,9 @@ fn blend_overlay_inside_offset_layer_composites() {
             blur_radius_x: Px(0.0),
             blur_radius_y: Px(0.0),
             rectangle_edge: true,
+            blend_mode: Default::default(),
+            color_filter: Default::default(),
+            compositing_strategy: Default::default(),
         },
         SceneNode::Rect {
             rect: Rect {

@@ -68,6 +68,7 @@ fn bounds_transform(from: Rect, to: Rect) -> Transform {
         origin_x: 0.0,
         origin_y: 0.0,
         perspective: [0.0, 0.0, 1.0],
+        ..Transform::default()
     }
 }
 
@@ -562,6 +563,7 @@ impl LayoutEngine {
         alpha_accum: f32,
     ) -> u64 {
         let mut h = FxHasher::default();
+        let mut has_graphics_scope = false;
         format!("{:?}", locals::theme()).hash(&mut h);
         let mut hover_ancestors: Vec<u64> = interactions.hover_ancestors.iter().copied().collect();
         hover_ancestors.sort_unstable();
@@ -611,6 +613,9 @@ impl LayoutEngine {
                 }
                 if let Some(g) = pnode.modifier.graphics_layer {
                     g.to_bits().hash(&mut h);
+                }
+                if pnode.modifier.graphics_layer_scope.is_some() {
+                    has_graphics_scope = true;
                 }
                 cur = pnode.parent;
             }
@@ -698,9 +703,15 @@ impl LayoutEngine {
                 src.collect_is_dragged().hash(&mut h);
                 src.collect_last_press_id().hash(&mut h);
             }
+            if n.modifier.graphics_layer_scope.is_some() {
+                has_graphics_scope = true;
+            }
             for &ch in n.children.iter() {
                 stack.push(ch);
             }
+        }
+        if has_graphics_scope {
+            self.graphics_scope_epoch.hash(&mut h);
         }
         h.finish()
     }
@@ -780,6 +791,7 @@ impl LayoutEngine {
         // carries one of these itself, which the recursive walk picks up.
         let node_may_paint_outside = modifier.transform.is_some()
             || modifier.graphics_layer.is_some()
+            || modifier.graphics_layer_scope.is_some()
             || modifier.shadow.is_some()
             || modifier.blur.is_some()
             || modifier.painter.is_some()
@@ -933,8 +945,11 @@ impl LayoutEngine {
 
         let kind_handles_hit = modifier.text_input.is_some() || modifier.scroll.is_some();
 
+        let incoming_alpha = alpha_accum;
         let this_alpha = modifier.alpha.unwrap_or(1.0);
         let alpha_accum = (alpha_accum * this_alpha).clamp(0.0, 1.0);
+        let (alpha_accum, graphics_scope) =
+            GraphicsScope::from_modifier(&modifier, rect, alpha_accum);
 
         let needs_hit = (!modifier.disabled
             && alpha_accum > 0.01
@@ -1020,6 +1035,7 @@ impl LayoutEngine {
         });
         let boundary_cacheable = allow_cache
             && modifier.repaint_boundary
+            && graphics_scope.is_none()
             && !self.subtree_has_deferred_render_z(node_id)
             && !self.subtree_has_shared_element(node_id);
         if boundary_cacheable && boundary_candidate {
@@ -1135,7 +1151,7 @@ impl LayoutEngine {
                 interactions,
                 focused,
                 parent_offset_px,
-                alpha_accum / this_alpha.max(1e-6),
+                incoming_alpha,
                 sem_parent,
                 interaction_source,
                 hit_context,
@@ -1272,6 +1288,15 @@ impl LayoutEngine {
                 transform: adjusted,
             });
         }
+        let scope_transform_pushed = if let Some(scope) = &graphics_scope
+            && let Some(tf) = scope.transform
+        {
+            node_hit_context = node_hit_context.with_transform(tf);
+            scene.nodes.push(SceneNode::PushTransform { transform: tf });
+            true
+        } else {
+            false
+        };
         let overflow_clip = modifier
             .overflow
             .is_none_or(|o| o == repose_core::Overflow::Clip);
@@ -1327,7 +1352,8 @@ impl LayoutEngine {
         let has_blur = modifier
             .blur
             .is_some_and(|b| b.radius_x.0 > 0.0 || b.radius_y.0 > 0.0);
-        let layer_id = if modifier.graphics_layer.is_some() || has_blur {
+        let layer_id = if modifier.graphics_layer.is_some() || has_blur || graphics_scope.is_some()
+        {
             let id = self.layer_id_counter;
             self.layer_id_counter = self.layer_id_counter.wrapping_add(1);
             let blur_style = modifier.blur.unwrap_or(BlurStyle {
@@ -1358,6 +1384,18 @@ impl LayoutEngine {
                     blur_style.edge_treatment,
                     BlurredEdgeTreatment::Rectangle
                 ),
+                blend_mode: graphics_scope
+                    .as_ref()
+                    .map(|s| s.scope.blend_mode)
+                    .unwrap_or_default(),
+                color_filter: graphics_scope
+                    .as_ref()
+                    .map(|s| s.scope.color_filter)
+                    .unwrap_or_default(),
+                compositing_strategy: graphics_scope
+                    .as_ref()
+                    .map(|s| s.scope.compositing_strategy.clone())
+                    .unwrap_or_default(),
             });
             let shift_x = -layer_rect.x;
             let shift_y = -layer_rect.y;
@@ -1372,6 +1410,7 @@ impl LayoutEngine {
                 origin_x: 0.0,
                 origin_y: 0.0,
                 perspective: [0.0, 0.0, 1.0],
+                ..Transform::default()
             };
             scene.nodes.push(SceneNode::PushTransform {
                 transform: layer_transform,
@@ -1521,8 +1560,8 @@ impl LayoutEngine {
                 alpha_accum,
             );
         }
-        if let Some(p) = &modifier.painter {
-            (p)(scene, rect, alpha_accum);
+        if modifier.paint_order <= 0 {
+            emit_painter(&modifier.painter, scene, rect, alpha_accum);
         }
         if let Some(payload) = &modifier.paint_callback {
             scene.nodes.push(SceneNode::Callback {
@@ -3155,10 +3194,16 @@ impl LayoutEngine {
             if modifier.focus_group {
                 self.focus_group_stack.pop();
             }
+            if modifier.paint_order > 0 {
+                emit_painter(&modifier.painter, scene, rect, alpha_accum);
+            }
             // Pop layer if present
             if let Some(id) = layer_id {
                 scene.nodes.push(SceneNode::PopTransform);
                 scene.nodes.push(SceneNode::EndLayer { layer_id: id });
+            }
+            if scope_transform_pushed {
+                scene.nodes.push(SceneNode::PopTransform);
             }
             // Pop clips and transforms pushed before the scroll branch
             if push_bounds_clip {
@@ -3255,9 +3300,16 @@ impl LayoutEngine {
             self.focus_group_stack.pop();
         }
 
+        if modifier.paint_order > 0 {
+            emit_painter(&modifier.painter, scene, rect, alpha_accum);
+        }
+
         if let Some(id) = layer_id {
             scene.nodes.push(SceneNode::PopTransform);
             scene.nodes.push(SceneNode::EndLayer { layer_id: id });
+        }
+        if scope_transform_pushed {
+            scene.nodes.push(SceneNode::PopTransform);
         }
 
         if push_bounds_clip {
@@ -3405,4 +3457,66 @@ fn resolved_transform(rect: repose_core::Rect, transform: Transform) -> Transfor
     adjusted.origin_x = 0.0;
     adjusted.origin_y = 0.0;
     adjusted
+}
+
+fn emit_painter(
+    painter: &Option<Rc<dyn Fn(&mut Scene, Rect, f32)>>,
+    scene: &mut Scene,
+    rect: Rect,
+    alpha: f32,
+) {
+    if let Some(p) = painter {
+        p(scene, rect, alpha);
+    }
+}
+
+#[derive(Clone)]
+struct GraphicsScope {
+    scope: GraphicsLayerScope,
+    transform: Option<Transform>,
+}
+
+impl GraphicsScope {
+    fn from_modifier(
+        modifier: &Modifier,
+        rect: repose_core::Rect,
+        alpha_accum: f32,
+    ) -> (f32, Option<Self>) {
+        let Some(factory) = &modifier.graphics_layer_scope else {
+            return (alpha_accum, None);
+        };
+        let scope = factory();
+        let alpha = (alpha_accum * scope.alpha).clamp(0.0, 1.0);
+
+        let tf = Transform {
+            translate_x: scope.translation_x.to_px().0,
+            translate_y: scope.translation_y.to_px().0,
+            scale_x: scope.scale_x,
+            scale_y: scope.scale_y,
+            rotate: scope.rotation_z,
+            shear_x: 0.0,
+            shear_y: 0.0,
+            origin_x: scope.transform_origin_x,
+            origin_y: scope.transform_origin_y,
+            perspective: [0.0, 0.0, 1.0],
+            rotation_x: scope.rotation_x,
+            rotation_y: scope.rotation_y,
+            camera_distance: scope.camera_distance,
+            ..Transform::default()
+        };
+        let transform = if tf.linear_is_identity()
+            && tf.translate_x == 0.0
+            && tf.translate_y == 0.0
+            && tf.rotate == 0.0
+            && scope.rotation_x == 0.0
+            && scope.rotation_y == 0.0
+            && !tf.has_perspective()
+        {
+            None
+        } else {
+            Some(resolved_transform(rect, tf))
+        };
+
+        (alpha, Some(Self { scope, transform }))
+    }
 }

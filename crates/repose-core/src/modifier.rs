@@ -8,11 +8,14 @@ use taffy::{
 };
 
 use crate::animation::AnimationSpec;
+use crate::color::ColorFilter;
 use crate::gesture::DragOrientation;
 use crate::indication::IndicationNodeFactory;
+use crate::scroll::ScrollAxis;
 use crate::shape::Shape;
 use crate::units::{Dp, DpSize};
-use crate::{Brush, Color, PointerEvent, Transform, Vec2};
+use crate::view::BlendMode;
+use crate::{Brush, Color, CompositingStrategy, PointerEvent, Transform, Vec2};
 
 /// State-driven colors. Priority: disabled > dragged > pressed > focused > hovered > default.
 ///
@@ -130,20 +133,24 @@ macro_rules! impl_option_fields {
                     painter,
                     paint_callback,
                     layout,
-                    blur, graphics_layer, shadow, shadow_shape,
+                    blur, graphics_layer, graphics_layer_scope,
+                    fill_parent_max_size, padding_from_baseline,
+                    shadow, shadow_shape,
                     on_drag_start, on_drag_end, on_drag_enter, on_drag_over, on_drag_leave, on_drop,
                     drag_preview,
                     on_action, cursor, animate_content_size, focus_requester, on_focus_changed,
+                    bring_into_view, on_focused_bounds_changed,
                     interaction_source, text_input, text_selection,
                     visible,
                 );
                         merge_flags!(self, other;
                     hit_passthrough, input_blocker, repaint_boundary, click, disabled,
-                    propagate_min, focus_group,
+                    propagate_min, focus_group, match_parent_size,
                 );
 
                 // `flex_basis_content` is a plain bool flag: OR like the rest.
                 self.flex_basis_content |= other.flex_basis_content;
+                self.paint_order = other.paint_order;
 
                 if let Some(f) = other.focusable {
                     self.focusable = Some(f);
@@ -266,6 +273,54 @@ pub struct ShadowSpec {
     pub color: Color,
     pub spread: Dp,
     pub inset: bool,
+}
+
+/// Compose-style graphics layer configuration. Returned by the closure passed
+/// to [`Modifier::graphics_layer_with`]; the closure is evaluated every frame,
+/// so animating its fields does not require recomposition.
+#[derive(Clone, Debug)]
+pub struct GraphicsLayerScope {
+    pub scale_x: f32,
+    pub scale_y: f32,
+    pub alpha: f32,
+    pub translation_x: Dp,
+    pub translation_y: Dp,
+    pub rotation_x: f32,
+    pub rotation_y: f32,
+    pub rotation_z: f32,
+    pub camera_distance: f32,
+    pub transform_origin_x: f32,
+    pub transform_origin_y: f32,
+    pub shadow_elevation: Dp,
+    pub blend_mode: BlendMode,
+    pub color_filter: ColorFilter,
+    pub shape: Option<Shape>,
+    pub clip: bool,
+    pub compositing_strategy: CompositingStrategy,
+}
+
+impl Default for GraphicsLayerScope {
+    fn default() -> Self {
+        Self {
+            scale_x: 1.0,
+            scale_y: 1.0,
+            alpha: 1.0,
+            translation_x: Dp::ZERO,
+            translation_y: Dp::ZERO,
+            rotation_x: 0.0,
+            rotation_y: 0.0,
+            rotation_z: 0.0,
+            camera_distance: 0.0,
+            transform_origin_x: 0.5,
+            transform_origin_y: 0.5,
+            shadow_elevation: Dp::ZERO,
+            blend_mode: BlendMode::Alpha,
+            color_filter: ColorFilter::None,
+            shape: None,
+            clip: false,
+            compositing_strategy: CompositingStrategy::Auto,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -822,6 +877,21 @@ pub struct Modifier {
     pub semantics: Option<crate::Semantics>,
     pub alpha: Option<f32>,
     pub graphics_layer: Option<f32>,
+    /// Compose-style graphics layer configured by a per-frame closure. The
+    /// closure is re-evaluated on every paint, so animated values do not
+    /// require a recomposition.
+    pub graphics_layer_scope: Option<Rc<dyn Fn() -> GraphicsLayerScope>>,
+    /// Size to the parent's content without contributing to the parent's
+    /// measurement (Compose `Modifier.matchParentSize`).
+    pub match_parent_size: bool,
+    /// `(axis, enabled)` marker used by lazy-list items to size against the
+    /// parent's maximum cross-axis extent instead of their incoming constraints.
+    pub fill_parent_max_size: Option<(ScrollAxis, bool)>,
+    /// Baseline-relative top padding for text layering.
+    pub padding_from_baseline: Option<Dp>,
+    /// Painter draw order relative to the node's own content. `-1` paints
+    /// behind, `+1` paints on top.
+    pub paint_order: i8,
     /// Shared-element identity whose painted bounds follow the owning node.
     pub shared_element: Option<crate::shared::SharedElementState>,
     /// Persistent modifier nodes, reconciled by element type and key.
@@ -903,6 +973,13 @@ pub struct Modifier {
     /// When the requester's `request_focus()` is called, keyboard focus will
     /// move to this view.
     pub focus_requester: Option<crate::runtime::FocusRequester>,
+
+    /// A handle that, when requested, scrolls ancestor containers so this view
+    /// is visible. Compose `Modifier.bringIntoViewRequester`.
+    pub bring_into_view: Option<crate::runtime::BringIntoViewRequester>,
+
+    /// Reports this view's bounds in px whenever they change.
+    pub on_focused_bounds_changed: Option<Rc<dyn Fn(crate::Rect)>>,
 
     /// Called when this view gains or loses focus. The boolean parameter is
     /// `true` when focused, `false` when unfocused.
@@ -1010,6 +1087,8 @@ impl std::fmt::Debug for Modifier {
             cursor,
             animate_content_size,
             blur,
+            fill_parent_max_size,
+            padding_from_baseline,
         );
 
         macro_rules! opt_cb {
@@ -1050,6 +1129,7 @@ impl std::fmt::Debug for Modifier {
             text_input,
             text_selection,
             layout,
+            graphics_layer_scope,
         );
 
         macro_rules! flag {
@@ -1065,6 +1145,7 @@ impl std::fmt::Debug for Modifier {
             disabled,
             propagate_min,
             focus_group,
+            match_parent_size,
         );
 
         if let Some(f) = self.focusable {
@@ -1072,6 +1153,9 @@ impl std::fmt::Debug for Modifier {
         }
         if self.z_index != 0.0 {
             s.field("z_index", &self.z_index);
+        }
+        if self.paint_order != 0 {
+            s.field("paint_order", &self.paint_order);
         }
 
         s.finish()
@@ -1215,6 +1299,12 @@ impl Modifier {
         self.default_min_height = Some(Dp(h.0.max(0.0)));
         self
     }
+    /// Size to the parent's content without influencing the parent's own
+    /// measurement (Compose `Modifier.matchParentSize`).
+    pub fn match_parent_size(mut self) -> Self {
+        self.match_parent_size = true;
+        self
+    }
     /// Fill the available space in both dimensions.
     /// By default fills 100% (fraction = 1.0). Pass a fraction to fill partially.
     pub fn fill_max_size(mut self) -> Self {
@@ -1234,6 +1324,12 @@ impl Modifier {
         self.fill_max_w = Some(fraction.clamp(0.0, 1.0));
         self
     }
+    /// Fill the parent's maximum width. Marker for lazy-list items whose
+    /// incoming width constraint is unbounded.
+    pub fn fill_parent_max_width(mut self) -> Self {
+        self.fill_parent_max_size = Some((ScrollAxis::Horizontal, true));
+        self
+    }
     /// Fill the available height. By default fills 100%.
     pub fn fill_max_height(mut self) -> Self {
         self.fill_max_h = Some(1.0);
@@ -1243,8 +1339,19 @@ impl Modifier {
         self.fill_max_h = Some(fraction.clamp(0.0, 1.0));
         self
     }
+    /// Fill the parent's maximum height. Marker for lazy-list items whose
+    /// incoming height constraint is unbounded.
+    pub fn fill_parent_max_height(mut self) -> Self {
+        self.fill_parent_max_size = Some((ScrollAxis::Vertical, true));
+        self
+    }
     pub fn padding(mut self, v: Dp) -> Self {
         self.padding = Some(v);
+        self
+    }
+    /// Add top padding measured from the first text baseline.
+    pub fn padding_from_baseline(mut self, v: Dp) -> Self {
+        self.padding_from_baseline = Some(v);
         self
     }
     pub fn padding_values(mut self, padding: PaddingValues) -> Self {
@@ -2116,6 +2223,18 @@ impl Modifier {
         self.graphics_layer = Some(alpha.clamp(0.0, 1.0));
         self
     }
+    /// Configure a graphics layer with a closure that is evaluated on every
+    /// paint. Mutating animation state read by the closure updates the layer
+    /// without recomposing the view.
+    pub fn graphics_layer_with(mut self, block: impl Fn() -> GraphicsLayerScope + 'static) -> Self {
+        self.graphics_layer_scope = Some(Rc::new(block));
+        self
+    }
+    /// Configure a graphics layer with a fixed [`GraphicsLayerScope`].
+    pub fn graphics_layer_scope(mut self, scope: GraphicsLayerScope) -> Self {
+        self.graphics_layer_scope = Some(Rc::new(move || scope.clone()));
+        self
+    }
     /// Drop shadow with the given `blur_radius` ([`Dp`]) and vertical `offset_y` ([`Dp`]).
     /// The shadow color defaults to black with alpha 64 (~25%). Combines with
     /// [`Modifier::graphics_layer`] to draw a shadow underneath the layer.
@@ -2365,6 +2484,24 @@ impl Modifier {
         self.painter = Some(Rc::new(f));
         self
     }
+    /// Paint the given callback behind the node's own content.
+    pub fn draw_behind(
+        mut self,
+        painter: impl Fn(&mut crate::Scene, crate::Rect, f32) + 'static,
+    ) -> Self {
+        self.painter = Some(Rc::new(painter));
+        self.paint_order = -1;
+        self
+    }
+    /// Paint the given callback on top of the node's own content.
+    pub fn draw_with_content(
+        mut self,
+        painter: impl Fn(&mut crate::Scene, crate::Rect, f32) + 'static,
+    ) -> Self {
+        self.painter = Some(Rc::new(painter));
+        self.paint_order = 1;
+        self
+    }
     /// Attach a custom GPU callback (like `egui::PaintCallback`). The payload
     /// is type-erased (`Arc<dyn Any>`) so the core crate stays backend-agnostic.
     /// Prefer `repose_render_wgpu::Callback::new` + `repose_ui::Embedded` or
@@ -2577,6 +2714,18 @@ impl Modifier {
     /// with the view's focusable element, allowing programmatic focus requests.
     pub fn focus_requester(mut self, fr: crate::runtime::FocusRequester) -> Self {
         self.focus_requester = Some(fr);
+        self
+    }
+
+    /// Scroll ancestor containers to reveal this view when requested.
+    pub fn bring_into_view(mut self, r: crate::runtime::BringIntoViewRequester) -> Self {
+        self.bring_into_view = Some(r);
+        self
+    }
+
+    /// Called when this view's bounds change (Compose `onFocusedBoundsChanged`).
+    pub fn on_focused_bounds_changed(mut self, f: impl Fn(crate::Rect) + 'static) -> Self {
+        self.on_focused_bounds_changed = Some(Rc::new(f));
         self
     }
 
