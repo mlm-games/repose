@@ -1819,13 +1819,6 @@ impl ReposeRuntime {
         if dnd::is_dragging() {
             return true;
         }
-        if self
-            .dnd_capture
-            .as_ref()
-            .is_some_and(|capture| capture.touch == Some(tid))
-        {
-            return true;
-        }
         self.touch_move_consumers.contains(&tid)
     }
 
