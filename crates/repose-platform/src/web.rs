@@ -8,6 +8,7 @@
 //! events to the runtime. Canvas attributes alone do not provide that bridge
 //! and are not treated as text-editor support here.
 use crate::common as rc;
+use crate::web_gamepad::WebGamepads;
 use crate::web_text_agent::{AgentEvent, TextAgent};
 
 use crate::render::RenderContext;
@@ -263,8 +264,10 @@ struct App {
 
     inspector: Option<repose_devtools::Inspector>,
 
-    // Shared touch-scroll / pinch / swipe gesture state
+    /// Shared touch-scroll / pinch / swipe gesture state
     touch_gestures: rc::TouchGestureState,
+    /// The browser's gamepads, sampled once per frame.
+    gamepads: WebGamepads,
 
     paste_requests: Rc<RefCell<Vec<ClipboardPasteRequest>>>,
     paste_apply_index: usize,
@@ -379,6 +382,7 @@ impl App {
             inspector: None, //  Some(repose_devtools::Inspector::new()),// Incomplete / doesn't work, so better disable it
 
             touch_gestures: rc::TouchGestureState::default(),
+            gamepads: WebGamepads::new(),
 
             paste_requests: Rc::new(RefCell::new(Vec::new())),
             paste_apply_index: 0,
@@ -1853,6 +1857,13 @@ impl ApplicationHandler<()> for App {
         self.rt.process_deeplinks();
         self.rt.process_lifecycle();
         self.poll_visibility_lifecycle();
+        let gamepad_events = self.gamepads.poll();
+        if !gamepad_events.is_empty() {
+            for event in &gamepad_events {
+                self.rt.handle_gamepad(event);
+            }
+            self.request_redraw();
+        }
         if !self.rt.take_rumble_requests().is_empty() {
             log::warn!("gamepad: rumble not supported on web");
         }

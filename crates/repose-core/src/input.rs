@@ -1,5 +1,6 @@
 use crate::Vec2;
 use std::cell::Cell;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -622,6 +623,33 @@ pub enum GamepadAxis {
     RightStickY,
     LeftTrigger,
     RightTrigger,
+}
+
+/// A connected gamepad's polled state, published beside the polled keys and the
+/// mouse levels so a game reads every hardware source from one snapshot.
+#[derive(Clone, Debug, Default)]
+pub struct GamepadPad {
+    /// Backend-local index, stable for the connection's lifetime.
+    pub id: u32,
+    /// Driver name, as the backend reported it.
+    pub name: String,
+    /// USB vendor and product ids, `0` where the platform reports none.
+    pub vendor_id: u16,
+    pub product_id: u16,
+    /// The standard buttons that are down right now.
+    pub pressed: HashSet<GamepadButton>,
+    /// Live axis values, -1.0..=1.0 for sticks and 0.0..=1.0 for triggers.
+    pub axes: HashMap<GamepadAxis, f32>,
+}
+
+impl GamepadPad {
+    pub fn button(&self, button: GamepadButton) -> bool {
+        self.pressed.contains(&button)
+    }
+
+    pub fn axis(&self, axis: GamepadAxis) -> f32 {
+        self.axes.get(&axis).copied().unwrap_or(0.0)
+    }
 }
 
 /// Motion sensor a gamepad can report.

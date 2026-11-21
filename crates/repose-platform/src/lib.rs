@@ -13,6 +13,8 @@ pub mod android;
 #[cfg(target_arch = "wasm32")]
 pub mod web;
 #[cfg(target_arch = "wasm32")]
+mod web_gamepad;
+#[cfg(target_arch = "wasm32")]
 mod web_text_agent;
 
 mod common;

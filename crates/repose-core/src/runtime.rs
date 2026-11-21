@@ -9,7 +9,11 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::effects::Dispose;
 use crate::scope::Scope;
-use crate::{CursorGrabMode, CursorIcon, Rect, Scene, View, input::PhysicalKey, semantics::Role};
+use crate::{
+    CursorGrabMode, CursorIcon, Rect, Scene, View,
+    input::{GamepadPad, PhysicalKey},
+    semantics::Role,
+};
 
 thread_local! {
     pub static COMPOSER: RefCell<Composer> = RefCell::new(Composer::default());
@@ -1535,6 +1539,13 @@ pub struct Scheduler {
     pub mouse_primary: bool,
     pub mouse_secondary: bool,
     pub mouse_middle: bool,
+    /// The connected gamepads, polled like the keys and the mouse levels: the
+    /// buttons that are down and the live axis values, one entry per pad.
+    pub gamepads: Vec<GamepadPad>,
+    /// The window's DPI scale factor: physical px per logical px. `1.0` on
+    /// a display that reports no scaling. The pointer's positions are physical
+    /// px, so a game that maps them into its own space divides by this.
+    pub scale: f32,
     /// App-requested cursor override. When `Some`, the platform
     /// applies it instead of the hover-derived icon: games hide the
     /// OS pointer here (`CursorIcon::Hidden`) while drawing their own
@@ -1587,6 +1598,8 @@ impl Scheduler {
             mouse_primary: false,
             mouse_secondary: false,
             mouse_middle: false,
+            gamepads: Vec::new(),
+            scale: 1.0,
             cursor_override: None,
             cursor_grab: CursorGrabMode::None,
             fullscreen_request: None,

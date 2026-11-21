@@ -70,8 +70,8 @@ pub fn NavigationBar(
     let id = remember(|| NAVBAR_COUNTER.fetch_add(1, Ordering::Relaxed));
 
     let mut bar_m = Modifier::new()
-        .fill_max_size()
-        .min_height(config.height)
+        .fill_max_width()
+        .height(config.height)
         .background(config.container_color)
         .then(config.modifier);
 

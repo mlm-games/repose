@@ -280,27 +280,7 @@ pub struct ReposeRuntime {
 }
 
 /// Live state of one connected gamepad, mirrored from [`GamepadEvent`]s.
-#[derive(Clone, Debug, Default)]
-pub struct GamepadPad {
-    pub name: String,
-    /// USB vendor and product ids, `0` where the platform reports none. Enough
-    /// to tell a model apart (a GameCube adapter, a Switch pad) without
-    /// carrying a driver identity.
-    pub vendor_id: u16,
-    pub product_id: u16,
-    pub pressed: HashSet<GamepadButton>,
-    pub axes: HashMap<GamepadAxis, f32>,
-}
-
-impl GamepadPad {
-    pub fn button(&self, button: GamepadButton) -> bool {
-        self.pressed.contains(&button)
-    }
-
-    pub fn axis(&self, axis: GamepadAxis) -> f32 {
-        self.axes.get(&axis).copied().unwrap_or(0.0)
-    }
-}
+pub use repose_core::input::GamepadPad;
 
 impl ReposeRuntime {
     pub fn new() -> Self {
@@ -429,6 +409,7 @@ impl ReposeRuntime {
     pub fn set_viewport_and_scale(&mut self, width_px: u32, height_px: u32, scale: f32) {
         self.scale = scale;
         self.sched.size = (width_px, height_px);
+        self.sched.scale = scale;
     }
 
     /// Advance animations. Call before `compose` each frame.
@@ -457,6 +438,9 @@ impl ReposeRuntime {
         self.flush_pending_click();
         self.poll_key_long_press();
         repose_ui::scrollbar_repeat::poll_track_repeat();
+
+        let pads: Vec<GamepadPad> = self.gamepads.values().cloned().collect();
+        self.sched.gamepads = pads;
 
         let size = self.sched.size;
         let rc = render_ctx.clone();
@@ -3214,6 +3198,7 @@ impl ReposeRuntime {
                 self.gamepads.insert(
                     id.0,
                     GamepadPad {
+                        id: id.0,
                         name: name.clone(),
                         vendor_id: *vendor_id,
                         product_id: *product_id,
