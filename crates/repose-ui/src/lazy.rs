@@ -1304,6 +1304,7 @@ where
     T: Clone + 'static,
     F: Fn(T, usize) -> View + 'static,
 {
+    let item_builder = Rc::new(item_builder);
     let LazyRowConfig {
         modifier,
         state,
