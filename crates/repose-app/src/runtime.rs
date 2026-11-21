@@ -1997,6 +1997,7 @@ impl ReposeRuntime {
     }
 
     fn reset_pointer_state(&mut self) {
+        set_touch_gesture_active(false);
         self.capture_id = None;
         self.hit_path = None;
         self.mouse_targets = None;

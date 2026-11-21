@@ -42,8 +42,9 @@ const AXES: [(usize, GamepadAxis); 6] = [
     (5, GamepadAxis::RightTrigger),
 ];
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct PadState {
+    browser_id: String,
     buttons: [bool; BUTTON_COUNT],
     axes: [f32; AXIS_COUNT],
 }
@@ -51,6 +52,7 @@ struct PadState {
 impl Default for PadState {
     fn default() -> Self {
         Self {
+            browser_id: String::new(),
             buttons: [false; BUTTON_COUNT],
             axes: [0.0; AXIS_COUNT],
         }
@@ -90,10 +92,23 @@ impl WebGamepads {
             }
             let id = index as u32;
             live.push(id);
-            let state = read_pad(&pad);
+            let mut state = read_pad(&pad);
+            state.browser_id = pad.id();
 
-            let Some(previous) = self.pads.get(&id).copied() else {
-                self.pads.insert(id, state);
+            // A different device can appear at the same browser index. Treat
+            // that as a disconnect/connect pair instead of inheriting the old
+            // pad's button and axis state.
+            if self
+                .pads
+                .get(&id)
+                .is_some_and(|previous| previous.browser_id != state.browser_id)
+            {
+                self.pads.remove(&id);
+                events.push(GamepadEvent::Disconnected { id: GamepadId(id) });
+            }
+
+            let Some(previous) = self.pads.get(&id).cloned() else {
+                self.pads.insert(id, state.clone());
                 events.push(GamepadEvent::Connected {
                     id: GamepadId(id),
                     name: pad.id(),
@@ -131,7 +146,7 @@ impl WebGamepads {
                 }
             }
             for mapping in AXES.iter() {
-                if state.axes[mapping.0] != previous.axes[mapping.0] {
+                if (state.axes[mapping.0] - previous.axes[mapping.0]).abs() > 1e-3 {
                     events.push(GamepadEvent::Axis {
                         id: GamepadId(id),
                         axis: mapping.1,

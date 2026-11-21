@@ -15,14 +15,14 @@ thread_local! {
 /// the finger is down. Compose holds the surface still mid-drag and only
 /// starts a fling when the drag stops.
 pub fn set_touch_gesture_active(active: bool) {
-    let was = TOUCH_GESTURE_ACTIVE.with(|slot| {
-        let was = slot.get();
-        slot.set(active);
-        was
-    });
-    if active && !was {
-        TOUCH_GESTURE_GENERATION.with(|slot| slot.set(slot.get().wrapping_add(1)));
-    }
+    TOUCH_GESTURE_ACTIVE.with(|slot| slot.set(active));
+}
+
+/// Pre-empt in-flight flings when a touch gesture commits to scrolling.
+/// Compose does this through `scroll(MutatePriority.UserInput)` on the
+/// scrollable that receives the drag, not on unrelated surfaces.
+pub fn cancel_flings() {
+    TOUCH_GESTURE_GENERATION.with(|slot| slot.set(slot.get().wrapping_add(1)));
 }
 
 pub fn touch_gesture_active() -> bool {

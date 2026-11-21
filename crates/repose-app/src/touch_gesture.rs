@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use repose_core::Vec2;
 use repose_core::input::PointerButton;
-use repose_core::scroll::set_touch_gesture_active;
+use repose_core::scroll::{cancel_flings, set_touch_gesture_active};
 
 use crate::runtime::ReposeRuntime;
 use crate::runtime::TAP_SLOP_DP;
@@ -340,6 +340,9 @@ impl TouchGestureState {
                     || self.touch_scroll_accum_y_px.abs() > 6.0 * scale;
 
                 if is_scroll {
+                    if !self.touch_scrolled {
+                        cancel_flings();
+                    }
                     let (consumed, cap) = rt.handle_scroll_at(
                         pos,
                         Vec2 {
