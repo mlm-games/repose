@@ -224,7 +224,7 @@ struct ShapeGradientStopsGpu {
 
 impl ShapeGradientStopsGpu {
     fn from_stops(stops: &repose_core::GradientStops) -> Self {
-        let mut out = Self::zeroed();
+        let mut out = <Self as bytemuck::Zeroable>::zeroed();
         let packed = pack_gradient_stops(stops);
         for (slot, color) in out.colors.iter_mut().zip(packed.0.iter()) {
             *slot = *color;
