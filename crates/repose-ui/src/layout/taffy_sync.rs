@@ -10,6 +10,54 @@ use taffy::style::Overflow;
 
 use super::*;
 
+#[derive(Clone, Copy)]
+enum AxisAlign {
+    Start,
+    Center,
+    End,
+}
+
+fn axis_align_items(a: AxisAlign) -> AlignItems {
+    match a {
+        AxisAlign::Start => AlignItems::SAFE_START,
+        AxisAlign::Center => AlignItems::SAFE_CENTER,
+        AxisAlign::End => AlignItems::SAFE_END,
+    }
+}
+
+fn axis_justify_content(a: AxisAlign) -> JustifyContent {
+    match a {
+        AxisAlign::Start => JustifyContent::SAFE_START,
+        AxisAlign::Center => JustifyContent::SAFE_CENTER,
+        AxisAlign::End => JustifyContent::SAFE_END,
+    }
+}
+
+fn wrap_content_axes(alignment: Alignment) -> (AxisAlign, AxisAlign) {
+    let vertical = match alignment {
+        Alignment::TopStart | Alignment::TopCenter | Alignment::TopEnd => AxisAlign::Start,
+        Alignment::CenterStart | Alignment::Center | Alignment::CenterEnd => AxisAlign::Center,
+        Alignment::BottomStart | Alignment::BottomCenter | Alignment::BottomEnd => AxisAlign::End,
+    };
+    let horizontal = match alignment {
+        Alignment::TopStart | Alignment::CenterStart | Alignment::BottomStart => AxisAlign::Start,
+        Alignment::TopCenter | Alignment::Center | Alignment::BottomCenter => AxisAlign::Center,
+        Alignment::TopEnd | Alignment::CenterEnd | Alignment::BottomEnd => AxisAlign::End,
+    };
+    (vertical, horizontal)
+}
+
+/// Compose `wrapContentSize` alignment expressed for a flex container.
+/// `to_flex` is Row-oriented (cross = vertical), so Column swaps the axes.
+fn wrap_content_alignment(alignment: Alignment, column: bool) -> (AlignItems, JustifyContent) {
+    let (vertical, horizontal) = wrap_content_axes(alignment);
+    if column {
+        (axis_align_items(horizontal), axis_justify_content(vertical))
+    } else {
+        (axis_align_items(vertical), axis_justify_content(horizontal))
+    }
+}
+
 impl LayoutEngine {
     pub(crate) fn build_taffy_subtree(
         &self,
@@ -755,6 +803,33 @@ impl LayoutEngine {
                 start: GridPlacement::Auto,
                 end: GridPlacement::Span(row_span),
             };
+        }
+
+        if m.visible == Some(false) {
+            s.display = Display::None;
+        }
+
+        if let Some((alignment, unbounded)) = m.wrap_content {
+            // The wrapper takes the child's intrinsic size but never shrinks
+            // below the incoming minimum; Taffy supplies the "at least min"
+            // half through the resolved style size/min-size, so here we only
+            // need to stop the default cross-axis stretch and align the child.
+            let column = matches!(s.flex_direction, FlexDirection::Column | FlexDirection::ColumnReverse);
+            if matches!(kind, ViewKind::ZStack) {
+                // Grid: align-items is the block axis, justify-items the inline axis.
+                let (vertical, horizontal) = wrap_content_axes(alignment);
+                s.align_items = Some(axis_align_items(vertical));
+                s.justify_items = Some(axis_align_items(horizontal));
+            } else {
+                let (cross, main) = wrap_content_alignment(alignment, column);
+                s.align_items = Some(cross);
+                s.justify_content = Some(main);
+            }
+            if unbounded {
+                s.max_size.width = taffy::Dimension::auto();
+                s.max_size.height = taffy::Dimension::auto();
+                s.flex_shrink = 0.0;
+            }
         }
         s
     }

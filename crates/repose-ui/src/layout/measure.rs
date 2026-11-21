@@ -59,6 +59,13 @@ impl LayoutEngine {
                         style,
                         |_, _| 0.0,
                         |known, avail| {
+                            if let Some(&node_id) = reverse_map.get(&taffy_node)
+                                && tree
+                                    .get(node_id)
+                                    .is_some_and(|n| n.modifier.visible == Some(false))
+                            {
+                                return taffy::geometry::Size::ZERO;
+                            }
                             // Check if this is a scope root marker -> return cached scope size
                             if let Some(&node_id) = reverse_map.get(&taffy_node) {
                                 // Custom layout modifier: delegate measurement to user callback.
@@ -216,6 +223,13 @@ impl LayoutEngine {
                         style2,
                         |_, _| 0.0,
                         |known2, avail2| {
+                            if let Some(&nid) = st_rev.get(&tn)
+                                && tree
+                                    .get(nid)
+                                    .is_some_and(|n| n.modifier.visible == Some(false))
+                            {
+                                return taffy::geometry::Size::ZERO;
+                            }
                             if let Some(&nid) = st_rev.get(&tn)
                                 && scope_root_map.contains_key(&nid)
                                 && let Some(nested_key) = node_to_scope.get(&nid)

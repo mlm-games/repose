@@ -389,6 +389,25 @@ impl LayoutEngine {
         if let Some(s) = self.baseline_shift_for(node_id) {
             l.location.y += s;
         }
+        // Compose-style post-layout offsets. Only the returned copy is moved so
+        // the parent's Taffy measurement stays untouched. The paint walk uses
+        // this same layout, so geometry, children and hit regions shift together.
+        if let Some(node) = self.tree.get(node_id) {
+            let m = &node.modifier;
+            if let Some((x, y)) = m.layout_offset {
+                let x_px = x.to_px().0;
+                l.location.x += if locals::text_direction() == locals::TextDirection::Rtl {
+                    -x_px
+                } else {
+                    x_px
+                };
+                l.location.y += y.to_px().0;
+            }
+            if let Some((x, y)) = m.absolute_layout_offset {
+                l.location.x += x.to_px().0;
+                l.location.y += y.to_px().0;
+            }
+        }
         l
     }
 

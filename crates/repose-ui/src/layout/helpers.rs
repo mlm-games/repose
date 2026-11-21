@@ -110,8 +110,57 @@ pub(crate) fn mul_alpha_brush(b: Brush, a: f32) -> Brush {
             start_color: mul_alpha_color(start_color, a),
             end_color: mul_alpha_color(end_color, a),
         },
+        Brush::LinearStops {
+            start,
+            end,
+            stops,
+            tile_mode,
+        } => Brush::LinearStops {
+            start,
+            end,
+            stops: mul_alpha_stops(stops, a),
+            tile_mode,
+        },
+        Brush::LinearNormalizedStops {
+            start,
+            end,
+            stops,
+            tile_mode,
+        } => Brush::LinearNormalizedStops {
+            start,
+            end,
+            stops: mul_alpha_stops(stops, a),
+            tile_mode,
+        },
+        Brush::RadialStops {
+            center,
+            radius,
+            stops,
+            tile_mode,
+        } => Brush::RadialStops {
+            center,
+            radius,
+            stops: mul_alpha_stops(stops, a),
+            tile_mode,
+        },
+        Brush::SweepStops {
+            center,
+            stops,
+            tile_mode,
+        } => Brush::SweepStops {
+            center,
+            stops: mul_alpha_stops(stops, a),
+            tile_mode,
+        },
         _ => b,
     }
+}
+
+fn mul_alpha_stops(mut stops: GradientStops, a: f32) -> GradientStops {
+    for stop in stops.as_mut_slice() {
+        stop.color = mul_alpha_color(stop.color, a);
+    }
+    stops
 }
 
 pub(crate) fn clamp_radius(r: f32, w: f32, h: f32) -> f32 {

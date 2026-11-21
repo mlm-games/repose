@@ -765,6 +765,10 @@ impl LayoutEngine {
             return false;
         };
         let modifier = &node.modifier;
+        if modifier.visible == Some(false) {
+            self.transform_layer_cache.insert(node_id, false);
+            return false;
+        }
         // Effects that emit pixels outside the layout rect. A plain background
         // draw is bounded by the rect, so anything that can spill has to opt in
         // through one of these. `overflow` is deliberately not a signal: the
@@ -819,6 +823,10 @@ impl LayoutEngine {
 
         let view_id = *self.view_ids.get(&node_id).unwrap_or(&0);
         let mut node_hit_context = hit_context.clone();
+
+        if modifier.visible == Some(false) {
+            return;
+        }
 
         if self.shared_element_depth == 0
             && let Some(state) = modifier.shared_element.clone()
@@ -1401,9 +1409,13 @@ impl LayoutEngine {
 
         // Draw background (always)
         if let Some(bg) = modifier.background {
+            let bg_alpha = modifier
+                .background_alpha
+                .unwrap_or(1.0)
+                .clamp(0.0, 1.0);
             scene.nodes.push(SceneNode::Rect {
                 rect,
-                brush: mul_alpha_brush(bg, alpha_accum),
+                brush: mul_alpha_brush(bg, alpha_accum * bg_alpha),
                 radius: round_clip_px,
             });
         }
@@ -3134,12 +3146,14 @@ impl LayoutEngine {
                 scene.nodes.push(SceneNode::CompositeShadow {
                     layer_id: id,
                     blur_px: shadow.blur_radius.to_px(),
-                    offset_px: (Px::ZERO, shadow.offset_y.to_px()),
+                    offset_px: (shadow.offset_x.to_px(), shadow.offset_y.to_px()),
                     color: shadow.color,
                     shape_px: modifier
                         .shadow_shape
                         .map(|r| r.map(|v| v.to_px()))
                         .unwrap_or([Px::ZERO; 4]),
+                    spread_px: shadow.spread.to_px(),
+                    inset: shadow.inset,
                 });
             }
             if modifier.transform.is_some() {
@@ -3234,6 +3248,8 @@ impl LayoutEngine {
                     .shadow_shape
                     .map(|r| r.map(|v| v.to_px()))
                     .unwrap_or([Px::ZERO; 4]),
+                spread_px: shadow.spread.to_px(),
+                inset: shadow.inset,
             });
         }
         if modifier.transform.is_some() {
