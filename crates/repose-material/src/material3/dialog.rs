@@ -732,7 +732,7 @@ pub fn Dialog(
                         back_state.dismiss();
                     }
                 }
-                true
+                dismiss
             });
             *overlay_guard.borrow_mut() =
                 Some(overlay.show_guard_with_back(builder, 1000.0, false, back_handler));

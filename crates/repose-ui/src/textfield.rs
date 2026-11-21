@@ -1535,6 +1535,15 @@ impl TextFieldState {
     /// `extend_selection` the caret moves and the anchor stays, so
     /// Ctrl+Shift+Arrow selects a word at a time.
     pub fn move_cursor(&mut self, delta: isize, extend_selection: bool, by_word: bool) {
+        if !extend_selection && self.selection.start != self.selection.end {
+            let lo = self.selection.start.min(self.selection.end);
+            let hi = self.selection.start.max(self.selection.end);
+            let pos = if delta < 0 { lo } else { hi };
+            self.selection = pos..pos;
+            self.preferred_x_px = None;
+            self.reset_caret_blink();
+            return;
+        }
         let origin = self.selection.end.min(self.text.len());
         let pos = if !by_word {
             let mut pos = origin;

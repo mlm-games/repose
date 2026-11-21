@@ -1491,7 +1491,8 @@ impl ReposeRuntime {
             self.pending_click = None;
         }
 
-        if self.double_candidate.is_none()
+        if button == PointerButton::Primary
+            && self.double_candidate.is_none()
             && !dragged
             && !self.suppress_next_click
             && let Some(cid) = self.capture_id
@@ -2218,7 +2219,10 @@ impl ReposeRuntime {
                 .any(|n| n.id == fid && n.role == repose_core::semantics::Role::TextField);
             if !is_tf {
                 if event.event_type == KeyEventType::Down && !event.is_repeat {
-                    if event.key == Key::Space || event.key == Key::Enter {
+                    if event.key == Key::Space
+                        || event.key == Key::Enter
+                        || event.key == Key::NumpadEnter
+                    {
                         let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid) else {
                             return false;
                         };
