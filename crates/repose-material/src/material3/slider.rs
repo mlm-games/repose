@@ -1,13 +1,43 @@
 #![allow(non_snake_case)]
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
+
+use web_time::Duration;
 
 use repose_core::*;
 use repose_ui::Box;
 
 use super::*;
+
+const WHEEL_SETTLE_MS: u64 = 150;
+
+fn schedule_wheel_finish(
+    timer: &Rc<RefCell<Option<repose_core::timer::TimerHandle>>>,
+    on_finished: Option<Rc<dyn Fn()>>,
+) {
+    if let Some(on_finished) = on_finished {
+        let handle = repose_core::timer::delay(Duration::from_millis(WHEEL_SETTLE_MS), move || {
+            on_finished();
+        });
+        *timer.borrow_mut() = Some(handle);
+    }
+}
+
+fn slider_key_handled(key: &Key) -> bool {
+    matches!(
+        key,
+        Key::ArrowLeft
+            | Key::ArrowDown
+            | Key::ArrowRight
+            | Key::ArrowUp
+            | Key::PageDown
+            | Key::PageUp
+            | Key::Home
+            | Key::End
+    )
+}
 
 /// Configuration for [`Slider`] and [`RangeSlider`].
 #[derive(Clone)]
@@ -231,6 +261,12 @@ pub fn Slider(
     let id = *remember(|| SLIDER_COUNTER.fetch_add(1, Ordering::Relaxed));
     let track_rect = remember_state_with_key(format!("ms_rect_{}", id), Rect::default);
     let drag_active = remember_mutable_with_key(format!("ms_da_{}", id), || false);
+    let active_pointer: Rc<RefCell<Option<PointerId>>> =
+        remember_with_key(format!("ms_ptr_{}", id), || RefCell::new(None));
+    let key_changed: Rc<Cell<bool>> =
+        remember_with_key(format!("ms_key_{}", id), || Cell::new(false));
+    let wheel_timer: Rc<RefCell<Option<repose_core::timer::TimerHandle>>> =
+        remember_with_key(format!("ms_wheel_timer_{}", id), || RefCell::new(None));
 
     let track_rect_p = track_rect.clone();
     let drag_active_p = drag_active.clone();
@@ -436,11 +472,16 @@ pub fn Slider(
             let oc = oc.clone();
             let track_rect = track_rect.clone();
             let drag_active = drag_active.clone();
+            let active_pointer = active_pointer.clone();
             let en = is_enabled;
             move |pe: PointerEvent| {
-                if !en {
+                if !en || !matches!(pe.event, PointerEventKind::Down(PointerButton::Primary)) {
                     return;
                 }
+                if active_pointer.borrow().is_some() {
+                    return;
+                }
+                *active_pointer.borrow_mut() = Some(pe.id);
                 drag_active.set_neq(true);
                 let r = *track_rect.borrow();
                 (oc)(value_from_x(pe.position_in_window().x, r, min, max, step));
@@ -451,9 +492,13 @@ pub fn Slider(
             let oc = oc.clone();
             let track_rect = track_rect.clone();
             let drag_active = drag_active.clone();
+            let active_pointer = active_pointer.clone();
             let en = is_enabled;
             move |pe: PointerEvent| {
                 if !en {
+                    return;
+                }
+                if active_pointer.borrow().is_none_or(|id| id != pe.id) {
                     return;
                 }
                 if !*drag_active.get() {
@@ -466,8 +511,16 @@ pub fn Slider(
         })
         .on_pointer_up({
             let drag_active = drag_active.clone();
+            let active_pointer = active_pointer.clone();
             let on_finished = config.on_value_change_finished.clone();
-            move |_pe: PointerEvent| {
+            move |pe: PointerEvent| {
+                if !matches!(pe.event, PointerEventKind::Up(PointerButton::Primary)) {
+                    return;
+                }
+                if active_pointer.borrow().is_none_or(|id| id != pe.id) {
+                    return;
+                }
+                *active_pointer.borrow_mut() = None;
                 let was = *drag_active.get();
                 drag_active.set_neq(false);
                 if was && let Some(ref cb) = on_finished {
@@ -477,8 +530,13 @@ pub fn Slider(
         })
         .on_pointer_cancel({
             let drag_active = drag_active.clone();
+            let active_pointer = active_pointer.clone();
             let on_finished = config.on_value_change_finished.clone();
-            move |_pe: PointerEvent| {
+            move |pe: PointerEvent| {
+                if active_pointer.borrow().is_none_or(|id| id != pe.id) {
+                    return;
+                }
+                *active_pointer.borrow_mut() = None;
                 if *drag_active.get() {
                     drag_active.set_neq(false);
                     if let Some(ref cb) = on_finished {
@@ -490,6 +548,8 @@ pub fn Slider(
         .on_scroll({
             let oc = oc.clone();
             let en = is_enabled;
+            let wheel_timer = wheel_timer.clone();
+            let on_finished = config.on_value_change_finished.clone();
             move |d: Vec2| -> Vec2 {
                 if !en {
                     return d;
@@ -508,6 +568,7 @@ pub fn Slider(
                 let new_val = snap_step(value + (dir as f32) * step_val, min, max, step);
                 if (new_val - value).abs() > 1e-6 {
                     (oc)(new_val);
+                    schedule_wheel_finish(&wheel_timer, on_finished.clone());
                     Vec2 { x: d.x, y: 0.0 }
                 } else {
                     d
@@ -517,13 +578,24 @@ pub fn Slider(
         .on_key_event({
             let oc = oc.clone();
             let en = is_enabled;
+            let on_finished = config.on_value_change_finished.clone();
+            let key_changed = key_changed.clone();
             move |ke: KeyEvent| -> bool {
-                if !en || ke.event_type != KeyEventType::Down {
+                if !en || !slider_key_handled(&ke.key) {
+                    return false;
+                }
+                if ke.event_type == KeyEventType::Up {
+                    if key_changed.replace(false) && let Some(ref cb) = on_finished {
+                        (cb)();
+                    }
+                    return true;
+                }
+                if ke.event_type != KeyEventType::Down {
                     return false;
                 }
                 let step_val = step.unwrap_or(((max - min) / 100.0).max(1e-6)).max(1e-6);
                 let page = step_val * 10.0;
-                let new_val = match ke.key {
+                let new_val = match &ke.key {
                     Key::ArrowLeft | Key::ArrowDown => snap_step(value - step_val, min, max, step),
                     Key::ArrowRight | Key::ArrowUp => snap_step(value + step_val, min, max, step),
                     Key::PageDown => snap_step(value - page, min, max, step),
@@ -532,9 +604,11 @@ pub fn Slider(
                     Key::End => max,
                     _ => return false,
                 };
-                if (new_val - value).abs() > 1e-6 {
+                let changed = (new_val - value).abs() > 1e-6;
+                if changed {
                     (oc)(new_val);
                 }
+                key_changed.set(changed);
                 true
             }
         })
@@ -578,6 +652,12 @@ pub fn RangeSlider(
     let track_rect = remember_state_with_key(format!("mrs_rect_{}", id), Rect::default);
     let drag_active = remember_mutable_with_key(format!("mrs_da_{}", id), || false);
     let active_thumb = remember_mutable_with_key(format!("mrs_at_{}", id), || false);
+    let active_pointer: Rc<RefCell<Option<PointerId>>> =
+        remember_with_key(format!("mrs_ptr_{}", id), || RefCell::new(None));
+    let key_changed: Rc<Cell<bool>> =
+        remember_with_key(format!("mrs_key_{}", id), || Cell::new(false));
+    let wheel_timer: Rc<RefCell<Option<repose_core::timer::TimerHandle>>> =
+        remember_with_key(format!("mrs_wheel_timer_{}", id), || RefCell::new(None));
 
     let min = range.0;
     let max = range.1;
@@ -829,11 +909,16 @@ pub fn RangeSlider(
             let track_rect = track_rect.clone();
             let drag_active = drag_active.clone();
             let active_thumb = active_thumb.clone();
+            let active_pointer = active_pointer.clone();
             let en = is_enabled;
             move |pe: PointerEvent| {
-                if !en {
+                if !en || !matches!(pe.event, PointerEventKind::Down(PointerButton::Primary)) {
                     return;
                 }
+                if active_pointer.borrow().is_some() {
+                    return;
+                }
+                *active_pointer.borrow_mut() = Some(pe.id);
                 drag_active.set_neq(true);
                 let r = *track_rect.borrow();
                 let v = value_from_x(pe.position_in_window().x, r, min, max, step);
@@ -853,9 +938,13 @@ pub fn RangeSlider(
             let track_rect = track_rect.clone();
             let drag_active = drag_active.clone();
             let active_thumb = active_thumb.clone();
+            let active_pointer = active_pointer.clone();
             let en = is_enabled;
             move |pe: PointerEvent| {
                 if !en {
+                    return;
+                }
+                if active_pointer.borrow().is_none_or(|id| id != pe.id) {
                     return;
                 }
                 if !*drag_active.get() {
@@ -876,8 +965,16 @@ pub fn RangeSlider(
         .on_pointer_up({
             let drag_active = drag_active.clone();
             let active_thumb = active_thumb.clone();
+            let active_pointer = active_pointer.clone();
             let on_finished = config.on_value_change_finished.clone();
-            move |_pe: PointerEvent| {
+            move |pe: PointerEvent| {
+                if !matches!(pe.event, PointerEventKind::Up(PointerButton::Primary)) {
+                    return;
+                }
+                if active_pointer.borrow().is_none_or(|id| id != pe.id) {
+                    return;
+                }
+                *active_pointer.borrow_mut() = None;
                 let was = *drag_active.get();
                 drag_active.set_neq(false);
                 active_thumb.set_neq(false);
@@ -889,8 +986,13 @@ pub fn RangeSlider(
         .on_pointer_cancel({
             let drag_active = drag_active.clone();
             let active_thumb = active_thumb.clone();
+            let active_pointer = active_pointer.clone();
             let on_finished = config.on_value_change_finished.clone();
-            move |_pe: PointerEvent| {
+            move |pe: PointerEvent| {
+                if active_pointer.borrow().is_none_or(|id| id != pe.id) {
+                    return;
+                }
+                *active_pointer.borrow_mut() = None;
                 if *drag_active.get() {
                     drag_active.set_neq(false);
                     active_thumb.set_neq(false);
@@ -904,6 +1006,8 @@ pub fn RangeSlider(
             let oc = oc.clone();
             let active_thumb = active_thumb.clone();
             let en = is_enabled;
+            let wheel_timer = wheel_timer.clone();
+            let on_finished = config.on_value_change_finished.clone();
             move |d: Vec2| -> Vec2 {
                 if !en {
                     return d;
@@ -928,6 +1032,7 @@ pub fn RangeSlider(
                 }
                 if (a - start).abs() > 1e-6 || (b - end).abs() > 1e-6 {
                     (oc)(a, b);
+                    schedule_wheel_finish(&wheel_timer, on_finished.clone());
                     Vec2 { x: d.x, y: 0.0 }
                 } else {
                     d
@@ -938,15 +1043,26 @@ pub fn RangeSlider(
             let oc = oc.clone();
             let active_thumb = active_thumb.clone();
             let en = is_enabled;
+            let on_finished = config.on_value_change_finished.clone();
+            let key_changed = key_changed.clone();
             move |ke: KeyEvent| -> bool {
-                if !en || ke.event_type != KeyEventType::Down {
+                if !en || !slider_key_handled(&ke.key) {
+                    return false;
+                }
+                if ke.event_type == KeyEventType::Up {
+                    if key_changed.replace(false) && let Some(ref cb) = on_finished {
+                        (cb)();
+                    }
+                    return true;
+                }
+                if ke.event_type != KeyEventType::Down {
                     return false;
                 }
                 let step_val = step.unwrap_or(((max - min) / 100.0).max(1e-6)).max(1e-6);
                 let page = step_val * 10.0;
                 let use_end = *active_thumb.get();
                 let (a, b) = if use_end {
-                    let new_b = match ke.key {
+                    let new_b = match &ke.key {
                         Key::ArrowLeft | Key::ArrowDown => {
                             snap_step(end - step_val, min, max, step)
                         }
@@ -959,7 +1075,7 @@ pub fn RangeSlider(
                     };
                     (start, new_b.max(start))
                 } else {
-                    let new_a = match ke.key {
+                    let new_a = match &ke.key {
                         Key::ArrowLeft | Key::ArrowDown => {
                             snap_step(start - step_val, min, max, step)
                         }
@@ -974,9 +1090,11 @@ pub fn RangeSlider(
                     };
                     (new_a.min(end), end)
                 };
-                if (a - start).abs() > 1e-6 || (b - end).abs() > 1e-6 {
+                let changed = (a - start).abs() > 1e-6 || (b - end).abs() > 1e-6;
+                if changed {
                     (oc)(a, b);
                 }
+                key_changed.set(changed);
                 true
             }
         })

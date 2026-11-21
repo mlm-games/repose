@@ -32,6 +32,8 @@ pub struct BottomSheetConfig {
     pub drag_handle_height: Dp,
     pub peek_height: Dp,
     pub gestures_enabled: bool,
+    pub should_dismiss_on_back_press: bool,
+    pub should_dismiss_on_click_outside: bool,
 }
 
 impl Default for BottomSheetConfig {
@@ -49,6 +51,8 @@ impl Default for BottomSheetConfig {
             drag_handle_height: BottomSheetDefaults::DRAG_HANDLE_HEIGHT,
             peek_height: BottomSheetDefaults::PEEK_HEIGHT,
             gestures_enabled: true,
+            should_dismiss_on_back_press: true,
+            should_dismiss_on_click_outside: true,
         }
     }
 }
@@ -713,6 +717,7 @@ pub fn ModalBottomSheet(
 
                     let scrim_alpha =
                         (config.scrim_color.3 as f32 * scrim_progress.get().clamp(0.0, 1.0)) as u8;
+                    let dismiss_on_click_outside = config.should_dismiss_on_click_outside;
                     let scrim = Box(Modifier::new()
                         .fill_max_size()
                         .background(config.scrim_color.with_alpha(scrim_alpha))
@@ -721,7 +726,11 @@ pub fn ModalBottomSheet(
                         .on_scroll(|_| Vec2::default())
                         .on_pointer_down({
                             let s = state.clone();
-                            move |_| s.dismiss()
+                            move |_| {
+                                if dismiss_on_click_outside {
+                                    s.dismiss();
+                                }
+                            }
                         }));
 
                     ZStack(Modifier::new().fill_max_size().absolute()).child((scrim, sheet))
@@ -729,9 +738,12 @@ pub fn ModalBottomSheet(
             });
 
             let back_state = state.clone();
+            let dismiss_on_back = config.should_dismiss_on_back_press;
             let back_handler: Rc<dyn Fn() -> bool> = Rc::new(move || {
-                back_state.dismiss();
-                true
+                if dismiss_on_back {
+                    back_state.dismiss();
+                }
+                dismiss_on_back
             });
             *overlay_guard.borrow_mut() =
                 Some(overlay.show_guard_with_back(builder, 800.0, false, back_handler));
@@ -858,11 +870,15 @@ pub fn DragHandle(modifier: Modifier, color: Option<Color>) -> View {
 }
 
 pub fn Scrim(on_click: impl Fn() + 'static, color: Color, modifier: Modifier) -> View {
+    let on_click = Rc::new(on_click);
     Box(Modifier::new()
         .fill_max_size()
         .background(color)
-        .clickable()
-        .on_click(on_click)
+        .on_pointer_down({
+            let on_click = on_click.clone();
+            move |_| on_click()
+        })
+        .on_click(move || on_click())
         .then(modifier))
 }
 

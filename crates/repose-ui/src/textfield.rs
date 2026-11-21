@@ -1120,6 +1120,20 @@ pub(crate) fn next_grapheme_boundary(text: &str, byte: usize) -> usize {
     text.len()
 }
 
+pub(crate) fn paragraph_range(text: &str, byte: usize) -> (usize, usize) {
+    let byte = byte.min(text.len());
+    let bytes = text.as_bytes();
+    let start = bytes[..byte]
+        .iter()
+        .rposition(|&b| b == b'\n')
+        .map_or(0, |i| i + 1);
+    let end = bytes[byte..]
+        .iter()
+        .position(|&b| b == b'\n')
+        .map_or(text.len(), |i| byte + i);
+    (start, end)
+}
+
 /// Find the word boundaries around the given byte index.
 /// Selects alphanumeric+underscore runs. Falls back to the grapheme cluster.
 pub(crate) fn word_range(text: &str, byte: usize) -> (usize, usize) {
@@ -1855,12 +1869,17 @@ impl TextFieldState {
             self.tap_count = count;
         }
         if count >= 3 {
-            self.selection = 0..self.text.len();
+            let (s, e) = if self.text.as_bytes().contains(&b'\n') {
+                paragraph_range(&self.text, idx)
+            } else {
+                (0, self.text.len())
+            };
+            self.selection = s..e;
             self.drag_anchor = None;
             self.preferred_x_px = None;
             self.reset_caret_blink();
-            if self.selection.end > 0 {
-                repose_core::clipboard::set_primary_selection(&self.text);
+            if e > s {
+                repose_core::clipboard::set_primary_selection(&self.text[s..e]);
             }
             return;
         }

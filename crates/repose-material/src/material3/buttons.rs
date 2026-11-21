@@ -513,7 +513,12 @@ fn toggle_button_impl(
     }
     let cb = on_checked_change;
     m = apply_m3_clickable(m, &tg_source, fg, enabled, move || cb(!checked));
-    m = with_button_semantics(m, enabled);
+    m = m.semantics(Semantics {
+        role: Role::Checkbox,
+        enabled,
+        checked: Some(checked),
+        ..Default::default()
+    });
     with_content_color(fg, || {
         with_text_size(theme().typography.label_large, || {
             Box(m).child(content(checked))
