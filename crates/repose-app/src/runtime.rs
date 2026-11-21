@@ -10,6 +10,7 @@ use repose_core::input::{
 };
 use repose_core::locals::{Density, set_density_default, with_density};
 use repose_core::runtime::{Frame, Scheduler};
+use repose_core::scroll::set_touch_gesture_active;
 use repose_core::shortcuts::DragAction;
 use repose_core::{
     CursorIcon, HitRegion, Interaction, Modifier, RenderContext, Scene, Vec2, View, request_frame,
@@ -1812,6 +1813,7 @@ impl ReposeRuntime {
         }
         self.suppressed_touch_clicks.remove(&tid);
         if was_primary {
+            set_touch_gesture_active(false);
             self.touch_primary = None;
             self.double_candidate = None;
             self.pending_click = None;

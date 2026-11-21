@@ -6,6 +6,33 @@ use web_time::Instant;
 use crate::nested_scroll::{NestedScrollConnection, NestedScrollSource};
 use crate::{ControlVisualSet, Dp, Signal, Vec2, request_frame, signal};
 
+thread_local! {
+    static TOUCH_GESTURE_ACTIVE: Cell<bool> = const { Cell::new(false) };
+    static TOUCH_GESTURE_GENERATION: Cell<u64> = const { Cell::new(0) };
+}
+
+/// Mark the start/end of a touch drag so scroll surfaces stop flinging while
+/// the finger is down. Compose holds the surface still mid-drag and only
+/// starts a fling when the drag stops.
+pub fn set_touch_gesture_active(active: bool) {
+    let was = TOUCH_GESTURE_ACTIVE.with(|slot| {
+        let was = slot.get();
+        slot.set(active);
+        was
+    });
+    if active && !was {
+        TOUCH_GESTURE_GENERATION.with(|slot| slot.set(slot.get().wrapping_add(1)));
+    }
+}
+
+pub fn touch_gesture_active() -> bool {
+    TOUCH_GESTURE_ACTIVE.with(Cell::get)
+}
+
+fn touch_gesture_generation() -> u64 {
+    TOUCH_GESTURE_GENERATION.with(Cell::get)
+}
+
 /// Axis (or axes) a scroll modifier operates on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ScrollAxis {
@@ -323,6 +350,7 @@ pub struct ScrollPhysics {
     decay_per_60hz: f32,
     stop_velocity: f32,
     input_activate_velocity: f32,
+    generation: u64,
 }
 
 impl Default for ScrollPhysics {
@@ -356,6 +384,17 @@ impl ScrollPhysics {
             decay_per_60hz,
             stop_velocity,
             input_activate_velocity,
+            generation: touch_gesture_generation(),
+        }
+    }
+
+    fn sync_generation(&mut self) {
+        let generation = touch_gesture_generation();
+        if generation != self.generation {
+            self.generation = generation;
+            self.vel = 0.0;
+            self.animating = false;
+            self.input_pending = false;
         }
     }
 
@@ -368,6 +407,7 @@ impl ScrollPhysics {
     /// samples of one gesture: averaging up from zero on every frame would
     /// leave every flick at a fraction of its real speed.
     pub fn record_user_input(&mut self, consumed: f32) {
+        self.sync_generation();
         let (instant_vel, fresh) = self.sample(consumed);
         if fresh || (self.animating && instant_vel * self.vel < 0.0) {
             self.vel = instant_vel;
@@ -422,6 +462,13 @@ impl ScrollPhysics {
         // then dump all of it into the first fling frame, which shows up as a
         // single large lurch the moment the finger lifts.
         let dt = self.dt();
+        self.sync_generation();
+        if touch_gesture_active() {
+            // The finger is down: Compose integrates no velocity mid-drag.
+            // Keep the sampled velocity for the fling on release.
+            self.input_pending = false;
+            return None;
+        }
         if self.input_pending {
             // A delta was applied since the last integration, so this frame's
             // motion is already accounted for. Compose feeds velocity from the
@@ -1244,6 +1291,12 @@ impl ScrollStateXY {
         let now = Instant::now();
         let dt = (now - self.prev_tick.get()).as_secs_f32().min(0.1);
         self.prev_tick.set(now);
+
+        if touch_gesture_active() {
+            self.physics_x.borrow_mut().sync_generation();
+            self.physics_y.borrow_mut().sync_generation();
+            return false;
+        }
 
         if self.overscroll_enabled.get()
             && (tick_os_axis(&self.os_x, true, dt) || tick_os_axis(&self.os_y, true, dt))

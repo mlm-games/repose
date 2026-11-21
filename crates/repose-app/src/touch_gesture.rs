@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use repose_core::Vec2;
 use repose_core::input::PointerButton;
+use repose_core::scroll::set_touch_gesture_active;
 
 use crate::runtime::ReposeRuntime;
 use crate::runtime::TAP_SLOP_DP;
@@ -186,6 +187,7 @@ impl TouchGestureState {
 
         let is_primary = self.primary_touch_id.is_none();
         if is_primary {
+            set_touch_gesture_active(true);
             self.primary_touch_id = Some(tid);
             self.touch_start = Some((web_time::Instant::now(), pos_px));
             self.touch_scrolled = false;
@@ -408,6 +410,7 @@ impl TouchGestureState {
 
         let mut swipe_right = None;
         if is_primary {
+            set_touch_gesture_active(false);
             self.primary_touch_id = None;
             if let Some((t0, p0)) = self.touch_start.take() {
                 let dt = (web_time::Instant::now() - t0).as_secs_f32();

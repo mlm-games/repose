@@ -251,6 +251,7 @@ pub fn run_android_app_with_options(
                 self.touch_gestures.contact_up(touch_id);
             }
             self.touch_gestures = rc::TouchGestureState::default();
+            repose_core::scroll::set_touch_gesture_active(false);
             self.rt.handle_focus_lost();
             self.rt.touch_paths.clear();
             self.rt.scroll_capture_id = None;
