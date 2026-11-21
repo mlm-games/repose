@@ -12105,7 +12105,7 @@ impl WgpuSceneRenderer {
                             shifted[3] -= oy * map[6];
                             shifted[4] -= oy * map[7];
                             shifted[5] -= oy * map[8];
-                            let uv_bounds = uv_for_layer(layer);
+                            let uv_bounds = uv_for_layer(&layer);
                             let uv = [0.0, 0.0, uv_bounds.0, uv_bounds.1];
                             composite = self.emit_isolated_blend_source(
                                 projected,
@@ -12295,7 +12295,7 @@ impl WgpuSceneRenderer {
                             );
                             if state.projective {
                                 let map = state.parent_transform.projective_matrix();
-                                let uv = uv_for_layer(layer);
+                                let uv = uv_for_layer(&layer);
                                 if let Some(inst) = make_projective_instance(
                                     &map,
                                     layer_rect,
