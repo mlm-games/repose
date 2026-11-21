@@ -1741,13 +1741,8 @@ impl ReposeRuntime {
         let Some(cid) = capture_id else {
             return false;
         };
-        let slop = if mouse {
-            MOUSE_TAP_SLOP_DP
-        } else {
-            TAP_SLOP_DP
-        };
         if self.press_origin.is_some_and(|(oid, x0, y0)| {
-            oid == cid && moved_past_slop(x0, y0, pos, slop, self.scale)
+            oid == cid && moved_past_slop(x0, y0, pos, TAP_SLOP_DP, self.scale)
         }) {
             return true;
         }
