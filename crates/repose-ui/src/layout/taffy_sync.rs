@@ -826,8 +826,8 @@ impl LayoutEngine {
                 s.justify_content = Some(main);
             }
             if unbounded {
-                s.max_size.width = taffy::Dimension::auto();
-                s.max_size.height = taffy::Dimension::auto();
+                s.max_size.width = taffy::LengthPercentageAuto::Auto;
+                s.max_size.height = taffy::LengthPercentageAuto::Auto;
                 s.flex_shrink = 0.0;
             }
         }
