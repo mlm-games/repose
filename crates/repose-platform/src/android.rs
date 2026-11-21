@@ -457,6 +457,21 @@ pub fn run_android_app_with_options(
             repose_render_wgpu::apply_render_commands(backend, self.render.drain()).log_failures();
         }
 
+        /// Force the IME open on a touch only when the finger is on a text
+        /// input. Dismissing the keyboard leaves focus on the field; forcing
+        /// on every touch would pop it back up on the first tap elsewhere.
+        fn ime_force_for_touch(&self, pos_px: (f32, f32)) -> bool {
+            self.rt.frame_cache.as_ref().is_some_and(|frame| {
+                rc::touch_hits_text_input(
+                    frame,
+                    repose_core::Vec2 {
+                        x: pos_px.0,
+                        y: pos_px.1,
+                    },
+                )
+            })
+        }
+
         fn current_ime_allowed(&self) -> bool {
             self.in_foreground
                 && self.ime_output_allowed
@@ -757,7 +772,7 @@ pub fn run_android_app_with_options(
                             .touch_started(&mut self.rt, t.id, pos_px);
                         crate::runner_common::sync_touch_points(&mut self.rt, &self.touch_gestures);
                         let ime_allowed = self.current_ime_allowed();
-                        self.update_ime_state(true, ime_allowed);
+                        self.update_ime_state(self.ime_force_for_touch(pos_px), ime_allowed);
 
                         self.request_redraw();
                     } else {
@@ -770,7 +785,8 @@ pub fn run_android_app_with_options(
                         );
                         if t.phase == winit::event::TouchPhase::Ended && r.press.is_some() {
                             let ime_allowed = self.current_ime_allowed();
-                            self.update_ime_state(true, ime_allowed);
+                            let pos = (t.location.x as f32, t.location.y as f32);
+                            self.update_ime_state(self.ime_force_for_touch(pos), ime_allowed);
                         }
                         let mut dirty = r.dirty;
                         if let Some((delta_scale, center)) = r.pinch {

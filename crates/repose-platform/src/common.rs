@@ -1,3 +1,51 @@
+#[cfg(test)]
+mod ime_touch_tests {
+    use super::*;
+    use repose_core::runtime::SemNode;
+    use repose_core::semantics::Role;
+    use repose_core::{HitRegion, Rect};
+
+    #[test]
+    fn force_only_on_text_input() {
+        let field = HitRegion {
+            id: 1,
+            rect: Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 100.0,
+                h: 40.0,
+            },
+            tf_enabled: true,
+            tf_state_key: Some(1),
+            ..Default::default()
+        };
+        let button = HitRegion {
+            id: 2,
+            rect: Rect {
+                x: 0.0,
+                y: 60.0,
+                w: 100.0,
+                h: 40.0,
+            },
+            ..Default::default()
+        };
+        let frame = Frame {
+            scene: Default::default(),
+            hit_regions: vec![field, button],
+            semantics_nodes: vec![SemNode {
+                id: 1,
+                role: Role::TextField,
+                ..Default::default()
+            }],
+            focus_chain: vec![1, 2],
+        };
+
+        assert!(touch_hits_text_input(&frame, Vec2 { x: 50.0, y: 20.0 }));
+        assert!(!touch_hits_text_input(&frame, Vec2 { x: 50.0, y: 80.0 }));
+        assert!(!touch_hits_text_input(&frame, Vec2 { x: 50.0, y: 200.0 }));
+    }
+}
+
 #[allow(unused_imports)]
 pub use repose_app::MultiTouchDelta;
 pub use repose_app::TouchGestureState;
@@ -384,6 +432,16 @@ pub(crate) fn has_ime_handler_hit(hits: &[repose_core::HitRegion], id: u64) -> b
 
 pub(crate) fn has_ime_handler(frame: &Frame, id: u64) -> bool {
     has_ime_handler_hit(&frame.hit_regions, id)
+}
+
+/// Whether a touch at `pos` landed on an editable text field (or a custom IME
+/// handler). After the user dismisses the soft keyboard, focus can stay on a
+/// field; the touch-down IME sync must only force the keyboard back open when
+/// the finger actually hits a field, so tapping elsewhere leaves it closed.
+pub(crate) fn touch_hits_text_input(frame: &Frame, pos: Vec2) -> bool {
+    repose_ui::hit_test_frame_regions(frame, pos)
+        .into_iter()
+        .any(|id| is_editable_textfield_hit(frame, id) || has_ime_handler(frame, id))
 }
 
 #[allow(dead_code)]
