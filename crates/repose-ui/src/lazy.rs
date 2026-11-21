@@ -1735,7 +1735,7 @@ where
                     data_i as u64,
                     item as *const T as usize,
                     p.h_px,
-                    alpha.to_bits(),
+                    alpha.to_bits() as u64,
                 );
                 col_child.push(scoped_item(data_i as u64, state_id, revision, || {
                     crate::Box(
