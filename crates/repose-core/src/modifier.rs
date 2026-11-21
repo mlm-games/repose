@@ -10,6 +10,7 @@ use taffy::{
 use crate::animation::AnimationSpec;
 use crate::gesture::DragOrientation;
 use crate::indication::IndicationNodeFactory;
+use crate::shape::Shape;
 use crate::units::{Dp, DpSize};
 use crate::{Brush, Color, PointerEvent, Transform, Vec2};
 
@@ -98,13 +99,14 @@ macro_rules! impl_option_fields {
                     required_min_height, required_max_height,
                     default_min_width, default_min_height,
                     fill_max, fill_max_w, fill_max_h,
-                    background, background_alpha, state_colors, state_elevation, border,
+                    background, background_alpha, background_shape, state_colors, state_elevation,
+                    border, border_shape,
                     flex_grow, flex_shrink, flex_basis, flex_wrap, flex_dir,
                     flex_line_count,
                     gap, row_gap, column_gap,
                     align_self, justify_content, align_items_container, align_content,
                     baseline_align,
-                    clip_rounded, clip_rect, overflow, render_z_index,
+                    clip_rounded, clip_rect, clip_shape, overflow, render_z_index,
                     on_scroll, on_scroll_with_source,
                     scrollbar_style,
                     nested_scroll_connection,
@@ -698,10 +700,14 @@ pub struct Modifier {
     /// Multiplies the alpha of the background brush/color when painting.
     /// Values outside `0.0..=1.0` are clamped by the painter.
     pub background_alpha: Option<f32>,
+    /// Shape the background is painted into. `None` means a plain rectangle.
+    pub background_shape: Option<Shape>,
     pub state_colors: Option<StateColors>,
     pub state_elevation: Option<StateElevation>,
 
     pub border: Option<Border>,
+    /// Shape the border follows. `None` means the legacy radius-based border.
+    pub border_shape: Option<Shape>,
     pub flex_grow: Option<f32>,
     pub flex_shrink: Option<f32>,
     pub flex_basis: Option<Dp>,
@@ -724,6 +730,9 @@ pub struct Modifier {
     /// Rectangular clip with a clipping operation (Intersect or Difference).
     /// The rect is relative to the element bounds, in [`Dp`].
     pub clip_rect: Option<ClipRect>,
+    /// Generic shape clip. Takes precedence over [`clip_rounded`](Self::clip_rounded)
+    /// and [`clip_rect`](Self::clip_rect) when the paint layer resolves it.
+    pub clip_shape: Option<Shape>,
     /// Controls whether child content is clipped to the parent bounds.
     ///
     /// Defaults to `Clip`. When set to `Visible`, children can overflow
@@ -957,9 +966,11 @@ impl std::fmt::Debug for Modifier {
             fill_max_h,
             background,
             background_alpha,
+            background_shape,
             state_colors,
             state_elevation,
             border,
+            border_shape,
             flex_grow,
             flex_shrink,
             flex_basis,
@@ -974,6 +985,7 @@ impl std::fmt::Debug for Modifier {
             align_content,
             clip_rounded,
             clip_rect,
+            clip_shape,
             render_z_index,
             semantics,
             alpha,
@@ -1307,12 +1319,25 @@ impl Modifier {
     /// Set a solid color background.
     pub fn background(mut self, color: Color) -> Self {
         self.background = Some(Brush::Solid(color));
+        self.background_shape = Some(Shape::Rectangle);
         self
     }
     /// Set a brush (solid, gradient, etc.) background.
     pub fn background_brush(mut self, brush: Brush) -> Self {
         self.background = Some(brush);
+        self.background_shape = Some(Shape::Rectangle);
         self
+    }
+    /// Paint a brush into an arbitrary [`Shape`].
+    pub fn background_with_shape(mut self, brush: Brush, shape: Shape, alpha: f32) -> Self {
+        self.background = Some(brush);
+        self.background_shape = Some(shape);
+        self.background_alpha = Some(alpha);
+        self
+    }
+    /// Solid-color convenience for [`background_with_shape`](Self::background_with_shape).
+    pub fn background_shape_color(self, color: Color, shape: Shape) -> Self {
+        self.background_with_shape(Brush::Solid(color), shape, 1.0)
     }
     /// Multiply the background brush/color alpha when painting.
     pub fn background_alpha(mut self, alpha: f32) -> Self {
@@ -1325,6 +1350,7 @@ impl Modifier {
             brush: Brush::Solid(color),
             radius: [radius; 4],
         });
+        self.border_shape = Some(Shape::rounded(radius));
         self
     }
     /// Brush border (gradient, etc.). Mirrors Compose
@@ -1335,6 +1361,7 @@ impl Modifier {
             brush,
             radius: [radius; 4],
         });
+        self.border_shape = Some(Shape::rounded(radius));
         self
     }
     pub fn border_radii(mut self, width: Dp, color: Color, radii: [Dp; 4]) -> Self {
@@ -1343,6 +1370,7 @@ impl Modifier {
             brush: Brush::Solid(color),
             radius: radii,
         });
+        self.border_shape = Some(Shape::Rounded { radii });
         self
     }
     /// Brush border with per-corner radii.
@@ -1352,6 +1380,17 @@ impl Modifier {
             brush,
             radius: radii,
         });
+        self.border_shape = Some(Shape::Rounded { radii });
+        self
+    }
+    /// Stroke an arbitrary [`Shape`] with a brush.
+    pub fn border_with_shape(mut self, width: Dp, brush: Brush, shape: Shape) -> Self {
+        self.border = Some(Border {
+            width,
+            brush,
+            radius: [Dp::ZERO; 4],
+        });
+        self.border_shape = Some(shape);
         self
     }
     pub fn flex_grow(mut self, v: f32) -> Self {
@@ -1431,10 +1470,12 @@ impl Modifier {
     }
     pub fn clip_rounded(mut self, radius: Dp) -> Self {
         self.clip_rounded = Some([radius; 4]);
+        self.clip_shape = Some(Shape::rounded(radius));
         self
     }
     pub fn clip_rounded_radii(mut self, radii: [Dp; 4]) -> Self {
         self.clip_rounded = Some(radii);
+        self.clip_shape = Some(Shape::Rounded { radii });
         self
     }
     /// Clip a rectangular region from this element using the given operation.
@@ -1447,7 +1488,19 @@ impl Modifier {
             bottom,
             op,
         });
+        self.clip_shape = Some(Shape::Rectangle);
         self
+    }
+    /// Clip this element's content to an arbitrary [`Shape`].
+    pub fn clip(mut self, shape: Shape) -> Self {
+        self.clip_shape = Some(shape);
+        self.clip_rounded = None;
+        self.clip_rect = None;
+        self
+    }
+    /// Clip this element's content to its bounds (sharp rectangle).
+    pub fn clip_to_bounds(self) -> Self {
+        self.clip(Shape::Rectangle)
     }
     pub fn overflow(mut self, overflow: Overflow) -> Self {
         self.overflow = Some(overflow);

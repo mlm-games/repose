@@ -6,6 +6,11 @@ pub(crate) fn open_url(url: &str) {
     let _ = webbrowser::open(url);
 }
 
+/// Resolve a [`Shape`] against a paint-space rect for scene-node emission.
+pub fn shape_outline(shape: &Shape, rect: Rect) -> ResolvedShape {
+    shape.resolve(rect)
+}
+
 /// Old focus ring rendering.
 #[deprecated(
     since = "0.27.7",

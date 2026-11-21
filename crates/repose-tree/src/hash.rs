@@ -379,6 +379,9 @@ fn facet_hash_modifier(modifier: &Modifier, hashers: &mut FacetHashers) {
         hashers.hash(FACET_PAINT, |h| 0u8.hash(h));
     }
     hash_opt_f32_value!(FACET_PAINT, modifier.background_alpha);
+    hashers.hash(FACET_PAINT, |h| {
+        hash_opt_shape(modifier.background_shape.as_ref(), h)
+    });
     if let Some(border) = &modifier.border {
         hashers.hash(FACET_PAINT, |h| {
             hash_dp(border.width, h);
@@ -390,6 +393,9 @@ fn facet_hash_modifier(modifier: &Modifier, hashers: &mut FacetHashers) {
     } else {
         hashers.hash(FACET_PAINT, |h| 0u8.hash(h));
     }
+    hashers.hash(FACET_PAINT, |h| {
+        hash_opt_shape(modifier.border_shape.as_ref(), h)
+    });
     hash_opt_f32_value!(FACET_LAYOUT, modifier.flex_grow);
     hash_opt_f32_value!(FACET_LAYOUT, modifier.flex_shrink);
     hash_opt_dp_value!(FACET_LAYOUT, modifier.flex_basis);
@@ -433,6 +439,9 @@ fn facet_hash_modifier(modifier: &Modifier, hashers: &mut FacetHashers) {
     } else {
         hashers.hash(FACET_PAINT, |h| 0u8.hash(h));
     }
+    hashers.hash(FACET_PAINT, |h| {
+        hash_opt_shape(modifier.clip_shape.as_ref(), h)
+    });
     if let Some(transform) = &modifier.transform {
         hashers.hash(FACET_PAINT, |h| {
             hash_f32(transform.translate_x, h);
@@ -1474,6 +1483,61 @@ fn hash_opt_f32(v: Option<f32>, hasher: &mut impl Hasher) {
     }
 }
 
+fn hash_shape(shape: &repose_core::Shape, hasher: &mut impl Hasher) {
+    match shape {
+        repose_core::Shape::Rectangle => 0u8.hash(hasher),
+        repose_core::Shape::Rounded { radii } => {
+            1u8.hash(hasher);
+            for radius in radii {
+                hash_dp(*radius, hasher);
+            }
+        }
+        repose_core::Shape::Percent(percent) => {
+            2u8.hash(hasher);
+            hash_f32(*percent, hasher);
+        }
+        repose_core::Shape::Circle => 3u8.hash(hasher),
+        repose_core::Shape::Path(path) => {
+            4u8.hash(hasher);
+            path.commands.len().hash(hasher);
+            for command in &path.commands {
+                match command {
+                    repose_core::PathCommand::MoveTo(x, y) => {
+                        0u8.hash(hasher);
+                        hash_dp(*x, hasher);
+                        hash_dp(*y, hasher);
+                    }
+                    repose_core::PathCommand::LineTo(x, y) => {
+                        1u8.hash(hasher);
+                        hash_dp(*x, hasher);
+                        hash_dp(*y, hasher);
+                    }
+                    repose_core::PathCommand::CubicTo { c1, c2, end } => {
+                        2u8.hash(hasher);
+                        hash_dp(c1.0, hasher);
+                        hash_dp(c1.1, hasher);
+                        hash_dp(c2.0, hasher);
+                        hash_dp(c2.1, hasher);
+                        hash_dp(end.0, hasher);
+                        hash_dp(end.1, hasher);
+                    }
+                    repose_core::PathCommand::Close => 3u8.hash(hasher),
+                }
+            }
+        }
+    }
+}
+
+fn hash_opt_shape(shape: Option<&repose_core::Shape>, hasher: &mut impl Hasher) {
+    match shape {
+        Some(shape) => {
+            1u8.hash(hasher);
+            hash_shape(shape, hasher);
+        }
+        None => 0u8.hash(hasher),
+    }
+}
+
 fn hash_dp(v: Dp, hasher: &mut impl Hasher) {
     hash_f32(v.0, hasher);
 }
@@ -1569,6 +1633,7 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
         None => 0u8.hash(hasher),
     }
     hash_opt_f32(m.background_alpha, hasher);
+    hash_opt_shape(m.background_shape.as_ref(), hasher);
     match &m.border {
         Some(border) => {
             1u8.hash(hasher);
@@ -1580,6 +1645,7 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
         }
         None => 0u8.hash(hasher),
     }
+    hash_opt_shape(m.border_shape.as_ref(), hasher);
     hash_opt_f32(m.flex_grow, hasher);
     hash_opt_f32(m.flex_shrink, hasher);
     hash_opt_dp(m.flex_basis, hasher);
@@ -1613,6 +1679,7 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
         }
         None => 0u8.hash(hasher),
     }
+    hash_opt_shape(m.clip_shape.as_ref(), hasher);
     match m.transform {
         Some(transform) => {
             1u8.hash(hasher);

@@ -1,3 +1,4 @@
+use crate::shape::ResolvedShape;
 use crate::units::{Dp, Px, Sp};
 use crate::{
     BaselineShift, Brush, ClipOp, Color, DrawStyle, FontStyle, FontSynthesis, FontWeight, Modifier,
@@ -399,6 +400,19 @@ pub enum SceneNode {
         width: Px,
         radius: [Px; 4],
     },
+    /// Fill an arbitrary resolved [`Shape`] with a brush.
+    ShapeRect {
+        rect: Rect,
+        resolved: ResolvedShape,
+        brush: Brush,
+    },
+    /// Stroke an arbitrary resolved [`Shape`] with a brush.
+    ShapeBorder {
+        rect: Rect,
+        resolved: ResolvedShape,
+        brush: Brush,
+        width: Px,
+    },
     Text {
         rect: Rect,
         text: Arc<str>,
@@ -418,6 +432,13 @@ pub enum SceneNode {
     PushClip {
         rect: Rect,
         radius: [Px; 4],
+        op: ClipOp,
+    },
+    /// Push a clip against an arbitrary resolved [`Shape`]. The matching
+    /// [`PopClip`](Self::PopClip) closes it, just as for `PushClip`.
+    PushShapeClip {
+        rect: Rect,
+        resolved: ResolvedShape,
         op: ClipOp,
     },
     PopClip,

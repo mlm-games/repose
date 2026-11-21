@@ -1,7 +1,7 @@
 use std::any::TypeId;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
-use std::hash::Hash;
+use std::hash::{Hash, Hasher};
 use std::num::NonZeroU64;
 #[cfg(feature = "winit-surface")]
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -9,9 +9,9 @@ use std::sync::{Arc, Mutex, Weak};
 
 use repose_core::color::{ChromaSiting, ColorInfo, PixelFormat};
 use repose_core::{
-    Brush, FontStyle, GradientStops, ImageAlignment, ImageFilter, ImageFit, ImagePaintStyle,
-    ImageSourceRect, MAX_GRADIENT_STOPS, Scene, SceneNode, StrokeCap, TextPaintStyle, TileMode,
-    Transform, Vec2,
+    Brush, Dp, FontStyle, GradientStops, ImageAlignment, ImageFilter, ImageFit, ImagePaintStyle,
+    ImageSourceRect, MAX_GRADIENT_STOPS, PathCommand, Px, ResolvedShape, Scene, SceneNode,
+    ShapePath, StrokeCap, TextPaintStyle, TileMode, Transform, Vec2,
 };
 #[cfg(feature = "winit-surface")]
 use repose_core::{GlyphRasterConfig, PresentModePref, RenderBackend, request_frame};
@@ -2655,6 +2655,7 @@ struct MeshCacheKey {
 enum MeshOwner {
     Object(Arc<repose_core::VectorMeshData>),
     Overlay(Arc<[repose_core::VectorMeshData]>),
+    Shape(Arc<ShapePath>, u32, Option<u32>),
 }
 
 struct MeshCacheEntry {
@@ -7660,6 +7661,304 @@ fn brush_to_shape_fields(
     }
 }
 
+/// Lyon path for a `ShapePath`, in px (each Dp command scaled by `ppp`).
+fn shape_path_to_lyon(path: &ShapePath, ppp: f32) -> Option<lyon_path::Path> {
+    use lyon_path::math::Point;
+
+    let point = |x: Dp, y: Dp| Point::new(x.0 * ppp, y.0 * ppp);
+    let finite = |p: Point| p.x.is_finite() && p.y.is_finite();
+    let mut builder = lyon_path::Path::builder();
+    let mut open = false;
+    for command in &path.commands {
+        match *command {
+            PathCommand::MoveTo(x, y) => {
+                let p = point(x, y);
+                if !finite(p) {
+                    return None;
+                }
+                if open {
+                    builder.end(false);
+                }
+                builder.begin(p);
+                open = true;
+            }
+            PathCommand::LineTo(x, y) => {
+                if !open {
+                    continue;
+                }
+                let p = point(x, y);
+                if !finite(p) {
+                    return None;
+                }
+                builder.line_to(p);
+            }
+            PathCommand::CubicTo { c1, c2, end } => {
+                if !open {
+                    continue;
+                }
+                let c1 = point(c1.0, c1.1);
+                let c2 = point(c2.0, c2.1);
+                let end = point(end.0, end.1);
+                if !finite(c1) || !finite(c2) || !finite(end) {
+                    return None;
+                }
+                builder.cubic_bezier_to(c1, c2, end);
+            }
+            PathCommand::Close => {
+                if open {
+                    builder.close();
+                    open = false;
+                }
+            }
+        }
+    }
+    if open {
+        builder.end(false);
+    }
+    Some(builder.build())
+}
+
+fn shape_mesh_from_buffers(
+    buffers: lyon_tessellation::VertexBuffers<lyon_path::math::Point, u16>,
+) -> Option<repose_core::VectorMeshData> {
+    if buffers.indices.is_empty() {
+        return None;
+    }
+    let vertices: Arc<[repose_core::VectorVertex]> = buffers
+        .vertices
+        .iter()
+        .map(|v| repose_core::VectorVertex {
+            pos: [v.x, v.y],
+            color: [1.0; 4],
+            uv: [0.0, 0.0],
+        })
+        .collect();
+    let indices: Arc<[u32]> = buffers.indices.iter().map(|&i| i as u32).collect();
+    Some(repose_core::VectorMeshData { vertices, indices })
+}
+
+/// Tessellate a shape path into mesh-local px. `stroke` selects a stroked
+/// outline instead of a filled interior. The caller applies the node's px
+/// offset through the mesh transform, so gradient endpoints stay in the same
+/// local space as the vertices.
+fn tessellate_shape_path(
+    path: &ShapePath,
+    ppp: f32,
+    stroke: Option<Px>,
+) -> Option<repose_core::VectorMeshData> {
+    use lyon_tessellation::{
+        FillTessellator, StrokeTessellator, VertexBuffers, geometry_builder::simple_builder,
+    };
+
+    let lyon_path = shape_path_to_lyon(path, ppp)?;
+    let mut buffers: VertexBuffers<lyon_path::math::Point, u16> = VertexBuffers::new();
+    if let Some(width) = stroke {
+        if !width.0.is_finite() || width.0 <= 0.0 {
+            return None;
+        }
+        StrokeTessellator::new()
+            .tessellate_path(
+                &lyon_path,
+                &lyon_tessellation::StrokeOptions::default()
+                    .with_tolerance(0.25)
+                    .with_line_width(width.0),
+                &mut simple_builder(&mut buffers),
+            )
+            .ok()?;
+    } else {
+        FillTessellator::new()
+            .tessellate_path(
+                &lyon_path,
+                &lyon_tessellation::FillOptions::default().with_tolerance(0.25),
+                &mut simple_builder(&mut buffers),
+            )
+            .ok()?;
+    }
+    shape_mesh_from_buffers(buffers)
+}
+
+/// Ellipse inscribed in `rect`, tessellated in mesh-local px so the caller can
+/// place it with the same transform machinery as a path clip.
+fn tessellate_shape_ellipse(rect: repose_core::Rect) -> Option<repose_core::VectorMeshData> {
+    use lyon_tessellation::{FillTessellator, VertexBuffers, geometry_builder::simple_builder};
+
+    let rx = (rect.w * 0.5).max(0.0);
+    let ry = (rect.h * 0.5).max(0.0);
+    if !rx.is_finite() || !ry.is_finite() || rx <= 0.0 || ry <= 0.0 {
+        return None;
+    }
+    let mut builder = lyon_path::Path::builder();
+    builder.add_ellipse(
+        lyon_path::math::Point::new(rect.w * 0.5, rect.h * 0.5),
+        lyon_path::math::Vector::new(rx, ry),
+        lyon_path::math::Angle::radians(0.0),
+        lyon_path::Winding::Positive,
+    );
+    let path = builder.build();
+    let mut buffers: VertexBuffers<lyon_path::math::Point, u16> = VertexBuffers::new();
+    FillTessellator::new()
+        .tessellate_path(
+            &path,
+            &lyon_tessellation::FillOptions::default().with_tolerance(0.25),
+            &mut simple_builder(&mut buffers),
+        )
+        .ok()?;
+    shape_mesh_from_buffers(buffers)
+}
+
+/// Conservative bounds of a shape path in scene px, used for culling without
+/// tessellating every frame. Stroke width, when present, expands the bounds.
+fn shape_path_aabb(
+    path: &ShapePath,
+    ppp: f32,
+    offset: (f32, f32),
+    stroke: Option<Px>,
+) -> repose_core::Rect {
+    let mut min_x = f32::INFINITY;
+    let mut min_y = f32::INFINITY;
+    let mut max_x = f32::NEG_INFINITY;
+    let mut max_y = f32::NEG_INFINITY;
+    let mut include = |x: f32, y: f32| {
+        min_x = min_x.min(x);
+        min_y = min_y.min(y);
+        max_x = max_x.max(x);
+        max_y = max_y.max(y);
+    };
+    let point = |x: Dp, y: Dp| (x.0 * ppp + offset.0, y.0 * ppp + offset.1);
+    for command in &path.commands {
+        match *command {
+            PathCommand::MoveTo(x, y) | PathCommand::LineTo(x, y) => {
+                let (x, y) = point(x, y);
+                include(x, y);
+            }
+            PathCommand::CubicTo { c1, c2, end } => {
+                for (x, y) in [c1, c2, end] {
+                    let (x, y) = point(x, y);
+                    include(x, y);
+                }
+            }
+            PathCommand::Close => {}
+        }
+    }
+    let pad = stroke.map_or(0.0, |w| w.0.max(0.0) * 0.5);
+    if !min_x.is_finite() || !min_y.is_finite() {
+        return repose_core::Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 0.0,
+            h: 0.0,
+        };
+    }
+    repose_core::Rect {
+        x: min_x - pad,
+        y: min_y - pad,
+        w: (max_x - min_x).max(0.0) + pad * 2.0,
+        h: (max_y - min_y).max(0.0) + pad * 2.0,
+    }
+}
+
+/// Convert a shape brush to a vector-mesh paint. Solid colors become a
+/// degenerate two-stop linear ramp (both endpoints at the origin), which the
+/// mesh shader evaluates as a constant; that keeps tessellated geometry
+/// color-independent and cacheable. Gradient endpoints stay in mesh-local px,
+/// matching the local vertices.
+fn brush_to_paint_desc(brush: &Brush, rect: repose_core::Rect) -> repose_core::PaintDesc {
+    use repose_core::PaintDesc as P;
+    let scaled = |p: Vec2| Vec2::new(p.x * rect.w, p.y * rect.h);
+    let stop_colors = |stops: &GradientStops| {
+        let slice = stops.as_slice();
+        let transparent = repose_core::Color::TRANSPARENT;
+        (
+            slice.first().map_or(transparent, |s| s.color),
+            slice.last().map_or(transparent, |s| s.color),
+        )
+    };
+    match *brush {
+        Brush::Solid(c) => P::Linear {
+            start: Vec2::ZERO,
+            end: Vec2::ZERO,
+            start_color: c,
+            end_color: c,
+        },
+        Brush::Linear {
+            start,
+            end,
+            start_color,
+            end_color,
+        } => P::Linear {
+            start,
+            end,
+            start_color,
+            end_color,
+        },
+        Brush::LinearNormalized {
+            start,
+            end,
+            start_color,
+            end_color,
+        } => P::Linear {
+            start: scaled(start),
+            end: scaled(end),
+            start_color,
+            end_color,
+        },
+        Brush::Radial {
+            center,
+            radius,
+            start_color,
+            end_color,
+        } => P::Radial {
+            center,
+            radius,
+            start_color,
+            end_color,
+        },
+        Brush::Sweep {
+            center,
+            start_color,
+            end_color,
+        } => P::Sweep {
+            center,
+            start_color,
+            end_color,
+        },
+        Brush::LinearStops {
+            start, end, stops, ..
+        } => P::LinearStops { start, end, stops },
+        Brush::LinearNormalizedStops {
+            start, end, stops, ..
+        } => P::LinearStops {
+            start: scaled(start),
+            end: scaled(end),
+            stops,
+        },
+        Brush::RadialStops {
+            center,
+            radius,
+            stops,
+            ..
+        } => P::RadialStops {
+            center,
+            radius,
+            stops,
+        },
+        Brush::SweepStops { center, stops, .. } => {
+            let (start_color, end_color) = stop_colors(&stops);
+            P::Sweep {
+                center,
+                start_color,
+                end_color,
+            }
+        }
+        _ => P::Linear {
+            start: Vec2::ZERO,
+            end: Vec2::ZERO,
+            start_color: repose_core::Color::TRANSPARENT,
+            end_color: repose_core::Color::TRANSPARENT,
+        },
+    }
+}
+
 fn brush_to_instance_fields(brush: &Brush) -> (u32, [f32; 4], [f32; 4], [f32; 2], [f32; 2]) {
     match brush {
         Brush::Solid(c) => (
@@ -8546,6 +8845,9 @@ impl WgpuSceneRenderer {
         match (owner, other) {
             (MeshOwner::Object(a), MeshOwner::Object(b)) => Arc::ptr_eq(a, b),
             (MeshOwner::Overlay(a), MeshOwner::Overlay(b)) => Arc::ptr_eq(a, b),
+            (MeshOwner::Shape(a, ap, aw), MeshOwner::Shape(b, bp, bw)) => {
+                ap == bp && aw == bw && Arc::ptr_eq(a, b)
+            }
             _ => false,
         }
     }
@@ -8696,6 +8998,52 @@ impl WgpuSceneRenderer {
             Self::mesh_cache_key(mesh),
             MeshOwner::Object(mesh.clone()),
         )
+    }
+
+    /// Tessellated geometry for a `ShapePath` fill or stroke, cached by the
+    /// path's identity and stroke width so a static shape is not re-tessellated
+    /// every frame.
+    fn upload_shape_mesh(
+        &mut self,
+        path: &Arc<ShapePath>,
+        ppp: f32,
+        stroke: Option<Px>,
+    ) -> Option<MeshGpu> {
+        let width_bits = stroke.map(|w| w.0.to_bits());
+        let ppp_bits = ppp.to_bits();
+        let source = Arc::as_ptr(path) as usize;
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        ppp_bits.hash(&mut hasher);
+        width_bits.hash(&mut hasher);
+        let index = hasher.finish() as usize;
+        let kind = if stroke.is_some() { 4 } else { 3 };
+        let owner = MeshOwner::Shape(path.clone(), ppp_bits, width_bits);
+        if let Some((key, cached)) = self
+            .mesh_cache
+            .iter()
+            .find(|(key, entry)| {
+                key.source == source
+                    && key.index == index
+                    && key.kind == kind
+                    && Self::mesh_owner_matches(&entry.owner, &owner)
+            })
+            .map(|(key, entry)| (*key, entry.gpu.clone()))
+        {
+            if let Some(entry) = self.mesh_cache.get_mut(&key) {
+                entry.last_used_frame = self.frame_index;
+                entry.last_touch_frame = self.next_cache_touch();
+            }
+            return Some(cached);
+        }
+        let mesh = Arc::new(tessellate_shape_path(path, ppp, stroke)?);
+        let key = MeshCacheKey {
+            source,
+            index,
+            kind,
+            vertex_len: mesh.vertices.len(),
+            index_len: mesh.indices.len(),
+        };
+        self.upload_mesh_geometry_with_owner(&mesh, key, owner)
     }
 
     fn upload_overlay_mesh(
@@ -9244,6 +9592,34 @@ impl WgpuSceneRenderer {
             ioff,
             icnt,
             blend,
+        });
+    }
+
+    /// Draw pre-tessellated shape geometry. The mesh is in shape-local px;
+    /// `offset` places its origin at the node's rect origin before the
+    /// accumulated scene transform is applied.
+    fn emit_shape_mesh(
+        &mut self,
+        mesh: MeshGpu,
+        current_transform: &Transform,
+        offset: (f32, f32),
+        paint: &repose_core::PaintDesc,
+        cmds: &mut Vec<Cmd>,
+    ) {
+        let Some(uoff) = self.alloc_mesh_uniform(mesh_uniform_from_paint(paint)) else {
+            return;
+        };
+        let affine =
+            combine_mesh_affine(current_transform, [1.0, 0.0, 0.0, 1.0, offset.0, offset.1]);
+        let Some((ioff, icnt)) = self.alloc_mesh_instances(&[affine]) else {
+            return;
+        };
+        cmds.push(Cmd::VectorMesh {
+            mesh,
+            uoff,
+            ioff,
+            icnt,
+            blend: repose_core::BlendMode::Alpha,
         });
     }
 
@@ -9981,6 +10357,213 @@ impl WgpuSceneRenderer {
                         _pad: [0.0; 2],
                     });
                 }
+                SceneNode::ShapeRect {
+                    rect,
+                    resolved,
+                    brush,
+                } => match resolved {
+                    ResolvedShape::Rect(radii) => {
+                        let clip = scissor_stack.last().copied().unwrap_or(root_clip_rect);
+                        if !visible(affine_aabb(current_transform, rect), clip) {
+                            continue;
+                        }
+                        flush_if_prim_changed!("rect", &self.rects);
+                        let (ndc, fwd_mat) = rect_to_instance_ndc(
+                            *rect,
+                            current_transform,
+                            current_target_size.0,
+                            current_target_size.1,
+                        );
+                        let (
+                            brush_type,
+                            grad_kind,
+                            color0,
+                            color1,
+                            grad_p0,
+                            grad_p1,
+                            tile_mode,
+                            stop_table,
+                        ) = brush_to_shape_fields(brush, rect, current_transform, &mut shape_stops);
+                        batch.rects.push(RectInstance {
+                            xywh: ndc,
+                            radii: radii.map(|r| r.0),
+                            color0,
+                            color1,
+                            fwd_mat,
+                            grad: [grad_p0[0], grad_p0[1], grad_p1[0], grad_p1[1]],
+                            bits: pack_shape_bits_with_stops(
+                                brush_type, grad_kind, tile_mode, 0, stop_table,
+                            ),
+                            _pad: [0.0; 3],
+                        });
+                    }
+                    ResolvedShape::Ellipse => {
+                        let clip = scissor_stack.last().copied().unwrap_or(root_clip_rect);
+                        if !visible(affine_aabb(current_transform, rect), clip) {
+                            continue;
+                        }
+                        flush_if_prim_changed!("ellipse", &self.ellipses);
+                        let (ndc, fwd_mat) = rect_to_instance_ndc(
+                            *rect,
+                            current_transform,
+                            current_target_size.0,
+                            current_target_size.1,
+                        );
+                        let (
+                            brush_type,
+                            grad_kind,
+                            color0,
+                            color1,
+                            grad_p0,
+                            grad_p1,
+                            tile_mode,
+                            stop_table,
+                        ) = brush_to_shape_fields(brush, rect, current_transform, &mut shape_stops);
+                        batch.ellipses.push(EllipseInstance {
+                            xywh: ndc,
+                            color0,
+                            color1,
+                            fwd_mat,
+                            grad: [grad_p0[0], grad_p0[1], grad_p1[0], grad_p1[1]],
+                            bits: pack_shape_bits_with_stops(
+                                brush_type, grad_kind, tile_mode, 0, stop_table,
+                            ),
+                            _pad: [0.0; 1],
+                        });
+                    }
+                    ResolvedShape::Path { path, offset } => {
+                        let clip = scissor_stack.last().copied().unwrap_or(root_clip_rect);
+                        let offset_px = (offset.0.0, offset.1.0);
+                        let aabb = shape_path_aabb(path, self.pixels_per_point, offset_px, None);
+                        if !visible(affine_aabb(current_transform, &aabb), clip) {
+                            continue;
+                        }
+                        let Some(mesh) = self.upload_shape_mesh(path, self.pixels_per_point, None)
+                        else {
+                            continue;
+                        };
+                        flush_batch!();
+                        let paint = brush_to_paint_desc(brush, *rect);
+                        self.emit_shape_mesh(
+                            mesh,
+                            current_transform,
+                            offset_px,
+                            &paint,
+                            &mut current_pass.cmds,
+                        );
+                    }
+                },
+                SceneNode::ShapeBorder {
+                    rect,
+                    resolved,
+                    brush,
+                    width,
+                } => match resolved {
+                    ResolvedShape::Rect(radii) => {
+                        let clip = scissor_stack.last().copied().unwrap_or(root_clip_rect);
+                        if !visible(affine_aabb(current_transform, rect), clip) {
+                            continue;
+                        }
+                        flush_if_prim_changed!("border", &self.borders);
+                        let (ndc, fwd_mat) = rect_to_instance_ndc(
+                            *rect,
+                            current_transform,
+                            current_target_size.0,
+                            current_target_size.1,
+                        );
+                        let (
+                            brush_type,
+                            grad_kind,
+                            color0,
+                            color1,
+                            grad_p0,
+                            grad_p1,
+                            tile_mode,
+                            stop_table,
+                        ) = brush_to_shape_fields(brush, rect, current_transform, &mut shape_stops);
+                        batch.borders.push(BorderInstance {
+                            xywh: ndc,
+                            radii: radii.map(|r| r.0),
+                            color0,
+                            color1,
+                            fwd_mat,
+                            grad: [grad_p0[0], grad_p0[1], grad_p1[0], grad_p1[1]],
+                            bits: pack_shape_bits_with_stops(
+                                brush_type, grad_kind, tile_mode, 0, stop_table,
+                            ),
+                            stroke: width.0,
+                            _pad: [0.0; 2],
+                        });
+                    }
+                    ResolvedShape::Ellipse => {
+                        let clip = scissor_stack.last().copied().unwrap_or(root_clip_rect);
+                        let cull_pad = width.0.abs() * 0.5 + 2.0;
+                        let cull_rect = repose_core::Rect {
+                            x: rect.x - cull_pad,
+                            y: rect.y - cull_pad,
+                            w: rect.w + cull_pad * 2.0,
+                            h: rect.h + cull_pad * 2.0,
+                        };
+                        if !visible(affine_aabb(current_transform, &cull_rect), clip) {
+                            continue;
+                        }
+                        flush_if_prim_changed!("ellipse_border", &self.ellipse_borders);
+                        let (ndc, fwd_mat) = rect_to_instance_ndc(
+                            *rect,
+                            current_transform,
+                            current_target_size.0,
+                            current_target_size.1,
+                        );
+                        let pad_px = width.0 * 0.5 + 2.0;
+                        let pad = (pad_px / current_target_size.0.max(1.0)) * 2.0;
+                        let (
+                            brush_type,
+                            grad_kind,
+                            color0,
+                            color1,
+                            grad_p0,
+                            grad_p1,
+                            tile_mode,
+                            stop_table,
+                        ) = brush_to_shape_fields(brush, rect, current_transform, &mut shape_stops);
+                        batch.e_borders.push(EllipseBorderInstance {
+                            xywh: ndc,
+                            color0,
+                            color1,
+                            fwd_mat,
+                            grad: [grad_p0[0], grad_p0[1], grad_p1[0], grad_p1[1]],
+                            bits: pack_shape_bits_with_stops(
+                                brush_type, grad_kind, tile_mode, 0, stop_table,
+                            ),
+                            stroke: width.0,
+                            pad,
+                            _pad: 0.0,
+                        });
+                    }
+                    ResolvedShape::Path { path, offset } => {
+                        let clip = scissor_stack.last().copied().unwrap_or(root_clip_rect);
+                        let offset_px = (offset.0.0, offset.1.0);
+                        let aabb =
+                            shape_path_aabb(path, self.pixels_per_point, offset_px, Some(*width));
+                        if !visible(affine_aabb(current_transform, &aabb), clip) {
+                            continue;
+                        }
+                        let Some(mesh) =
+                            self.upload_shape_mesh(path, self.pixels_per_point, Some(*width))
+                        else {
+                            continue;
+                        };
+                        flush_batch!();
+                        let paint = brush_to_paint_desc(brush, *rect);
+                        self.emit_shape_mesh(
+                            mesh,
+                            current_transform,
+                            offset_px,
+                            &paint,
+                            &mut current_pass.cmds,
+                        );
+                    }
+                },
                 SceneNode::Ellipse { rect, brush } => {
                     let clip = scissor_stack.last().copied().unwrap_or(root_clip_rect);
                     if !visible(affine_aabb(current_transform, rect), clip) {
@@ -10778,6 +11361,229 @@ impl WgpuSceneRenderer {
                         blocked,
                     });
                 }
+                SceneNode::PushShapeClip { rect, resolved, op } => {
+                    flush_batch!();
+
+                    let is_diff = matches!(op, repose_core::ClipOp::Difference);
+                    let t_identity = Transform::identity();
+                    let current_transform = transform_stack.last().unwrap_or(&t_identity);
+                    let has_inverse = active_clips.iter().any(ActiveClip::difference);
+                    let mut blocked =
+                        current_pass.active_scissor.is_none() || (has_inverse && !is_diff);
+                    if has_inverse && is_diff {
+                        log::error!(
+                            "unsupported clip nesting: Difference cannot contain a Difference clip"
+                        );
+                        blocked = true;
+                    }
+
+                    if let ResolvedShape::Rect(radii) = resolved {
+                        let transformed = affine_aabb(current_transform, rect);
+                        let top = scissor_stack.last().copied().unwrap_or(root_clip_rect);
+                        let next_scissor = if is_diff {
+                            top
+                        } else {
+                            intersect(top, transformed)
+                        };
+                        scissor_stack.push(next_scissor);
+                        let scissor = to_scissor(
+                            &next_scissor,
+                            current_target_size.0 as u32,
+                            current_target_size.1 as u32,
+                        );
+                        let has_area = transformed.x.is_finite()
+                            && transformed.y.is_finite()
+                            && transformed.w.is_finite()
+                            && transformed.h.is_finite()
+                            && transformed.w > 0.0
+                            && transformed.h > 0.0;
+                        let mut applied = false;
+                        let mut off = 0;
+                        if !blocked && has_area && (is_diff || scissor.2 > 0 && scissor.3 > 0) {
+                            let clip_ndc_tl = to_ndc(
+                                transformed.x,
+                                transformed.y,
+                                transformed.w,
+                                transformed.h,
+                                current_target_size.0,
+                                current_target_size.1,
+                            );
+                            let inst = ClipInstance {
+                                xywh: [
+                                    clip_ndc_tl[0] + clip_ndc_tl[2] * 0.5,
+                                    clip_ndc_tl[1] + clip_ndc_tl[3] * 0.5,
+                                    clip_ndc_tl[2],
+                                    clip_ndc_tl[3],
+                                ],
+                                radii: radii.map(|r| r.0),
+                                fwd_mat: [1.0, 0.0, 0.0, 1.0],
+                            };
+                            let bytes = bytemuck::bytes_of(&inst);
+                            if self
+                                .clip_ring
+                                .grow_to_fit(
+                                    &self.device,
+                                    encoder,
+                                    u64::try_from(bytes.len()).unwrap_or(u64::MAX),
+                                )
+                                .is_ok()
+                                && let Ok(new_off) = self.clip_ring.alloc_write(&self.queue, bytes)
+                            {
+                                off = new_off;
+                                applied = true;
+                                current_pass.cmds.push(Cmd::ClipPush {
+                                    off,
+                                    cnt: 1,
+                                    scissor,
+                                    difference: is_diff,
+                                    applied,
+                                });
+                            } else {
+                                blocked = !is_diff;
+                            }
+                        } else if !is_diff {
+                            blocked = true;
+                        }
+                        current_pass.active_scissor = if blocked {
+                            None
+                        } else {
+                            (scissor.2 > 0 && scissor.3 > 0).then_some(scissor)
+                        };
+                        active_clips.push(ActiveClip::Rect {
+                            off,
+                            cnt: u32::from(applied),
+                            rect: transformed,
+                            radii: radii.map(|r| r.0),
+                            scissor,
+                            difference: is_diff,
+                            applied,
+                            blocked,
+                        });
+                    } else {
+                        let (mesh, affine, aabb) = match resolved {
+                            ResolvedShape::Ellipse => {
+                                let mesh = tessellate_shape_ellipse(*rect).map(Arc::new);
+                                let affine = combine_mesh_affine(
+                                    current_transform,
+                                    [1.0, 0.0, 0.0, 1.0, rect.x, rect.y],
+                                );
+                                (mesh, affine, *rect)
+                            }
+                            ResolvedShape::Path { path, offset } => {
+                                let mesh = tessellate_shape_path(path, self.pixels_per_point, None)
+                                    .map(Arc::new);
+                                let offset_px = (offset.0.0, offset.1.0);
+                                let affine = combine_mesh_affine(
+                                    current_transform,
+                                    [1.0, 0.0, 0.0, 1.0, offset_px.0, offset_px.1],
+                                );
+                                let aabb =
+                                    shape_path_aabb(path, self.pixels_per_point, offset_px, None);
+                                (mesh, affine, aabb)
+                            }
+                            ResolvedShape::Rect(_) => unreachable!(),
+                        };
+                        let top = scissor_stack.last().copied().unwrap_or(root_clip_rect);
+                        let next = if is_diff { top } else { intersect(top, aabb) };
+                        scissor_stack.push(next);
+                        let scissor = to_scissor(
+                            &next,
+                            current_target_size.0 as u32,
+                            current_target_size.1 as u32,
+                        );
+                        let has_area = aabb.x.is_finite()
+                            && aabb.y.is_finite()
+                            && aabb.w.is_finite()
+                            && aabb.h.is_finite()
+                            && aabb.w > 0.0
+                            && aabb.h > 0.0
+                            && mesh.as_ref().is_some_and(|mesh| {
+                                !mesh.vertices.is_empty() && !mesh.indices.is_empty()
+                            });
+                        let mut uoff = 0;
+                        let mut ioff = 0;
+                        let mut icnt = 0;
+                        let mut pushed = false;
+                        if !blocked
+                            && has_area
+                            && (if is_diff {
+                                visible(aabb, top)
+                            } else {
+                                scissor.2 > 0 && scissor.3 > 0
+                            })
+                        {
+                            if let Some(mesh_arc) = mesh.as_ref()
+                                && let Some(mesh_gpu) = self.upload_mesh_geometry(mesh_arc)
+                                && let Some(slot) = self.alloc_mesh_uniform(
+                                    mesh_uniform_from_paint(&repose_core::PaintDesc::Solid),
+                                )
+                                && let Some((run_off, run_cnt)) =
+                                    self.alloc_mesh_instances(&[affine])
+                            {
+                                uoff = slot;
+                                ioff = run_off;
+                                icnt = run_cnt;
+                                pushed = true;
+                                current_pass.cmds.push(Cmd::VectorClipPush {
+                                    mesh: mesh_gpu.clone(),
+                                    uoff,
+                                    ioff,
+                                    icnt,
+                                    scissor,
+                                    difference: is_diff,
+                                    applied: true,
+                                });
+                                active_clips.push(ActiveClip::Vector {
+                                    mesh: Some(mesh_gpu),
+                                    source: mesh_arc.clone(),
+                                    uoff,
+                                    ioff,
+                                    icnt,
+                                    affine,
+                                    scissor,
+                                    difference: is_diff,
+                                    applied: true,
+                                    blocked,
+                                });
+                            } else {
+                                blocked = !is_diff;
+                            }
+                        } else if !is_diff {
+                            blocked = true;
+                        }
+                        if !pushed {
+                            match mesh {
+                                Some(source) => active_clips.push(ActiveClip::Vector {
+                                    mesh: None,
+                                    source,
+                                    uoff,
+                                    ioff,
+                                    icnt,
+                                    affine,
+                                    scissor,
+                                    difference: is_diff,
+                                    applied: false,
+                                    blocked,
+                                }),
+                                None => active_clips.push(ActiveClip::Rect {
+                                    off: 0,
+                                    cnt: 0,
+                                    rect: aabb,
+                                    radii: [0.0; 4],
+                                    scissor,
+                                    difference: is_diff,
+                                    applied: false,
+                                    blocked: true,
+                                }),
+                            }
+                        }
+                        current_pass.active_scissor = if blocked {
+                            None
+                        } else {
+                            (scissor.2 > 0 && scissor.3 > 0).then_some(scissor)
+                        };
+                    }
+                }
                 SceneNode::PopClip => {
                     flush_batch!();
 
@@ -10813,8 +11619,26 @@ impl WgpuSceneRenderer {
                                 applied: true,
                             });
                         }
-                        Some(ActiveClip::Vector { .. }) => {
-                            log::error!("PopClip matched a vector clip");
+                        Some(ActiveClip::Vector {
+                            mesh: Some(mesh),
+                            uoff,
+                            ioff,
+                            icnt,
+                            scissor: stencil_scissor,
+                            difference,
+                            applied,
+                            ..
+                        }) if applied && mesh.vertex_count > 0 && mesh.index_count > 0 => {
+                            current_pass.cmds.push(Cmd::VectorClipPop {
+                                mesh,
+                                uoff,
+                                ioff,
+                                icnt,
+                                scissor,
+                                stencil_scissor,
+                                difference,
+                                applied: true,
+                            });
                         }
                         None => {}
                         _ => {}

@@ -45,6 +45,7 @@ pub use crate::scroll::{
     ScrollPhysics, ScrollState, ScrollStateXY, ScrollbarStyle, run_post_scroll, run_pre_scroll,
 };
 pub use crate::semantics::{LiveRegion, ProgressRangeInfo, Role, Semantics};
+pub use crate::shape::{PathCommand, ResolvedShape, Shape, ShapePath};
 pub use crate::shared::{MovableContent, SharedElementState};
 pub use crate::shortcuts;
 pub use crate::signal::{Signal, signal};

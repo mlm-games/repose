@@ -1275,7 +1275,16 @@ impl LayoutEngine {
         let overflow_clip = modifier
             .overflow
             .is_none_or(|o| o == repose_core::Overflow::Clip);
-        if push_round_clip && overflow_clip {
+        let shape_clip = modifier.clip_shape.as_ref().filter(|_| overflow_clip);
+        let push_round_clip = push_round_clip && shape_clip.is_none();
+        if let Some(shape) = shape_clip {
+            node_hit_context = node_hit_context.with_clip(rect, ClipOp::Intersect);
+            scene.nodes.push(SceneNode::PushShapeClip {
+                rect,
+                resolved: shape_outline(shape, rect),
+                op: ClipOp::Intersect,
+            });
+        } else if push_round_clip && overflow_clip {
             node_hit_context = node_hit_context.with_clip(rect, ClipOp::Intersect);
             scene.nodes.push(SceneNode::PushClip {
                 rect,
@@ -1303,6 +1312,7 @@ impl LayoutEngine {
             && (matches!(modifier.overflow, Some(repose_core::Overflow::Clip))
                 || modifier.animate_content_size.is_some())
             && !push_round_clip
+            && shape_clip.is_none()
             && modifier.clip_rect.is_none()
             && (rect.w > 0.0 || rect.h > 0.0);
         if push_bounds_clip {
@@ -1414,11 +1424,20 @@ impl LayoutEngine {
         // Draw background (always)
         if let Some(bg) = modifier.background {
             let bg_alpha = modifier.background_alpha.unwrap_or(1.0).clamp(0.0, 1.0);
-            scene.nodes.push(SceneNode::Rect {
-                rect,
-                brush: mul_alpha_brush(bg, alpha_accum * bg_alpha),
-                radius: round_clip_px,
-            });
+            let brush = mul_alpha_brush(bg, alpha_accum * bg_alpha);
+            if let Some(shape) = &modifier.background_shape {
+                scene.nodes.push(SceneNode::ShapeRect {
+                    rect,
+                    resolved: shape_outline(shape, rect),
+                    brush,
+                });
+            } else {
+                scene.nodes.push(SceneNode::Rect {
+                    rect,
+                    brush,
+                    radius: round_clip_px,
+                });
+            }
         }
         // State layer as overlay on top (independently animated alpha).
         // Indication (ripple) owns hover/focus/press layers in M3, so controls
@@ -1452,12 +1471,22 @@ impl LayoutEngine {
         }
 
         if let Some(b) = &modifier.border {
-            scene.nodes.push(SceneNode::Border {
-                rect,
-                brush: mul_alpha_brush(b.brush, alpha_accum),
-                width: b.width.to_px(),
-                radius: round_clip_px,
-            });
+            let brush = mul_alpha_brush(b.brush, alpha_accum);
+            if let Some(shape) = &modifier.border_shape {
+                scene.nodes.push(SceneNode::ShapeBorder {
+                    rect,
+                    resolved: shape_outline(shape, rect),
+                    brush,
+                    width: b.width.to_px(),
+                });
+            } else {
+                scene.nodes.push(SceneNode::Border {
+                    rect,
+                    brush,
+                    width: b.width.to_px(),
+                    radius: round_clip_px,
+                });
+            }
         }
         // Native text field painting (Compose-aligned: text_input modifier triggers built-in paint)
         if let Some(ref ti) = modifier.text_input {
@@ -3141,6 +3170,9 @@ impl LayoutEngine {
             if push_round_clip && overflow_clip {
                 scene.nodes.push(SceneNode::PopClip);
             }
+            if shape_clip.is_some() {
+                scene.nodes.push(SceneNode::PopClip);
+            }
             if let Some(id) = layer_id
                 && let Some(shadow) = &modifier.shadow
             {
@@ -3235,6 +3267,9 @@ impl LayoutEngine {
             scene.nodes.push(SceneNode::PopClip);
         }
         if push_round_clip && overflow_clip {
+            scene.nodes.push(SceneNode::PopClip);
+        }
+        if shape_clip.is_some() {
             scene.nodes.push(SceneNode::PopClip);
         }
         if let Some(id) = layer_id
