@@ -27,6 +27,7 @@ fn drag_region(id: u64, r: Rect) -> HitRegion {
         id,
         rect: r,
         on_pointer_move: Some(Rc::new(move |_ev| *moved.borrow_mut() += 1)),
+        drag_owner: true,
         ..Default::default()
     }
 }
