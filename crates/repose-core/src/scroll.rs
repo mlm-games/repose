@@ -265,6 +265,11 @@ pub const SCROLL_DECAY_PER_60HZ: f32 = 0.85;
 pub const SCROLL_STOP_VELOCITY: f32 = 15.0;
 /// A gesture must exceed this speed (px/s) to leave a fling behind.
 pub const SCROLL_FLING_ACTIVATE_VELOCITY: f32 = 50.0;
+/// How recently the finger must have moved for its velocity to seed a fling.
+/// Compose's `VelocityTracker` computes from samples inside a 100ms horizon,
+/// so a short pause before lifting still coasts. A tighter cutoff drops the
+/// fling on any dropped frame on a busy screen.
+pub const SCROLL_RELEASE_VELOCITY_HORIZON_MS: u128 = 100;
 /// Rubber-band asymptote: overscroll never stretches past this many px.
 pub const SCROLL_OVERSROLL_BAND_MAX: f32 = 150.0;
 
@@ -465,11 +470,15 @@ impl ScrollPhysics {
         }
     }
 
-    /// A finger held still before lift must not leave a fling behind. Compose's
-    /// velocity tracker stops sampling after ~40ms and reports zero.
+    /// A finger held still before lift must not leave a fling behind. The cutoff
+    /// is Compose's velocity horizon, not the inter-sample gap: a short pause
+    /// or a dropped frame on a busy screen still coasts.
     pub(crate) fn settle_after_touch(&mut self) {
         let active = touch_gesture_active();
-        if self.touch_active && !active && self.last_input_t.elapsed().as_millis() > 40 {
+        if self.touch_active
+            && !active
+            && self.last_input_t.elapsed().as_millis() > SCROLL_RELEASE_VELOCITY_HORIZON_MS
+        {
             self.vel = 0.0;
             self.animating = false;
             self.input_pending = false;
@@ -1932,6 +1941,46 @@ mod fling_tests {
         assert!(
             st.get() > before_coast,
             "parent must coast: nested velocity reached the driven physics"
+        );
+    }
+
+    /// A brief pause before lifting (a dropped frame on a busy screen) must
+    /// still coast. Compose keeps samples for a 100ms horizon; the old 40ms
+    /// cutoff killed the fling here, which read as random loss of inertia.
+    #[test]
+    fn fling_survives_short_pause_before_lift() {
+        struct TouchGuard;
+        impl Drop for TouchGuard {
+            fn drop(&mut self) {
+                set_touch_gesture_active(false);
+            }
+        }
+        let _guard = TouchGuard;
+        set_touch_gesture_active(true);
+
+        let st = seeded();
+        for _ in 0..8 {
+            st.scroll_immediate(30.0);
+            frame();
+            st.tick();
+        }
+        let at_release = st.get();
+
+        std::thread::sleep(web_time::Duration::from_millis(60));
+        set_touch_gesture_active(false);
+        st.tick();
+
+        let mut coasted = false;
+        for _ in 0..8 {
+            frame();
+            if st.tick() {
+                coasted = true;
+            }
+        }
+        assert!(coasted, "a 60ms pause before lift must still coast");
+        assert!(
+            st.get() > at_release,
+            "fling must travel further after release"
         );
     }
 }
