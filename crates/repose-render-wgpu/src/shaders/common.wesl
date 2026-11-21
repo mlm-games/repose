@@ -5,6 +5,19 @@ struct Globals {
 
 @group(0) @binding(0) var<uniform> G: Globals;
 
+const MAX_GRADIENT_STOPS: u32 = 8u;
+
+struct ShapeGradientStops {
+    colors: array<vec4<f32>, 8>,
+    offsets: array<f32, 8>,
+    count: u32,
+    _pad: u32,
+    _pad1: u32,
+    _pad2: u32,
+};
+
+@group(1) @binding(0) var<storage, read> SHAPE_STOPS: array<ShapeGradientStops>;
+
 fn brush_type_of(bits: u32) -> u32 {
     return bits & 3u;
 }
@@ -28,6 +41,34 @@ fn apply_tile(t: f32, tile_mode: u32) -> f32 {
     return clamp(t, 0.0, 1.0);
 }
 
+fn stop_table_of(bits: u32) -> u32 {
+    return (bits >> 8u) & 0xFFFu;
+}
+
+fn eval_shape_stops(t: f32, table: u32) -> vec4<f32> {
+    let stops = SHAPE_STOPS[table];
+    let count = stops.count;
+    if count == 0u {
+        return vec4<f32>(0.0);
+    }
+    if count == 1u || t <= stops.offsets[0] {
+        return stops.colors[0];
+    }
+    let last = count - 1u;
+    if t >= stops.offsets[last] {
+        return stops.colors[last];
+    }
+    for (var i = 0u; i < last; i = i + 1u) {
+        if t < stops.offsets[i + 1u] {
+            let lo = stops.offsets[i];
+            let span = max(stops.offsets[i + 1u] - lo, 1e-6);
+            let f = clamp((t - lo) / span, 0.0, 1.0);
+            return mix(stops.colors[i], stops.colors[i + 1u], f);
+        }
+    }
+    return stops.colors[last];
+}
+
 fn eval_brush_px(
     color0: vec4<f32>,
     color1: vec4<f32>,
@@ -41,22 +82,29 @@ fn eval_brush_px(
     let tile_mode = tile_mode_of(bits);
     let grad_p0 = grad.xy;
     let grad_p1 = grad.zw;
-    if grad_kind_of(bits) == 1u {
+    let kind = grad_kind_of(bits);
+    var t: f32;
+    if kind == 1u {
         let d = distance(local_px, grad_p0);
         let radius = max(grad_p1.x, 1e-3);
-        return mix(color0, color1, apply_tile(d / radius, tile_mode));
-    }
-    if grad_kind_of(bits) == 2u {
+        t = d / radius;
+    } else if kind == 2u {
         let rel = local_px - grad_p0;
         var frac = atan2(rel.y, rel.x) / 6.2831853;
         if frac < 0.0 {
             frac += 1.0;
         }
-        return mix(color0, color1, apply_tile(frac, tile_mode));
+        t = frac;
+    } else {
+        let dir = grad_p1 - grad_p0;
+        let len2 = max(dot(dir, dir), 1e-6);
+        t = dot(local_px - grad_p0, dir) / len2;
     }
-    let dir = grad_p1 - grad_p0;
-    let len2 = max(dot(dir, dir), 1e-6);
-    return mix(color0, color1, apply_tile(dot(local_px - grad_p0, dir) / len2, tile_mode));
+    t = apply_tile(t, tile_mode);
+    if brush_type_of(bits) == 2u {
+        return eval_shape_stops(t, stop_table_of(bits));
+    }
+    return mix(color0, color1, t);
 }
 
 fn corner_radius(p: vec2<f32>, r: vec4<f32>) -> f32 {

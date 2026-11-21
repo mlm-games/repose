@@ -10,8 +10,8 @@ use std::sync::{Arc, Mutex, Weak};
 use repose_core::color::{ChromaSiting, ColorInfo, PixelFormat};
 use repose_core::{
     Brush, FontStyle, GradientStops, ImageAlignment, ImageFilter, ImageFit, ImagePaintStyle,
-    ImageSourceRect, MAX_GRADIENT_STOPS, Scene, SceneNode, StrokeCap, TextPaintStyle, Transform,
-    Vec2,
+    ImageSourceRect, MAX_GRADIENT_STOPS, Scene, SceneNode, StrokeCap, TextPaintStyle, TileMode,
+    Transform, Vec2,
 };
 #[cfg(feature = "winit-surface")]
 use repose_core::{GlyphRasterConfig, PresentModePref, RenderBackend, request_frame};
@@ -210,6 +210,33 @@ fn make_globals(target_w: f32, target_h: f32) -> Globals {
     }
 }
 
+const MAX_SHAPE_GRADIENT_TABLES: u32 = 4096;
+
+/// Storage-table entry matching `ShapeGradientStops` in common.wesl.
+#[repr(C, align(16))]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct ShapeGradientStopsGpu {
+    colors: [[f32; 4]; 8],
+    offsets: [f32; 8],
+    count: u32,
+    _pad: [u32; 3],
+}
+
+impl ShapeGradientStopsGpu {
+    fn from_stops(stops: &repose_core::GradientStops) -> Self {
+        let mut out = Self::zeroed();
+        let packed = pack_gradient_stops(stops);
+        for (slot, color) in out.colors.iter_mut().zip(packed.0.iter()) {
+            *slot = *color;
+        }
+        for (slot, group) in out.offsets.chunks_exact_mut(4).zip(packed.1.iter()) {
+            slot.copy_from_slice(group);
+        }
+        out.count = packed.2.min(repose_core::MAX_GRADIENT_STOPS as u32);
+        out
+    }
+}
+
 pub struct WgpuSceneRenderer {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
@@ -333,6 +360,9 @@ pub struct WgpuSceneRenderer {
     globals_bind: wgpu::BindGroup,
     globals_staging: wgpu::Buffer,
     globals_staging_cap: u64,
+
+    shape_stops_buf: wgpu::Buffer,
+    shape_stops_bind: wgpu::BindGroup,
 
     // Glyph atlas
     atlas_mask: AtlasA8,
@@ -730,6 +760,7 @@ struct Pipelines {
     /// `FIXED_FUNCTION_BLENDS`.
     image_nv12_blends: [wgpu::RenderPipeline; FIXED_FUNCTION_BLENDS.len()],
     blur: wgpu::RenderPipeline,
+    inset_shadow: wgpu::RenderPipeline,
     blur_content: wgpu::RenderPipeline,
     clip_bin: wgpu::RenderPipeline,
     clip_dec: wgpu::RenderPipeline,
@@ -787,6 +818,7 @@ impl Pipelines {
         format: wgpu::TextureFormat,
         sample_count: u32,
         globals_layout: &wgpu::BindGroupLayout,
+        shape_stops_layout: &wgpu::BindGroupLayout,
         text_bind_layout: &wgpu::BindGroupLayout,
         image_bind_layout_nv12: &wgpu::BindGroupLayout,
         clip_pipeline_layout: &wgpu::PipelineLayout,
@@ -816,7 +848,7 @@ impl Pipelines {
                 let pipeline_layout =
                     device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                         label: Some(concat!($shader, " pipeline layout")),
-                        bind_group_layouts: &[Some(globals_layout)],
+                        bind_group_layouts: &[Some(globals_layout), Some(shape_stops_layout)],
                         immediate_size: 0,
                     });
                 let $name = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -1283,6 +1315,32 @@ impl Pipelines {
             fragment: Some(wgpu::FragmentState {
                 module: &blur_shader,
                 entry_point: Some("fs_alpha"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: Some(stencil_for_content.clone()),
+            multisample: msaa_state,
+            multiview_mask: None,
+            cache: None,
+        });
+
+        let inset_shadow = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("inset shadow pipeline"),
+            layout: Some(&blur_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &blur_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[Some(blur_layout.clone())],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &blur_shader,
+                entry_point: Some("fs_inset"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format,
                     blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
@@ -1775,6 +1833,7 @@ impl Pipelines {
             image_nv12_blends,
             coverage,
             blur,
+            inset_shadow,
             blur_content,
             clip_bin,
             clip_dec,
@@ -2016,6 +2075,9 @@ enum Cmd {
         off: u64,
         cnt: u32,
         layer_id: u32,
+        /// Silhouette growth in px, already baked into the instance quad.
+        spread_px: f32,
+        inset: bool,
     },
     /// Separable gaussian blur over full RGBA, for `Modifier::blur`. Two
     /// stages exactly like [`Cmd::CompositeShadow`].
@@ -3184,6 +3246,35 @@ impl WgpuSceneRenderer {
             mapped_at_creation: false,
         });
 
+        let shape_stops_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("shape gradient stops layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+        let shape_stops_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("shape gradient stops"),
+            size: (MAX_SHAPE_GRADIENT_TABLES as u64)
+                * (std::mem::size_of::<ShapeGradientStopsGpu>() as u64),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let shape_stops_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("shape gradient stops bind"),
+            layout: &shape_stops_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: shape_stops_buf.as_entire_binding(),
+            }],
+        });
+
         let ds_format = wgpu::TextureFormat::Depth24PlusStencil8;
 
         let stencil_for_content = wgpu::DepthStencilState {
@@ -3479,6 +3570,7 @@ impl WgpuSceneRenderer {
             output_format,
             msaa_samples,
             &globals_layout,
+            &shape_stops_layout,
             &text_bind_layout,
             &image_bind_layout_nv12,
             &clip_pipeline_layout,
@@ -3493,6 +3585,7 @@ impl WgpuSceneRenderer {
             wgpu::TextureFormat::Rgba16Float,
             working_space_msaa_samples,
             &globals_layout,
+            &shape_stops_layout,
             &text_bind_layout,
             &image_bind_layout_nv12,
             &clip_pipeline_layout,
@@ -3510,6 +3603,7 @@ impl WgpuSceneRenderer {
                 output_format,
                 1,
                 &globals_layout,
+                &shape_stops_layout,
                 &text_bind_layout,
                 &image_bind_layout_nv12,
                 &clip_pipeline_layout,
@@ -3528,6 +3622,7 @@ impl WgpuSceneRenderer {
                 wgpu::TextureFormat::Rgba16Float,
                 1,
                 &globals_layout,
+                &shape_stops_layout,
                 &text_bind_layout,
                 &image_bind_layout_nv12,
                 &clip_pipeline_layout,
@@ -3784,6 +3879,8 @@ impl WgpuSceneRenderer {
             globals_buf,
             globals_staging,
             globals_staging_cap,
+            shape_stops_buf,
+            shape_stops_bind,
 
             atlas_mask,
             atlas_color,
@@ -6402,6 +6499,7 @@ impl WgpuSceneRenderer {
         slot: u32,
         sigma: [f32; 2],
         pad: (f32, f32),
+        spread: (f32, f32),
         edge_mode: u32,
         alpha_only: bool,
         shape: [f32; 4],
@@ -6410,34 +6508,42 @@ impl WgpuSceneRenderer {
         next_pass_id: &mut u64,
         encoder: &mut wgpu::CommandEncoder,
     ) -> Option<u32> {
-        let scratch_id = self.acquire_blur_scratch(source_layer, slot, pad)?;
-        let (scratch_w, scratch_h, source_w, source_h) = {
-            let scratch = self.layer_pool.get(&scratch_id)?;
+        let (source_w, source_h) = {
             let source = self.layer_pool.get(&source_layer)?;
-            (
-                scratch.width,
-                scratch.height,
-                source.width as f32,
-                source.height as f32,
-            )
+            (source.width as f32, source.height as f32)
         };
-        // The quad covers the whole scratch, and scratch texel (x, y) samples
-        // the source at (x - pad_x, y - pad_y). Padding texels therefore land
-        // outside the source's 0..1, and `edge_mode` decides whether that
-        // contributes nothing (decal, correct for a shadow) or clamps to the
-        // edge texel (the `Modifier::blur` clamp edge treatment).
+        // Spread grows the silhouette before blurring: the source is sampled
+        // into an `expanded` region, still surrounded by `pad` texels of blur
+        // room. Scaling sigma by source/expanded keeps the on-screen blur
+        // radius (and therefore `pad`) unchanged.
+        let spread_x = spread.0.max(-pad.0).max((1.0 - source_w) * 0.5);
+        let spread_y = spread.1.max(-pad.1).max((1.0 - source_h) * 0.5);
+        let expanded_w = (source_w + 2.0 * spread_x).max(1.0);
+        let expanded_h = (source_h + 2.0 * spread_y).max(1.0);
+        let alloc_pad = (pad.0 + spread_x, pad.1 + spread_y);
+        let scratch_id = self.acquire_blur_scratch(source_layer, slot, alloc_pad)?;
+        let (scratch_w, scratch_h) = {
+            let scratch = self.layer_pool.get(&scratch_id)?;
+            (scratch.width, scratch.height)
+        };
+        // Scratch texel (x, y) samples the source at (x - pad) / expanded, so
+        // the grown silhouette occupies exactly `expanded` texels in the
+        // middle of the scratch and the padding still falls outside 0..1.
         let uv = [
-            -pad.0 / source_w,
-            -pad.1 / source_h,
-            1.0 + pad.0 / source_w,
-            1.0 + pad.1 / source_h,
+            -pad.0 / expanded_w,
+            -pad.1 / expanded_h,
+            1.0 + pad.0 / expanded_w,
+            1.0 + pad.1 / expanded_h,
         ];
         let ndc = [-1.0, -1.0, 2.0, 2.0];
         let inst = BlurInstance {
             xywh: [ndc[0] + ndc[2] * 0.5, ndc[1] + ndc[3] * 0.5, ndc[2], ndc[3]],
             uv,
             color: [1.0, 1.0, 1.0, 1.0],
-            sigma_px: sigma,
+            sigma_px: [
+                sigma[0] * source_w / expanded_w,
+                sigma[1] * source_h / expanded_h,
+            ],
             fwd_mat: [1.0, 0.0, 0.0, 1.0],
             axis: 0,
             edge_mode,
@@ -6448,6 +6554,8 @@ impl WgpuSceneRenderer {
                 off,
                 cnt: 1,
                 layer_id: source_layer,
+                spread_px: 0.0,
+                inset: false,
             },
             Some(off) => Cmd::CompositeBlur {
                 off,
@@ -7316,6 +7424,45 @@ fn pack_shape_bits(brush_type: u32, grad_kind: u32, tile_mode: u32, cap: u32) ->
     (brush_type & 3) | ((grad_kind & 3) << 2) | ((tile_mode & 3) << 4) | ((cap & 3) << 6)
 }
 
+fn tile_mode_bits(mode: TileMode) -> u32 {
+    match mode {
+        TileMode::Clamp => 0,
+        TileMode::Repeated => 1,
+        TileMode::Mirror => 2,
+    }
+}
+
+fn pack_shape_bits_with_stops(
+    brush_type: u32,
+    grad_kind: u32,
+    tile_mode: u32,
+    cap: u32,
+    stop_table: u32,
+) -> u32 {
+    pack_shape_bits(brush_type, grad_kind, tile_mode, cap) | ((stop_table & 0xFFF) << 8)
+}
+
+fn push_shape_stops(tables: &mut Vec<ShapeGradientStopsGpu>, stops: &GradientStops) -> u32 {
+    let id = tables.len() as u32;
+    if id < MAX_SHAPE_GRADIENT_TABLES {
+        tables.push(ShapeGradientStopsGpu::from_stops(stops));
+        id
+    } else {
+        0
+    }
+}
+
+fn stop_endpoints(stops: &GradientStops) -> ([f32; 4], [f32; 4]) {
+    let slice = stops.as_slice();
+    match slice.first() {
+        Some(first) => (
+            first.color.to_linear(),
+            slice.last().map(|s| s.color.to_linear()).unwrap_or(first.color.to_linear()),
+        ),
+        None => ([0.0; 4], [0.0; 4]),
+    }
+}
+
 /// Packed brush fields shared by the shape instances (border, ellipse,
 /// ellipse border, arc). Gradient endpoints are shape-local px; the shaders
 /// recenter `(0,0)` at the shape top-left. Radial packs `center` into
@@ -7333,7 +7480,8 @@ fn brush_to_shape_fields(
     brush: &Brush,
     rect: &repose_core::Rect,
     transform: &Transform,
-) -> (u32, u32, [f32; 4], [f32; 4], [f32; 2], [f32; 2], u32) {
+    stop_tables: &mut Vec<ShapeGradientStopsGpu>,
+) -> (u32, u32, [f32; 4], [f32; 4], [f32; 2], [f32; 2], u32, u32) {
     let to_local = |p: Vec2| {
         let m = transform.linear();
         let det = m[0] * m[3] - m[1] * m[2];
@@ -7354,6 +7502,7 @@ fn brush_to_shape_fields(
             [0.0; 2],
             [0.0; 2],
             0u32,
+            0u32,
         ),
         Brush::Linear {
             start,
@@ -7367,6 +7516,7 @@ fn brush_to_shape_fields(
             end_color.to_linear(),
             to_local(*start),
             to_local(*end),
+            0u32,
             0u32,
         ),
         Brush::LinearNormalized {
@@ -7388,6 +7538,7 @@ fn brush_to_shape_fields(
                 y: end.y * rect.h,
             }),
             0u32,
+            0u32,
         ),
         Brush::Radial {
             center,
@@ -7402,6 +7553,7 @@ fn brush_to_shape_fields(
             to_local(*center),
             [radius.max(0.0), 0.0],
             0u32,
+            0u32,
         ),
         Brush::Sweep {
             center,
@@ -7415,8 +7567,92 @@ fn brush_to_shape_fields(
             to_local(*center),
             [0.0, 0.0],
             0u32,
+            0u32,
         ),
-        _ => (0u32, 0u32, [0.0; 4], [0.0; 4], [0.0; 2], [0.0; 2], 0u32),
+        Brush::LinearStops {
+            start,
+            end,
+            stops,
+            tile_mode,
+        } => {
+            let id = push_shape_stops(stop_tables, stops);
+            let (color0, color1) = stop_endpoints(stops);
+            (
+                2u32,
+                0u32,
+                color0,
+                color1,
+                to_local(*start),
+                to_local(*end),
+                tile_mode_bits(*tile_mode),
+                id,
+            )
+        }
+        Brush::LinearNormalizedStops {
+            start,
+            end,
+            stops,
+            tile_mode,
+        } => {
+            let id = push_shape_stops(stop_tables, stops);
+            let (color0, color1) = stop_endpoints(stops);
+            (
+                2u32,
+                0u32,
+                color0,
+                color1,
+                to_local(Vec2 {
+                    x: start.x * rect.w,
+                    y: start.y * rect.h,
+                }),
+                to_local(Vec2 {
+                    x: end.x * rect.w,
+                    y: end.y * rect.h,
+                }),
+                tile_mode_bits(*tile_mode),
+                id,
+            )
+        }
+        Brush::RadialStops {
+            center,
+            radius,
+            stops,
+            tile_mode,
+        } => {
+            let id = push_shape_stops(stop_tables, stops);
+            let (color0, color1) = stop_endpoints(stops);
+            (
+                2u32,
+                1u32,
+                color0,
+                color1,
+                to_local(*center),
+                [radius.max(0.0), 0.0],
+                tile_mode_bits(*tile_mode),
+                id,
+            )
+        }
+        Brush::SweepStops {
+            center,
+            stops,
+            tile_mode,
+        } => {
+            let id = push_shape_stops(stop_tables, stops);
+            let (color0, color1) = stop_endpoints(stops);
+            (
+                2u32,
+                2u32,
+                color0,
+                color1,
+                to_local(*center),
+                [0.0, 0.0],
+                tile_mode_bits(*tile_mode),
+                id,
+            )
+        }
+        _ => (
+            0u32, 0u32, [0.0; 4], [0.0; 4], [0.0; 2], [0.0; 2], 0u32, 0u32,
+        ),
     }
 }
 
@@ -7467,6 +7703,15 @@ fn brush_to_instance_fields(brush: &Brush) -> (u32, [f32; 4], [f32; 4], [f32; 2]
             [0.0, 0.0],
             [0.0, 1.0],
         ),
+        Brush::LinearStops { start, end, stops, .. }
+        | Brush::LinearNormalizedStops { start, end, stops, .. } => {
+            let (color0, color1) = stop_endpoints(stops);
+            (1u32, color0, color1, [start.x, start.y], [end.x, end.y])
+        }
+        Brush::RadialStops { stops, .. } | Brush::SweepStops { stops, .. } => {
+            let (color0, _) = stop_endpoints(stops);
+            (0u32, color0, [0.0; 4], [0.0, 0.0], [0.0, 1.0])
+        }
         _ => (0u32, [0.0; 4], [0.0; 4], [0.0; 2], [0.0; 2]),
     }
 }
@@ -7481,6 +7726,10 @@ fn brush_to_solid_color(brush: &Brush) -> [f32; 4] {
         Brush::LinearNormalized { start_color, .. } => start_color.to_linear(),
         Brush::Radial { start_color, .. } => start_color.to_linear(),
         Brush::Sweep { start_color, .. } => start_color.to_linear(),
+        Brush::LinearStops { stops, .. }
+        | Brush::LinearNormalizedStops { stops, .. }
+        | Brush::RadialStops { stops, .. }
+        | Brush::SweepStops { stops, .. } => stop_endpoints(stops).0,
         _ => [0.0; 4],
     }
 }
@@ -9371,6 +9620,7 @@ impl WgpuSceneRenderer {
         };
 
         let mut current_prim: Option<&'static str> = None;
+        let mut shape_stops: Vec<ShapeGradientStopsGpu> = Vec::new();
 
         macro_rules! flush_if_prim_changed {
             ($prim:literal, $pipe:expr) => {
@@ -9659,8 +9909,8 @@ impl WgpuSceneRenderer {
                         current_target_size.0,
                         current_target_size.1,
                     );
-                    let (brush_type, grad_kind, color0, color1, grad_p0, grad_p1, tile_mode) =
-                        brush_to_shape_fields(brush, rect, current_transform);
+                    let (brush_type, grad_kind, color0, color1, grad_p0, grad_p1, tile_mode, stop_table) =
+                        brush_to_shape_fields(brush, rect, current_transform, &mut shape_stops);
                     batch.rects.push(RectInstance {
                         xywh: ndc,
                         radii: radius.map(|r| r.0),
@@ -9668,7 +9918,13 @@ impl WgpuSceneRenderer {
                         color1,
                         fwd_mat,
                         grad: [grad_p0[0], grad_p0[1], grad_p1[0], grad_p1[1]],
-                        bits: pack_shape_bits(brush_type, grad_kind, tile_mode, 0),
+                        bits: pack_shape_bits_with_stops(
+                            brush_type,
+                            grad_kind,
+                            tile_mode,
+                            0,
+                            stop_table,
+                        ),
                         _pad: [0.0; 3],
                     });
                 }
@@ -9689,8 +9945,8 @@ impl WgpuSceneRenderer {
                         current_target_size.0,
                         current_target_size.1,
                     );
-                    let (brush_type, grad_kind, color0, color1, grad_p0, grad_p1, tile_mode) =
-                        brush_to_shape_fields(brush, rect, current_transform);
+                    let (brush_type, grad_kind, color0, color1, grad_p0, grad_p1, tile_mode, stop_table) =
+                        brush_to_shape_fields(brush, rect, current_transform, &mut shape_stops);
                     batch.borders.push(BorderInstance {
                         xywh: ndc,
                         radii: radius.map(|r| r.0),
@@ -9698,7 +9954,13 @@ impl WgpuSceneRenderer {
                         color1,
                         fwd_mat,
                         grad: [grad_p0[0], grad_p0[1], grad_p1[0], grad_p1[1]],
-                        bits: pack_shape_bits(brush_type, grad_kind, tile_mode, 0),
+                        bits: pack_shape_bits_with_stops(
+                            brush_type,
+                            grad_kind,
+                            tile_mode,
+                            0,
+                            stop_table,
+                        ),
                         stroke: width.0,
                         _pad: [0.0; 2],
                     });
@@ -9715,15 +9977,21 @@ impl WgpuSceneRenderer {
                         current_target_size.0,
                         current_target_size.1,
                     );
-                    let (brush_type, grad_kind, color0, color1, grad_p0, grad_p1, tile_mode) =
-                        brush_to_shape_fields(brush, rect, current_transform);
+                    let (brush_type, grad_kind, color0, color1, grad_p0, grad_p1, tile_mode, stop_table) =
+                        brush_to_shape_fields(brush, rect, current_transform, &mut shape_stops);
                     batch.ellipses.push(EllipseInstance {
                         xywh: ndc,
                         color0,
                         color1,
                         fwd_mat,
                         grad: [grad_p0[0], grad_p0[1], grad_p1[0], grad_p1[1]],
-                        bits: pack_shape_bits(brush_type, grad_kind, tile_mode, 0),
+                        bits: pack_shape_bits_with_stops(
+                            brush_type,
+                            grad_kind,
+                            tile_mode,
+                            0,
+                            stop_table,
+                        ),
                         _pad: [0.0; 1],
                     });
                 }
@@ -9748,15 +10016,21 @@ impl WgpuSceneRenderer {
                     );
                     let pad_px = width.0 * 0.5 + 2.0;
                     let pad = (pad_px / current_target_size.0.max(1.0)) * 2.0;
-                    let (brush_type, grad_kind, color0, color1, grad_p0, grad_p1, tile_mode) =
-                        brush_to_shape_fields(brush, rect, current_transform);
+                    let (brush_type, grad_kind, color0, color1, grad_p0, grad_p1, tile_mode, stop_table) =
+                        brush_to_shape_fields(brush, rect, current_transform, &mut shape_stops);
                     batch.e_borders.push(EllipseBorderInstance {
                         xywh: ndc,
                         color0,
                         color1,
                         fwd_mat,
                         grad: [grad_p0[0], grad_p0[1], grad_p1[0], grad_p1[1]],
-                        bits: pack_shape_bits(brush_type, grad_kind, tile_mode, 0),
+                        bits: pack_shape_bits_with_stops(
+                            brush_type,
+                            grad_kind,
+                            tile_mode,
+                            0,
+                            stop_table,
+                        ),
                         stroke: width.0,
                         pad,
                         _pad: 0.0,
@@ -9809,8 +10083,8 @@ impl WgpuSceneRenderer {
                         StrokeCap::Round => 1.0,
                         StrokeCap::Square => 2.0,
                     };
-                    let (brush_type, grad_kind, color0, color1, grad_p0, grad_p1, tile_mode) =
-                        brush_to_shape_fields(brush, rect, current_transform);
+                    let (brush_type, grad_kind, color0, color1, grad_p0, grad_p1, tile_mode, stop_table) =
+                        brush_to_shape_fields(brush, rect, current_transform, &mut shape_stops);
                     let (start, sweep) = if *sweep_angle < 0.0 {
                         (*start_angle + *sweep_angle, -*sweep_angle)
                     } else {
@@ -9822,7 +10096,13 @@ impl WgpuSceneRenderer {
                         color1,
                         fwd_mat,
                         grad: [grad_p0[0], grad_p0[1], grad_p1[0], grad_p1[1]],
-                        bits: pack_shape_bits(brush_type, grad_kind, tile_mode, cap_val as u32),
+                        bits: pack_shape_bits_with_stops(
+                            brush_type,
+                            grad_kind,
+                            tile_mode,
+                            cap_val as u32,
+                            stop_table,
+                        ),
                         start_angle: start,
                         sweep_angle: sweep,
                         stroke: stroke_width.0,
@@ -10750,6 +11030,7 @@ impl WgpuSceneRenderer {
                             BLUR_SLOT_CONTENT,
                             sigma,
                             (pad_x, pad_y),
+                            (0.0, 0.0),
                             edge_mode,
                             false,
                             [0.0; 4],
@@ -10822,9 +11103,12 @@ impl WgpuSceneRenderer {
                     offset_px,
                     color,
                     shape_px,
+                    spread_px,
+                    inset,
                 } => {
                     let sigma = blur_sigma(blur_px.0);
                     let pad = blur_pad(blur_px.0);
+                    let spread = spread_px.0;
                     let layer = self.layer_pool.get(layer_id).cloned();
                     if let Some(layer) = layer {
                         let layer_rect = repose_core::Rect {
@@ -10835,11 +11119,13 @@ impl WgpuSceneRenderer {
                         };
                         let local_layer_rect =
                             affine_aabb(transform_stack.last().unwrap_or(&t_identity), &layer_rect);
-                        let sx = local_layer_rect.x + offset_px.0.0 - pad;
-                        let sy = local_layer_rect.y + offset_px.1.0 - pad;
-                        let sw = local_layer_rect.w + pad * 2.0;
-                        let sh = local_layer_rect.h + pad * 2.0;
-                        let clip = scissor_stack.last().copied().unwrap_or(root_clip_rect);
+                        let spread_x = spread.max(-pad).max((1.0 - local_layer_rect.w) * 0.5);
+                        let spread_y = spread.max(-pad).max((1.0 - local_layer_rect.h) * 0.5);
+                        let sx = local_layer_rect.x + offset_px.0.0 - spread_x - pad;
+                        let sy = local_layer_rect.y + offset_px.1.0 - spread_y - pad;
+                        let sw = local_layer_rect.w + 2.0 * (spread_x + pad);
+                        let sh = local_layer_rect.h + 2.0 * (spread_y + pad);
+                        let top_clip = scissor_stack.last().copied().unwrap_or(root_clip_rect);
                         if !visible(
                             repose_core::Rect {
                                 x: sx,
@@ -10847,8 +11133,9 @@ impl WgpuSceneRenderer {
                                 w: sw,
                                 h: sh,
                             },
-                            clip,
-                        ) {
+                            top_clip,
+                        ) || (*inset && !visible(local_layer_rect, top_clip))
+                        {
                             flush_pending_layer!();
                             continue;
                         }
@@ -10864,6 +11151,7 @@ impl WgpuSceneRenderer {
                             BLUR_SLOT_SHADOW,
                             [sigma, sigma],
                             (pad, pad),
+                            (spread_x, spread_y),
                             1,
                             true,
                             shape,
@@ -10897,11 +11185,87 @@ impl WgpuSceneRenderer {
                                 shape: [0.0; 4],
                             };
                             if let Some(off) = self.upload_blur_instance(&inst, encoder) {
-                                current_pass.cmds.push(Cmd::CompositeShadow {
-                                    off,
-                                    cnt: 1,
-                                    layer_id: scratch_id,
-                                });
+                                if *inset {
+                                    // Inverted alpha is only meaningful inside
+                                    // the silhouette, so clip to the unexpanded
+                                    // layer shape for the duration of this draw.
+                                    let inner = intersect(top_clip, local_layer_rect);
+                                    let inner_scissor = to_scissor(
+                                        &inner,
+                                        current_target_size.0 as u32,
+                                        current_target_size.1 as u32,
+                                    );
+                                    let outer_scissor = to_scissor(
+                                        &top_clip,
+                                        current_target_size.0 as u32,
+                                        current_target_size.1 as u32,
+                                    );
+                                    if inner_scissor.2 > 0
+                                        && inner_scissor.3 > 0
+                                        && current_pass.active_scissor.is_some()
+                                    {
+                                        let clip_ndc = to_ndc(
+                                            local_layer_rect.x,
+                                            local_layer_rect.y,
+                                            local_layer_rect.w,
+                                            local_layer_rect.h,
+                                            current_target_size.0,
+                                            current_target_size.1,
+                                        );
+                                        let clip_inst = ClipInstance {
+                                            xywh: [
+                                                clip_ndc[0] + clip_ndc[2] * 0.5,
+                                                clip_ndc[1] + clip_ndc[3] * 0.5,
+                                                clip_ndc[2],
+                                                clip_ndc[3],
+                                            ],
+                                            radii: shape,
+                                            fwd_mat: [1.0, 0.0, 0.0, 1.0],
+                                        };
+                                        let bytes = bytemuck::bytes_of(&clip_inst);
+                                        if self
+                                            .clip_ring
+                                            .grow_to_fit(&self.device, encoder, bytes.len() as u64)
+                                            .is_ok()
+                                            && let Ok(co) =
+                                                self.clip_ring.alloc_write(&self.queue, bytes)
+                                        {
+                                            let saved_scissor = current_pass.active_scissor;
+                                            current_pass.cmds.push(Cmd::ClipPush {
+                                                off: co,
+                                                cnt: 1,
+                                                scissor: inner_scissor,
+                                                difference: false,
+                                                applied: true,
+                                            });
+                                            current_pass.active_scissor = Some(inner_scissor);
+                                            current_pass.cmds.push(Cmd::CompositeShadow {
+                                                off,
+                                                cnt: 1,
+                                                layer_id: scratch_id,
+                                                spread_px: spread,
+                                                inset: true,
+                                            });
+                                            current_pass.cmds.push(Cmd::ClipPop {
+                                                off: co,
+                                                cnt: 1,
+                                                scissor: outer_scissor,
+                                                stencil_scissor: inner_scissor,
+                                                difference: false,
+                                                applied: true,
+                                            });
+                                            current_pass.active_scissor = saved_scissor;
+                                        }
+                                    }
+                                } else {
+                                    current_pass.cmds.push(Cmd::CompositeShadow {
+                                        off,
+                                        cnt: 1,
+                                        layer_id: scratch_id,
+                                        spread_px: spread,
+                                        inset: false,
+                                    });
+                                }
                             }
                         }
                     }
@@ -11212,6 +11576,11 @@ impl WgpuSceneRenderer {
         flush_pending_layer!();
         flush_batch!();
         passes.push(current_pass);
+
+        if !shape_stops.is_empty() {
+            self.queue
+                .write_buffer(&self.shape_stops_buf, 0, bytemuck::cast_slice(&shape_stops));
+        }
 
         {
             let mut seen: std::collections::HashSet<usize> = std::collections::HashSet::new();
@@ -11671,6 +12040,7 @@ impl WgpuSceneRenderer {
             macro_rules! draw_simple {
                 ($pipeline:expr, $ring:expr, $inst:ty, $off:ident, $n:ident) => {{
                     rpass.set_pipeline($pipeline);
+                    rpass.set_bind_group(1, &self.shape_stops_bind, &[]);
                     let bytes = ($n as u64) * std::mem::size_of::<$inst>() as u64;
                     rpass.set_vertex_buffer(0, $ring.buf.slice($off..$off + bytes));
                     rpass.draw(0..6, 0..$n);
@@ -11940,10 +12310,16 @@ impl WgpuSceneRenderer {
                         off,
                         cnt: n,
                         layer_id,
+                        spread_px: _,
+                        inset,
                     } => {
                         if let Some(lt) = self.layer_pool.get(&layer_id).cloned() {
                             draw_with_bind!(
-                                &pipes.blur,
+                                if inset {
+                                    &pipes.inset_shadow
+                                } else {
+                                    &pipes.blur
+                                },
                                 self.blur_ring,
                                 BlurInstance,
                                 &lt.bind_linear,

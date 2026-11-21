@@ -163,3 +163,12 @@ fn fs_color(in: VSOut) -> @location(0) vec4<f32> {
     let blurred = blur_axis(in);
     return vec4<f32>(blurred.rgb * in.color.a, blurred.a * in.color.a);
 }
+
+/// Inner-shadow variant of `fs_alpha`: the caller clips the quad to the
+/// silhouette, so inverting the blurred coverage leaves the shadow only along
+/// the inside edge (and on the side opposite `offset_px`).
+@fragment
+fn fs_inset(in: VSOut) -> @location(0) vec4<f32> {
+    let alpha = (1.0 - blur_axis(in).a) * in.color.a;
+    return vec4<f32>(in.color.rgb * alpha, alpha);
+}
