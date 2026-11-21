@@ -297,7 +297,7 @@ pub fn ModalBottomSheet(
     let current_modifier = remember_state_with_key(format!("mbs_mod_{mbs_id}"), Modifier::new);
     *current_modifier.borrow_mut() = modifier;
     let current_config = remember_state_with_key(format!("mbs_cfg_{mbs_id}"), || config.clone());
-    *current_config.borrow_mut() = config;
+    *current_config.borrow_mut() = config.clone();
 
     // Drag state -> offset_at_drag_start is the anim value when the drag began
     let drag_anchor_y: Rc<RefCell<f32>> =
