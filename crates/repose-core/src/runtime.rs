@@ -1877,17 +1877,23 @@ impl Scheduler {
         let root = guard.scope.run(|| build_root(self));
         let (scene, hits, sem) = layout_paint(&root, self.size);
 
-        let focus_chain: Vec<u64> = match take_focus_order() {
-            Some(order) => {
-                let focusable: FxHashSet<u64> =
-                    hits.iter().filter(|h| h.focusable).map(|h| h.id).collect();
-                order
-                    .into_iter()
-                    .filter(|id| focusable.contains(id))
-                    .collect()
-            }
-            None => hits.iter().filter(|h| h.focusable).map(|h| h.id).collect(),
+        let focusable: FxHashSet<u64> = hits.iter().filter(|h| h.focusable).map(|h| h.id).collect();
+        let mut focus_chain: Vec<u64> = match take_focus_order() {
+            Some(order) => order
+                .into_iter()
+                .filter(|id| focusable.contains(id))
+                .collect(),
+            None => Vec::new(),
         };
+        // A focusable view painted through a path that did not contribute to the
+        // captured order (overlay, deferred subtree, repaint-boundary replay)
+        // must still be reachable. Otherwise the focused id is pruned from the
+        // chain on the next frame, which drops focus and hides the IME.
+        for hit in &hits {
+            if hit.focusable && !focus_chain.contains(&hit.id) {
+                focus_chain.push(hit.id);
+            }
+        }
 
         let live_scope_keys = guard.live_scope_keys();
         let frame = Frame {
