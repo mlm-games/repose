@@ -81,9 +81,7 @@ impl WebGamepads {
         let mut live = Vec::new();
 
         for index in 0..pads.length() {
-            let Some(value) = pads.get(index) else {
-                continue;
-            };
+            let value = pads.get(index);
             let Ok(pad) = value.dyn_into::<Gamepad>() else {
                 continue;
             };
@@ -163,9 +161,7 @@ fn read_pad(pad: &Gamepad) -> PadState {
     let mut state = PadState::default();
     let buttons = pad.buttons();
     for slot in 0..BUTTON_COUNT.min(buttons.length() as usize) {
-        let Some(value) = buttons.get(slot as u32) else {
-            continue;
-        };
+        let value = buttons.get(slot as u32);
         let Ok(button) = value.dyn_into::<WebGamepadButton>() else {
             continue;
         };
@@ -173,9 +169,7 @@ fn read_pad(pad: &Gamepad) -> PadState {
     }
     let axes = pad.axes();
     for slot in 0..AXIS_COUNT.min(axes.length() as usize) {
-        let Some(value) = axes.get(slot as u32) else {
-            continue;
-        };
+        let value = axes.get(slot as u32);
         state.axes[slot] = value.as_f64().unwrap_or(0.0) as f32;
     }
     state
