@@ -267,6 +267,12 @@ pub struct ReposeRuntime {
     key_long_press: HashMap<Key, (u64, web_time::Instant, bool)>,
     suppress_next_click: bool,
     pending_click: Option<(u64, web_time::Instant, Rc<dyn Fn()>)>,
+    /// Focus candidate from a press on a non-text focusable. Compose moves
+    /// focus to a clickable on click (pointer-up), not on pointer-down: doing
+    /// it on down steals focus from a focused TextField the moment the gesture
+    /// might become a scroll, hiding the soft keyboard. Applied on release
+    /// only when the press was a tap, dropped when it became a drag.
+    pending_focus_on_click: Option<u64>,
 
     pub frame_cache: Option<Rc<Frame>>,
 
@@ -342,6 +348,7 @@ impl ReposeRuntime {
             key_long_press: HashMap::new(),
             suppress_next_click: false,
             pending_click: None,
+            pending_focus_on_click: None,
             frame_cache: None,
             cursor: None,
             frame_cursor_override: None,
@@ -976,6 +983,7 @@ impl ReposeRuntime {
                     self.touch_primary = None;
                     self.double_candidate = None;
                     self.pending_click = None;
+                    self.pending_focus_on_click = None;
                     self.last_up = None;
                     self.last_down = None;
                     self.press_origin = None;
@@ -1414,18 +1422,26 @@ impl ReposeRuntime {
             self.pressed_ids.insert(hit.id);
 
             if primary_pointer && hit.focusable {
-                if self.sched.focused != Some(hit.id) {
-                    self.finish_compositions();
-                }
-                self.sched.focused = Some(hit.id);
-                result.focused = Some(hit.id);
-                if hit.tf_state_key.is_some() {
+                if hit.tf_state_key.is_some() || is_textfield_in_frame(f, hit.id) {
+                    // Text fields take focus on pointer-down so the caret is
+                    // placed and the IME opens immediately (Compose parity).
+                    if self.sched.focused != Some(hit.id) {
+                        self.finish_compositions();
+                    }
+                    self.sched.focused = Some(hit.id);
+                    result.focused = Some(hit.id);
                     let key = tf_key_of(f, hit.id);
                     let st =
                         ensure_tf_state(&mut self.textfield_states, key, hit.tf_value.as_str());
                     let mut s = st.borrow_mut();
                     s.apply_controlled_value(&hit.tf_value);
                     s.reset_caret_blink();
+                } else {
+                    // Buttons and other clickables receive focus on click, not
+                    // on pointer-down. Deferring keeps focus on a previously
+                    // focused TextField when the press turns into a scroll.
+                    self.pending_focus_on_click = Some(hit.id);
+                    result.focused = self.sched.focused;
                 }
             }
 
@@ -1569,6 +1585,7 @@ impl ReposeRuntime {
         let dragged = self.drag_cancelled_tap(self.capture_id, pos, true);
         if dragged {
             self.pending_click = None;
+            self.pending_focus_on_click = None;
         }
 
         if button == PointerButton::Primary
@@ -1579,6 +1596,13 @@ impl ReposeRuntime {
             && let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid && !h.disabled)
             && repose_ui::hit_region_contains(hit, pos)
         {
+            if self.pending_focus_on_click.take() == Some(cid) {
+                if self.sched.focused != Some(cid) {
+                    self.finish_compositions();
+                }
+                self.sched.focused = Some(cid);
+                result.focused = Some(cid);
+            }
             let now = web_time::Instant::now();
             // With onDoubleTap present, single
             // clicks are delayed until the double-tap window elapses.
@@ -1711,6 +1735,7 @@ impl ReposeRuntime {
             let dragged = self.drag_cancelled_tap(capture_id, pos, false);
             if dragged {
                 self.pending_click = None;
+                self.pending_focus_on_click = None;
             }
 
             if self.double_candidate.is_none()
@@ -1722,6 +1747,13 @@ impl ReposeRuntime {
                     .find(|hit| hit.id == cid && !hit.disabled)
                 && repose_ui::hit_region_contains(hit, pos)
             {
+                if self.pending_focus_on_click.take() == Some(cid) {
+                    if self.sched.focused != Some(cid) {
+                        self.finish_compositions();
+                    }
+                    self.sched.focused = Some(cid);
+                    result.focused = Some(cid);
+                }
                 let now = web_time::Instant::now();
                 if hit.on_double_click.is_some() {
                     if let Some(callback) = hit.on_click.clone() {
@@ -1922,6 +1954,7 @@ impl ReposeRuntime {
             self.touch_primary = None;
             self.double_candidate = None;
             self.pending_click = None;
+            self.pending_focus_on_click = None;
             self.last_up = None;
             self.last_down = None;
             self.suppress_next_click = false;
@@ -2116,6 +2149,7 @@ impl ReposeRuntime {
         self.suppressed_touch_clicks.clear();
         self.pressed_ids.clear();
         self.pending_click = None;
+        self.pending_focus_on_click = None;
         self.last_down = None;
         self.press_origin = None;
         self.double_candidate = None;
@@ -3023,6 +3057,7 @@ impl ReposeRuntime {
         self.key_pressed_active = None;
         self.pressed_ids.clear();
         self.pending_click = None;
+        self.pending_focus_on_click = None;
         self.last_down = None;
         self.press_origin = None;
         self.last_up = None;
@@ -4607,6 +4642,72 @@ mod gamepad_tests {
             rt.gamepad_id_by_sensor_device("Nintendo Switch Pro Controller"),
             None,
             "an identical name cannot pick a pad by map order"
+        );
+    }
+}
+
+#[cfg(test)]
+mod focus_click_tests {
+    use super::*;
+    use repose_core::Rect;
+
+    fn frame_with_field_and_button() -> Frame {
+        let field = HitRegion {
+            id: 1,
+            rect: Rect { x: 0.0, y: 0.0, w: 100.0, h: 40.0 },
+            focusable: true,
+            tf_enabled: false,
+            ..Default::default()
+        };
+        let button = HitRegion {
+            id: 2,
+            rect: Rect { x: 0.0, y: 60.0, w: 100.0, h: 40.0 },
+            focusable: true,
+            on_click: Some(Rc::new(|| {})),
+            ..Default::default()
+        };
+        Frame {
+            scene: Default::default(),
+            hit_regions: vec![field, button],
+            semantics_nodes: vec![],
+            focus_chain: vec![1, 2],
+        }
+    }
+
+    #[test]
+    fn focused_textfield_survives_drag_started_on_clickable() {
+        let mut rt = ReposeRuntime::new();
+        rt.frame_cache = Some(Rc::new(frame_with_field_and_button()));
+        rt.sched.focused = Some(1);
+
+        rt.handle_touch_press(Some(10), Vec2 { x: 50.0, y: 80.0 }, PointerButton::Primary);
+        assert_eq!(
+            rt.sched.focused,
+            Some(1),
+            "pointer-down on a clickable must not steal focus from the field"
+        );
+
+        rt.handle_touch_release(Some(10), Vec2 { x: 50.0, y: 400.0 }, PointerButton::Primary);
+        assert_eq!(
+            rt.sched.focused,
+            Some(1),
+            "a press that became a drag must leave the field focused"
+        );
+        assert_eq!(rt.pending_focus_on_click, None);
+    }
+
+    #[test]
+    fn clickable_receives_focus_on_tap() {
+        let mut rt = ReposeRuntime::new();
+        rt.frame_cache = Some(Rc::new(frame_with_field_and_button()));
+        rt.sched.focused = Some(1);
+
+        rt.handle_touch_press(Some(11), Vec2 { x: 50.0, y: 80.0 }, PointerButton::Primary);
+        rt.handle_touch_release(Some(11), Vec2 { x: 50.0, y: 80.0 }, PointerButton::Primary);
+        assert_eq!(
+            rt.sched.focused,
+            Some(2),
+            "a completed tap moves focus to the clickable"
         );
     }
 }
