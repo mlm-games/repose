@@ -211,26 +211,28 @@ fn make_globals(target_w: f32, target_h: f32) -> Globals {
     }
 }
 
-const MAX_SHAPE_GRADIENT_TABLES: u32 = 64;
+const MAX_SHAPE_GRADIENT_TABLES: u32 = 256;
+/// Texels per table row in the gradient-stop texture: 8 colors, 8 offsets, count.
+const SHAPE_STOPS_TEXELS: u32 = 17;
 
-/// Uniform-table entry matching `ShapeGradientStops` in common.wesl.
-#[repr(C, align(16))]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+/// One table row of the gradient-stop texture, matching `common.wesl`.
+#[derive(Clone, Copy)]
 struct ShapeGradientStopsGpu {
-    colors: [[f32; 4]; 8],
-    offsets: [[f32; 4]; 2],
-    count: u32,
-    _pad: [u32; 3],
+    texels: [[f32; 4]; SHAPE_STOPS_TEXELS as usize],
 }
 
 impl ShapeGradientStopsGpu {
     fn from_stops(stops: &repose_core::GradientStops) -> Self {
-        let mut out = <Self as bytemuck::Zeroable>::zeroed();
+        let mut texels = [[0.0f32; 4]; SHAPE_STOPS_TEXELS as usize];
         let packed = pack_gradient_stops(stops);
-        out.colors = packed.0;
-        out.offsets = packed.1;
-        out.count = packed.2.min(repose_core::MAX_GRADIENT_STOPS as u32);
-        out
+        for (slot, color) in texels.iter_mut().take(8).zip(packed.0.iter()) {
+            *slot = *color;
+        }
+        for i in 0..8 {
+            texels[8 + i][0] = packed.1[i / 4][i % 4];
+        }
+        texels[16][0] = packed.2.min(repose_core::MAX_GRADIENT_STOPS as u32) as f32;
+        Self { texels }
     }
 }
 
@@ -358,7 +360,7 @@ pub struct WgpuSceneRenderer {
     globals_staging: wgpu::Buffer,
     globals_staging_cap: u64,
 
-    shape_stops_buf: wgpu::Buffer,
+    shape_stops_tex: wgpu::Texture,
     shape_stops_bind: wgpu::BindGroup,
 
     // Glyph atlas
@@ -3446,27 +3448,35 @@ impl WgpuSceneRenderer {
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
                     },
                     count: None,
                 }],
             });
-        let shape_stops_buf = device.create_buffer(&wgpu::BufferDescriptor {
+        let shape_stops_tex = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("shape gradient stops"),
-            size: (MAX_SHAPE_GRADIENT_TABLES as u64)
-                * (std::mem::size_of::<ShapeGradientStopsGpu>() as u64),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
+            size: wgpu::Extent3d {
+                width: SHAPE_STOPS_TEXELS,
+                height: MAX_SHAPE_GRADIENT_TABLES,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba32Float,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
         });
+        let shape_stops_view = shape_stops_tex.create_view(&wgpu::TextureViewDescriptor::default());
         let shape_stops_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("shape gradient stops bind"),
             layout: &shape_stops_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: shape_stops_buf.as_entire_binding(),
+                resource: wgpu::BindingResource::TextureView(&shape_stops_view),
             }],
         });
 
@@ -4074,7 +4084,7 @@ impl WgpuSceneRenderer {
             globals_buf,
             globals_staging,
             globals_staging_cap,
-            shape_stops_buf,
+            shape_stops_tex,
             shape_stops_bind,
 
             atlas_mask,
@@ -12838,8 +12848,33 @@ impl WgpuSceneRenderer {
         passes.push(current_pass);
 
         if !shape_stops.is_empty() {
-            self.queue
-                .write_buffer(&self.shape_stops_buf, 0, bytemuck::cast_slice(&shape_stops));
+            let rows = shape_stops.len().min(MAX_SHAPE_GRADIENT_TABLES as usize) as u32;
+            let mut pixels =
+                Vec::with_capacity((rows as usize) * (SHAPE_STOPS_TEXELS as usize) * 4);
+            for table in shape_stops.iter().take(rows as usize) {
+                for texel in table.texels {
+                    pixels.extend_from_slice(&texel);
+                }
+            }
+            self.queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &self.shape_stops_tex,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                bytemuck::cast_slice(&pixels),
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(SHAPE_STOPS_TEXELS * 4 * 4),
+                    rows_per_image: Some(MAX_SHAPE_GRADIENT_TABLES),
+                },
+                wgpu::Extent3d {
+                    width: SHAPE_STOPS_TEXELS,
+                    height: rows,
+                    depth_or_array_layers: 1,
+                },
+            );
         }
 
         {

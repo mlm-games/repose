@@ -7,21 +7,24 @@ struct Globals {
 
 const MAX_GRADIENT_STOPS: u32 = 8u;
 
-const MAX_SHAPE_GRADIENT_TABLES: u32 = 64u;
+// Gradient stop tables are stored in a 2D texture, one table per row:
+//   x 0..7  : rgba color for stops 0..7
+//   x 8..15 : r channel holds the offset for stops 0..7
+//   x 16    : r channel holds the stop count
+// A texture (rather than a storage/uniform buffer) keeps the shader
+// translatable to GLSL ES on WebGL backends.
+@group(1) @binding(0) var SHAPE_STOPS: texture_2d<f32>;
 
-struct ShapeGradientStops {
-    colors: array<vec4<f32>, 8>,
-    offsets: array<vec4<f32>, 2>,
-    count: u32,
-    _pad: u32,
-    _pad1: u32,
-    _pad2: u32,
-};
+fn stop_color_at(table: u32, i: u32) -> vec4<f32> {
+    return textureLoad(SHAPE_STOPS, vec2<i32>(i32(i), i32(table)), 0);
+}
 
-@group(1) @binding(0) var<uniform> SHAPE_STOPS: array<ShapeGradientStops, 64>;
+fn stop_offset_at(table: u32, i: u32) -> f32 {
+    return textureLoad(SHAPE_STOPS, vec2<i32>(8i + i32(i), i32(table)), 0).r;
+}
 
-fn stop_offset_at(stops: ShapeGradientStops, i: u32) -> f32 {
-    return stops.offsets[i / 4u][i % 4u];
+fn stop_count(table: u32) -> u32 {
+    return u32(textureLoad(SHAPE_STOPS, vec2<i32>(16, i32(table)), 0).r + 0.5);
 }
 
 fn brush_type_of(bits: u32) -> u32 {
@@ -52,27 +55,26 @@ fn stop_table_of(bits: u32) -> u32 {
 }
 
 fn eval_shape_stops(t: f32, table: u32) -> vec4<f32> {
-    let stops = SHAPE_STOPS[table];
-    let count = stops.count;
+    let count = stop_count(table);
     if count == 0u {
         return vec4<f32>(0.0);
     }
-    if count == 1u || t <= stop_offset_at(stops, 0u) {
-        return stops.colors[0];
+    if count == 1u || t <= stop_offset_at(table, 0u) {
+        return stop_color_at(table, 0u);
     }
     let last = count - 1u;
-    if t >= stop_offset_at(stops, last) {
-        return stops.colors[last];
+    if t >= stop_offset_at(table, last) {
+        return stop_color_at(table, last);
     }
     for (var i = 0u; i < last; i = i + 1u) {
-        if t < stop_offset_at(stops, i + 1u) {
-            let lo = stop_offset_at(stops, i);
-            let span = max(stop_offset_at(stops, i + 1u) - lo, 1e-6);
+        if t < stop_offset_at(table, i + 1u) {
+            let lo = stop_offset_at(table, i);
+            let span = max(stop_offset_at(table, i + 1u) - lo, 1e-6);
             let f = clamp((t - lo) / span, 0.0, 1.0);
-            return mix(stops.colors[i], stops.colors[i + 1u], f);
+            return mix(stop_color_at(table, i), stop_color_at(table, i + 1u), f);
         }
     }
-    return stops.colors[last];
+    return stop_color_at(table, last);
 }
 
 fn eval_brush_px(
