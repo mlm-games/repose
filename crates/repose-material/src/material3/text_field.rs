@@ -1089,13 +1089,21 @@ pub fn TextField(
                     th.shapes.extra_small, // TL
                 ])
                 .background(container_bg)),
-            // Input row
+            // Input row. Compose places the input at `top padding + label height`,
+            // i.e. directly beneath the floated label with a visible gap. The
+            // extra top padding (half the label's line height) shifts the
+            // vertically-centered input down by that amount so it doesn't touch
+            // the label ink.
             Row(Modifier::new()
                 .fill_max_size()
                 .padding_values(PaddingValues {
                     left: Dp(16.0),
                     right: Dp(16.0),
-                    top: top_pad,
+                    top: if has_label {
+                        top_pad + Dp(8.0)
+                    } else {
+                        top_pad
+                    },
                     bottom: bottom_pad,
                 })
                 .align_items(AlignItems::CENTER))
@@ -1287,6 +1295,53 @@ mod tests {
         assert!(
             label.w < container.w,
             "a short label does not fill the field"
+        );
+    }
+
+    #[test]
+    fn floated_label_does_not_touch_input_text() {
+        let scope = Scope::new();
+        let guard = ComposeGuard::begin();
+        let r = scope.run(|| {
+            with_density(Density { scale: 1.0 }, || {
+                let view = TextField(
+                    Modifier::new(),
+                    "ff".into(),
+                    |_| {},
+                    TextFieldConfig {
+                        label: Some("Search".into()),
+                        ..Default::default()
+                    },
+                );
+                let mut engine = LayoutEngine::new();
+                let (scene, _, _) = engine.layout_frame(
+                    &view,
+                    (320, 200),
+                    &HashMap::new(),
+                    &Interactions::default(),
+                    None,
+                );
+                let mut input_y = 0.0f32;
+                let mut label_bottom = 0.0f32;
+                for n in &scene.nodes {
+                    if let SceneNode::Text { rect, text, .. } = n {
+                        if text.as_ref() == "ff" {
+                            input_y = rect.y;
+                        }
+                        if text.as_ref() == "Search" {
+                            label_bottom = rect.y + rect.h;
+                        }
+                    }
+                }
+                (input_y, label_bottom)
+            })
+        });
+        drop(guard);
+        scope.dispose();
+        let (input_y, label_bottom) = r;
+        assert!(
+            input_y >= label_bottom,
+            "input text ({input_y}) must start at or below the floated label box end ({label_bottom})"
         );
     }
 
