@@ -351,6 +351,7 @@ pub struct ScrollPhysics {
     stop_velocity: f32,
     input_activate_velocity: f32,
     generation: u64,
+    touch_active: bool,
 }
 
 impl Default for ScrollPhysics {
@@ -385,6 +386,7 @@ impl ScrollPhysics {
             stop_velocity,
             input_activate_velocity,
             generation: touch_gesture_generation(),
+            touch_active: touch_gesture_active(),
         }
     }
 
@@ -396,6 +398,21 @@ impl ScrollPhysics {
             self.animating = false;
             self.input_pending = false;
         }
+    }
+
+    /// A finger held still before lift must not leave a fling behind. Compose's
+    /// velocity tracker stops sampling after ~40ms and reports zero.
+    pub(crate) fn settle_after_touch(&mut self) {
+        let active = touch_gesture_active();
+        if self.touch_active
+            && !active
+            && self.last_input_t.elapsed().as_millis() > 40
+        {
+            self.vel = 0.0;
+            self.animating = false;
+            self.input_pending = false;
+        }
+        self.touch_active = active;
     }
 
     /// Feed a delta that arrived from real user input.
@@ -463,6 +480,7 @@ impl ScrollPhysics {
         // single large lurch the moment the finger lifts.
         let dt = self.dt();
         self.sync_generation();
+        self.settle_after_touch();
         if touch_gesture_active() {
             // The finger is down: Compose integrates no velocity mid-drag.
             // Keep the sampled velocity for the fling on release.
@@ -1292,9 +1310,15 @@ impl ScrollStateXY {
         let dt = (now - self.prev_tick.get()).as_secs_f32().min(0.1);
         self.prev_tick.set(now);
 
+        {
+            let mut px = self.physics_x.borrow_mut();
+            let mut py = self.physics_y.borrow_mut();
+            px.sync_generation();
+            py.sync_generation();
+            px.settle_after_touch();
+            py.settle_after_touch();
+        }
         if touch_gesture_active() {
-            self.physics_x.borrow_mut().sync_generation();
-            self.physics_y.borrow_mut().sync_generation();
             return false;
         }
 
@@ -1313,7 +1337,9 @@ impl ScrollStateXY {
         if !px.animating && !py.animating {
             return false;
         }
-        if px.animating {
+        if px.input_pending {
+            px.input_pending = false;
+        } else if px.animating {
             if px.vel.abs() < px.stop_velocity {
                 px.vel = 0.0;
                 px.animating = false;
@@ -1336,7 +1362,9 @@ impl ScrollStateXY {
                 }
             }
         }
-        if py.animating {
+        if py.input_pending {
+            py.input_pending = false;
+        } else if py.animating {
             if py.vel.abs() < py.stop_velocity {
                 py.vel = 0.0;
                 py.animating = false;

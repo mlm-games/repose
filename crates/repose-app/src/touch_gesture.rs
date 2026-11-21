@@ -325,6 +325,15 @@ impl TouchGestureState {
             }
             rt.suppress_touch_click(pending_tid);
             self.pending_primary = None;
+            // Compose's touch slop detector reports only the travel beyond
+            // slop as the first drag delta. Without this a single large move
+            // event that jumps past slop makes the list lurch on frame one.
+            let dist = (dx * dx + dy * dy).sqrt();
+            let excess = ((dist - slop) / dist).max(0.0);
+            self.prev_touch_px = Some((
+                pending_pos.x + dx * excess,
+                pending_pos.y + dy * excess,
+            ));
         }
 
         if let Some(prev) = self.prev_touch_px {
