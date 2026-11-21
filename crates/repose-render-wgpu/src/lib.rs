@@ -11985,6 +11985,7 @@ impl WgpuSceneRenderer {
                         encoder,
                     );
                     let saved = std::mem::replace(&mut current_pass, layer_pass);
+                    let layer_projective = transform_is_projective(current_transform);
                     if let Some(top) = transform_stack.last_mut() {
                         *top = Transform::identity();
                     }
@@ -12003,7 +12004,7 @@ impl WgpuSceneRenderer {
                         blend_mode: *blend_mode,
                         color_filter: *color_filter,
                         compositing_strategy: *compositing_strategy,
-                        projective: transform_is_projective(current_transform),
+                        projective: layer_projective,
                     });
                     passes.push(saved);
                     // BeginLayer always allocates the offscreen target, so
