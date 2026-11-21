@@ -3767,7 +3767,20 @@ where
     } else if let Some(fid) = sched.focused
         && !frame.focus_chain.contains(&fid)
     {
-        sched.focused = None;
+        // A keyed subtree (e.g. a Dialog's measure/probe regenerated when the
+        // IME inset changes) can reassign layout view ids. If a FocusRequester
+        // that was pointing at the now-stale focused id has moved to a new id
+        // that is in this frame's chain, follow it instead of dropping focus.
+        // Dropping focus here hides the soft keyboard mid-edit on Android.
+        let remapped = repose_core::runtime::take_focus_target_remaps()
+            .into_iter()
+            .find(|(old, new)| *old == fid && frame.focus_chain.contains(new))
+            .map(|(_, new)| new);
+        sched.focused = remapped;
+    } else {
+        // No stale focus, but still drain any remaps recorded this frame so
+        // they cannot leak into a later frame's reconciliation.
+        let _ = repose_core::runtime::take_focus_target_remaps();
     }
 
     frame
@@ -4607,5 +4620,166 @@ fn gesture_centroid(action: &repose_core::shortcuts::Action) -> Option<repose_co
             _ => None,
         },
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod dialog_focus_repro_tests {
+    use super::*;
+    use repose_core::{Dp, FocusRequester, Modifier, View, ViewKind};
+
+    /// Reproduce the dialog auto-focus lifecycle: a field with a focus requester,
+    /// and a zero-size probe whose on_globally_positioned requests focus once
+    /// (mirrors repose-material Dialog's focus_probe).
+    #[test]
+    fn focus_survives_ime_padding_change() {
+        let mut rt = ReposeRuntime::new();
+        let fr = FocusRequester::new();
+        let requested = Rc::new(Cell::new(false));
+        let fr_probe = fr.clone();
+        let padding = Rc::new(Cell::new(0.0f32));
+
+        let tf_states: HashMap<u64, Rc<RefCell<TextFieldState>>> = HashMap::new();
+        let pressed = HashSet::new();
+
+        let mut root = |_s: &mut Scheduler| {
+            let p = padding.get();
+            let rp = requested.clone();
+            let fp = fr_probe.clone();
+            let probe = View::new(0, ViewKind::Box).modifier(
+                Modifier::new()
+                    .size(Dp(0.0), Dp(0.0))
+                    .on_globally_positioned(move |_| {
+                        if !rp.get() && fp.target.borrow().is_some() {
+                            fp.request_focus();
+                            rp.set(true);
+                        }
+                    }),
+            );
+            let field = View::new(0, ViewKind::Box).modifier(
+                Modifier::new()
+                    .fill_max_width()
+                    .height(Dp(40.0))
+                    .focusable(true)
+                    .focus_requester(fr.clone()),
+            );
+            let container = View::new(0, ViewKind::Column)
+                .modifier(Modifier::new().padding(Dp(p)))
+                .with_children(vec![field, probe]);
+            container
+        };
+
+        let frame1 = compose_frame_inner(
+            &mut rt.sched,
+            &mut root,
+            1.0,
+            (400, 800),
+            None,
+            &pressed,
+            &tf_states,
+        );
+        let focused1 = rt.sched.focused;
+        assert!(
+            focused1.is_some(),
+            "frame1: focus requested by probe should be applied"
+        );
+        assert!(
+            frame1.focus_chain.contains(&focused1.unwrap()),
+            "frame1: focused id in chain"
+        );
+
+        // IME inset grows: padding on the container changes, like Dialog's platform padding.
+        padding.set(300.0);
+        let frame2 = compose_frame_inner(
+            &mut rt.sched,
+            &mut root,
+            1.0,
+            (400, 800),
+            None,
+            &pressed,
+            &tf_states,
+        );
+        let focused2 = rt.sched.focused;
+        assert!(
+            focused2.is_some(),
+            "frame2: focus should survive padding change (got None)"
+        );
+        assert!(
+            frame2.focus_chain.contains(&focused2.unwrap()),
+            "frame2: focused id in chain"
+        );
+    }
+
+    /// Change the STRUCTURE before the field (not just padding), mirroring
+    /// Dialog's keyed `measure` subtree regenerating on IME inset change.
+    #[test]
+    fn focus_survives_structure_change_before_field() {
+        use repose_ui::subcompose::box_with_constraints_with_key;
+        let mut rt = ReposeRuntime::new();
+        let fr = FocusRequester::new();
+        let requested = Rc::new(Cell::new(false));
+        let key = Rc::new(Cell::new(0u32));
+        let tf_states: HashMap<u64, Rc<RefCell<TextFieldState>>> = HashMap::new();
+        let pressed = HashSet::new();
+
+        let mut root = |_s: &mut Scheduler| {
+            let k = key.get();
+            let rp = requested.clone();
+            let fp = fr.clone();
+            let probe = View::new(0, ViewKind::Box).modifier(
+                Modifier::new()
+                    .size(Dp(0.0), Dp(0.0))
+                    .on_globally_positioned(move |_| {
+                        if !rp.get() && fp.target.borrow().is_some() {
+                            fp.request_focus();
+                            rp.set(true);
+                        }
+                    }),
+            );
+            let field = View::new(0, ViewKind::Box).modifier(
+                Modifier::new()
+                    .fill_max_width()
+                    .height(Dp(40.0))
+                    .focusable(true)
+                    .focus_requester(fr.clone()),
+            );
+            let measure = box_with_constraints_with_key(
+                k,
+                Modifier::new().size(Dp(10.0), Dp(10.0)),
+                |_scope| {
+                    View::new(0, ViewKind::Box).modifier(Modifier::new().size(Dp(10.0), Dp(10.0)))
+                },
+            );
+            View::new(0, ViewKind::Column).with_children(vec![measure, field, probe])
+        };
+
+        let frame1 = compose_frame_inner(
+            &mut rt.sched,
+            &mut root,
+            1.0,
+            (400, 800),
+            None,
+            &pressed,
+            &tf_states,
+        );
+        let focused1 = rt.sched.focused.expect("frame1 focus");
+        assert!(frame1.focus_chain.contains(&focused1));
+
+        key.set(1);
+        let frame2 = compose_frame_inner(
+            &mut rt.sched,
+            &mut root,
+            1.0,
+            (400, 800),
+            None,
+            &pressed,
+            &tf_states,
+        );
+        let focused2 = rt.sched.focused;
+        assert!(
+            focused2.is_some(),
+            "frame2: focus should survive keyed structure change, got None"
+        );
+        assert!(frame2.focus_chain.contains(&focused2.unwrap()));
     }
 }

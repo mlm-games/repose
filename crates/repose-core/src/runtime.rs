@@ -47,6 +47,13 @@ thread_local! {
     /// the previous frame's hit regions before the next frame is composed.
     static BRING_INTO_VIEW_REQUESTS: RefCell<std::collections::VecDeque<u64>> =
         const { RefCell::new(std::collections::VecDeque::new()) };
+
+    /// (old, new) view id remaps recorded when a `FocusRequester`'s target is
+    /// reassigned during layout, e.g. when a keyed subtree regenerates and
+    /// shifts the focused widget's layout id. Drained each frame by the app
+    /// runtime so focus can follow the requester instead of being dropped.
+    static FOCUS_TARGET_REMAPS: RefCell<Vec<(u64, u64)>> =
+        const { RefCell::new(Vec::new()) };
 }
 
 pub const CLEAR_FOCUS_MARKER: u64 = u64::MAX;
@@ -578,8 +585,17 @@ impl FocusManager {
 
     /// Set target ID on a FocusRequester (called during layout).
     pub fn set_requester_target(requester: &FocusRequester, id: u64) {
-        *requester.target.borrow_mut() = Some(id);
+        let previous = requester.target.replace(Some(id));
+        if let Some(old) = previous
+            && old != id
+        {
+            FOCUS_TARGET_REMAPS.with(|remaps| remaps.borrow_mut().push((old, id)));
+        }
     }
+}
+/// Drain the focus-target remaps recorded during this frame's layout.
+pub fn take_focus_target_remaps() -> Vec<(u64, u64)> {
+    FOCUS_TARGET_REMAPS.with(|remaps| std::mem::take(&mut *remaps.borrow_mut()))
 }
 
 /// Sub-chain of ids sharing the focused element's focus group.
