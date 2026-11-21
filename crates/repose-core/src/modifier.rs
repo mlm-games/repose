@@ -1426,13 +1426,11 @@ impl Modifier {
     /// Set a solid color background.
     pub fn background(mut self, color: Color) -> Self {
         self.background = Some(Brush::Solid(color));
-        self.background_shape = Some(Shape::Rectangle);
         self
     }
     /// Set a brush (solid, gradient, etc.) background.
     pub fn background_brush(mut self, brush: Brush) -> Self {
         self.background = Some(brush);
-        self.background_shape = Some(Shape::Rectangle);
         self
     }
     /// Paint a brush into an arbitrary [`Shape`].
@@ -1457,7 +1455,6 @@ impl Modifier {
             brush: Brush::Solid(color),
             radius: [radius; 4],
         });
-        self.border_shape = Some(Shape::rounded(radius));
         self
     }
     /// Brush border (gradient, etc.). Mirrors Compose
@@ -1468,7 +1465,6 @@ impl Modifier {
             brush,
             radius: [radius; 4],
         });
-        self.border_shape = Some(Shape::rounded(radius));
         self
     }
     pub fn border_radii(mut self, width: Dp, color: Color, radii: [Dp; 4]) -> Self {
@@ -1477,7 +1473,6 @@ impl Modifier {
             brush: Brush::Solid(color),
             radius: radii,
         });
-        self.border_shape = Some(Shape::Rounded { radii });
         self
     }
     /// Brush border with per-corner radii.
@@ -1487,7 +1482,6 @@ impl Modifier {
             brush,
             radius: radii,
         });
-        self.border_shape = Some(Shape::Rounded { radii });
         self
     }
     /// Stroke an arbitrary [`Shape`] with a brush.
@@ -1577,12 +1571,10 @@ impl Modifier {
     }
     pub fn clip_rounded(mut self, radius: Dp) -> Self {
         self.clip_rounded = Some([radius; 4]);
-        self.clip_shape = Some(Shape::rounded(radius));
         self
     }
     pub fn clip_rounded_radii(mut self, radii: [Dp; 4]) -> Self {
         self.clip_rounded = Some(radii);
-        self.clip_shape = Some(Shape::Rounded { radii });
         self
     }
     /// Clip a rectangular region from this element using the given operation.
@@ -1595,7 +1587,6 @@ impl Modifier {
             bottom,
             op,
         });
-        self.clip_shape = Some(Shape::Rectangle);
         self
     }
     /// Clip this element's content to an arbitrary [`Shape`].
