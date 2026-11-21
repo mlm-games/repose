@@ -1461,6 +1461,7 @@ where
             );
             if animate_item.is_some() {
                 let offset_dp = Dp(Px(placement_offset_px).to_dp().0);
+                let loop_builder = item_builder.clone();
                 children.push(scoped_item_with_key(
                     item_scope_key(state_id, key),
                     key,
@@ -1472,7 +1473,7 @@ where
                                 .width(Dp(item_width_dp))
                                 .absolute_offset(offset_dp, Dp::ZERO),
                         )
-                        .child(item_builder(item.clone(), data_i))
+                        .child(loop_builder(item.clone(), data_i))
                     },
                 ));
             } else {
