@@ -1729,7 +1729,7 @@ where
                 let vis_bot = vis_top + p.h_px;
                 let in_view =
                     vis_bot > scroll_offset_px && vis_top < scroll_offset_px + viewport_height_px;
-                let alpha = if in_view { 1.0 } else { 0.0 };
+                let alpha: f32 = if in_view { 1.0 } else { 0.0 };
                 let data_i = data_idx_of(i);
                 let revision = state.cache_revision_for_with(
                     data_i as u64,
