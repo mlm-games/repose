@@ -1623,11 +1623,12 @@ where
         let item = items.get(data_i)?.clone();
         let revision =
             state.cache_revision_for_with(data_i as u64, &item as *const T as usize, item_w_px, 0);
+        let sticky_builder = item_builder.clone();
         let sticky_view = scoped_item_with_key(
             item_scope_key(state_id, data_i as u64),
             data_i as u64,
             revision,
-            move || item_builder(item, data_i),
+            move || sticky_builder(item, data_i),
         );
         Some(
             crate::Box(
