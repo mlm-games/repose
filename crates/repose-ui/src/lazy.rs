@@ -486,9 +486,7 @@ where
         }
         if Some(visual_index) == sticky_active {
             combined_children.push(crate::Box(
-                Modifier::new()
-                    .fill_parent_max_width()
-                    .height(Dp(height_dp)),
+                Modifier::new().fill_max_width().height(Dp(height_dp)),
             ));
             continue;
         }
@@ -500,7 +498,7 @@ where
                 move || {
                     crate::Box(
                         Modifier::new()
-                            .fill_parent_max_width()
+                            .fill_max_width()
                             .height(Dp(height_dp))
                             .alpha(alpha)
                             .absolute_offset(Dp::ZERO, placement_offset_dp),
@@ -516,7 +514,7 @@ where
                 move || {
                     crate::Box(
                         Modifier::new()
-                            .fill_parent_max_width()
+                            .fill_max_width()
                             .height(Dp(height_dp))
                             .absolute_offset(Dp::ZERO, placement_offset_dp),
                     )
@@ -1469,7 +1467,7 @@ where
                     move || {
                         crate::Box(
                             Modifier::new()
-                                .fill_parent_max_height()
+                                .fill_max_height()
                                 .width(Dp(item_width_dp))
                                 .absolute_offset(offset_dp, Dp::ZERO),
                         )
