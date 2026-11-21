@@ -955,6 +955,7 @@ fn facet_hash_scroll_binding(binding: Option<&ScrollBinding>, hashers: &mut Face
             hashers.hash(FACET_PAINT, |h| {
                 binding.show_scrollbar.hash(h);
                 hash_rc_identity(&binding.on_scroll, h);
+                hash_rc_identity(&binding.on_scroll_with_source, h);
                 hash_rc_identity(&binding.set_viewport_width, h);
                 hash_rc_identity(&binding.set_viewport_height, h);
                 hash_rc_identity(&binding.set_content_width, h);
@@ -977,6 +978,7 @@ fn facet_hash_scroll_axis(
     hashers.hash(FACET_PAINT, |h| {
         binding.show_scrollbar.hash(h);
         hash_rc_identity(&binding.on_scroll, h);
+        hash_rc_identity(&binding.on_scroll_with_source, h);
         hash_rc_identity(&binding.set_viewport_main, h);
         hash_rc_identity(&binding.set_content_main, h);
         hash_rc_identity(&binding.get_offset_main, h);
@@ -1389,6 +1391,7 @@ fn hash_scroll_axis_binding(
 ) {
     binding.show_scrollbar.hash(hasher);
     hash_rc_identity(&binding.on_scroll, hasher);
+    hash_rc_identity(&binding.on_scroll_with_source, hasher);
     hash_rc_identity(&binding.set_viewport_main, hasher);
     hash_rc_identity(&binding.set_content_main, hasher);
     hash_rc_identity(&binding.get_offset_main, hasher);
@@ -1412,6 +1415,7 @@ fn hash_scroll_binding(binding: &ScrollBinding, hasher: &mut impl Hasher) {
             3u8.hash(hasher);
             binding.show_scrollbar.hash(hasher);
             hash_rc_identity(&binding.on_scroll, hasher);
+            hash_rc_identity(&binding.on_scroll_with_source, hasher);
             hash_rc_identity(&binding.set_viewport_width, hasher);
             hash_rc_identity(&binding.set_viewport_height, hasher);
             hash_rc_identity(&binding.set_content_width, hasher);

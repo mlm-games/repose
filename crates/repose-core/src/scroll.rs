@@ -3,6 +3,7 @@ use std::rc::Rc;
 
 use web_time::Instant;
 
+use crate::input::ScrollSource;
 use crate::nested_scroll::{NestedScrollConnection, NestedScrollSource};
 use crate::{ControlVisualSet, Dp, Signal, Vec2, request_frame, signal};
 
@@ -155,6 +156,9 @@ impl ScrollbarStyle {
 #[derive(Clone, Default)]
 pub struct ScrollAxisBinding {
     pub on_scroll: Option<Rc<dyn Fn(Vec2) -> Vec2>>,
+    /// Source-aware scroll handler. Takes precedence over `on_scroll` in the
+    /// input pipeline; wheel deltas intentionally do not seed a fling.
+    pub on_scroll_with_source: Option<Rc<dyn Fn(Vec2, ScrollSource) -> Vec2>>,
     /// Set viewport size along the scroll axis (height for V, width for H).
     pub set_viewport_main: Option<Rc<dyn Fn(f32)>>,
     /// Set content size along the scroll axis.
@@ -173,6 +177,10 @@ impl std::fmt::Debug for ScrollAxisBinding {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ScrollAxisBinding")
             .field("has_on_scroll", &self.on_scroll.is_some())
+            .field(
+                "has_on_scroll_with_source",
+                &self.on_scroll_with_source.is_some(),
+            )
             .field("set_viewport_main", &self.set_viewport_main.is_some())
             .field("set_content_main", &self.set_content_main.is_some())
             .field("get_offset_main", &self.get_offset_main.is_some())
@@ -191,6 +199,8 @@ impl std::fmt::Debug for ScrollAxisBinding {
 #[derive(Clone, Default)]
 pub struct ScrollBothBinding {
     pub on_scroll: Option<Rc<dyn Fn(Vec2) -> Vec2>>,
+    /// Source-aware scroll handler; see `ScrollAxisBinding::on_scroll_with_source`.
+    pub on_scroll_with_source: Option<Rc<dyn Fn(Vec2, ScrollSource) -> Vec2>>,
     pub set_viewport_width: Option<Rc<dyn Fn(f32)>>,
     pub set_viewport_height: Option<Rc<dyn Fn(f32)>>,
     pub set_content_width: Option<Rc<dyn Fn(f32)>>,
@@ -209,6 +219,10 @@ impl std::fmt::Debug for ScrollBothBinding {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ScrollBothBinding")
             .field("has_on_scroll", &self.on_scroll.is_some())
+            .field(
+                "has_on_scroll_with_source",
+                &self.on_scroll_with_source.is_some(),
+            )
             .field("set_viewport_width", &self.set_viewport_width.is_some())
             .field("set_viewport_height", &self.set_viewport_height.is_some())
             .field("set_content_width", &self.set_content_width.is_some())
@@ -243,6 +257,7 @@ impl ScrollBinding {
 }
 
 const OVERSHOOT_DECAY_PER_60HZ: f32 = 0.78;
+const MAX_SCROLL_VELOCITY: f32 = 8000.0;
 
 /// Per-60Hz-frame velocity decay at low speed. Higher stops the fling sooner.
 pub const SCROLL_DECAY_PER_60HZ: f32 = 0.85;
@@ -336,6 +351,13 @@ pub fn tick_os_axis(os: &Signal<f32>, enabled: bool, dt: f32) -> bool {
     }
 }
 
+#[derive(Clone, Copy)]
+enum DeltaVelocity {
+    User,
+    Nested,
+    Wheel,
+}
+
 /// Handles velocity estimation from input deltas, frame-rate-independent
 /// exponential decay, edge snapping, and animation state tracking.
 #[derive(Clone)]
@@ -352,6 +374,9 @@ pub struct ScrollPhysics {
     input_activate_velocity: f32,
     generation: u64,
     touch_active: bool,
+    /// Velocity the last integration step could not spend because it clamped
+    /// at a boundary. Taken once by the post-fling chaining dispatch.
+    clamped_velocity: Option<f32>,
 }
 
 impl Default for ScrollPhysics {
@@ -387,6 +412,7 @@ impl ScrollPhysics {
             input_activate_velocity,
             generation: touch_gesture_generation(),
             touch_active: touch_gesture_active(),
+            clamped_velocity: None,
         }
     }
 
@@ -397,6 +423,7 @@ impl ScrollPhysics {
             self.vel = 0.0;
             self.animating = false;
             self.input_pending = false;
+            self.clamped_velocity = None;
         }
     }
 
@@ -411,8 +438,37 @@ impl ScrollPhysics {
             self.vel = 0.0;
             self.animating = false;
             self.input_pending = false;
+            self.clamped_velocity = None;
         }
         self.touch_active = active;
+    }
+
+    /// Apply a delta from a source that must not start a fling (mouse wheel /
+    /// trackpad wheel). The offset still moves; only velocity is discarded.
+    pub(crate) fn clear_velocity(&mut self) {
+        self.sync_generation();
+        self.vel = 0.0;
+        self.animating = false;
+        self.input_pending = false;
+        self.clamped_velocity = None;
+    }
+
+    /// Seed a fling directly, used when a parent continues a child's clamped
+    /// fling through post-fling dispatch.
+    pub(crate) fn set_fling_velocity(&mut self, vel: f32) {
+        self.sync_generation();
+        self.vel = vel.clamp(-MAX_SCROLL_VELOCITY, MAX_SCROLL_VELOCITY);
+        self.animating = self.vel.abs() > self.input_activate_velocity;
+        self.input_pending = false;
+        self.clamped_velocity = None;
+        let now = Instant::now();
+        self.last_t = now;
+        self.last_input_t = now;
+    }
+
+    /// Consume the velocity the last integration step left at a boundary.
+    pub(crate) fn take_clamped_velocity(&mut self) -> Option<f32> {
+        self.clamped_velocity.take()
     }
 
     /// Feed a delta that arrived from real user input.
@@ -460,8 +516,7 @@ impl ScrollPhysics {
     }
 
     fn finish_sample(&mut self) {
-        const MAX_VEL: f32 = 8000.0;
-        self.vel = self.vel.clamp(-MAX_VEL, MAX_VEL);
+        self.vel = self.vel.clamp(-MAX_SCROLL_VELOCITY, MAX_SCROLL_VELOCITY);
         self.animating = self.vel.abs() > self.input_activate_velocity;
         self.input_pending = true;
     }
@@ -514,6 +569,7 @@ impl ScrollPhysics {
             raw.clamp(min, max.max(min))
         };
         if (new - current).abs() < 0.01 && (current <= min || current >= max) {
+            self.clamped_velocity = Some(self.vel);
             self.vel = 0.0;
             self.animating = false;
             return None;
@@ -549,6 +605,7 @@ pub struct ScrollState {
     show_scrollbar: Cell<bool>,
     reversed: Rc<Cell<bool>>,
     prev_tick: Cell<Instant>,
+    fling_dispatched: Cell<bool>,
 }
 
 impl Default for ScrollState {
@@ -570,6 +627,7 @@ impl ScrollState {
             show_scrollbar: Cell::new(true),
             reversed: Rc::new(Cell::new(false)),
             prev_tick: Cell::new(Instant::now()),
+            fling_dispatched: Cell::new(false),
         }
     }
 
@@ -590,25 +648,39 @@ impl ScrollState {
     pub fn connection(&self) -> NestedScrollConnection {
         let this = Rc::new(self.clone());
         let pc = Rc::clone(&this.parent_connection);
-        NestedScrollConnection::new().on_post_scroll(
-            move |_consumed: Vec2, available: Vec2, _source: NestedScrollSource| -> Vec2 {
-                if available.x.abs() < 0.001 && available.y.abs() < 0.001 {
-                    return Vec2::ZERO;
-                }
-                let leftover_y = this.scroll_nested(available.y);
-                let after = run_post_scroll(
-                    &pc,
+        let fling_target = Rc::clone(&this);
+        NestedScrollConnection::new()
+            .on_post_scroll(
+                move |consumed: Vec2, available: Vec2, _source: NestedScrollSource| -> Vec2 {
+                    if available.x.abs() < 0.001 && available.y.abs() < 0.001 {
+                        return Vec2::ZERO;
+                    }
+                    let leftover_y = this.scroll_nested(available.y);
+                    let own_consumed = available.y - leftover_y;
+                    let after = run_post_scroll(
+                        &pc,
+                        Vec2 {
+                            x: consumed.x,
+                            y: consumed.y + own_consumed,
+                        },
+                        Vec2 {
+                            x: available.x,
+                            y: leftover_y,
+                        },
+                        NestedScrollSource::UserInput,
+                    );
                     Vec2 {
-                        x: available.x,
-                        y: leftover_y,
-                    },
-                );
-                Vec2 {
-                    x: available.x - after.x,
-                    y: available.y - after.y,
-                }
-            },
-        )
+                        x: available.x - after.x,
+                        y: available.y - after.y,
+                    }
+                },
+            )
+            .on_post_fling(
+                move |_consumed: Vec2, available: Vec2, _source: NestedScrollSource| -> Vec2 {
+                    fling_target.fling(available);
+                    available
+                },
+            )
     }
 
     pub fn set_show_scrollbar(&self, show: bool) {
@@ -672,17 +744,29 @@ impl ScrollState {
     /// fling, matching Compose where a new `scroll(UserInput)` cancels the
     /// fling coroutine holding the `MutatorMutex`.
     pub fn scroll_immediate(&self, dy: f32) -> f32 {
-        self.apply_delta(dy, true)
+        self.apply_delta(dy, DeltaVelocity::User)
     }
 
     /// Apply a delta that arrived as leftover from a nested child. This is
     /// Compose's `dispatchRawDelta`: it bypasses mutual exclusion, so it must
     /// not cancel this container's own fling.
     pub fn scroll_nested(&self, dy: f32) -> f32 {
-        self.apply_delta(dy, false)
+        self.apply_delta(dy, DeltaVelocity::Nested)
     }
 
-    fn apply_delta(&self, dy: f32, user: bool) -> f32 {
+    /// Apply a delta while honouring what produced it. Wheel deltas move the
+    /// surface but start no fling; touch deltas keep the usual velocity
+    /// tracking. `scroll_immediate` and `scroll_nested` remain unchanged.
+    pub fn apply_delta_with_source(&self, dy: f32, source: ScrollSource) -> f32 {
+        let mode = if source == ScrollSource::Wheel {
+            DeltaVelocity::Wheel
+        } else {
+            DeltaVelocity::User
+        };
+        self.apply_delta(dy, mode)
+    }
+
+    fn apply_delta(&self, dy: f32, mode: DeltaVelocity) -> f32 {
         let dy = if dy.is_finite() { dy } else { 0.0 };
         let before = self.scroll_offset.get();
         let vh = self.viewport_height.get();
@@ -692,12 +776,33 @@ impl ScrollState {
         let new_off = clamp_offset(before + dy, max_off);
         self.scroll_offset.set(new_off);
         let consumed = new_off - before;
-        if user {
-            self.physics.borrow_mut().record_user_input(consumed);
-        } else {
-            self.physics.borrow_mut().record_nested_input(consumed);
+        match mode {
+            DeltaVelocity::User => {
+                self.fling_dispatched.set(false);
+                self.physics.borrow_mut().record_user_input(consumed);
+            }
+            DeltaVelocity::Nested => self.physics.borrow_mut().record_nested_input(consumed),
+            DeltaVelocity::Wheel => self.physics.borrow_mut().clear_velocity(),
         }
         dy - consumed
+    }
+
+    /// Seed a fling from a velocity (px/s), for example velocity handed over
+    /// by a parent through `NestedScrollConnection::dispatch_post_fling`.
+    pub fn fling(&self, velocity: Vec2) {
+        self.fling_dispatched.set(false);
+        self.physics.borrow_mut().set_fling_velocity(velocity.y);
+        request_frame();
+    }
+
+    fn dispatch_post_fling(&self, velocity: Vec2) {
+        if self.fling_dispatched.get() {
+            return;
+        }
+        if let Some(ref parent) = *self.parent_connection.borrow() {
+            self.fling_dispatched.set(true);
+            parent.dispatch_post_fling(Vec2::ZERO, velocity, NestedScrollSource::UserInput);
+        }
     }
 
     /// Feed leftover (after the nested parent chain has had its chance via
@@ -737,6 +842,11 @@ impl ScrollState {
             request_frame();
             true
         } else {
+            let clamped_velocity = p.take_clamped_velocity();
+            drop(p);
+            if let Some(v) = clamped_velocity {
+                self.dispatch_post_fling(Vec2 { x: 0.0, y: v });
+            }
             false
         }
     }
@@ -749,25 +859,40 @@ impl ScrollState {
     pub fn to_binding(&self) -> ScrollBinding {
         let this = Rc::new(self.clone());
         let pc = Rc::clone(&this.parent_connection);
-        let c_on_scroll = {
+        let c_on_scroll_with_source = {
             let state = Rc::clone(&pc);
             let this = Rc::clone(&this);
-            Rc::new(move |d: Vec2| -> Vec2 {
-                let d = run_pre_scroll(&state, d);
+            Rc::new(move |d: Vec2, source: ScrollSource| -> Vec2 {
+                let available = run_pre_scroll(&state, d);
+                let pre_consumed = d - available;
                 // Clamp this scroller first; leftover goes to the nested parent
                 // chain (post-scroll) BEFORE rubber-band overscroll.
-                let leftover_y = this.scroll_immediate(d.y);
+                let leftover_y = this.apply_delta_with_source(available.y, source);
                 let result = Vec2 {
-                    x: d.x,
+                    x: available.x,
                     y: leftover_y,
                 };
-                let after_parent = run_post_scroll(&state, result);
+                let consumed = pre_consumed
+                    + Vec2 {
+                        x: 0.0,
+                        y: available.y - leftover_y,
+                    };
+                let after_parent = run_post_scroll(
+                    &state,
+                    consumed,
+                    result,
+                    NestedScrollSource::UserInput,
+                );
                 let final_y = this.apply_overscroll(after_parent.y);
                 Vec2 {
                     x: after_parent.x,
                     y: final_y,
                 }
             })
+        } as Rc<dyn Fn(Vec2, ScrollSource) -> Vec2>;
+        let c_on_scroll = {
+            let source_aware = Rc::clone(&c_on_scroll_with_source);
+            Rc::new(move |d: Vec2| source_aware(d, ScrollSource::Touch))
         } as Rc<dyn Fn(Vec2) -> Vec2>;
         let c_set_viewport = {
             let this = Rc::clone(&this);
@@ -799,6 +924,7 @@ impl ScrollState {
         };
         ScrollBinding::Vertical(ScrollAxisBinding {
             on_scroll: Some(c_on_scroll),
+            on_scroll_with_source: Some(c_on_scroll_with_source),
             set_viewport_main: Some(c_set_viewport),
             set_content_main: Some(c_set_content),
             get_offset_main: Some(c_get),
@@ -824,6 +950,7 @@ pub struct HorizontalScrollState {
     show_scrollbar: Cell<bool>,
     reversed: Rc<Cell<bool>>,
     prev_tick: Cell<Instant>,
+    fling_dispatched: Cell<bool>,
 }
 
 impl Default for HorizontalScrollState {
@@ -845,6 +972,7 @@ impl HorizontalScrollState {
             show_scrollbar: Cell::new(true),
             reversed: Rc::new(Cell::new(false)),
             prev_tick: Cell::new(Instant::now()),
+            fling_dispatched: Cell::new(false),
         }
     }
 
@@ -866,25 +994,39 @@ impl HorizontalScrollState {
     pub fn connection(&self) -> NestedScrollConnection {
         let this = Rc::new(self.clone());
         let pc = Rc::clone(&this.parent_connection);
-        NestedScrollConnection::new().on_post_scroll(
-            move |_consumed: Vec2, available: Vec2, _source: NestedScrollSource| -> Vec2 {
-                if available.x.abs() < 0.001 && available.y.abs() < 0.001 {
-                    return Vec2::ZERO;
-                }
-                let leftover_x = this.scroll_nested(available.x);
-                let after = run_post_scroll(
-                    &pc,
+        let fling_target = Rc::clone(&this);
+        NestedScrollConnection::new()
+            .on_post_scroll(
+                move |consumed: Vec2, available: Vec2, _source: NestedScrollSource| -> Vec2 {
+                    if available.x.abs() < 0.001 && available.y.abs() < 0.001 {
+                        return Vec2::ZERO;
+                    }
+                    let leftover_x = this.scroll_nested(available.x);
+                    let own_consumed = available.x - leftover_x;
+                    let after = run_post_scroll(
+                        &pc,
+                        Vec2 {
+                            x: consumed.x + own_consumed,
+                            y: consumed.y,
+                        },
+                        Vec2 {
+                            x: leftover_x,
+                            y: available.y,
+                        },
+                        NestedScrollSource::UserInput,
+                    );
                     Vec2 {
-                        x: leftover_x,
-                        y: available.y,
-                    },
-                );
-                Vec2 {
-                    x: available.x - after.x,
-                    y: available.y - after.y,
-                }
-            },
-        )
+                        x: available.x - after.x,
+                        y: available.y - after.y,
+                    }
+                },
+            )
+            .on_post_fling(
+                move |_consumed: Vec2, available: Vec2, _source: NestedScrollSource| -> Vec2 {
+                    fling_target.fling(available);
+                    available
+                },
+            )
     }
 
     pub fn set_show_scrollbar(&self, show: bool) {
@@ -937,16 +1079,26 @@ impl HorizontalScrollState {
     /// Apply a scroll delta from real user input; pre-empts any in-flight
     /// fling. See [`ScrollState::scroll_immediate`].
     pub fn scroll_immediate(&self, dx: f32) -> f32 {
-        self.apply_delta(dx, true)
+        self.apply_delta(dx, DeltaVelocity::User)
     }
 
     /// Apply leftover from a nested child without cancelling this container's
     /// own fling. See [`ScrollState::scroll_nested`].
     pub fn scroll_nested(&self, dx: f32) -> f32 {
-        self.apply_delta(dx, false)
+        self.apply_delta(dx, DeltaVelocity::Nested)
     }
 
-    fn apply_delta(&self, dx: f32, user: bool) -> f32 {
+    /// Source-aware delta application; wheel deltas never seed a fling.
+    pub fn apply_delta_with_source(&self, dx: f32, source: ScrollSource) -> f32 {
+        let mode = if source == ScrollSource::Wheel {
+            DeltaVelocity::Wheel
+        } else {
+            DeltaVelocity::User
+        };
+        self.apply_delta(dx, mode)
+    }
+
+    fn apply_delta(&self, dx: f32, mode: DeltaVelocity) -> f32 {
         let dx = if dx.is_finite() { dx } else { 0.0 };
         let before = self.scroll_offset.get();
         let max_off = (self.content_width.get() - self.viewport_width.get()).max(0.0);
@@ -954,12 +1106,32 @@ impl HorizontalScrollState {
         let new_off = clamp_offset(before + dx, max_off);
         self.scroll_offset.set(new_off);
         let consumed = new_off - before;
-        if user {
-            self.physics.borrow_mut().record_user_input(consumed);
-        } else {
-            self.physics.borrow_mut().record_nested_input(consumed);
+        match mode {
+            DeltaVelocity::User => {
+                self.fling_dispatched.set(false);
+                self.physics.borrow_mut().record_user_input(consumed);
+            }
+            DeltaVelocity::Nested => self.physics.borrow_mut().record_nested_input(consumed),
+            DeltaVelocity::Wheel => self.physics.borrow_mut().clear_velocity(),
         }
         dx - consumed
+    }
+
+    /// Seed a fling from a velocity (px/s).
+    pub fn fling(&self, velocity: Vec2) {
+        self.fling_dispatched.set(false);
+        self.physics.borrow_mut().set_fling_velocity(velocity.x);
+        request_frame();
+    }
+
+    fn dispatch_post_fling(&self, velocity: Vec2) {
+        if self.fling_dispatched.get() {
+            return;
+        }
+        if let Some(ref parent) = *self.parent_connection.borrow() {
+            self.fling_dispatched.set(true);
+            parent.dispatch_post_fling(Vec2::ZERO, velocity, NestedScrollSource::UserInput);
+        }
     }
 
     /// Feed leftover (after the nested parent chain) into rubber-band overscroll.
@@ -993,6 +1165,11 @@ impl HorizontalScrollState {
             request_frame();
             true
         } else {
+            let clamped_velocity = p.take_clamped_velocity();
+            drop(p);
+            if let Some(v) = clamped_velocity {
+                self.dispatch_post_fling(Vec2 { x: v, y: 0.0 });
+            }
             false
         }
     }
@@ -1004,23 +1181,38 @@ impl HorizontalScrollState {
     pub fn to_binding(&self) -> ScrollBinding {
         let this = Rc::new(self.clone());
         let pc = Rc::clone(&this.parent_connection);
-        let c_on_scroll = {
+        let c_on_scroll_with_source = {
             let state = Rc::clone(&pc);
             let this = Rc::clone(&this);
-            Rc::new(move |d: Vec2| -> Vec2 {
-                let d = run_pre_scroll(&state, d);
-                let leftover_x = this.scroll_immediate(d.x);
+            Rc::new(move |d: Vec2, source: ScrollSource| -> Vec2 {
+                let available = run_pre_scroll(&state, d);
+                let pre_consumed = d - available;
+                let leftover_x = this.apply_delta_with_source(available.x, source);
                 let result = Vec2 {
                     x: leftover_x,
-                    y: d.y,
+                    y: available.y,
                 };
-                let after_parent = run_post_scroll(&state, result);
+                let consumed = pre_consumed
+                    + Vec2 {
+                        x: available.x - leftover_x,
+                        y: 0.0,
+                    };
+                let after_parent = run_post_scroll(
+                    &state,
+                    consumed,
+                    result,
+                    NestedScrollSource::UserInput,
+                );
                 let final_x = this.apply_overscroll(after_parent.x);
                 Vec2 {
                     x: final_x,
                     y: after_parent.y,
                 }
             })
+        } as Rc<dyn Fn(Vec2, ScrollSource) -> Vec2>;
+        let c_on_scroll = {
+            let source_aware = Rc::clone(&c_on_scroll_with_source);
+            Rc::new(move |d: Vec2| source_aware(d, ScrollSource::Touch))
         } as Rc<dyn Fn(Vec2) -> Vec2>;
         let c_set_vp = {
             let this = Rc::clone(&this);
@@ -1052,6 +1244,7 @@ impl HorizontalScrollState {
         };
         ScrollBinding::Horizontal(ScrollAxisBinding {
             on_scroll: Some(c_on_scroll),
+            on_scroll_with_source: Some(c_on_scroll_with_source),
             set_viewport_main: Some(c_set_vp),
             set_content_main: Some(c_set_ct),
             get_offset_main: Some(c_get),
@@ -1083,6 +1276,7 @@ pub struct ScrollStateXY {
     reversed_x: Rc<Cell<bool>>,
     reversed_y: Rc<Cell<bool>>,
     prev_tick: Cell<Instant>,
+    fling_dispatched: Cell<bool>,
 }
 
 impl Default for ScrollStateXY {
@@ -1110,6 +1304,7 @@ impl ScrollStateXY {
             reversed_x: Rc::new(Cell::new(false)),
             reversed_y: Rc::new(Cell::new(false)),
             prev_tick: Cell::new(Instant::now()),
+            fling_dispatched: Cell::new(false),
         }
     }
 
@@ -1147,19 +1342,33 @@ impl ScrollStateXY {
     pub fn connection(&self) -> NestedScrollConnection {
         let this = Rc::new(self.clone());
         let pc = Rc::clone(&this.parent_connection);
-        NestedScrollConnection::new().on_post_scroll(
-            move |_consumed: Vec2, available: Vec2, _source: NestedScrollSource| -> Vec2 {
-                if available.x.abs() < 0.001 && available.y.abs() < 0.001 {
-                    return Vec2::ZERO;
-                }
-                let after = this.scroll_nested(available);
-                let after2 = run_post_scroll(&pc, after);
-                Vec2 {
-                    x: available.x - after2.x,
-                    y: available.y - after2.y,
-                }
-            },
-        )
+        let fling_target = Rc::clone(&this);
+        NestedScrollConnection::new()
+            .on_post_scroll(
+                move |consumed: Vec2, available: Vec2, _source: NestedScrollSource| -> Vec2 {
+                    if available.x.abs() < 0.001 && available.y.abs() < 0.001 {
+                        return Vec2::ZERO;
+                    }
+                    let leftover = this.scroll_nested(available);
+                    let own_consumed = available - leftover;
+                    let after2 = run_post_scroll(
+                        &pc,
+                        consumed + own_consumed,
+                        leftover,
+                        NestedScrollSource::UserInput,
+                    );
+                    Vec2 {
+                        x: available.x - after2.x,
+                        y: available.y - after2.y,
+                    }
+                },
+            )
+            .on_post_fling(
+                move |_consumed: Vec2, available: Vec2, _source: NestedScrollSource| -> Vec2 {
+                    fling_target.fling(available);
+                    available
+                },
+            )
     }
 
     pub fn set_viewport(&self, w: f32, h: f32) {
@@ -1238,16 +1447,26 @@ impl ScrollStateXY {
     /// Apply a scroll delta from real user input; pre-empts any in-flight
     /// fling. See [`ScrollState::scroll_immediate`].
     pub fn scroll_immediate(&self, d: Vec2) -> Vec2 {
-        self.apply_delta(d, true)
+        self.apply_delta(d, DeltaVelocity::User)
     }
 
     /// Apply leftover from a nested child without cancelling this container's
     /// own fling. See [`ScrollState::scroll_nested`].
     pub fn scroll_nested(&self, d: Vec2) -> Vec2 {
-        self.apply_delta(d, false)
+        self.apply_delta(d, DeltaVelocity::Nested)
     }
 
-    fn apply_delta(&self, d: Vec2, user: bool) -> Vec2 {
+    /// Source-aware delta application; wheel deltas never seed a fling.
+    pub fn apply_delta_with_source(&self, d: Vec2, source: ScrollSource) -> Vec2 {
+        let mode = if source == ScrollSource::Wheel {
+            DeltaVelocity::Wheel
+        } else {
+            DeltaVelocity::User
+        };
+        self.apply_delta(d, mode)
+    }
+
+    fn apply_delta(&self, d: Vec2, mode: DeltaVelocity) -> Vec2 {
         let d = Vec2 {
             x: if d.x.is_finite() { d.x } else { 0.0 },
             y: if d.y.is_finite() { d.y } else { 0.0 },
@@ -1264,18 +1483,44 @@ impl ScrollStateXY {
 
         let mut px = self.physics_x.borrow_mut();
         let mut py = self.physics_y.borrow_mut();
-        if user {
-            px.record_user_input(cx);
-            py.record_user_input(cy);
-        } else {
-            px.record_nested_input(cx);
-            py.record_nested_input(cy);
+        match mode {
+            DeltaVelocity::User => {
+                self.fling_dispatched.set(false);
+                px.record_user_input(cx);
+                py.record_user_input(cy);
+            }
+            DeltaVelocity::Nested => {
+                px.record_nested_input(cx);
+                py.record_nested_input(cy);
+            }
+            DeltaVelocity::Wheel => {
+                px.clear_velocity();
+                py.clear_velocity();
+            }
         }
         drop((px, py));
 
         Vec2 {
             x: d.x - cx,
             y: d.y - cy,
+        }
+    }
+
+    /// Seed a fling from a velocity (px/s) on both axes.
+    pub fn fling(&self, velocity: Vec2) {
+        self.fling_dispatched.set(false);
+        self.physics_x.borrow_mut().set_fling_velocity(velocity.x);
+        self.physics_y.borrow_mut().set_fling_velocity(velocity.y);
+        request_frame();
+    }
+
+    fn dispatch_post_fling(&self, velocity: Vec2) {
+        if self.fling_dispatched.get() {
+            return;
+        }
+        if let Some(ref parent) = *self.parent_connection.borrow() {
+            self.fling_dispatched.set(true);
+            parent.dispatch_post_fling(Vec2::ZERO, velocity, NestedScrollSource::UserInput);
         }
     }
 
@@ -1346,6 +1591,7 @@ impl ScrollStateXY {
             } else {
                 let nx = clamp_offset(bx + px.vel * dt, max_x);
                 if (nx - bx).abs() < 0.01 && (bx <= 0.0 || bx >= max_x) {
+                    px.clamped_velocity = Some(px.vel);
                     px.vel = 0.0;
                     px.animating = false;
                 } else {
@@ -1371,6 +1617,7 @@ impl ScrollStateXY {
             } else {
                 let ny = clamp_offset(by + py.vel * dt, max_y);
                 if (ny - by).abs() < 0.01 && (by <= 0.0 || by >= max_y) {
+                    py.clamped_velocity = Some(py.vel);
                     py.vel = 0.0;
                     py.animating = false;
                 } else {
@@ -1388,8 +1635,17 @@ impl ScrollStateXY {
             }
         }
         let running = px.animating || py.animating;
+        let clamped_x = px.take_clamped_velocity();
+        let clamped_y = py.take_clamped_velocity();
+        drop((px, py));
         if running {
             request_frame();
+        }
+        if clamped_x.is_some() || clamped_y.is_some() {
+            self.dispatch_post_fling(Vec2 {
+                x: clamped_x.unwrap_or(0.0),
+                y: clamped_y.unwrap_or(0.0),
+            });
         }
         running
     }
@@ -1401,15 +1657,26 @@ impl ScrollStateXY {
     pub fn to_binding(&self) -> ScrollBinding {
         let this = Rc::new(self.clone());
         let pc = Rc::clone(&this.parent_connection);
-        let c_on_scroll = {
+        let c_on_scroll_with_source = {
             let state = Rc::clone(&pc);
             let this = Rc::clone(&this);
-            Rc::new(move |d: Vec2| -> Vec2 {
-                let d = run_pre_scroll(&state, d);
-                let result = this.scroll_immediate(d);
-                let after_parent = run_post_scroll(&state, result);
+            Rc::new(move |d: Vec2, source: ScrollSource| -> Vec2 {
+                let available = run_pre_scroll(&state, d);
+                let pre_consumed = d - available;
+                let result = this.apply_delta_with_source(available, source);
+                let consumed = pre_consumed + (available - result);
+                let after_parent = run_post_scroll(
+                    &state,
+                    consumed,
+                    result,
+                    NestedScrollSource::UserInput,
+                );
                 this.apply_overscroll(after_parent)
             })
+        } as Rc<dyn Fn(Vec2, ScrollSource) -> Vec2>;
+        let c_on_scroll = {
+            let source_aware = Rc::clone(&c_on_scroll_with_source);
+            Rc::new(move |d: Vec2| source_aware(d, ScrollSource::Touch))
         } as Rc<dyn Fn(Vec2) -> Vec2>;
         let c_set_vw = {
             let this = Rc::clone(&this);
@@ -1453,6 +1720,7 @@ impl ScrollStateXY {
         };
         ScrollBinding::Both(ScrollBothBinding {
             on_scroll: Some(c_on_scroll),
+            on_scroll_with_source: Some(c_on_scroll_with_source),
             set_viewport_width: Some(c_set_vw),
             set_viewport_height: Some(c_set_vh),
             set_content_width: Some(c_set_cw),
@@ -1477,14 +1745,29 @@ pub fn run_pre_scroll(conn: &RefCell<Option<NestedScrollConnection>>, d: Vec2) -
     }
 }
 
-pub fn run_post_scroll(conn: &RefCell<Option<NestedScrollConnection>>, leftover: Vec2) -> Vec2 {
-    if let Some(ref parent) = *conn.borrow() {
-        let added =
-            parent.dispatch_post_scroll(Vec2::ZERO, leftover, NestedScrollSource::UserInput);
-        leftover - added
+/// Dispatch leftover scroll to the parent chain and return what remains after
+/// the chain's consumption. `consumed` is the amount already consumed before
+/// reaching this helper (by pre-scroll and by this scroller).
+pub fn run_post_scroll(
+    connection: &RefCell<Option<NestedScrollConnection>>,
+    consumed: Vec2,
+    available: Vec2,
+    source: NestedScrollSource,
+) -> Vec2 {
+    if let Some(ref parent) = *connection.borrow() {
+        let added = parent.dispatch_post_scroll(consumed, available, source);
+        available - added
     } else {
-        leftover
+        available
     }
+}
+
+/// Compatibility wrapper for callers that have no consumption to report.
+pub fn run_post_scroll_zero(
+    connection: &RefCell<Option<NestedScrollConnection>>,
+    available: Vec2,
+) -> Vec2 {
+    run_post_scroll(connection, Vec2::ZERO, available, NestedScrollSource::UserInput)
 }
 
 #[cfg(test)]

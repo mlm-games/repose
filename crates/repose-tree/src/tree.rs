@@ -138,6 +138,7 @@ fn scroll_axis_identity_changed(
     new: &repose_core::scroll::ScrollAxisBinding,
 ) -> bool {
     rc_identity_changed(&old.on_scroll, &new.on_scroll)
+        || rc_identity_changed(&old.on_scroll_with_source, &new.on_scroll_with_source)
         || rc_identity_changed(&old.set_viewport_main, &new.set_viewport_main)
         || rc_identity_changed(&old.set_content_main, &new.set_content_main)
         || rc_identity_changed(&old.get_offset_main, &new.get_offset_main)
@@ -164,6 +165,7 @@ fn scroll_identity_changed(
             Some(repose_core::ScrollBinding::Both(new)),
         ) => {
             rc_identity_changed(&old.on_scroll, &new.on_scroll)
+                || rc_identity_changed(&old.on_scroll_with_source, &new.on_scroll_with_source)
                 || rc_identity_changed(&old.set_viewport_width, &new.set_viewport_width)
                 || rc_identity_changed(&old.set_viewport_height, &new.set_viewport_height)
                 || rc_identity_changed(&old.set_content_width, &new.set_content_width)

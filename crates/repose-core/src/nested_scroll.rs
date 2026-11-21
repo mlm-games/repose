@@ -81,6 +81,8 @@ impl NestedScrollConnection {
             .unwrap_or(Vec2::ZERO)
     }
 
+    /// Offer a fling to ancestors before this scrollable consumes it. Pair
+    /// with `dispatch_post_fling` to coordinate who actually starts a fling.
     pub fn dispatch_pre_fling(&self, available: Vec2, source: NestedScrollSource) -> Vec2 {
         self.on_pre_fling
             .as_ref()
@@ -88,6 +90,22 @@ impl NestedScrollConnection {
             .unwrap_or(Vec2::ZERO)
     }
 
+    /// Hand a fling that clamped at a boundary to ancestors, so a parent can
+    /// keep coasting with the leftover velocity. The intended chaining pattern
+    /// is for the parent to seed its own physics from the velocity it receives:
+    ///
+    /// ```ignore
+    /// let connection = NestedScrollConnection::new().on_post_fling(
+    ///     |_consumed, available, _source| {
+    ///         parent_state.fling(available);
+    ///         available
+    ///     },
+    /// );
+    /// child_state.set_nested_scroll_parent(connection);
+    /// ```
+    ///
+    /// `ScrollState::connection()` already wires this up, so the common
+    /// parent/child case needs no extra code.
     pub fn dispatch_post_fling(
         &self,
         consumed: Vec2,

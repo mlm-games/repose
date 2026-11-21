@@ -37,6 +37,18 @@ pub fn remember_scroll_state_xy(key: impl Into<String>) -> Rc<ScrollStateXY> {
 /// around expensive list bodies.
 pub fn ScrollArea(modifier: Modifier, state: Rc<ScrollState>, content: View) -> View {
     let binding = state.to_binding();
+    let on_scroll_with_source = match &binding {
+        ScrollBinding::Vertical(b) => b.on_scroll_with_source.clone(),
+        _ => unreachable!(),
+    };
+    let modifier = modifier.vertical_scroll(match binding {
+        ScrollBinding::Vertical(b) => b,
+        _ => unreachable!(),
+    });
+    let modifier = match on_scroll_with_source {
+        Some(handler) => modifier.on_scroll_with_source(move |d, s| handler(d, s)),
+        None => modifier,
+    };
     let content = crate::Box(
         Modifier::new()
             .flex_shrink(0.0)
@@ -47,10 +59,7 @@ pub fn ScrollArea(modifier: Modifier, state: Rc<ScrollState>, content: View) -> 
     .child(content);
 
     View::new(0, ViewKind::Box)
-        .modifier(modifier.vertical_scroll(match binding {
-            ScrollBinding::Vertical(b) => b,
-            _ => unreachable!(),
-        }))
+        .modifier(modifier)
         .with_children(vec![content])
 }
 
@@ -64,6 +73,18 @@ pub fn HorizontalScrollArea(
     content: View,
 ) -> View {
     let binding = state.to_binding();
+    let on_scroll_with_source = match &binding {
+        ScrollBinding::Horizontal(b) => b.on_scroll_with_source.clone(),
+        _ => unreachable!(),
+    };
+    let modifier = modifier.horizontal_scroll(match binding {
+        ScrollBinding::Horizontal(b) => b,
+        _ => unreachable!(),
+    });
+    let modifier = match on_scroll_with_source {
+        Some(handler) => modifier.on_scroll_with_source(move |d, s| handler(d, s)),
+        None => modifier,
+    };
     let content = crate::Box(
         Modifier::new()
             .flex_shrink(0.0)
@@ -74,10 +95,7 @@ pub fn HorizontalScrollArea(
     .child(content);
 
     View::new(0, ViewKind::Box)
-        .modifier(modifier.horizontal_scroll(match binding {
-            ScrollBinding::Horizontal(b) => b,
-            _ => unreachable!(),
-        }))
+        .modifier(modifier)
         .with_children(vec![content])
 }
 
@@ -87,12 +105,21 @@ pub fn HorizontalScrollArea(
 /// both axes.
 pub fn ScrollAreaXY(modifier: Modifier, state: Rc<ScrollStateXY>, content: View) -> View {
     let binding = state.to_binding();
+    let on_scroll_with_source = match &binding {
+        ScrollBinding::Both(b) => b.on_scroll_with_source.clone(),
+        _ => unreachable!(),
+    };
+    let modifier = modifier.scrollable(match binding {
+        ScrollBinding::Both(b) => b,
+        _ => unreachable!(),
+    });
+    let modifier = match on_scroll_with_source {
+        Some(handler) => modifier.on_scroll_with_source(move |d, s| handler(d, s)),
+        None => modifier,
+    };
     let content = crate::Box(Modifier::new().flex_shrink(0.0)).child(content);
 
     View::new(0, ViewKind::Box)
-        .modifier(modifier.scrollable(match binding {
-            ScrollBinding::Both(b) => b,
-            _ => unreachable!(),
-        }))
+        .modifier(modifier)
         .with_children(vec![content])
 }

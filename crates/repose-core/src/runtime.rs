@@ -37,6 +37,10 @@ thread_local! {
     /// Captured-focus lock (`FocusRequester::capture_focus`). While set,
     /// queued requests for other targets are denied and focus stays pinned.
     static FOCUS_CAPTURED: RefCell<Option<u64>> = const { RefCell::new(None) };
+
+    /// Focusable view ids in declaration/layout order, captured by paint before
+    /// hit regions are reordered by z-index for hit testing.
+    static FOCUS_ORDER: RefCell<Option<Vec<u64>>> = const { RefCell::new(None) };
 }
 
 pub const CLEAR_FOCUS_MARKER: u64 = u64::MAX;
@@ -280,6 +284,18 @@ pub fn drain_focus_requests() -> Vec<u64> {
 /// Currently captured focus target, if any.
 pub fn focus_capture() -> Option<u64> {
     FOCUS_CAPTURED.with(|c| *c.borrow())
+}
+
+/// Record the focusable ids in declaration/layout order for the frame being
+/// painted. Called by the layout engine before hit regions are reordered for
+/// hit testing.
+pub fn set_focus_order(order: Vec<u64>) {
+    FOCUS_ORDER.with(|o| *o.borrow_mut() = Some(order));
+}
+
+/// Take the focus order captured by the last paint, if any.
+pub fn take_focus_order() -> Option<Vec<u64>> {
+    FOCUS_ORDER.with(|o| o.borrow_mut().take())
 }
 
 /// A handle that can programmatically request focus for a widget.
@@ -1767,7 +1783,14 @@ impl Scheduler {
         let root = guard.scope.run(|| build_root(self));
         let (scene, hits, sem) = layout_paint(&root, self.size);
 
-        let focus_chain: Vec<u64> = hits.iter().filter(|h| h.focusable).map(|h| h.id).collect();
+        let focus_chain: Vec<u64> = match take_focus_order() {
+            Some(order) => {
+                let focusable: FxHashSet<u64> =
+                    hits.iter().filter(|h| h.focusable).map(|h| h.id).collect();
+                order.into_iter().filter(|id| focusable.contains(id)).collect()
+            }
+            None => hits.iter().filter(|h| h.focusable).map(|h| h.id).collect(),
+        };
 
         let live_scope_keys = guard.live_scope_keys();
         let frame = Frame {

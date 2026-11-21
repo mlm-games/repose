@@ -267,6 +267,13 @@ impl LayoutEngine {
         sems.extend(before_sems);
         sems.extend(after_sems);
 
+        let focus_order: Vec<u64> = hits
+            .iter()
+            .filter(|hit| hit.focusable)
+            .map(|hit| hit.id)
+            .collect();
+        repose_core::runtime::set_focus_order(focus_order);
+
         if !hits.is_empty() {
             hits.sort_by(|a, b| a.z_index.partial_cmp(&b.z_index).unwrap_or(Ordering::Equal));
 
@@ -1501,7 +1508,9 @@ impl LayoutEngine {
         };
 
         // Sync focus transitions into the InteractionSource (Compose FocusInteraction).
-        if owns_hit && let Some(ref src) = indication_source {
+        // The repaint-boundary cache path registers every hit with a source for
+        // focus dispatch; do the same here for sources on nodes without a hit.
+        if let Some(ref src) = indication_source {
             let msrc = src.to_mutable();
             let was = src.collect_is_focused();
             if is_focused && !was {
@@ -1509,6 +1518,7 @@ impl LayoutEngine {
             } else if !is_focused && was {
                 msrc.emit(Interaction::Unfocus);
             }
+            self.focus_interaction_sources.insert(view_id, src.clone());
         }
         if let (Some(factory), Some(interaction_source)) =
             (indication_factory.as_ref(), indication_source.as_ref())
@@ -1540,8 +1550,6 @@ impl LayoutEngine {
             // Auto-wire InteractionSource to pointer/hover/focus/drag callbacks.
             // The source's state is OR'd with the implicit view-ID state in state resolution above.
             if let Some(ref src) = indication_source {
-                self.focus_interaction_sources.insert(view_id, src.clone());
-
                 let msrc = src.to_mutable();
                 let last_press_id: Rc<Cell<Option<PressId>>> = Rc::new(Cell::new(None));
 
@@ -2703,6 +2711,7 @@ impl LayoutEngine {
                             id: view_id,
                             rect,
                             on_scroll: b.on_scroll.clone(),
+                            on_scroll_with_source: b.on_scroll_with_source.clone(),
                             focusable: false,
                             z_index: modifier.z_index,
                             ..HitRegion::from_modifier(view_id, rect, &modifier)
@@ -2815,6 +2824,7 @@ impl LayoutEngine {
                             id: view_id,
                             rect,
                             on_scroll: b.on_scroll.clone(),
+                            on_scroll_with_source: b.on_scroll_with_source.clone(),
                             focusable: false,
                             z_index: modifier.z_index,
                             ..HitRegion::from_modifier(view_id, rect, &modifier)
@@ -2925,6 +2935,7 @@ impl LayoutEngine {
                             id: view_id,
                             rect,
                             on_scroll: b.on_scroll.clone(),
+                            on_scroll_with_source: b.on_scroll_with_source.clone(),
                             focusable: false,
                             z_index: modifier.z_index,
                             ..HitRegion::from_modifier(view_id, rect, &modifier)
