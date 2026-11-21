@@ -247,7 +247,6 @@ fn chip_impl(
     let mut m = Modifier::new()
         .flex_shrink(0.0)
         .min_height(ChipDefaults::HEIGHT)
-        .height(ChipDefaults::HEIGHT)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: Color::TRANSPARENT,

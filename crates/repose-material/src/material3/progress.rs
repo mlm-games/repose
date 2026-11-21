@@ -429,7 +429,7 @@ pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicat
     };
 
     Box(Modifier::new()
-        .fill_max_width()
+        .width(ProgressIndicatorDefaults::LINEAR_INDICATOR_WIDTH)
         .height(ProgressIndicatorDefaults::LINEAR_INDICATOR_HEIGHT)
         .then(config.modifier)
         .painter(move |scene: &mut Scene, rect: Rect, alpha: f32| {

@@ -274,7 +274,6 @@ pub fn ListItem(
 
     let mut modifier = Modifier::new()
         .fill_max_width()
-        .min_width(Dp(200.0))
         .min_height(min_h)
         .background(bg);
     match config.shape_radii {

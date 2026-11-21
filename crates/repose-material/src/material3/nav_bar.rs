@@ -71,7 +71,7 @@ pub fn NavigationBar(
 
     let mut bar_m = Modifier::new()
         .fill_max_width()
-        .height(config.height)
+        .min_height(config.height)
         .background(config.container_color)
         .then(config.modifier);
 

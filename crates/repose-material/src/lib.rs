@@ -3,7 +3,7 @@ pub mod ripple;
 mod symbol;
 pub use symbol::Symbol;
 
-use repose_core::View;
+use repose_core::{Sp, View};
 use repose_ui::{Text, TextStyle};
 
 /// Register a font blob into the global FontSystem.
@@ -28,5 +28,7 @@ macro_rules! material_symbols {
 /// A Material Symbol icon.
 #[allow(non_snake_case)]
 pub fn Icon(symbol: Symbol) -> View {
-    Text(symbol.codepoint.to_string()).font_family("Material Symbols Outlined")
+    Text(symbol.codepoint.to_string())
+        .font_family("Material Symbols Outlined")
+        .size(Sp(24.0))
 }

@@ -161,6 +161,8 @@ pub fn NavigationRail(
         let item_width = remember_state_with_key(format!("rail_w_{}_{}", id, i), || 0.0f32);
         let mut item_m = Modifier::new()
             .fill_max_width()
+            .min_height(NavigationRailDefaults::ITEM_MIN_HEIGHT)
+            .propagate_min_constraints(true)
             .padding_values(PaddingValues {
                 left: Dp(4.0),
                 right: Dp(4.0),
@@ -251,7 +253,7 @@ pub fn NavigationRail(
 
     Column(
         Modifier::new()
-            .width(config.width)
+            .min_width(config.width)
             .fill_max_height()
             .background(config.container_color)
             .align_items(AlignItems::CENTER)
@@ -263,8 +265,8 @@ pub fn NavigationRail(
         Box(Modifier::new().flex_grow(1.0)).child(
             Column(
                 Modifier::new()
-                    .fill_max_size()
-                    .justify_content(JustifyContent::SPACE_BETWEEN)
+                    .fill_max_width()
+                    .gap(NavigationRailDefaults::ITEM_SPACING)
                     .align_items(AlignItems::CENTER),
             )
             .with_children(item_views),

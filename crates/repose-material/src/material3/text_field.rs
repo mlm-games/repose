@@ -722,8 +722,7 @@ fn outlined_field_decoration(
     Column(modifier.min_width(OutlinedTextFieldDefaults::MIN_WIDTH)).child((
         ZStack(
             Modifier::new()
-                .fill_max_width()
-                .min_width(Dp(200.0))
+                .min_width(TextFieldDefaults::MIN_WIDTH)
                 .min_height(OutlinedTextFieldDefaults::MIN_HEIGHT),
         )
         .child((
@@ -1075,7 +1074,7 @@ pub fn TextField(
     Column(modifier.min_width(TextFieldDefaults::MIN_WIDTH)).child((
         ZStack(
             Modifier::new()
-                .fill_max_width()
+                .min_width(TextFieldDefaults::MIN_WIDTH)
                 .min_height(TextFieldDefaults::MIN_HEIGHT),
         )
         .child((

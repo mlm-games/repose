@@ -639,70 +639,78 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
         .map(Rc::new)
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
 
-    let mut track = Modifier::new()
+    // Compose reserves a 48dp minimum interactive size while the visual
+    // pill stays 32dp tall, centred inside the touch host.
+    let track_visual = Modifier::new()
         .size(track_w, track_h)
         .padding(Dp(0.0))
         .clip_rounded(track_h * 0.5)
         .background(track_bg)
-        .border(Dp(track_border), border_color, track_h * 0.5)
+        .border(Dp(track_border), border_color, track_h * 0.5);
+
+    let mut host = Modifier::new()
+        .size(track_w, Dp(48.0))
+        .align_items(AlignItems::CENTER)
         .interaction_source(&sw_source);
 
-    track = apply_enabled_click(track, is_enabled, {
+    host = apply_enabled_click(host, is_enabled, {
         let cb = on_change;
         move || cb(!checked)
     });
-    track = track.semantics(Semantics {
+    host = host.semantics(Semantics {
         role: Role::Switch,
         enabled: is_enabled,
         checked: Some(checked),
         ..Default::default()
     });
 
-    Box(track.then(config.modifier)).child((
-        Box(Modifier::new()
-            .size(Dp(thumb_d), Dp(thumb_d))
-            .background(thumb_bg)
-            .clip_rounded(Dp(thumb_d * 0.5))
-            .hit_passthrough()
-            .align_items(AlignItems::CENTER)
-            .justify_content(JustifyContent::CENTER)
-            .absolute()
-            .inset(Some(Dp(thumb_left)), Some(thumb_top), None, None))
-        .child(
-            config
-                .thumb_content
-                .map(|v| {
-                    let icon_col = if !is_enabled {
-                        if checked {
-                            config.disabled_checked_icon_color
+    Box(host.then(config.modifier)).child(
+        Box(track_visual).child((
+            Box(Modifier::new()
+                .size(Dp(thumb_d), Dp(thumb_d))
+                .background(thumb_bg)
+                .clip_rounded(Dp(thumb_d * 0.5))
+                .hit_passthrough()
+                .align_items(AlignItems::CENTER)
+                .justify_content(JustifyContent::CENTER)
+                .absolute()
+                .inset(Some(Dp(thumb_left)), Some(thumb_top), None, None))
+            .child(
+                config
+                    .thumb_content
+                    .map(|v| {
+                        let icon_col = if !is_enabled {
+                            if checked {
+                                config.disabled_checked_icon_color
+                            } else {
+                                config.disabled_unchecked_icon_color
+                            }
+                        } else if checked {
+                            config.checked_icon_color
                         } else {
-                            config.disabled_unchecked_icon_color
-                        }
-                    } else if checked {
-                        config.checked_icon_color
-                    } else {
-                        config.unchecked_icon_color
-                    };
-                    with_content_color(icon_col, move || v)
-                })
-                .unwrap_or(Box(Modifier::new())),
-        ),
-        Box(Modifier::new()
-            .size(Dp(40.0), Dp(40.0))
-            .hit_passthrough()
-            .interaction_source(&sw_source)
-            .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
-                color: Some(th.on_surface),
-                bounded: false,
-                radius: Some(Dp(20.0)),
-                ..Default::default()
-            }))
-            .absolute()
-            .inset(
-                Some(Dp(thumb_left + thumb_d * 0.5 - 20.0)),
-                Some(track_h * 0.5 - Dp(20.0)),
-                None,
-                None,
-            )),
-    ))
+                            config.unchecked_icon_color
+                        };
+                        with_content_color(icon_col, move || v)
+                    })
+                    .unwrap_or(Box(Modifier::new())),
+            ),
+            Box(Modifier::new()
+                .size(Dp(40.0), Dp(40.0))
+                .hit_passthrough()
+                .interaction_source(&sw_source)
+                .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
+                    color: Some(th.on_surface),
+                    bounded: false,
+                    radius: Some(Dp(20.0)),
+                    ..Default::default()
+                }))
+                .absolute()
+                .inset(
+                    Some(Dp(thumb_left + thumb_d * 0.5 - 20.0)),
+                    Some(track_h * 0.5 - Dp(20.0)),
+                    None,
+                    None,
+                )),
+        )),
+    )
 }

@@ -28,14 +28,15 @@ impl Default for BadgeConfig {
 pub fn Badge(content: Option<View>, config: BadgeConfig) -> View {
     match content {
         None => Box(Modifier::new()
-            .size(BadgeDefaults::DOT_SIZE, BadgeDefaults::DOT_SIZE)
+            .min_width(BadgeDefaults::DOT_SIZE)
+            .min_height(BadgeDefaults::DOT_SIZE)
             .background(config.container_color)
             .clip_rounded(BadgeDefaults::DOT_SIZE * 0.5)
             .flex_shrink(0.0)
             .then(config.modifier)),
         Some(view) => Box(Modifier::new()
             .min_width(BadgeDefaults::LABEL_MIN_WIDTH)
-            .height(BadgeDefaults::LABEL_HEIGHT)
+            .min_height(BadgeDefaults::LABEL_HEIGHT)
             .background(config.container_color)
             .clip_rounded(BadgeDefaults::LABEL_HEIGHT * 0.5)
             .padding_values(PaddingValues {

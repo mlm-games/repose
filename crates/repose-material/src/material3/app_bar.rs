@@ -257,7 +257,7 @@ fn top_app_bar_layout(
 
     let root_m = Modifier::new()
         .fill_max_width()
-        .height(config.height + Px(insets.top).to_dp())
+        .min_height(config.height + Px(insets.top).to_dp())
         .background(bg)
         .translate(0.0, scroll_offset)
         .semantics(Semantics::new(Role::Container));

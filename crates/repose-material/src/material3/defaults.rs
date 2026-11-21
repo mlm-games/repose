@@ -104,6 +104,7 @@ impl ProgressIndicatorDefaults {
     pub fn linear_track_color() -> Color {
         theme().secondary_container
     }
+    pub const LINEAR_INDICATOR_WIDTH: Dp = Dp(240.0);
     pub const LINEAR_INDICATOR_HEIGHT: Dp = Dp(4.0);
     pub const LINEAR_INDICATOR_GAP_SIZE: Dp = Dp(4.0);
     pub const LINEAR_TRACK_STOP_SIZE: Dp = Dp(4.0);
@@ -371,7 +372,7 @@ impl IconButtonDefaults {
 pub struct CheckboxDefaults;
 
 impl CheckboxDefaults {
-    pub const TOUCH_TARGET_SIZE: Dp = Dp(40.0);
+    pub const TOUCH_TARGET_SIZE: Dp = Dp(48.0);
     pub const BOX_SIZE: Dp = Dp(18.0);
     pub const STROKE_WIDTH: Dp = Dp(2.0);
     pub const CORNER_RADIUS: Dp = Dp(2.0);
@@ -410,7 +411,7 @@ impl CheckboxDefaults {
 pub struct RadioButtonDefaults;
 
 impl RadioButtonDefaults {
-    pub const TOUCH_TARGET_SIZE: Dp = Dp(40.0);
+    pub const TOUCH_TARGET_SIZE: Dp = Dp(48.0);
     pub const OUTER_RADIUS: Dp = Dp(10.0);
     pub const DOT_RADIUS: Dp = Dp(5.0);
     pub const STROKE_WIDTH: Dp = Dp(2.0);
@@ -992,6 +993,8 @@ pub struct NavigationDrawerDefaults;
 
 impl NavigationDrawerDefaults {
     pub const WIDTH: Dp = Dp(300.0);
+    pub const MIN_WIDTH: Dp = Dp(240.0);
+    pub const MAX_WIDTH: Dp = Dp(360.0);
     pub const TONAL_ELEVATION: Dp = Dp(0.0);
     pub fn container_color() -> Color {
         theme().surface_container_low

@@ -66,7 +66,8 @@ fn fab_impl(icon: View, on_click: impl Fn() + 'static, config: FABConfig) -> Vie
     };
 
     let mut m = Modifier::new()
-        .size(config.size, config.size)
+        .min_width(config.size)
+        .min_height(config.size)
         .background(bg)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
@@ -203,9 +204,7 @@ pub fn ExtendedFAB(
     Row(m).child((
         icon.map(|v| super::util::icon_content_with_color(content_color, v))
             .unwrap_or(Box(Modifier::new())),
-        Box(Modifier::new()
-            .width(if has_icon { Dp(12.0) } else { Dp::ZERO })
-            .fill_max_height()),
+        Box(Modifier::new().width(if has_icon { Dp(12.0) } else { Dp::ZERO })),
         Text(label)
             .color(content_color)
             .size(th.typography.label_large)

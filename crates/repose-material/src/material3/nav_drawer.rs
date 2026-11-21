@@ -98,6 +98,8 @@ pub fn ModalNavigationDrawer(
         )
         .fill_max_height()
         .width(config.width)
+        .min_width(NavigationDrawerDefaults::MIN_WIDTH)
+        .max_width(NavigationDrawerDefaults::MAX_WIDTH)
         .background(config.container_color)
         .clip_rounded(config.shape_radius);
 
@@ -163,6 +165,8 @@ pub fn DismissibleNavigationDrawer(
         )
         .fill_max_height()
         .width(config.width)
+        .min_width(NavigationDrawerDefaults::MIN_WIDTH)
+        .max_width(NavigationDrawerDefaults::MAX_WIDTH)
         .background(config.container_color)
         .clip_rounded(config.shape_radius);
 
@@ -195,6 +199,8 @@ pub fn PermanentNavigationDrawer(
     Row(Modifier::new().fill_max_size()).child((
         Box(Modifier::new()
             .width(config.width)
+            .min_width(NavigationDrawerDefaults::MIN_WIDTH)
+            .max_width(NavigationDrawerDefaults::MAX_WIDTH)
             .fill_max_height()
             .background(config.container_color))
         .child(
@@ -320,6 +326,8 @@ pub fn ModalDrawerSheet(modifier: Modifier, content: View) -> View {
     Box(Modifier::new()
         .fill_max_height()
         .width(NavigationDrawerDefaults::WIDTH)
+        .min_width(NavigationDrawerDefaults::MIN_WIDTH)
+        .max_width(NavigationDrawerDefaults::MAX_WIDTH)
         .background(NavigationDrawerDefaults::container_color())
         .then(modifier)
         .semantics(Semantics::new(Role::Dialog)))

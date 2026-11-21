@@ -84,7 +84,6 @@ pub fn BottomSheet(
     let sheet = Box(modifier
         .fill_max_width()
         .max_width(config.max_width)
-        .min_height(config.peek_height)
         .alpha(opacity)
         .background(config.container_color)
         .state_elevation(StateElevation {

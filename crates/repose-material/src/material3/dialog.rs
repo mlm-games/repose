@@ -420,7 +420,6 @@ fn build_dialog(
         _ => unreachable!(),
     };
     let scrollable_body = Box(Modifier::new()
-        .fill_max_width()
         .max_height(platform_max_h)
         .vertical_scroll(axis_binding))
     .child(content);
