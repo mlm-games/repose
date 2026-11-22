@@ -171,6 +171,7 @@ where
     let spacing_px = spacing.to_px().0.max(0.0);
     let uniform_height_dp = item_height.uniform_height().map(|height| height.max(1.0));
     let uniform_height_px = uniform_height_dp.map(|height| Dp(height).to_px().0);
+    state.set_reverse_layout(reverse_layout, padding_bottom_px);
     state.set_content_padding(padding_top_px);
     state.set_item_count(items.len());
     state.set_item_metrics(spacing_px, uniform_height_px.unwrap_or(0.0));
@@ -251,7 +252,9 @@ where
         (0, 0)
     };
     state.set_visible_range(first_visible, last_visible);
-    if let Some(&key) = current_keys.get(first_visible) {
+    if reverse_layout && state.core.axis.offset.get() <= f32::EPSILON {
+        state.core.clear_anchor();
+    } else if let Some(&key) = current_keys.get(first_visible) {
         state
             .core
             .set_anchor(key, scroll_offset_px - item_top_px(first_visible));

@@ -775,6 +775,8 @@ impl LazyScrollCore {
 pub struct LazyColumnState {
     pub(crate) core: LazyScrollCore,
     geometry: RefCell<LazyColumnGeometryCache>,
+    reverse_layout: Cell<bool>,
+    padding_bottom_px: Cell<f32>,
 }
 
 impl Default for LazyColumnState {
@@ -788,6 +790,8 @@ impl LazyColumnState {
         Self {
             core: LazyScrollCore::new(),
             geometry: RefCell::new(LazyColumnGeometryCache::new()),
+            reverse_layout: Cell::new(false),
+            padding_bottom_px: Cell::new(0.0),
         }
     }
 
@@ -888,10 +892,30 @@ impl LazyColumnState {
         self.core.visible_range_signal()
     }
 
+    pub(crate) fn set_reverse_layout(&self, reverse_layout: bool, padding_bottom_px: f32) {
+        self.reverse_layout.set(reverse_layout);
+        self.padding_bottom_px.set(padding_bottom_px);
+    }
+
     pub fn offset_for_index(&self, index: usize) -> Option<f32> {
         let count = self.core.item_count();
         if index >= count {
             return None;
+        }
+        if self.reverse_layout.get() {
+            let padding = self.padding_bottom_px.get();
+            if let Some(geometry) = self.geometry.borrow().current()
+                && geometry.len() == count
+                && self.core.uniform_main.get() == 0.0
+            {
+                let after = count - index;
+                if after == count {
+                    return Some(padding);
+                }
+                return Some(padding + geometry.total() - geometry.top(after)
+                    + self.core.spacing_main.get());
+            }
+            return Some(padding + self.core.uniform_offset_for_index(index) - self.core.pad());
         }
         if let Some(geo) = self.geometry.borrow().current()
             && index < geo.len()
@@ -1282,6 +1306,23 @@ mod tests {
         assert_eq!(state.offset_for_index(10), None);
         state.set_visible_range(2, 5);
         assert_eq!(state.visible_range(), (2, 5));
+    }
+
+    #[test]
+    fn reversed_column_scroll_offsets_follow_item_order_from_bottom() {
+        let state = LazyColumnState::new();
+        state.set_reverse_layout(true, 6.0);
+        state.set_content_padding(10.0);
+        state.set_item_count(3);
+        state.set_item_metrics(4.0, 50.0);
+        assert_eq!(state.offset_for_index(1), Some(60.0));
+
+        state.set_item_metrics(4.0, 0.0);
+        state.geometry(&[3, 2, 1], &[24.0, 34.0, 40.0]);
+        assert_eq!(state.offset_for_index(0), Some(6.0));
+        assert_eq!(state.offset_for_index(1), Some(50.0));
+        assert_eq!(state.offset_for_index(2), Some(84.0));
+        assert_eq!(state.offset_for_index(3), None);
     }
 
     #[test]
