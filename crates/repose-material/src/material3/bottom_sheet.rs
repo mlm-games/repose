@@ -279,7 +279,11 @@ pub fn ModalBottomSheet(
         remember_with_key(format!("mbs_height_{mbs_id}"), || Cell::new(0.0));
     let viewport_height = repose_core::locals::get_window_container_height().max(0.0);
     let measured_height = sheet_height.get().max(0.0);
-    let anim_distance = Dp(peek_h.0.max(viewport_height).max(measured_height) + 1.0);
+    let anim_distance = if measured_height > 0.0 {
+        Dp(measured_height + 1.0)
+    } else {
+        Dp(peek_h.0.max(viewport_height) + 1.0)
+    };
     let anim_distance_px = remember_with_key(format!("mbs_distance_{mbs_id}"), || {
         Cell::new(anim_distance.to_px().0)
     });
@@ -430,7 +434,6 @@ pub fn ModalBottomSheet(
                     let config = current_config.borrow().clone();
                     let off = modal_sheet_offset(*anim.borrow().get(), anim_distance_px.get());
                     let content = current_content.borrow().clone();
-                    let sheet_peek_height = Dp(state.peek_height.get().max(config.peek_height.0));
 
                     let mut sheet_mod = modifier
                         .clone()
@@ -457,19 +460,13 @@ pub fn ModalBottomSheet(
                             let drag_release_in_flight = drag_release_in_flight.clone();
                             let last_target = last_target.clone();
                             let last_spatial_motion = last_spatial_motion.clone();
-                            let viewport_height = Dp(viewport_height);
 
                             move |size| {
                                 if size.y.is_finite() {
                                     let height = size.y.max(0.0);
                                     if (sheet_height.get() - height).abs() > f32::EPSILON {
                                         sheet_height.set(height);
-                                        let distance = Dp(height
-                                            .max(viewport_height.0)
-                                            .max(sheet_peek_height.0)
-                                            + 1.0)
-                                        .to_px()
-                                        .0;
+                                        let distance = Dp(height + 1.0).to_px().0;
                                         anim_distance_px.set(distance);
                                         if !state.is_visible() {
                                             let current = *anim.borrow().get();
