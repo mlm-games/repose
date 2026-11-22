@@ -264,7 +264,7 @@ fn top_app_bar_layout(
 
     let nav = navigation_icon
         .map(|icon| with_content_color(colors.navigation_icon_content_color, move || icon))
-        .unwrap_or(Box(Modifier::new().width(Dp(16.0)).fill_max_height()));
+        .unwrap_or(Box(Modifier::new().width(Dp(8.0))));
 
     let actions_row = Row(Modifier::new()
         .align_items(AlignItems::CENTER)
@@ -320,11 +320,11 @@ fn top_app_bar_layout(
             .child(title_column),
         ))
     } else {
-        Row(root_m.padding_values(content_padding).then(config.modifier)).child((
+        Row(root_m.padding_values(content_padding).align_items(AlignItems::CENTER).then(config.modifier)).child((
             nav,
             Box(Modifier::new()
                 .padding_values(PaddingValues {
-                    left: Dp(16.0),
+                    left: Dp(4.0),
                     right: Dp(0.0),
                     top: Dp(0.0),
                     bottom: Dp(0.0),

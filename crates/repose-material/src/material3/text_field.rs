@@ -305,6 +305,7 @@ pub struct OutlinedTextFieldConfig {
     /// Only shown when `label` is `None`. When a label is present the label
     /// itself serves as the visual placeholder.
     pub placeholder: Option<String>,
+    pub shape_radius: Option<Dp>,
     /// Icon displayed at the start of the input.
     pub leading_icon: Option<View>,
     /// Icon displayed at the end of the input.
@@ -342,6 +343,7 @@ impl Default for OutlinedTextFieldConfig {
         Self {
             label: None,
             placeholder: None,
+            shape_radius: None,
             leading_icon: None,
             trailing_icon: None,
             single_line: true,
@@ -548,6 +550,7 @@ fn outlined_field_decoration(
 ) -> View {
     let th = theme();
     let has_label = label_str.is_some();
+    let radius = config.shape_radius.unwrap_or(th.shapes.small);
 
     let should_float = has_content || is_focused;
     let float_t = animate_f32(
@@ -623,7 +626,13 @@ fn outlined_field_decoration(
     let label_y = Dp(label_start_y.0 + (label_end_y.0 - label_start_y.0) * float_t);
 
     // Label X: expanded at text-input start (~24dp) -> minimized at border-start (~20dp)
-    let label_start_x = if has_label { 24.0 } else { 0.0 };
+    let label_start_x = if has_label && config.leading_icon.is_some() {
+        48.0
+    } else if has_label {
+        24.0
+    } else {
+        0.0
+    };
     let label_end_x = if has_label { 20.0 } else { 0.0 };
     let label_x = Dp(label_start_x - (label_start_x - label_end_x) * float_t);
 
@@ -728,13 +737,13 @@ fn outlined_field_decoration(
         .child((
             Box(Modifier::new()
                 .fill_max_size()
-                .clip_rounded(th.shapes.small)
+                .clip_rounded(radius)
                 .background(container_bg)),
             if has_label {
                 let mut bm = Modifier::new()
                     .fill_max_size()
-                    .clip_rounded(th.shapes.small)
-                    .border(Dp(border_w), border_color, th.shapes.small);
+                    .clip_rounded(radius)
+                    .border(Dp(border_w), border_color, radius);
                 if let Some((l, t, r, b)) = label_cutout {
                     bm = bm.clip_rect(l, t, r, b, ClipOp::Difference);
                 }
@@ -742,8 +751,8 @@ fn outlined_field_decoration(
             } else {
                 Box(Modifier::new()
                     .fill_max_size()
-                    .clip_rounded(th.shapes.small)
-                    .border(Dp(border_w), border_color, th.shapes.small))
+                    .clip_rounded(radius)
+                    .border(Dp(border_w), border_color, radius))
             },
             Row(Modifier::new()
                 .fill_max_size()
@@ -950,7 +959,13 @@ pub fn TextField(
     };
     let label_y = Dp(label_start_y.0 + (label_end_y.0 - label_start_y.0) * float_t);
 
-    let label_start_x = if has_label { 24.0 } else { 0.0 };
+    let label_start_x = if has_label && config.leading_icon.is_some() {
+        48.0
+    } else if has_label {
+        24.0
+    } else {
+        0.0
+    };
     let label_end_x = if has_label { 20.0 } else { 0.0 };
     let label_x = Dp(label_start_x - (label_start_x - label_end_x) * float_t);
 

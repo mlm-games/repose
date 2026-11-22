@@ -8,6 +8,7 @@ use repose_core::*;
 use repose_ui::{
     Box, Column, Row, Text, TextStyle, ViewExt,
     anim::{animate_color, animate_f32},
+    textfield::{TextMeasureConfig, measure_text},
 };
 
 use super::util::apply_m3_clickable;
@@ -55,6 +56,13 @@ enum TabCellWidth {
     Min(Dp),
 }
 
+#[derive(Clone, Copy)]
+enum IndicatorWidth {
+    Tab,
+    Content,
+    Fraction(f32),
+}
+
 fn tab_cell(
     row_id: u64,
     index: usize,
@@ -62,7 +70,7 @@ fn tab_cell(
     selected: bool,
     config: &TabRowConfig,
     width: TabCellWidth,
-    indicator_fraction: Option<f32>,
+    indicator_width: IndicatorWidth,
 ) -> View {
     let th = theme();
     let default_effects = AnimationSpec::spring_crit(40.0);
@@ -111,25 +119,27 @@ fn tab_cell(
 
     tab_m = apply_m3_clickable(tab_m, &tab_source, th.on_surface, tab.enabled, move || cb());
 
-    let indicator = Box(Modifier::new()
-        .fill_max_width()
-        .height(Dp(indicator_h))
-        .background(config.indicator_color)
-        .clip_rounded(TabDefaults::INDICATOR_CORNER));
-    let indicator = match indicator_fraction {
-        Some(f) => Row(Modifier::new()
-            .fill_max_width()
-            .justify_content(JustifyContent::CENTER))
-        .child(Box(Modifier::new().fill_max_width_frac(f.clamp(0.0, 1.0))).child(indicator)),
-        None => indicator,
+    let label_size = th.typography.title_small;
+    let width = match indicator_width {
+        IndicatorWidth::Tab => Modifier::new().fill_max_width(),
+        IndicatorWidth::Fraction(fraction) => Modifier::new().fill_max_width_frac(fraction),
+        IndicatorWidth::Content => {
+            let metrics = measure_text(&tab.label, label_size.to_px().0, TextMeasureConfig::default());
+            let label_width = Px(metrics.positions.last().copied().unwrap_or_default()).to_dp();
+            Modifier::new().width(Dp(label_width.0.max(24.0)))
+        }
     };
+    let indicator = Row(Modifier::new()
+        .absolute()
+        .inset(Some(Dp::ZERO), None, Some(Dp::ZERO), Some(Dp::ZERO))
+        .justify_content(JustifyContent::CENTER))
+        .child(Box(width.height(Dp(indicator_h))
+            .clip_rounded(TabDefaults::INDICATOR_CORNER)
+            .background(config.indicator_color)));
 
-    Column(tab_m).child((
+    Column(tab_m.gap(Dp(4.0))).child((
         tab.icon.unwrap_or(Box(Modifier::new())),
-        Text(tab.label)
-            .color(color)
-            .size(th.typography.title_small)
-            .single_line(),
+        Text(tab.label).color(color).size(label_size).single_line(),
         indicator,
     ))
 }
@@ -138,6 +148,10 @@ fn tab_cell(
 /// Text colors animate with DefaultEffects (spring_crit 40.0).
 /// Indicator height animates with DefaultEffects (spring_crit 40.0).
 pub fn TabRow(selected_index: usize, tabs: Vec<Tab>, config: TabRowConfig) -> View {
+    fixed_tab_row(selected_index, tabs, config, IndicatorWidth::Tab)
+}
+
+fn fixed_tab_row(selected_index: usize, tabs: Vec<Tab>, config: TabRowConfig, width: IndicatorWidth) -> View {
     let th = theme();
     let id = remember(|| TABROW_COUNTER.fetch_add(1, Ordering::Relaxed));
     let config_modifier = config.modifier.clone();
@@ -158,7 +172,7 @@ pub fn TabRow(selected_index: usize, tabs: Vec<Tab>, config: TabRowConfig) -> Vi
                         i == selected_index,
                         &config,
                         TabCellWidth::Fill,
-                        None,
+                        width,
                     )
                 })
                 .collect::<Vec<_>>(),
@@ -171,40 +185,11 @@ pub fn TabRow(selected_index: usize, tabs: Vec<Tab>, config: TabRowConfig) -> Vi
 }
 
 pub fn PrimaryTabRow(selected_index: usize, tabs: Vec<Tab>, config: TabRowConfig) -> View {
-    TabRow(selected_index, tabs, config)
+    fixed_tab_row(selected_index, tabs, config, IndicatorWidth::Content)
 }
 
 pub fn SecondaryTabRow(selected_index: usize, tabs: Vec<Tab>, config: TabRowConfig) -> View {
-    let th = theme();
-    let id = remember(|| TABROW_COUNTER.fetch_add(1, Ordering::Relaxed));
-    let config_modifier = config.modifier.clone();
-    Column(Modifier::new().fill_max_width().then(config_modifier)).child((
-        Row(Modifier::new()
-            .fill_max_width()
-            .height(config.height)
-            .background(config.container_color)
-            .semantics(Semantics::new(Role::Container).with_selectable_group()))
-        .child(
-            tabs.into_iter()
-                .enumerate()
-                .map(|(i, tab)| {
-                    tab_cell(
-                        *id,
-                        i,
-                        tab,
-                        i == selected_index,
-                        &config,
-                        TabCellWidth::Fill,
-                        Some(0.6),
-                    )
-                })
-                .collect::<Vec<_>>(),
-        ),
-        Box(Modifier::new()
-            .fill_max_width()
-            .height(Dp(1.0))
-            .background(th.outline_variant)),
-    ))
+    fixed_tab_row(selected_index, tabs, config, IndicatorWidth::Fraction(0.6))
 }
 
 #[derive(Clone, Debug)]
@@ -275,7 +260,7 @@ pub fn ScrollableTabRow(
                     i == selected_index,
                     &base,
                     TabCellWidth::Min(config.min_tab_width),
-                    None,
+                    IndicatorWidth::Tab,
                 )
             })
             .collect::<Vec<_>>(),

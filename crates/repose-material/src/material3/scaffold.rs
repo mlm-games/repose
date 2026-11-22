@@ -45,8 +45,10 @@ impl Default for ScaffoldConfig {
     }
 }
 
+#[track_caller]
 pub fn Scaffold(content: impl Fn(PaddingValues) -> View, config: ScaffoldConfig) -> View {
-    with_material_indication(|| scaffold_inner(content, config))
+    let instance_id = remember_auto("scaffold", unique_component_id);
+    with_material_indication(|| scaffold_inner(content, config, *instance_id))
 }
 
 fn max_dp(a: Dp, b: Dp) -> Dp {
@@ -73,8 +75,7 @@ fn measured_bar(bar: View, measured: Rc<Signal<f32>>, placement: Modifier) -> Vi
     .child(bar)
 }
 
-fn scaffold_inner(content: impl Fn(PaddingValues) -> View, config: ScaffoldConfig) -> View {
-    let instance_id = remember(unique_component_id);
+fn scaffold_inner(content: impl Fn(PaddingValues) -> View, config: ScaffoldConfig, instance_id: u64) -> View {
     let insets = window_insets();
     let (itop, ibottom, iime, ileft, iright) = if config.owns_window_insets {
         (
@@ -90,7 +91,7 @@ fn scaffold_inner(content: impl Fn(PaddingValues) -> View, config: ScaffoldConfi
     let has_top = config.top_bar.is_some();
     let has_bottom = config.bottom_bar.is_some();
     let has_fab = config.floating_action_button.is_some();
-    let identity = scaffold_identity(&config.modifier, *instance_id);
+    let identity = scaffold_identity(&config.modifier, instance_id);
     let top_height = remember_with_key(format!("{identity}:top"), || signal(0.0));
     let bottom_height = remember_with_key(format!("{identity}:bottom"), || signal(0.0));
     let fab_height = remember_with_key(format!("{identity}:fab"), || signal(0.0));
@@ -124,19 +125,22 @@ fn scaffold_inner(content: impl Fn(PaddingValues) -> View, config: ScaffoldConfi
     };
 
     let top_bar = config.top_bar.map(|bar| {
+        let key = remember_with_key(format!("{identity}:top-view"), unique_component_id);
         measured_bar(
             bar,
             top_height,
             Modifier::new()
+                .key(*key)
                 .absolute()
                 .inset(Some(Dp::ZERO), Some(itop), Some(Dp::ZERO), None),
         )
     });
     let bottom_bar = config.bottom_bar.map(|bar| {
+        let key = remember_with_key(format!("{identity}:bottom-view"), unique_component_id);
         measured_bar(
             bar,
             bottom_height,
-            Modifier::new().absolute().inset(
+            Modifier::new().key(*key).absolute().inset(
                 Some(Dp::ZERO),
                 None,
                 Some(Dp::ZERO),
@@ -151,6 +155,7 @@ fn scaffold_inner(content: impl Fn(PaddingValues) -> View, config: ScaffoldConfi
         }));
 
     let fab = config.floating_action_button.map(|fab| {
+        let key = remember_with_key(format!("{identity}:fab-view"), unique_component_id);
         let bottom = bottom_reserved + ScaffoldDefaults::FAB_MARGIN;
         let modifier = match config.fab_position {
             FabPosition::End => Modifier::new().absolute().inset(
@@ -165,7 +170,7 @@ fn scaffold_inner(content: impl Fn(PaddingValues) -> View, config: ScaffoldConfi
                 .align_self(AlignSelf::CENTER)
                 .inset(None, None, None, Some(bottom)),
         };
-        Box(modifier.on_size_changed({
+        Box(modifier.key(*key).on_size_changed({
             let measured = fab_height.clone();
             move |size| {
                 let height = if size.y.is_finite() {
