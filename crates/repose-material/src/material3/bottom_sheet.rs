@@ -113,11 +113,17 @@ pub fn BottomSheet(
     Column(Modifier::new().fill_max_width()).child((sheet, dismiss_target))
 }
 
-/// State for `ModalBottomSheet` - manages visibility and drag offset.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SheetAnchor {
+    Expanded,
+    Partial,
+    Hidden,
+}
+
+/// Visibility and resting position of a modal bottom sheet.
 pub struct SheetState {
-    visible: Signal<bool>,
-    /// Drag offset in px (pointer space).
-    drag_offset: Signal<f32>,
+    anchor: Signal<SheetAnchor>,
+    partial_expansion: bool,
     /// Peek height in [`Dp`] magnitudes.
     peek_height: Signal<f32>,
     id: u64,
@@ -126,8 +132,8 @@ pub struct SheetState {
 impl SheetState {
     pub fn new(peek_height: Dp) -> Self {
         Self {
-            visible: signal(false),
-            drag_offset: signal(0.0),
+            anchor: signal(SheetAnchor::Hidden),
+            partial_expansion: false,
             peek_height: signal(peek_height.0),
             id: unique_component_id(),
         }
@@ -137,17 +143,33 @@ impl SheetState {
         format!("sheet_{}_{}", self.id, suffix)
     }
 
+    /// Start at the partial anchor when the sheet is taller than half the viewport.
+    pub fn with_partial_expansion(mut self) -> Self {
+        self.partial_expansion = true;
+        self
+    }
+
     pub fn is_visible(&self) -> bool {
-        self.visible.get()
+        self.anchor.get() != SheetAnchor::Hidden
     }
 
     pub fn show(&self) {
-        self.visible.set_neq(true);
+        if !self.is_visible() {
+            let anchor = if self.partial_expansion {
+                SheetAnchor::Partial
+            } else {
+                SheetAnchor::Expanded
+            };
+            self.anchor.set_neq(anchor);
+        }
+    }
+
+    pub fn expand(&self) {
+        self.anchor.set_neq(SheetAnchor::Expanded);
     }
 
     pub fn dismiss(&self) {
-        self.visible.set_neq(false);
-        self.drag_offset.set_neq(0.0);
+        self.anchor.set_neq(SheetAnchor::Hidden);
     }
 
     pub fn set_peek_height(&self, h: Dp) {
@@ -243,6 +265,60 @@ fn modal_sheet_release_target(
     }
 }
 
+fn modal_sheet_partial_offset(sheet_height: f32, viewport_height: f32) -> f32 {
+    (sheet_height - viewport_height * 0.5).max(0.0)
+}
+
+fn modal_sheet_drag_anchor(
+    offset: f32,
+    distance: f32,
+    partial: f32,
+    velocity: f32,
+    positional_threshold: f32,
+    velocity_threshold: f32,
+) -> (SheetAnchor, f32) {
+    if partial <= f32::EPSILON || partial >= distance {
+        let target = modal_sheet_release_target(
+            offset,
+            distance,
+            velocity,
+            positional_threshold,
+            velocity_threshold,
+        );
+        return if target > 0.0 {
+            (SheetAnchor::Hidden, target)
+        } else {
+            (SheetAnchor::Expanded, 0.0)
+        };
+    }
+    let anchors = [
+        (SheetAnchor::Expanded, 0.0),
+        (SheetAnchor::Partial, partial),
+        (SheetAnchor::Hidden, distance),
+    ];
+    if velocity >= velocity_threshold {
+        return anchors
+            .iter()
+            .copied()
+            .find(|(_, position)| *position > offset)
+            .unwrap_or(anchors[2]);
+    }
+    if velocity <= -velocity_threshold {
+        return anchors
+            .iter()
+            .copied()
+            .rev()
+            .find(|(_, position)| *position < offset)
+            .unwrap_or(anchors[0]);
+    }
+    anchors
+        .into_iter()
+        .min_by(|(_, first), (_, second)| {
+            (first - offset).abs().total_cmp(&(second - offset).abs())
+        })
+        .unwrap_or(anchors[0])
+}
+
 fn modal_sheet_spatial_spec(travel: f32) -> AnimationSpec {
     let settle_progress = (MODAL_SHEET_SPRING_VISIBILITY_THRESHOLD_PX
         / travel.abs().max(MODAL_SHEET_SPRING_VISIBILITY_THRESHOLD_PX))
@@ -288,6 +364,16 @@ pub fn ModalBottomSheet(
         Cell::new(anim_distance.to_px().0)
     });
     anim_distance_px.set(anim_distance.to_px().0);
+    let partial_offset_px = remember_with_key(format!("mbs_partial_{mbs_id}"), || Cell::new(0.0));
+    let viewport_height_dp = remember_with_key(format!("mbs_viewport_{mbs_id}"), || Cell::new(0.0));
+    viewport_height_dp.set(viewport_height);
+    partial_offset_px.set(if state.partial_expansion {
+        Dp(modal_sheet_partial_offset(measured_height, viewport_height))
+            .to_px()
+            .0
+    } else {
+        0.0
+    });
     let overlay_guard = remember_with_key(format!("mbs_oguard_{mbs_id}"), || {
         RefCell::new(None::<OverlayGuard>)
     });
@@ -342,19 +428,20 @@ pub fn ModalBottomSheet(
         drag_release_in_flight.set(false);
     }
     let release_in_flight = drag_release_in_flight.get();
-    let anim_target = if state.is_visible() {
-        0.0
-    } else {
-        anim_distance_px.get()
+    let anim_target = match state.anchor.get() {
+        SheetAnchor::Expanded => 0.0,
+        SheetAnchor::Partial => partial_offset_px.get(),
+        SheetAnchor::Hidden => anim_distance_px.get(),
     };
     let spatial_motion = state.is_visible() || release_in_flight;
 
     {
         let mut a = anim.borrow_mut();
         let mut lt = last_target.borrow_mut();
-        if lt.is_nan()
-            || (*lt - anim_target).abs() > 1e-6
-            || last_spatial_motion.get() != spatial_motion
+        if !*is_dragging.borrow()
+            && (lt.is_nan()
+                || (*lt - anim_target).abs() > 1e-6
+                || last_spatial_motion.get() != spatial_motion)
         {
             let velocity = a.current_velocity();
             let travel = anim_target - *a.get();
@@ -388,7 +475,7 @@ pub fn ModalBottomSheet(
     }
 
     let scrim_target = if *is_dragging.borrow() {
-        *anim.borrow().get() < anim_distance_px.get() * 0.5
+        *anim.borrow().get() < (anim_distance_px.get() + partial_offset_px.get()) * 0.5
     } else {
         state.is_visible() && !drag_release_in_flight.get()
     };
@@ -414,6 +501,8 @@ pub fn ModalBottomSheet(
                 let state = state.clone();
                 let anim = anim.clone();
                 let anim_distance_px = anim_distance_px.clone();
+                let partial_offset_px = partial_offset_px.clone();
+                let viewport_height_dp = viewport_height_dp.clone();
                 let sheet_height = sheet_height.clone();
                 let current_modifier = current_modifier.clone();
                 let current_content = current_content.clone();
@@ -460,6 +549,8 @@ pub fn ModalBottomSheet(
                             let drag_release_in_flight = drag_release_in_flight.clone();
                             let last_target = last_target.clone();
                             let last_spatial_motion = last_spatial_motion.clone();
+                            let partial_offset_px = partial_offset_px.clone();
+                            let viewport_height_dp = viewport_height_dp.clone();
 
                             move |size| {
                                 if size.y.is_finite() {
@@ -468,6 +559,13 @@ pub fn ModalBottomSheet(
                                         sheet_height.set(height);
                                         let distance = Dp(height + 1.0).to_px().0;
                                         anim_distance_px.set(distance);
+                                        if state.partial_expansion {
+                                            let partial = modal_sheet_partial_offset(
+                                                height,
+                                                viewport_height_dp.get(),
+                                            );
+                                            partial_offset_px.set(Dp(partial).to_px().0);
+                                        }
                                         if !state.is_visible() {
                                             let current = *anim.borrow().get();
                                             let velocity = anim.borrow().current_velocity();
@@ -587,6 +685,7 @@ pub fn ModalBottomSheet(
                                 let drag_release_in_flight = drag_release_in_flight.clone();
                                 let last_target = last_target.clone();
                                 let last_spatial_motion = last_spatial_motion.clone();
+                                let partial_offset_px = partial_offset_px.clone();
 
                                 move |ev| {
                                     if !*is_dragging.borrow() {
@@ -607,9 +706,10 @@ pub fn ModalBottomSheet(
                                     let distance = anim_distance_px.get();
                                     let current_off =
                                         modal_sheet_drag_offset(*anim.borrow().get(), distance);
-                                    let target = modal_sheet_release_target(
+                                    let (anchor, target) = modal_sheet_drag_anchor(
                                         current_off,
                                         distance,
+                                        partial_offset_px.get(),
                                         release_velocity,
                                         positional_threshold_px,
                                         velocity_threshold_px,
@@ -624,12 +724,8 @@ pub fn ModalBottomSheet(
                                     }
                                     *last_target.borrow_mut() = target;
                                     last_spatial_motion.set(true);
-                                    if target > 0.0 {
-                                        drag_release_in_flight.set(true);
-                                        state.dismiss();
-                                    } else {
-                                        drag_release_in_flight.set(false);
-                                    }
+                                    drag_release_in_flight.set(anchor == SheetAnchor::Hidden);
+                                    state.anchor.set_neq(anchor);
                                     request_frame();
                                 }
                             })
@@ -644,6 +740,7 @@ pub fn ModalBottomSheet(
                                 let last_spatial_motion = last_spatial_motion.clone();
 
                                 let anim_distance_px = anim_distance_px.clone();
+                                let partial_offset_px = partial_offset_px.clone();
 
                                 move |_| {
                                     if !*is_dragging.borrow() {
@@ -655,9 +752,10 @@ pub fn ModalBottomSheet(
                                     let distance = anim_distance_px.get();
                                     let current =
                                         modal_sheet_drag_offset(*anim.borrow().get(), distance);
-                                    let target = modal_sheet_release_target(
+                                    let (anchor, target) = modal_sheet_drag_anchor(
                                         current,
                                         distance,
+                                        partial_offset_px.get(),
                                         0.0,
                                         positional_threshold_px,
                                         velocity_threshold_px,
@@ -670,12 +768,8 @@ pub fn ModalBottomSheet(
                                     }
                                     *last_target.borrow_mut() = target;
                                     last_spatial_motion.set(true);
-                                    if target > 0.0 {
-                                        drag_release_in_flight.set(true);
-                                        state.dismiss();
-                                    } else {
-                                        drag_release_in_flight.set(false);
-                                    }
+                                    drag_release_in_flight.set(anchor == SheetAnchor::Hidden);
+                                    state.anchor.set_neq(anchor);
                                     request_frame();
                                 }
                             });
@@ -786,6 +880,25 @@ mod tests {
         assert_eq!(
             modal_sheet_release_target(100.0, 600.0, 200.0, 56.0, 125.0),
             600.0
+        );
+    }
+
+    #[test]
+    fn modal_sheet_partial_anchor_can_expand_and_dismiss() {
+        let partial = modal_sheet_partial_offset(540.0, 600.0);
+        assert_eq!(partial, 240.0);
+        assert_eq!(modal_sheet_partial_offset(150.0, 600.0), 0.0);
+        assert_eq!(
+            modal_sheet_drag_anchor(40.0, 541.0, partial, -200.0, 56.0, 125.0),
+            (SheetAnchor::Expanded, 0.0)
+        );
+        assert_eq!(
+            modal_sheet_drag_anchor(250.0, 541.0, partial, 0.0, 56.0, 125.0),
+            (SheetAnchor::Partial, partial)
+        );
+        assert_eq!(
+            modal_sheet_drag_anchor(450.0, 541.0, partial, 0.0, 56.0, 125.0),
+            (SheetAnchor::Hidden, 541.0)
         );
     }
 

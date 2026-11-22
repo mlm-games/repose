@@ -383,7 +383,7 @@ impl Default for OutlinedTextFieldConfig {
 /// );
 /// ```
 pub fn OutlinedTextField(
-    modifier: Modifier,
+    mut modifier: Modifier,
     value: String,
     on_value_change: impl Fn(String) + 'static,
     config: OutlinedTextFieldConfig,
@@ -415,9 +415,11 @@ pub fn OutlinedTextField(
         config.placeholder.clone().unwrap_or_default()
     };
 
+    let mut input_modifier = Modifier::new().flex_grow(1.0);
+    input_modifier.focus_requester = modifier.focus_requester.take();
     let text_input = View::new(0, ViewKind::Box)
         .modifier(
-            Modifier::new().flex_grow(1.0).text_input(TextInputConfig {
+            input_modifier.text_input(TextInputConfig {
                 hint: tf_placeholder,
                 multiline: !config.single_line,
                 on_change: Some(Rc::new(on_value_change) as _),
@@ -462,7 +464,7 @@ pub fn OutlinedTextField(
 
 /// State-based M3 Outlined Text Field.
 pub fn OutlinedTextFieldState(
-    modifier: Modifier,
+    mut modifier: Modifier,
     state: Rc<RefCell<TextFieldState>>,
     on_value_change: impl Fn(String) + 'static,
     config: OutlinedTextFieldConfig,
@@ -495,9 +497,11 @@ pub fn OutlinedTextFieldState(
 
     let text_value = state.borrow().text.clone();
     let semantic_value = accessible_value(&text_value, config.visual_transformation.as_ref());
+    let mut input_modifier = Modifier::new().flex_grow(1.0);
+    input_modifier.focus_requester = modifier.focus_requester.take();
     let text_input = BasicTextField(
         state,
-        Modifier::new().flex_grow(1.0),
+        input_modifier,
         tf_placeholder,
         BasicTextFieldConfig {
             line_limits: if config.single_line {
