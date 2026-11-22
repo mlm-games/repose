@@ -557,7 +557,16 @@ where
         ));
     }
 
-    let content = crate::View::new(0, ViewKind::Column).with_children(combined_children);
+    let content_modifier = if reverse_layout {
+        Modifier::new()
+            .min_height(Px(viewport_height_px).to_dp())
+            .justify_content(JustifyContent::FLEX_END)
+    } else {
+        Modifier::new()
+    };
+    let content = crate::View::new(0, ViewKind::Column)
+        .modifier(content_modifier)
+        .with_children(combined_children);
     let content = if exit_views.is_empty() {
         content
     } else {

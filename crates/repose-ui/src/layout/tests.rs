@@ -1331,6 +1331,42 @@ fn test_row_baseline_alignment_grows_row() {
 }
 
 #[test]
+fn reversed_lazy_column_anchors_short_content_to_bottom() {
+    use crate::{LazyColumn, LazyColumnConfig, LazyColumnState};
+
+    let newest = Color::from_rgb(180, 30, 60);
+    let state = std::rc::Rc::new(LazyColumnState::new());
+    state.set_vp_height(100.0);
+    let list = LazyColumn(
+        vec![1, 2],
+        20.0_f32,
+        |item: &i32| *item as u64,
+        move |item: i32, _| {
+            let color = if item == 1 { newest } else { Color::BLACK };
+            RBox(Modifier::new().fill_max_size().background(color))
+        },
+        LazyColumnConfig {
+            state,
+            modifier: Modifier::new().fill_max_size(),
+            reverse_layout: true,
+            ..Default::default()
+        },
+    );
+    let (scene, _, _) = LayoutEngine::new().layout_frame(
+        &list,
+        (100, 100),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
+    let item = scene.nodes.iter().find_map(|node| match node {
+        SceneNode::Rect { rect, brush: Brush::Solid(color), .. } if *color == newest => Some(rect),
+        _ => None,
+    }).expect("newest row is visible");
+    assert!((item.y - 80.0).abs() < 1.0);
+}
+
+#[test]
 fn weighted_text_stays_within_lazy_row_bounds() {
     use crate::{LazyColumn, LazyColumnConfig};
 
