@@ -474,6 +474,27 @@ impl DepthComposite {
         )
     }
 
+    /// [`begin_scene`](Self::begin_scene) with GPU timestamp writes on the
+    /// scene pass.
+    pub fn begin_scene_timed<'a>(
+        &'a self,
+        id: &str,
+        encoder: &'a mut wgpu::CommandEncoder,
+        clear: [f32; 4],
+        writes: Option<wgpu::RenderPassTimestampWrites<'a>>,
+    ) -> Option<wgpu::RenderPass<'a>> {
+        self.begin_scene_ops_timed(
+            id,
+            encoder,
+            ScenePassOps {
+                clear: Some(clear),
+                load_depth: false,
+                store_depth: false,
+            },
+            writes,
+        )
+    }
+
     /// [`begin_scene`](Self::begin_scene) with explicit attachment ops, for
     /// a pass that draws over what an earlier pass left (see
     /// [`ScenePassOps`]). The target keeps its contents only if the earlier
@@ -483,6 +504,17 @@ impl DepthComposite {
         id: &str,
         encoder: &'a mut wgpu::CommandEncoder,
         ops: ScenePassOps,
+    ) -> Option<wgpu::RenderPass<'a>> {
+        self.begin_scene_ops_timed(id, encoder, ops, None)
+    }
+
+    /// [`begin_scene_ops`](Self::begin_scene_ops) with GPU timestamp writes.
+    pub fn begin_scene_ops_timed<'a>(
+        &'a self,
+        id: &str,
+        encoder: &'a mut wgpu::CommandEncoder,
+        ops: ScenePassOps,
+        writes: Option<wgpu::RenderPassTimestampWrites<'a>>,
     ) -> Option<wgpu::RenderPass<'a>> {
         let t = self.targets.get(id)?;
         let (w, h) = (t.key.2 as f32, t.key.3 as f32);
@@ -528,7 +560,7 @@ impl DepthComposite {
                     store: wgpu::StoreOp::Discard,
                 }),
             }),
-            timestamp_writes: None,
+            timestamp_writes: writes,
             occlusion_query_set: None,
             multiview_mask: None,
         });
