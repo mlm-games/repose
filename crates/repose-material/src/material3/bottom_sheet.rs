@@ -524,7 +524,7 @@ pub fn ModalBottomSheet(
                     let off = modal_sheet_offset(*anim.borrow().get(), anim_distance_px.get());
                     let content = current_content.borrow().clone();
 
-                    let mut sheet_mod = modifier
+                    let sheet_mod = modifier
                         .clone()
                         .fill_max_width()
                         .max_width(config.max_width)
@@ -600,9 +600,10 @@ pub fn ModalBottomSheet(
                             ..Default::default()
                         });
 
+                    let mut drag_mod = Modifier::new();
                     if config.gestures_enabled {
                         let drag_distance = anim_distance_px.clone();
-                        sheet_mod = sheet_mod
+                        drag_mod = drag_mod
                             .on_pointer_down({
                                 let anim = anim.clone();
                                 let state = state.clone();
@@ -775,26 +776,27 @@ pub fn ModalBottomSheet(
                             });
                     }
 
+                    let handle_row = Row(drag_mod
+                        .fill_max_width()
+                        .justify_content(JustifyContent::CENTER)
+                        .height(Dp(48.0)))
+                    .child(Box(Modifier::new()
+                        .width(config.drag_handle_width)
+                        .height(config.drag_handle_height)
+                        .background(config.drag_handle_color)
+                        .clip_rounded(Dp(2.0))
+                        .interaction_source(&dh_source)
+                        .indication(ripple(RippleConfig {
+                            color: Some(config.content_color),
+                            bounded: true,
+                            ..Default::default()
+                        }))
+                        .on_pointer_down(|_| {})));
+
                     let sheet_body = Box(sheet_mod).child(
-                        Column(Modifier::new().fill_max_width()).child((
-                            Row(Modifier::new()
-                                .fill_max_width()
-                                .justify_content(JustifyContent::CENTER))
-                            .child(Box(Modifier::new()
-                                .margin_vertical(Dp(22.0))
-                                .width(config.drag_handle_width)
-                                .height(config.drag_handle_height)
-                                .background(config.drag_handle_color)
-                                .clip_rounded(Dp(2.0))
-                                .interaction_source(&dh_source)
-                                .indication(ripple(RippleConfig {
-                                    color: Some(config.content_color),
-                                    bounded: true,
-                                    ..Default::default()
-                                }))
-                                .on_pointer_down(|_| {}))),
-                            with_content_color(config.content_color, move || content),
-                        )),
+                        Column(Modifier::new().fill_max_width())
+                            .child(handle_row)
+                            .child(with_content_color(config.content_color, move || content)),
                     );
 
                     let sheet = Column(
