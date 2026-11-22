@@ -692,6 +692,7 @@ impl LazyScrollCore {
 
     pub(crate) fn scroll_immediate(&self, delta_px: f32, content_px: f32) -> f32 {
         self.fling_dispatched.set(false);
+        self.clear_anchor();
         self.axis
             .scroll_immediate(delta_px, content_px, &self.physics)
     }
