@@ -49,15 +49,15 @@ fn settled_indicator(build: impl Fn() -> View + 'static) -> Rect {
 }
 
 #[test]
-fn tab_indicator_follows_tab_content_from_the_cell_start() {
+fn tab_indicator_centers_content_width_under_the_label() {
     let indicator = settled_indicator(|| TabRow(1, tabs(), config()));
     assert!(
         indicator.w >= 24.0 && indicator.w < 100.0,
         "primary indicator matches content width: {indicator:?}"
     );
     assert!(
-        (indicator.x - 100.0).abs() < 1.0,
-        "indicator starts at tab 1 cell left: {indicator:?}"
+        ((indicator.x + indicator.w / 2.0) - 150.0).abs() < 1.0,
+        "indicator must be centered on tab 1: {indicator:?}"
     );
     assert!(
         indicator.y > 40.0,

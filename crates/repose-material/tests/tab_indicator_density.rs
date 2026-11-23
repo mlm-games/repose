@@ -42,9 +42,10 @@ fn indicator_offset_uses_density_scaled_tab_width() {
         .collect();
     repose_core::set_density_default(Density { scale: 1.0 });
     assert_eq!(rects.len(), 1);
+    let center = rects[0].x + rects[0].w / 2.0;
     assert!(
-        (rects[0].x - 200.0).abs() < 2.0,
-        "indicator must start at tab 1's 200px cell: {:?}",
+        (center - 300.0).abs() < 2.0,
+        "indicator must be centered on tab 1's 200px cell: {:?}",
         rects[0]
     );
 }

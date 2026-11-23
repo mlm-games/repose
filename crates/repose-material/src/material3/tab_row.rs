@@ -168,7 +168,7 @@ fn indicator_geometry(
         IndicatorWidth::Tab => cell,
         IndicatorWidth::Content => content_widths.get(i).copied().unwrap_or(cell).min(cell),
     };
-    let left: f32 = cells.iter().take(i).sum::<f32>();
+    let left: f32 = cells.iter().take(i).sum::<f32>() + (cell - width) / 2.0;
     (left, width)
 }
 
