@@ -49,15 +49,15 @@ fn settled_indicator(build: impl Fn() -> View + 'static) -> Rect {
 }
 
 #[test]
-fn tab_indicator_is_single_and_fills_the_selected_tab() {
+fn tab_indicator_follows_tab_content_from_the_cell_start() {
     let indicator = settled_indicator(|| TabRow(1, tabs(), config()));
     assert!(
-        (indicator.w - 100.0).abs() < 1.0,
-        "width must fill a 100px tab: {indicator:?}"
+        indicator.w >= 24.0 && indicator.w < 100.0,
+        "primary indicator matches content width: {indicator:?}"
     );
     assert!(
         (indicator.x - 100.0).abs() < 1.0,
-        "indicator must sit on tab 1: {indicator:?}"
+        "indicator starts at tab 1 cell left: {indicator:?}"
     );
     assert!(
         indicator.y > 40.0,

@@ -492,7 +492,12 @@ pub fn DatePicker(
                     )
                 })
                 .collect();
-            rows.push(Row(Modifier::new()).with_children(dow_headers));
+            rows.push(
+                Row(Modifier::new()
+                    .fill_max_width()
+                    .justify_content(JustifyContent::SPACE_EVENLY))
+                .with_children(dow_headers),
+            );
 
             // Proper calendar grid: offset by start_dow, 6 rows
             let total_cells = start_dow + dim;
@@ -574,7 +579,12 @@ pub fn DatePicker(
                         }
                     }
                 }
-                rows.push(Row(Modifier::new()).with_children(week));
+                rows.push(
+                    Row(Modifier::new()
+                        .fill_max_width()
+                        .justify_content(JustifyContent::SPACE_EVENLY))
+                    .with_children(week),
+                );
             }
             rows
         }),
@@ -583,6 +593,11 @@ pub fn DatePicker(
         Row(Modifier::new()
             .fill_max_width()
             .justify_content(JustifyContent::END)
+            .padding_values(PaddingValues {
+                right: Dp(6.0),
+                bottom: Dp(8.0),
+                ..PaddingValues::default()
+            })
             .gap(Dp(8.0)))
         .child((
             TextButton(
@@ -926,7 +941,12 @@ pub fn DateRangePicker(
                         }
                     }
                 }
-                rows.push(Row(Modifier::new()).with_children(week));
+                rows.push(
+                    Row(Modifier::new()
+                        .fill_max_width()
+                        .justify_content(JustifyContent::SPACE_EVENLY))
+                    .with_children(week),
+                );
             }
             rows
         }),
@@ -934,6 +954,11 @@ pub fn DateRangePicker(
         Row(Modifier::new()
             .fill_max_width()
             .justify_content(JustifyContent::END)
+            .padding_values(PaddingValues {
+                right: Dp(6.0),
+                bottom: Dp(8.0),
+                ..PaddingValues::default()
+            })
             .gap(Dp(8.0)))
         .child((
             TextButton(

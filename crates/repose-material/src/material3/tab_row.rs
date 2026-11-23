@@ -54,7 +54,6 @@ static TABROW_COUNTER: AtomicU64 = AtomicU64::new(0);
 enum IndicatorWidth {
     Tab,
     Content,
-    Fraction(f32),
 }
 
 fn label_width_px(label: &str, style_px: f32, has_icon: bool) -> f32 {
@@ -167,16 +166,15 @@ fn indicator_geometry(
     let cell = cells[i].max(1.0);
     let width = match mode {
         IndicatorWidth::Tab => cell,
-        IndicatorWidth::Fraction(f) => cell * f.clamp(0.0, 1.0),
         IndicatorWidth::Content => content_widths.get(i).copied().unwrap_or(cell).min(cell),
     };
-    let left: f32 = cells.iter().take(i).sum::<f32>() + (cell - width) / 2.0;
+    let left: f32 = cells.iter().take(i).sum::<f32>();
     (left, width)
 }
 
 /// M3 Tab Row. A single indicator slides and resizes between tabs, matching Compose.
 pub fn TabRow(selected_index: usize, tabs: Vec<Tab>, config: TabRowConfig) -> View {
-    fixed_tab_row(selected_index, tabs, config, IndicatorWidth::Tab, false)
+    fixed_tab_row(selected_index, tabs, config, IndicatorWidth::Content, false)
 }
 
 fn fixed_tab_row(
@@ -205,7 +203,7 @@ fn fixed_tab_row(
     let widths: Vec<Mutable<f32>> = (0..tabs.len())
         .map(|i| remember_mutable_with_key(format!("tab_w_{}_{}", id, i), || 0.0f32))
         .collect();
-    let cells: Vec<f32> = widths.iter().map(|w| *w.get()).collect();
+    let cells: Vec<f32> = widths.iter().map(|w| Dp(*w.get()).to_px().0).collect();
     let (left, width) = indicator_geometry(&cells, &content_widths, selected_index, mode);
 
     let mut children: Vec<View> = tabs
@@ -312,7 +310,7 @@ pub fn ScrollableTabRow(
     let widths: Vec<Mutable<f32>> = (0..tabs.len())
         .map(|i| remember_mutable_with_key(format!("stab_w_{}_{}", id, i), || 0.0f32))
         .collect();
-    let cells: Vec<f32> = widths.iter().map(|w| *w.get()).collect();
+    let cells: Vec<f32> = widths.iter().map(|w| Dp(*w.get()).to_px().0).collect();
     let (left, width) = indicator_geometry(
         &cells,
         &content_widths,
