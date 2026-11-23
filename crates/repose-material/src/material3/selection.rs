@@ -223,7 +223,7 @@ pub fn TriStateCheckbox(
     let has_fill = is_checked || is_indeterminate;
     let is_enabled = config.enabled;
 
-    let fill = animate_color(
+    let fill = animate_color_directional(
         format!("tc_fill_{}", id),
         if !is_enabled {
             if has_fill {
@@ -236,7 +236,9 @@ pub fn TriStateCheckbox(
         } else {
             Color::TRANSPARENT
         },
-        spec,
+        has_fill,
+        th.motion.color,
+        th.motion.color_fast,
     );
     let bd_w = animate_f32(
         format!("tc_bw_{}", id),
@@ -253,7 +255,7 @@ pub fn TriStateCheckbox(
         },
         spec,
     );
-    let bd = animate_color(
+    let bd = animate_color_directional(
         format!("tc_bd_{}", id),
         if !is_enabled {
             if has_fill {
@@ -266,7 +268,9 @@ pub fn TriStateCheckbox(
         } else {
             config.unchecked_border_color
         },
-        spec,
+        has_fill,
+        th.motion.color,
+        th.motion.color_fast,
     );
     let symbol_alpha = animate_f32(
         format!("tc_sa_{}", id),
