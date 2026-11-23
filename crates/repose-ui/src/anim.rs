@@ -210,6 +210,7 @@ pub fn animate_color_directional(
             anim_key.clone(),
             Rc::new(RefCell::new(move || registration.borrow_mut().update())),
         );
+        drop(value);
         request_frame();
     } else {
         let needs_reregister = !animation_driver::is_registered(&anim_key) && value.is_animating();
