@@ -554,7 +554,7 @@ impl Default for SwitchConfig {
 
 /// M3 Switch.
 /// Renders a pill track with an animated thumb knob.
-/// Thumb position, size, and colors animate with spring/tween physics.
+/// Thumb position and size animate with a spring; colors snap like Compose.
 static SWITCH_COUNTER: AtomicU64 = AtomicU64::new(0);
 pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchConfig) -> View {
     let th = theme();
@@ -571,12 +571,14 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
     // Thumb: spring-animated position and size
     let has_content = config.thumb_content.is_some();
     let pressed = sw_source.source().collect_is_pressed();
-    let thumb_target_pos = if checked {
-        (track_w - SwitchDefaults::THUMB_CHECKED_SIZE - Dp(4.0)).0
-    } else if has_content {
-        4.0
+    let max_bound = (track_w - SwitchDefaults::THUMB_CHECKED_SIZE - Dp(4.0)).0;
+    let min_bound = if has_content { 4.0 } else { 8.0 };
+    let thumb_target_pos = if pressed {
+        if checked { max_bound - 2.0 } else { 2.0 }
+    } else if checked {
+        max_bound
     } else {
-        8.0
+        min_bound
     };
     let thumb_target_d = if pressed {
         28.0
@@ -591,65 +593,40 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
     let thumb_d = animate_f32(format!("sw_d_{}", id), thumb_target_d, spring);
     let thumb_top = (track_h - Dp(thumb_d)) * 0.5;
 
-    let color_spec = th.motion.color_fast;
     let is_enabled = config.enabled;
-
-    let track_bg = animate_color(
-        format!("sw_tbg_{}", id),
-        if !is_enabled {
-            if checked {
-                config.disabled_checked_track_color
-            } else {
-                config.disabled_unchecked_track_color
-            }
-        } else if checked {
-            config.checked_track_color
+    let track_bg = if !is_enabled {
+        if checked {
+            config.disabled_checked_track_color
         } else {
-            config.unchecked_track_color
-        },
-        color_spec,
-    );
-    let thumb_bg = animate_color(
-        format!("sw_tmbg_{}", id),
-        if !is_enabled {
-            if checked {
-                config.disabled_checked_thumb_color
-            } else {
-                config.disabled_unchecked_thumb_color
-            }
-        } else if checked {
-            config.checked_thumb_color
+            config.disabled_unchecked_track_color
+        }
+    } else if checked {
+        config.checked_track_color
+    } else {
+        config.unchecked_track_color
+    };
+    let thumb_bg = if !is_enabled {
+        if checked {
+            config.disabled_checked_thumb_color
         } else {
-            config.unchecked_thumb_color
-        },
-        color_spec,
-    );
-    let track_border = animate_f32(
-        format!("sw_tb_{}", id),
-        if !is_enabled {
-            if checked { 0.0 } else { 2.0 }
-        } else if checked {
-            0.0
+            config.disabled_unchecked_thumb_color
+        }
+    } else if checked {
+        config.checked_thumb_color
+    } else {
+        config.unchecked_thumb_color
+    };
+    let border_color = if !is_enabled {
+        if checked {
+            config.disabled_checked_border_color
         } else {
-            2.0
-        },
-        color_spec,
-    );
-    let border_color = animate_color(
-        format!("sw_bc_{}", id),
-        if !is_enabled {
-            if checked {
-                config.disabled_checked_border_color
-            } else {
-                config.disabled_unchecked_border_color
-            }
-        } else if checked {
-            config.checked_border_color
-        } else {
-            config.unchecked_border_color
-        },
-        color_spec,
-    );
+            config.disabled_unchecked_border_color
+        }
+    } else if checked {
+        config.checked_border_color
+    } else {
+        config.unchecked_border_color
+    };
 
     // Compose reserves a 48dp minimum interactive size while the visual
     // pill stays 32dp tall, centred inside the touch host.
@@ -658,7 +635,7 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
         .padding(Dp(0.0))
         .clip_rounded(track_h * 0.5)
         .background(track_bg)
-        .border(Dp(track_border), border_color, track_h * 0.5);
+        .border(Dp(2.0), border_color, track_h * 0.5);
 
     let mut host = Modifier::new()
         .size(track_w, Dp(48.0))
