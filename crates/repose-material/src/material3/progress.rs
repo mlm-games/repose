@@ -56,7 +56,10 @@ fn determinate_value(key: String, value: f32) -> f32 {
         key,
         value,
         value,
-        AnimationSpec::spring(SpringSpec::new(1.0, 120.0)),
+        AnimationSpec::spring(SpringSpec {
+            settle_progress: 0.001,
+            ..SpringSpec::new(1.0, 50.0)
+        }),
     )
 }
 
