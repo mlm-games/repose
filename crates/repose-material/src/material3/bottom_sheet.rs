@@ -13,8 +13,6 @@ use repose_ui::{
     overlay::ambient_overlay,
 };
 
-use crate::ripple::{RippleConfig, ripple};
-
 use super::*;
 
 /// Configuration for [`BottomSheet`] / `ModalBottomSheet`.
@@ -64,7 +62,6 @@ pub fn BottomSheet(
     content: View,
     config: BottomSheetConfig,
 ) -> View {
-    let th = theme();
     let instance_id = remember(unique_component_id);
     let identity = match modifier.key {
         Some(key) => format!("bottom-sheet:key:{key}"),

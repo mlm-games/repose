@@ -644,12 +644,15 @@ pub fn TooltipBox(
     let text: Rc<str> = Rc::from(text.into());
     let id = state.id();
     let th = theme();
-    let spec = th.motion.overlay;
+    let spec = th.motion.fast_effects;
+    let scale_spec = th.motion.fast_spatial;
     let theme_key = theme_fingerprint_of(&th);
     let theme_state = remember_with_key(format!("tt_theme_{id}"), || Rc::new(Cell::new(theme_key)));
     theme_state.set(theme_key);
-    let spec_state = remember_with_key(format!("tt_spec_{id}"), || Rc::new(Cell::new(spec)));
-    spec_state.set(spec);
+    let scale_spec_state = remember_with_key(format!("tt_scale_spec_{id}"), || {
+        Rc::new(Cell::new(scale_spec))
+    });
+    scale_spec_state.set(scale_spec);
 
     let current_config = remember_with_key(format!("tt_cfg_{id}"), || {
         RefCell::new(Rc::new(config.clone()))
@@ -704,6 +707,7 @@ pub fn TooltipBox(
     let host_view = Box(host).child(trigger);
 
     let anim_key = format!("tooltip_alpha_{id}");
+    let scale_key = format!("tooltip_scale_{id}");
     let state_visible = state.is_visible();
     let alpha = animate_f32(
         anim_key.clone(),
@@ -746,25 +750,24 @@ pub fn TooltipBox(
             let popup_cache = popup_cache.clone();
             let current_config = current_config.clone();
             let theme_state = theme_state.clone();
-            let spec_state = spec_state.clone();
+            let scale_spec_state = scale_spec_state.clone();
             let anchor_rect = anchor_rect.clone();
             let popup_size = popup_size.clone();
             let state_for_scrim = state.clone();
             // The overlay entry rebuilds every frame, so re-read the animation
             // target-tracked value here instead of capturing the frame's copy.
-            let anim_key = anim_key.clone();
             *overlay_guard.borrow_mut() = Some(overlay.show_guard(
                 Rc::new(move || {
                     let theme_key = theme_state.get();
-                    let spec = spec_state.get();
+                    let scale_spec = scale_spec_state.get();
                     let frame_alpha = animate_f32(
-                        anim_key.clone(),
+                        scale_key.clone(),
                         if state_for_scrim.is_visible() {
                             1.0
                         } else {
                             0.0
                         },
-                        spec,
+                        scale_spec,
                     );
                     let config = current_config.borrow().clone();
                     let Some(text) = body_cache

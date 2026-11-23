@@ -87,12 +87,12 @@ pub fn Snackbar(
         Some(key) => format!("snackbar:key:{key}"),
         None => format!("snackbar:instance:{instance_id}"),
     };
-    let slide_target = if dismissing { 80.0 } else { 0.0 };
-    let slide = animate_f32_from(
-        format!("{identity}:slide"),
-        80.0,
-        slide_target,
-        th.motion.overlay,
+    let scale_target = if dismissing { 0.8 } else { 1.0 };
+    let scale = animate_f32_from(
+        format!("{identity}:scale"),
+        0.8,
+        scale_target,
+        th.motion.fast_spatial,
     );
 
     let alpha_target = if dismissing { 0.0 } else { 1.0 };
@@ -100,12 +100,12 @@ pub fn Snackbar(
         format!("{identity}:alpha"),
         0.0,
         alpha_target,
-        th.motion.overlay,
+        th.motion.fast_effects,
     );
 
     let snackbar = Box(Modifier::new()
         .margin(Dp(12.0))
-        .translate(0.0, slide)
+        .scale(scale)
         .alpha(alpha)
         .min_height(config.min_height)
         .min_width(config.min_width)

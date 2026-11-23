@@ -281,7 +281,6 @@ pub fn OutlinedIconButton(
     on_click: impl Fn() + 'static,
     config: IconButtonConfig,
 ) -> View {
-    let th = theme();
     let colors = resolve_colors(&config, IconButtonDefaults::outlined_colors());
     let sz = config
         .container_size
