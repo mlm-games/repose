@@ -1,6 +1,6 @@
 #![allow(non_snake_case)]
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use repose_core::animation::AnimationSpec;
@@ -53,7 +53,9 @@ pub enum DismissValue {
 
 /// State for `SwipeToDismiss` - backed by a generic `SwipeableState<DismissValue>`.
 pub struct SwipeToDismissState {
-    swipeable: repose_core::SwipeableState<DismissValue>,
+    swipeable: RefCell<repose_core::SwipeableState<DismissValue>>,
+    config: SwipeToDismissConfig,
+    dismiss_offset: Cell<f32>,
     dismiss_latch: Cell<bool>,
 }
 
@@ -68,20 +70,23 @@ impl SwipeToDismissState {
         Self::with_config(SwipeToDismissConfig::default())
     }
 
-    pub fn with_config(config: SwipeToDismissConfig) -> Self {
-        let positional_threshold =
-            SwipeToDismissDefaults::POSITIONAL_THRESHOLD.0 / config.dismissed_offset.max(1.0);
+    fn anchors_for(offset: f32, config: &SwipeToDismissConfig) -> Vec<(f32, DismissValue)> {
         let mut anchors = vec![(0.0, DismissValue::Default)];
         if config.enable_dismiss_from_end_to_start {
-            anchors.push((-config.dismissed_offset, DismissValue::DismissedToStart));
+            anchors.push((-offset, DismissValue::DismissedToStart));
         }
         if config.enable_dismiss_from_start_to_end {
-            anchors.push((config.dismissed_offset, DismissValue::DismissedToEnd));
+            anchors.push((offset, DismissValue::DismissedToEnd));
         }
-        // Sort by offset for correct clamp/nearest/next-anchor logic.
         anchors.sort_by(|(a, _), (b, _)| a.partial_cmp(b).unwrap());
+        anchors
+    }
+
+    fn build_swipeable(config: &SwipeToDismissConfig) -> repose_core::SwipeableState<DismissValue> {
+        let positional_threshold =
+            SwipeToDismissDefaults::POSITIONAL_THRESHOLD.0 / config.dismissed_offset.max(1.0);
         let swipeable = repose_core::SwipeableState::new(
-            anchors,
+            Self::anchors_for(config.dismissed_offset, config),
             repose_core::SwipeableConfig {
                 animation_spec: config.animation_spec,
                 positional_threshold,
@@ -89,32 +94,66 @@ impl SwipeToDismissState {
                 ..Default::default()
             },
         );
-        // Start at the default position (not anchors[0], which may be negative).
         swipeable.snap_to(0.0);
+        swipeable
+    }
+
+    pub fn with_config(config: SwipeToDismissConfig) -> Self {
+        let dismiss_offset = config.dismissed_offset;
         Self {
-            swipeable,
+            swipeable: RefCell::new(Self::build_swipeable(&config)),
+            config,
+            dismiss_offset: Cell::new(dismiss_offset),
             dismiss_latch: Cell::new(false),
         }
     }
 
+    /// Currently active dismissed anchor distance.
+    pub fn dismiss_offset(&self) -> f32 {
+        self.dismiss_offset.get()
+    }
+
+    /// Update the dismissed anchors from the measured container width.
+    pub fn set_dismiss_offset(&self, offset: f32) {
+        if (self.dismiss_offset.get() - offset).abs() < 0.5 {
+            return;
+        }
+        self.dismiss_offset.set(offset);
+        let current = self.swipeable.borrow().offset();
+        let swipeable = repose_core::SwipeableState::new(
+            Self::anchors_for(offset, &self.config),
+            repose_core::SwipeableConfig {
+                animation_spec: self.config.animation_spec,
+                positional_threshold: SwipeToDismissDefaults::POSITIONAL_THRESHOLD.0
+                    / offset.max(1.0),
+                velocity_threshold: Dp(125.0).to_px().0,
+                ..Default::default()
+            },
+        );
+        swipeable.snap_to(current);
+        *self.swipeable.borrow_mut() = swipeable;
+    }
+
     /// Current animated offset in pixels.
     pub fn offset(&self) -> f32 {
-        self.swipeable.offset()
+        self.swipeable.borrow().offset()
     }
 
     /// Snap instantly to an offset (used during active drag).
     pub fn set_offset_instant(&self, off: f32) {
-        self.swipeable.snap_to(off);
+        self.swipeable.borrow().snap_to(off);
     }
 
     /// Whether the current position is past the dismiss threshold.
     pub fn is_dismissed(&self) -> bool {
-        self.swipeable.current_value() != DismissValue::Default
+        self.swipeable.borrow().current_value() != DismissValue::Default
     }
 
     /// Animate to the dismissed position.
     pub fn dismiss(&self) {
-        self.swipeable.animate_to(&DismissValue::DismissedToStart);
+        self.swipeable
+            .borrow()
+            .animate_to(&DismissValue::DismissedToStart);
     }
 
     /// Animate to the dismissed position with custom offset.
@@ -124,13 +163,13 @@ impl SwipeToDismissState {
         } else {
             DismissValue::DismissedToEnd
         };
-        self.swipeable.animate_to(&value);
+        self.swipeable.borrow().animate_to(&value);
     }
 
     /// Animate back to origin.
     pub fn reset(&self) {
         self.dismiss_latch.set(false);
-        self.swipeable.animate_to(&DismissValue::Default);
+        self.swipeable.borrow().animate_to(&DismissValue::Default);
     }
 
     /// Fire the dismiss callback once when the spring settles past a given threshold.
@@ -139,8 +178,9 @@ impl SwipeToDismissState {
         on_dismiss: &Option<Rc<dyn Fn()>>,
         _threshold: f32,
     ) {
-        if !self.swipeable.is_animating() {
-            let val = self.swipeable.current_value();
+        let swipeable = self.swipeable.borrow();
+        if !swipeable.is_animating() {
+            let val = swipeable.current_value();
             if val == DismissValue::Default {
                 self.dismiss_latch.set(false);
             } else if let Some(cb) = on_dismiss
@@ -172,18 +212,26 @@ pub fn SwipeToDismiss(
     let s1 = state.swipeable.clone();
     let s2 = state.swipeable.clone();
     let s3 = state.swipeable.clone();
-    let on_down = { move |e: PointerEvent| s1.on_pointer_down(e.position.x) };
-    let on_move = { move |e: PointerEvent| s2.on_pointer_move(e.position.x) };
-    let on_up = { move |_e: PointerEvent| s3.on_pointer_up() };
+    let on_down = { move |e: PointerEvent| s1.borrow().on_pointer_down(e.position.x) };
+    let on_move = { move |e: PointerEvent| s2.borrow().on_pointer_move(e.position.x) };
+    let on_up = { move |_e: PointerEvent| s3.borrow().on_pointer_up() };
 
-    let display_offset = offset
-        .max(-config.dismissed_offset)
-        .min(config.dismissed_offset);
+    let active_offset = state.dismiss_offset();
+    let display_offset = offset.max(-active_offset).min(active_offset);
 
+    let width_state = state.clone();
     let content_modifier = {
         let mut m = Modifier::new()
             .fill_max_width()
-            .translate(display_offset, 0.0);
+            .translate(display_offset, 0.0)
+            .on_size_changed({
+                move |size| {
+                    if size.x > 0.0 {
+                        width_state.set_dismiss_offset(size.x);
+                        repose_core::request_frame();
+                    }
+                }
+            });
         if config.gestures_enabled {
             m = m
                 .on_pointer_down(on_down)
