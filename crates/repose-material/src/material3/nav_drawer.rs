@@ -146,8 +146,11 @@ pub fn DismissibleNavigationDrawer(
     content: View,
     mut config: NavigationDrawerConfig,
 ) -> View {
-    let _th = theme();
+    let th = theme();
     config.shape_radius = Dp::ZERO;
+    if config.container_color == NavigationDrawerDefaults::container_color() {
+        config.container_color = th.surface;
+    }
     let is_open = drawer_state.is_open();
     let drawer_offset = animate_f32(
         drawer_state.key("dismissible-offset"),
@@ -198,8 +201,11 @@ pub fn DismissibleNavigationDrawer(
 pub fn PermanentNavigationDrawer(
     drawer_content: View,
     content: View,
-    config: NavigationDrawerConfig,
+    mut config: NavigationDrawerConfig,
 ) -> View {
+    if config.container_color == NavigationDrawerDefaults::container_color() {
+        config.container_color = theme().surface;
+    }
     Row(Modifier::new().fill_max_size()).child((
         Box(Modifier::new()
             .width(config.width)
@@ -234,7 +240,7 @@ impl Default for NavigationDrawerItemConfig {
             icon: None,
             badge: None,
             enabled: true,
-            shape_radius: repose_core::locals::theme().shapes.large,
+            shape_radius: repose_core::locals::theme().shapes.extra_large,
             interaction_source: None,
         }
     }
@@ -305,7 +311,17 @@ pub fn NavigationDrawerItem(
         m = m.clickable().on_click(on_click);
     }
 
-    Box(m).child(with_content_color(fg, || {
+    let mut children: Vec<View> = Vec::new();
+    if let Some(icon) = config.icon {
+        children.push(icon);
+        children.push(Box(Modifier::new().width(Dp(12.0)).height(Dp(1.0))));
+    }
+    children.push(Box(Modifier::new().weight(1.0)).child(label));
+    if let Some(badge) = config.badge {
+        children.push(Box(Modifier::new().width(Dp(12.0)).height(Dp(1.0))));
+        children.push(badge);
+    }
+    Box(m).child(with_content_color(fg, move || {
         Row(Modifier::new()
             .align_items(AlignItems::CENTER)
             .padding_values(PaddingValues {
@@ -314,15 +330,7 @@ pub fn NavigationDrawerItem(
                 top: Dp(0.0),
                 bottom: Dp(0.0),
             }))
-        .child((
-            config
-                .icon
-                .unwrap_or(Box(Modifier::new().width(Dp(24.0)).height(Dp(24.0)))),
-            Box(Modifier::new().width(Dp(12.0)).height(Dp(1.0))),
-            Box(Modifier::new().weight(1.0)).child(label),
-            Box(Modifier::new().width(Dp(12.0)).height(Dp(1.0))),
-            config.badge.unwrap_or(Box(Modifier::new())),
-        ))
+        .with_children(children)
     }))
 }
 

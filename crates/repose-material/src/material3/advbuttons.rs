@@ -34,6 +34,7 @@ pub fn SplitButtonLayout(
 ) -> View {
     Row(config
         .modifier
+        .min_height(Dp(48.0))
         .gap(config.spacing)
         .align_items(AlignItems::CENTER))
     .child((leading_button, trailing_button))
@@ -209,14 +210,15 @@ pub fn SplitButtonTrailingToggleButton(
     let se = config
         .state_elevation
         .unwrap_or_else(super::ToggleButtonDefaults::state_elevation_default);
+    let split_padding = super::SplitButtonDefaults::small_trailing_content_padding();
     let pad_l = config
         .content_padding
         .map(|p| p.left)
-        .unwrap_or(super::ToggleButtonDefaults::HORIZONTAL_PADDING);
+        .unwrap_or(split_padding.left);
     let pad_r = config
         .content_padding
         .map(|p| p.right)
-        .unwrap_or(super::ToggleButtonDefaults::HORIZONTAL_PADDING);
+        .unwrap_or(split_padding.right);
     let mut m = Modifier::new()
         .height(config.height)
         .min_width(Dp(48.0))
@@ -244,7 +246,12 @@ pub fn SplitButtonTrailingToggleButton(
     if !config.enabled {
         m = m.alpha(0.38);
     }
-    m = m.then(modifier.clip_rounded_radii(split_trailing_shape_radii()));
+    let radii = if checked {
+        [super::SplitButtonDefaults::OUTER_CORNER_SIZE; 4]
+    } else {
+        split_trailing_shape_radii()
+    };
+    m = m.then(modifier.clip_rounded_radii(radii));
     with_content_color(fg, || Box(m).child(content(checked)))
 }
 
@@ -274,7 +281,7 @@ pub fn SplitButtonTonalLeadingButton(
         cc,
         bg,
         sc,
-        se.or(Some(super::ButtonDefaults::elevated_state_elevation())),
+        se.or(Some(super::ButtonDefaults::state_elevation_default())),
         config.border,
         pad.left,
         pad.right,
@@ -310,14 +317,15 @@ pub fn SplitButtonTonalTrailingToggleButton(
     let se = config
         .state_elevation
         .unwrap_or_else(super::ToggleButtonDefaults::state_elevation_default);
+    let split_padding = super::SplitButtonDefaults::small_trailing_content_padding();
     let pad_l = config
         .content_padding
         .map(|p| p.left)
-        .unwrap_or(super::ToggleButtonDefaults::HORIZONTAL_PADDING);
+        .unwrap_or(split_padding.left);
     let pad_r = config
         .content_padding
         .map(|p| p.right)
-        .unwrap_or(super::ToggleButtonDefaults::HORIZONTAL_PADDING);
+        .unwrap_or(split_padding.right);
     let mut m = Modifier::new()
         .height(config.height)
         .min_width(Dp(48.0))
@@ -345,7 +353,12 @@ pub fn SplitButtonTonalTrailingToggleButton(
     if !config.enabled {
         m = m.alpha(0.38);
     }
-    m = m.then(modifier.clip_rounded_radii(split_trailing_shape_radii()));
+    let radii = if checked {
+        [super::SplitButtonDefaults::OUTER_CORNER_SIZE; 4]
+    } else {
+        split_trailing_shape_radii()
+    };
+    m = m.then(modifier.clip_rounded_radii(radii));
     with_content_color(fg, || Box(m).child(content(checked)))
 }
 

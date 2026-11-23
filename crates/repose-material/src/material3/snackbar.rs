@@ -104,6 +104,7 @@ pub fn Snackbar(
     );
 
     let snackbar = Box(Modifier::new()
+        .margin(Dp(12.0))
         .translate(0.0, slide)
         .alpha(alpha)
         .min_height(config.min_height)
@@ -158,13 +159,11 @@ pub fn Snackbar(
                 .size(th.typography.body_medium)
                 .max_lines(2)
                 .overflow_ellipsize(),
-            action
-                .map(|a| {
+            {
+                let mut action_children: Vec<View> = Vec::new();
+                if let Some(a) = action {
                     let label = a.label.clone();
-                    Row(Modifier::new()
-                        .fill_max_width()
-                        .justify_content(repose_core::JustifyContent::END))
-                    .child(TextButton(
+                    action_children.push(TextButton(
                         Modifier::new(),
                         move || (a.on_click)(),
                         ButtonConfig {
@@ -177,10 +176,16 @@ pub fn Snackbar(
                             ..Default::default()
                         },
                         || Text(label).size(th.typography.label_large).single_line(),
-                    ))
-                })
-                .unwrap_or(Box(Modifier::new())),
-            dismiss_btn.unwrap_or(Box(Modifier::new())),
+                    ));
+                }
+                if let Some(dismiss) = dismiss_btn {
+                    action_children.push(dismiss);
+                }
+                Row(Modifier::new()
+                    .fill_max_width()
+                    .justify_content(repose_core::JustifyContent::END))
+                .with_children(action_children)
+            },
         ))
     } else {
         Row(Modifier::new()
