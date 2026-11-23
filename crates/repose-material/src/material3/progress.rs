@@ -908,7 +908,7 @@ pub fn WavyProgressIndicator(value: Option<f32>, config: WavyProgressIndicatorCo
     let wave = config.wavelength.to_px().0.max(8.0);
     Box(Modifier::new()
         .fill_max_width()
-        .height(Dp(amp * 2.0 + 8.0))
+        .height(config.amplitude * 2.0 + Dp(8.0))
         .then(config.modifier)
         .semantics(Semantics {
             role: Role::ProgressBar,

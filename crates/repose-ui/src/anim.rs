@@ -185,7 +185,46 @@ pub fn animate_color_directional(
     enter_spec: AnimationSpec,
     exit_spec: AnimationSpec,
 ) -> Color {
-    animate_color(key, target, if active { enter_spec } else { exit_spec })
+    let key = key.into();
+    let anim_key = format!("anim:color:{key}");
+    let spec = if active { enter_spec } else { exit_spec };
+    let anim = remember_state_with_key(&anim_key, || AnimatedValue::new(target, spec));
+    let last =
+        remember_state_with_key(
+            format!("anim:color_dir_last:{key}"),
+            || None::<(Color, bool)>,
+        );
+    animation_driver::touch(&anim_key);
+    let mut value = anim.borrow_mut();
+    let mut previous = last.borrow_mut();
+    if previous
+        .as_ref()
+        .is_none_or(|(color, was_active)| *color != target || *was_active != active)
+    {
+        value.set_spec(spec);
+        value.set_target(target);
+        *previous = Some((target, active));
+        drop(previous);
+        let registration = anim.clone();
+        animation_driver::register(
+            anim_key.clone(),
+            Rc::new(RefCell::new(move || registration.borrow_mut().update())),
+        );
+        request_frame();
+    } else {
+        let needs_reregister = !animation_driver::is_registered(&anim_key) && value.is_animating();
+        drop(previous);
+        drop(value);
+        if needs_reregister {
+            let registration = anim.clone();
+            animation_driver::register(
+                anim_key,
+                Rc::new(RefCell::new(move || registration.borrow_mut().update())),
+            );
+            request_frame();
+        }
+    }
+    *anim.borrow().get()
 }
 
 /// Animate Vec2 to target. Starts at target on first mount.

@@ -855,7 +855,10 @@ pub fn DateRangePicker(
         Column(Modifier::new()).child({
             let mut rows: Vec<View> = Vec::new();
             rows.push(
-                Row(Modifier::new()).with_children(
+                Row(Modifier::new()
+                    .fill_max_width()
+                    .justify_content(JustifyContent::SPACE_EVENLY))
+                .with_children(
                     DOW_HEADERS
                         .iter()
                         .map(|d| {

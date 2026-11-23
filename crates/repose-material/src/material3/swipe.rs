@@ -229,7 +229,7 @@ pub fn SwipeToDismiss(
             .on_size_changed({
                 move |size| {
                     if size.x > 0.0 {
-                        width_state.set_dismiss_offset(size.x);
+                        width_state.set_dismiss_offset(Dp(size.x).to_px().0);
                         repose_core::request_frame();
                     }
                 }
