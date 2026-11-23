@@ -5,9 +5,11 @@ use std::rc::Rc;
 
 use web_time::Duration;
 
-use repose_core::animation::{AnimationSpec, CubicBezier, Easing, KeyframesSpec, RepeatableSpec};
+use repose_core::animation::{
+    AnimationSpec, CubicBezier, Easing, KeyframesSpec, RepeatableSpec, SpringSpec,
+};
 use repose_core::*;
-use repose_ui::Box;
+use repose_ui::{Box, anim::animate_f32_from};
 
 use super::*;
 
@@ -47,6 +49,15 @@ fn progress_identity(modifier: &Modifier, kind: &str, instance_id: u64) -> Strin
 
 fn indeterminate_spec(duration: Duration) -> AnimationSpec {
     AnimationSpec::tween(duration, Easing::Linear).repeated(RepeatableSpec::infinite())
+}
+
+fn determinate_value(key: String, value: f32) -> f32 {
+    animate_f32_from(
+        key,
+        value,
+        value,
+        AnimationSpec::spring(SpringSpec::new(1.0, 120.0)),
+    )
 }
 
 fn indeterminate_value(
@@ -190,11 +201,12 @@ pub fn CircularProgressIndicator(
     let identity = progress_identity(&config.modifier, "circular", *instance_id);
     let sz = ProgressIndicatorDefaults::CIRCULAR_INDICATOR_SIZE;
     let val = value.map(|v| {
-        if v.is_nan() {
+        let target = if v.is_nan() {
             f32::NAN
         } else {
             v.clamp(0.0, 1.0)
-        }
+        };
+        determinate_value(format!("{identity}:circular-value"), target)
     });
     let (global_animation, add_animation, sweep_animation) = if value.is_none() {
         let spec = indeterminate_spec(Duration::from_millis(6000));
@@ -386,11 +398,12 @@ pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicat
     let instance_id = remember(unique_component_id);
     let identity = progress_identity(&config.modifier, "linear", *instance_id);
     let value = value.map(|v| {
-        if v.is_nan() {
+        let target = if v.is_nan() {
             f32::NAN
         } else {
             v.clamp(0.0, 1.0)
-        }
+        };
+        determinate_value(format!("{identity}:linear-value"), target)
     });
     let motion = if value.is_none() {
         let spec = indeterminate_spec(Duration::from_millis(1750));

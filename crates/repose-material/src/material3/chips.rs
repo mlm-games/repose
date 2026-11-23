@@ -308,8 +308,9 @@ pub fn AssistChip(
     label: View,
     leading_icon: Option<View>,
     trailing_icon: Option<View>,
-    config: ChipConfig,
+    mut config: ChipConfig,
 ) -> View {
+    config.colors.label_color = theme().on_surface;
     chip_impl(
         ChipStyle::Bordered,
         false,
@@ -330,8 +331,9 @@ pub fn ElevatedAssistChip(
     label: View,
     leading_icon: Option<View>,
     trailing_icon: Option<View>,
-    config: ChipConfig,
+    mut config: ChipConfig,
 ) -> View {
+    config.colors.label_color = theme().on_surface;
     chip_impl(
         ChipStyle::Elevated,
         false,

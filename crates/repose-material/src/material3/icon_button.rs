@@ -287,9 +287,9 @@ pub fn OutlinedIconButton(
         .container_size
         .unwrap_or(IconButtonDefaults::CONTAINER_SIZE);
     let border_color = if config.enabled {
-        th.outline
+        IconButtonDefaults::content_color()
     } else {
-        th.on_surface.with_alpha_f32(0.12)
+        IconButtonDefaults::content_color().with_alpha_f32(0.38)
     };
     let cc = colors.content(config.enabled);
     icon_button_render(

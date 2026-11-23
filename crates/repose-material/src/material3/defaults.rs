@@ -44,7 +44,7 @@ impl ToggleButtonDefaults {
         theme().on_surface_variant
     }
     pub fn outlined_border_color() -> Color {
-        theme().outline
+        theme().outline_variant
     }
     pub fn outlined_checked_container_color() -> Color {
         theme().secondary_container
@@ -151,7 +151,7 @@ impl ButtonDefaults {
         theme().on_surface_variant
     }
     pub fn outlined_border_color() -> Color {
-        theme().outline
+        theme().outline_variant
     }
     pub fn text_content_color() -> Color {
         theme().primary
@@ -330,7 +330,7 @@ impl IconButtonDefaults {
             content_color: Self::filled_content_color(),
             disabled_container_color: th
                 .on_surface
-                .with_alpha_f32(0.12)
+                .with_alpha_f32(0.10)
                 .composite_over(th.surface),
             disabled_content_color: Self::disabled_content_color(),
         }
@@ -344,7 +344,7 @@ impl IconButtonDefaults {
             content_color: Self::filled_tonal_content_color(),
             disabled_container_color: th
                 .on_surface
-                .with_alpha_f32(0.12)
+                .with_alpha_f32(0.10)
                 .composite_over(th.surface),
             disabled_content_color: Self::disabled_content_color(),
         }
@@ -459,10 +459,10 @@ impl SwitchDefaults {
         theme().outline
     }
     pub fn checked_icon_color() -> Color {
-        theme().on_primary
+        theme().on_primary_container
     }
     pub fn unchecked_icon_color() -> Color {
-        theme().outline
+        theme().surface_container_highest
     }
     pub fn unchecked_border_color() -> Color {
         theme().outline
@@ -839,8 +839,8 @@ impl FABDefaults {
             default: theme().elevation.level3,
             hovered: theme().elevation.level4,
             focused: theme().elevation.level3,
-            pressed: theme().elevation.level5,
-            dragged: theme().elevation.level5,
+            pressed: theme().elevation.level3,
+            dragged: theme().elevation.level3,
             disabled: Dp(0.0),
         }
     }
@@ -850,7 +850,7 @@ pub struct ChipDefaults;
 
 impl ChipDefaults {
     pub const HEIGHT: Dp = Dp(32.0);
-    pub const HORIZONTAL_PADDING: Dp = Dp(16.0);
+    pub const HORIZONTAL_PADDING: Dp = Dp(8.0);
     pub const SHAPE_RADIUS: Dp = Dp(8.0);
     pub const BORDER_WIDTH: Dp = Dp(1.0);
 
@@ -865,7 +865,7 @@ impl ChipDefaults {
         theme().primary
     }
     pub fn trailing_icon_color() -> Color {
-        theme().primary
+        theme().on_surface_variant
     }
 
     // Disabled colors (non-selected)
@@ -890,7 +890,7 @@ impl ChipDefaults {
         theme().on_secondary_container
     }
     pub fn selected_leading_icon_color() -> Color {
-        theme().primary
+        theme().on_secondary_container
     }
     pub fn selected_trailing_icon_color() -> Color {
         theme().on_secondary_container
@@ -1010,7 +1010,7 @@ impl NavigationDrawerDefaults {
 pub struct BottomSheetDefaults;
 
 impl BottomSheetDefaults {
-    pub const TONAL_ELEVATION: Dp = Dp(0.0);
+    pub const TONAL_ELEVATION: Dp = Dp(1.0);
     pub fn container_color() -> Color {
         theme().surface_container_low
     }
@@ -1021,11 +1021,11 @@ impl BottomSheetDefaults {
         theme().on_surface_variant
     }
     pub fn scrim_color() -> Color {
-        theme().scrim.with_alpha(85)
+        theme().scrim.with_alpha(82)
     }
     pub const DRAG_HANDLE_WIDTH: Dp = Dp(32.0);
     pub const DRAG_HANDLE_HEIGHT: Dp = Dp(4.0);
-    pub const SHAPE_RADIUS: Dp = Dp(16.0);
+    pub const SHAPE_RADIUS: Dp = Dp(28.0);
     pub const PEEK_HEIGHT: Dp = Dp(56.0);
     pub const MAX_WIDTH: Dp = Dp(640.0);
 }
@@ -1143,7 +1143,7 @@ impl TooltipDefaults {
     pub const RICH_HORIZONTAL_PADDING: Dp = Dp(16.0);
     pub const RICH_TITLE_TOP: Dp = Dp(8.0);
     pub const RICH_TEXT_TOP: Dp = Dp(4.0);
-    pub const RICH_TEXT_BOTTOM: Dp = Dp(12.0);
+    pub const RICH_TEXT_BOTTOM: Dp = Dp(4.0);
     pub const RICH_ACTION_MIN_HEIGHT: Dp = Dp(36.0);
     pub const RICH_ACTION_BOTTOM: Dp = Dp(8.0);
     pub const RICH_SHADOW_ELEVATION: Dp = Dp(3.0);
@@ -1539,7 +1539,7 @@ pub struct FloatingToolbarDefaults;
 impl FloatingToolbarDefaults {
     pub const SHAPE_RADIUS: Dp = Dp(28.0);
     pub fn container_color() -> Color {
-        theme().surface_container_high
+        theme().surface_container
     }
     pub fn content_color() -> Color {
         theme().on_surface_variant

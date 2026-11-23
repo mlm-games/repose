@@ -557,12 +557,15 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
     let id = remember(|| SWITCH_COUNTER.fetch_add(1, Ordering::Relaxed));
 
     // Thumb: spring-animated position and size
+    let has_content = config.thumb_content.is_some();
     let thumb_target_pos = if checked {
         (track_w - SwitchDefaults::THUMB_CHECKED_SIZE - Dp(4.0)).0
+    } else if has_content {
+        4.0
     } else {
         8.0
     };
-    let thumb_target_d = if checked {
+    let thumb_target_d = if checked || has_content {
         SwitchDefaults::THUMB_CHECKED_SIZE.0
     } else {
         SwitchDefaults::THUMB_UNCHECKED_SIZE.0

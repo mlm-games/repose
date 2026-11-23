@@ -474,7 +474,7 @@ fn estimate_dropdown_height(items: &[DropdownMenuEntry], config: &DropdownMenuCo
             DropdownMenuEntry::Item(_) | DropdownMenuEntry::Submenu(_) => {
                 h += config.item_height.max(DDM_ITEM_MIN_HEIGHT).0;
             }
-            DropdownMenuEntry::Divider => h += 1.0 + 2.0 * 12.0,
+            DropdownMenuEntry::Divider => h += 1.0 + 2.0 * 2.0,
         }
     }
     h
@@ -992,7 +992,8 @@ fn render_dropdown_divider(config: &DropdownMenuConfig) -> View {
     Box(Modifier::new()
         .fill_max_width()
         .height(Dp(1.0))
-        .margin(Dp(12.0))
+        .margin_horizontal(Dp(12.0))
+        .margin_vertical(Dp(2.0))
         .background(config.divider_color))
 }
 fn render_dropdown_menu_content(

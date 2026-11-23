@@ -211,9 +211,9 @@ pub fn Button(
         content_color: ButtonDefaults::content_color(),
         disabled_container_color: th
             .on_surface
-            .with_alpha_f32(0.12)
+            .with_alpha_f32(0.10)
             .composite_over(th.surface),
-        disabled_content_color: th.on_surface.with_alpha_f32(0.38),
+        disabled_content_color: th.on_surface_variant.with_alpha_f32(0.38),
     };
     let (cc, bg, sc, se) = resolve_button_colors(&config, def);
     let pad = config
@@ -286,14 +286,14 @@ pub fn OutlinedButton(
         container_color: Color::TRANSPARENT,
         content_color: ButtonDefaults::outlined_content_color(),
         disabled_container_color: Color::TRANSPARENT,
-        disabled_content_color: th.on_surface.with_alpha_f32(0.38),
+        disabled_content_color: th.on_surface_variant.with_alpha_f32(0.38),
     };
     let (cc, bg, sc, se) = resolve_button_colors(&config, def);
     let border = config.border.unwrap_or_else(|| {
         let c = if config.enabled {
             ButtonDefaults::outlined_border_color()
         } else {
-            th.on_surface.with_alpha_f32(0.12)
+            th.outline_variant.with_alpha_f32(0.10)
         };
         (Dp(1.0), c, config.shape_radius)
     });
@@ -329,7 +329,7 @@ pub fn TextButton(
         container_color: Color::TRANSPARENT,
         content_color: ButtonDefaults::text_content_color(),
         disabled_container_color: Color::TRANSPARENT,
-        disabled_content_color: th.on_surface.with_alpha_f32(0.38),
+        disabled_content_color: th.on_surface_variant.with_alpha_f32(0.38),
     };
     let (cc, bg, sc, se) = resolve_button_colors(&config, def);
     let pad = config
@@ -363,8 +363,8 @@ pub fn ElevatedButton(
     let def = ButtonColors {
         container_color: ButtonDefaults::elevated_container_color(),
         content_color: ButtonDefaults::elevated_content_color(),
-        disabled_container_color: th.on_surface.with_alpha_f32(0.04),
-        disabled_content_color: th.on_surface.with_alpha_f32(0.38),
+        disabled_container_color: th.on_surface.with_alpha_f32(0.10),
+        disabled_content_color: th.on_surface_variant.with_alpha_f32(0.38),
     };
     let (cc, bg, sc, se) = resolve_button_colors(&config, def);
     let pad = config

@@ -95,7 +95,7 @@ pub fn BottomSheet(
             disabled: Dp::ZERO,
         })
         .shadow(config.shadow_elevation, Dp::ZERO)
-        .clip_rounded(config.shape_radius))
+        .clip_rounded_radii([config.shape_radius, config.shape_radius, Dp::ZERO, Dp::ZERO]))
     .child(with_content_color(config.content_color, move || content));
 
     let dismiss_target = if config.gestures_enabled {
@@ -540,7 +540,12 @@ pub fn ModalBottomSheet(
                             disabled: Dp::ZERO,
                         })
                         .shadow(config.shadow_elevation, Dp::ZERO)
-                        .clip_rounded(config.shape_radius)
+                        .clip_rounded_radii([
+                            config.shape_radius,
+                            config.shape_radius,
+                            Dp::ZERO,
+                            Dp::ZERO,
+                        ])
                         .on_size_changed({
                             let sheet_height = sheet_height.clone();
                             let anim = anim.clone();

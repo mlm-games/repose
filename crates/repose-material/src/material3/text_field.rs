@@ -254,18 +254,18 @@ impl TextFieldDefaults {
             error_text_color: th.on_surface,
             focused_container_color: th.surface_container_highest,
             unfocused_container_color: th.surface_container_highest,
-            disabled_container_color: th.on_surface.with_alpha_f32(0.04),
+            disabled_container_color: th.surface_container_highest,
             error_container_color: th.surface_container_highest,
             cursor_color: th.primary,
             error_cursor_color: th.error,
             focused_indicator_color: th.primary,
             unfocused_indicator_color: th.on_surface_variant,
-            disabled_indicator_color: th.on_surface.with_alpha_f32(0.12),
+            disabled_indicator_color: th.on_surface.with_alpha_f32(0.38),
             error_indicator_color: th.error,
             focused_leading_icon_color: th.on_surface_variant,
             unfocused_leading_icon_color: th.on_surface_variant,
             disabled_leading_icon_color: th.on_surface.with_alpha_f32(0.38),
-            error_leading_icon_color: th.error,
+            error_leading_icon_color: th.on_surface_variant,
             focused_trailing_icon_color: th.on_surface_variant,
             unfocused_trailing_icon_color: th.on_surface_variant,
             disabled_trailing_icon_color: th.on_surface.with_alpha_f32(0.38),
@@ -282,14 +282,14 @@ impl TextFieldDefaults {
             unfocused_supporting_text_color: th.on_surface_variant,
             disabled_supporting_text_color: th.on_surface.with_alpha_f32(0.38),
             error_supporting_text_color: th.error,
-            focused_prefix_color: th.on_surface,
-            unfocused_prefix_color: th.on_surface,
+            focused_prefix_color: th.on_surface_variant,
+            unfocused_prefix_color: th.on_surface_variant,
             disabled_prefix_color: th.on_surface.with_alpha_f32(0.38),
-            error_prefix_color: th.on_surface,
-            focused_suffix_color: th.on_surface,
-            unfocused_suffix_color: th.on_surface,
+            error_prefix_color: th.on_surface_variant,
+            focused_suffix_color: th.on_surface_variant,
+            unfocused_suffix_color: th.on_surface_variant,
             disabled_suffix_color: th.on_surface.with_alpha_f32(0.38),
-            error_suffix_color: th.on_surface,
+            error_suffix_color: th.on_surface_variant,
         }
     }
 }
@@ -653,18 +653,12 @@ fn outlined_field_decoration(
             tc.suffix_color(config.enabled, config.is_error, is_focused),
         )
     } else {
-        (
-            if config.is_error {
-                th.error
-            } else {
-                th.on_surface
-            },
-            if config.is_error {
-                th.error
-            } else {
-                th.on_surface
-            },
-        )
+        let c = if config.enabled {
+            th.on_surface_variant
+        } else {
+            th.on_surface.with_alpha_f32(0.38)
+        };
+        (c, c)
     };
 
     let (lead_c, trail_c) = if let Some(ref tc) = config.colors {
@@ -673,14 +667,20 @@ fn outlined_field_decoration(
             tc.trailing_icon_color(config.enabled, config.is_error, is_focused),
         )
     } else {
-        let c = if !config.enabled {
-            th.on_surface.with_alpha_f32(0.38)
+        let disabled = th.on_surface.with_alpha_f32(0.38);
+        let lead = if config.enabled {
+            th.on_surface_variant
+        } else {
+            disabled
+        };
+        let trail = if !config.enabled {
+            disabled
         } else if config.is_error {
             th.error
         } else {
             th.on_surface_variant
         };
-        (c, c)
+        (lead, trail)
     };
 
     let text_c = config
@@ -924,13 +924,7 @@ pub fn TextField(
             } else {
                 th.on_surface_variant
             };
-            let bg = if config.enabled {
-                th.surface_container_highest
-            } else {
-                th.on_surface
-                    .with_alpha_f32(0.04)
-                    .composite_over(th.surface)
-            };
+            let bg = th.surface_container_highest;
             (ind, lb, bg)
         };
 
@@ -999,18 +993,12 @@ pub fn TextField(
             tc.suffix_color(config.enabled, config.is_error, is_focused),
         )
     } else {
-        (
-            if config.is_error {
-                th.error
-            } else {
-                th.on_surface
-            },
-            if config.is_error {
-                th.error
-            } else {
-                th.on_surface
-            },
-        )
+        let c = if config.enabled {
+            th.on_surface_variant
+        } else {
+            th.on_surface.with_alpha_f32(0.38)
+        };
+        (c, c)
     };
 
     let (lead_c, trail_c) = if let Some(ref tc) = config.colors {
@@ -1019,14 +1007,20 @@ pub fn TextField(
             tc.trailing_icon_color(config.enabled, config.is_error, is_focused),
         )
     } else {
-        let c = if !config.enabled {
-            th.on_surface.with_alpha_f32(0.38)
+        let disabled = th.on_surface.with_alpha_f32(0.38);
+        let lead = if config.enabled {
+            th.on_surface_variant
+        } else {
+            disabled
+        };
+        let trail = if !config.enabled {
+            disabled
         } else if config.is_error {
             th.error
         } else {
             th.on_surface_variant
         };
-        (c, c)
+        (lead, trail)
     };
 
     let text_c = config

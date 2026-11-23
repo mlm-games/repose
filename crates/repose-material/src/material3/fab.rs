@@ -178,7 +178,7 @@ pub fn ExtendedFAB(
 
     let mut m = Modifier::new()
         .height(config.size)
-        .min_width(config.size.max(Dp(80.0)))
+        .min_width(config.size)
         .background(bg)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
@@ -192,7 +192,7 @@ pub fn ExtendedFAB(
         .clip_rounded(config.shape_radius)
         .padding_values(PaddingValues {
             left: Dp(16.0),
-            right: Dp(20.0),
+            right: Dp(16.0),
             top: Dp(0.0),
             bottom: Dp(0.0),
         })
@@ -204,7 +204,7 @@ pub fn ExtendedFAB(
     Row(m).child((
         icon.map(|v| super::util::icon_content_with_color(content_color, v))
             .unwrap_or(Box(Modifier::new())),
-        Box(Modifier::new().width(if has_icon { Dp(12.0) } else { Dp::ZERO })),
+        Box(Modifier::new().width(if has_icon { Dp(8.0) } else { Dp::ZERO })),
         Text(label)
             .color(content_color)
             .size(th.typography.label_large)

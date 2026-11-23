@@ -101,7 +101,7 @@ pub fn ModalNavigationDrawer(
         .min_width(NavigationDrawerDefaults::MIN_WIDTH)
         .max_width(NavigationDrawerDefaults::MAX_WIDTH)
         .background(config.container_color)
-        .clip_rounded(config.shape_radius);
+        .clip_rounded_radii([Dp::ZERO, config.shape_radius, config.shape_radius, Dp::ZERO]);
 
     if config.tonal_elevation.0 > 0.0 {
         drawer_m = drawer_m.state_elevation(StateElevation {
@@ -119,19 +119,20 @@ pub fn ModalNavigationDrawer(
             .fill_max_size()
             .background(config.content_color))
         .child(content),
-        if drawer_state.is_open() {
-            Box(Modifier::new()
-                .fill_max_size()
-                .background(config.scrim_color)
-                .clickable()
-                .on_pointer_down({
-                    let ds = drawer_state.clone();
-                    move |_| ds.dismiss()
-                }))
-            .child(Box(Modifier::new()))
-        } else {
-            Box(Modifier::new())
-        },
+        Box(Modifier::new()
+            .fill_max_size()
+            .alpha((1.0 + drawer_offset / config.width.0.max(1.0)).clamp(0.0, 1.0))
+            .background(config.scrim_color)
+            .then({
+                let ds = drawer_state.clone();
+                let open = drawer_state.is_open();
+                let mut m = Modifier::new();
+                if open {
+                    m = m.clickable().on_pointer_down(move |_| ds.dismiss());
+                }
+                m
+            }))
+        .child(Box(Modifier::new())),
         Box(drawer_m).child(drawer_content),
     ))
 }
@@ -142,9 +143,10 @@ pub fn DismissibleNavigationDrawer(
     drawer_state: Rc<DrawerState>,
     drawer_content: View,
     content: View,
-    config: NavigationDrawerConfig,
+    mut config: NavigationDrawerConfig,
 ) -> View {
     let _th = theme();
+    config.shape_radius = Dp::ZERO;
     let drawer_offset = animate_f32(
         drawer_state.key("dismissible-offset"),
         if drawer_state.is_open() {
@@ -168,7 +170,7 @@ pub fn DismissibleNavigationDrawer(
         .min_width(NavigationDrawerDefaults::MIN_WIDTH)
         .max_width(NavigationDrawerDefaults::MAX_WIDTH)
         .background(config.container_color)
-        .clip_rounded(config.shape_radius);
+        .clip_rounded_radii([Dp::ZERO, config.shape_radius, config.shape_radius, Dp::ZERO]);
 
     if config.tonal_elevation.0 > 0.0 {
         drawer_m = drawer_m.state_elevation(StateElevation {
@@ -316,6 +318,7 @@ pub fn NavigationDrawerItem(
                 .unwrap_or(Box(Modifier::new().width(Dp(24.0)).height(Dp(24.0)))),
             Box(Modifier::new().width(Dp(12.0)).height(Dp(1.0))),
             Box(Modifier::new().weight(1.0)).child(label),
+            Box(Modifier::new().width(Dp(12.0)).height(Dp(1.0))),
             config.badge.unwrap_or(Box(Modifier::new())),
         ))
     }))

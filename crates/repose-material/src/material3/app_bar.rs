@@ -408,7 +408,7 @@ pub fn MediumTopAppBar(
         actions,
         config,
         Dp(112.0),
-        Sp(28.0),
+        Sp(24.0),
         Sp(22.0),
     )
 }
@@ -468,7 +468,7 @@ pub fn FloatingToolbar(expanded: bool, content: View, config: FloatingToolbarCon
         Row(Modifier::new()
             .background(config.container_color)
             .clip_rounded(config.shape_radius)
-            .shadow(th.elevation.level3, Dp::ZERO)
+            .shadow(Dp::ZERO, Dp::ZERO)
             .padding_values(PaddingValues {
                 left: Dp(16.0),
                 right: Dp(16.0),

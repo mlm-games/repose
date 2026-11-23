@@ -202,6 +202,11 @@ impl TooltipState {
         ));
     }
 
+    pub fn show_no_timeout(&self) {
+        *self.timer.borrow_mut() = None;
+        self.visible.set_neq(true);
+    }
+
     pub fn dismiss(&self) {
         *self.timer.borrow_mut() = None;
         self.visible.set_neq(false);
@@ -670,13 +675,9 @@ pub fn TooltipBox(
         host = host.align_self(AlignSelf::FLEX_START);
     }
     if config.enable_user_input {
-        let timeout = config.auto_dismiss_timeout;
         let enter = state.clone();
         let leave = state.clone();
-        host = host.hoverable(
-            move || enter.show_with_timeout(timeout),
-            move || leave.dismiss(),
-        );
+        host = host.hoverable(move || enter.show_no_timeout(), move || leave.dismiss());
         // Touch/stylus: show on long-press, dismiss on release, mirroring
         // Compose `BasicTooltipBox.handleGestures` (mouse uses hover above;
         // `PointerKind` distinguishes them here). A quick tap never reaches
@@ -684,7 +685,7 @@ pub fn TooltipBox(
         let long = state.clone();
         let up = state.clone();
         host = host
-            .on_long_click(move || long.show_with_timeout(timeout))
+            .on_long_click(move || long.show_no_timeout())
             .on_pointer_up(move |e| {
                 if e.kind != PointerKind::Mouse {
                     up.dismiss();
