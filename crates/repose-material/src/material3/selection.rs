@@ -402,7 +402,7 @@ pub fn RadioButton(
     let id = remember(|| RADIO_COUNTER.fetch_add(1, Ordering::Relaxed));
     let spring = th.motion.fast_spatial;
 
-    let ring_col = animate_color_directional(
+    let ring_col = animate_color(
         format!("rb_ring_{}", id),
         if !config.enabled {
             if selected {
@@ -415,9 +415,7 @@ pub fn RadioButton(
         } else {
             config.unselected_color
         },
-        selected,
         th.motion.color,
-        th.motion.color_fast,
     );
     let dot_size = animate_f32(
         format!("rb_dot_{}", id),
