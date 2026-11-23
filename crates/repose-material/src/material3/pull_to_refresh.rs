@@ -25,7 +25,7 @@ impl Default for PullToRefreshConfig {
         Self {
             modifier: Modifier::new(),
             indicator_color: PullToRefreshDefaults::indicator_color(),
-            threshold: PullToRefreshDefaults::THRESHOLD.0,
+            threshold: PullToRefreshDefaults::THRESHOLD.to_px().0,
             content_alignment: AlignItems::FLEX_START,
         }
     }
@@ -55,7 +55,7 @@ impl PullToRefreshState {
         Self {
             refreshing: signal(false),
             scroll_state: RefCell::new(None),
-            threshold: 80.0,
+            threshold: PullToRefreshDefaults::THRESHOLD.to_px().0,
             triggered: Cell::new(false),
             id: unique_component_id(),
         }
@@ -195,7 +195,7 @@ pub fn PullToRefresh(
         if distance_fraction > 0.01 {
             Box(Modifier::new()
                 .fill_max_width()
-                .height(Dp(Px(indicator_h).to_dp().0))
+                .height(Px(indicator_h).to_dp())
                 .align_items(AlignItems::CENTER)
                 .justify_content(JustifyContent::CENTER))
             .child(

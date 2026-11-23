@@ -1,6 +1,8 @@
 use repose_core::view::View;
 use repose_core::*;
-use repose_material::material3::{SecondaryTabRow, Tab, TabRow, TabRowConfig};
+use repose_material::material3::{
+    ScrollableTabRow, ScrollableTabRowConfig, SecondaryTabRow, Tab, TabRow, TabRowConfig,
+};
 use repose_ui_test::UiTest;
 use std::rc::Rc;
 
@@ -71,5 +73,42 @@ fn secondary_tab_indicator_fills_the_tab_cell() {
     assert!(
         (indicator.w - 100.0).abs() < 1.0,
         "secondary indicator fills the cell: {indicator:?}"
+    );
+    assert!(
+        (indicator.x - 200.0).abs() < 1.0,
+        "secondary indicator starts at the cell: {indicator:?}"
+    );
+}
+
+fn many_tabs() -> Vec<Tab> {
+    (0..8)
+        .map(|i| Tab {
+            label: format!("T{i}"),
+            icon: None,
+            on_click: Rc::new(|| {}),
+            enabled: true,
+            interaction_source: None,
+        })
+        .collect()
+}
+
+fn scrollable_config() -> ScrollableTabRowConfig {
+    ScrollableTabRowConfig {
+        container_color: Color::TRANSPARENT,
+        indicator_color: Color::from_rgb(255, 0, 0),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn scrollable_tab_indicator_stays_within_the_selected_tab() {
+    let indicator = settled_indicator(|| ScrollableTabRow(3, many_tabs(), scrollable_config()));
+    assert!(
+        indicator.w > 0.0 && indicator.w <= 90.0,
+        "indicator fits a tab: {indicator:?}"
+    );
+    assert!(
+        indicator.x >= 0.0 && indicator.x + indicator.w <= 300.0,
+        "indicator stays inside the viewport: {indicator:?}"
     );
 }

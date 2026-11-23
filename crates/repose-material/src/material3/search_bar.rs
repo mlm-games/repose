@@ -318,7 +318,7 @@ impl SearchBarScrollBehavior {
     /// measured height while laying out, mirroring upstream's
     /// `onSizeChanged { scrollOffsetLimit = -size.height }`.
     pub fn new(scroll_state: SearchBarScrollState, height: Dp) -> Self {
-        scroll_state.scroll_offset_limit.set(-height.0);
+        scroll_state.scroll_offset_limit.set(-height.to_px().0);
         Self {
             scroll_state,
             height,
@@ -344,7 +344,7 @@ impl SearchBarScrollBehavior {
     /// Syncs [`SearchBarScrollState::scroll_offset_limit`] from the bar's
     /// measured height (upstream's `onSizeChanged` hook).
     pub fn set_scroll_offset_limit(&self, height: Dp) {
-        self.scroll_state.scroll_offset_limit.set(-height.0);
+        self.scroll_state.scroll_offset_limit.set(-height.to_px().0);
     }
 
     /// Drag layer of upstream's `searchBarScrollBehaviorModifier`: dragging

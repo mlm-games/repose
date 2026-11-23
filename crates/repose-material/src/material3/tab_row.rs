@@ -56,15 +56,11 @@ enum IndicatorWidth {
     Content,
 }
 
-fn label_width_px(label: &str, style_px: f32, has_icon: bool) -> f32 {
+fn content_width_px(label: &str, style_px: f32, has_icon: bool) -> f32 {
     let metrics = measure_text(label, style_px, TextMeasureConfig::default());
     let text = metrics.positions.last().copied().unwrap_or_default();
-    let icon = if has_icon {
-        Dp(24.0).to_px().0 + Dp(4.0).to_px().0
-    } else {
-        0.0
-    };
-    (text + icon).max(Dp(24.0).to_px().0)
+    let icon = if has_icon { Dp(24.0).to_px().0 } else { 0.0 };
+    text.max(icon).max(Dp(24.0).to_px().0)
 }
 
 fn tab_cell(
@@ -189,7 +185,7 @@ fn fixed_tab_row(
     let label_size = th.typography.title_small;
     let content_widths: Vec<f32> = tabs
         .iter()
-        .map(|tab| label_width_px(&tab.label, label_size.to_px().0, tab.icon.is_some()))
+        .map(|tab| content_width_px(&tab.label, label_size.to_px().0, tab.icon.is_some()))
         .collect();
     let row_height = if tabs
         .iter()
@@ -305,7 +301,7 @@ pub fn ScrollableTabRow(
     let label_size = th.typography.title_small;
     let content_widths: Vec<f32> = tabs
         .iter()
-        .map(|tab| label_width_px(&tab.label, label_size.to_px().0, tab.icon.is_some()))
+        .map(|tab| content_width_px(&tab.label, label_size.to_px().0, tab.icon.is_some()))
         .collect();
     let widths: Vec<Mutable<f32>> = (0..tabs.len())
         .map(|i| remember_mutable_with_key(format!("stab_w_{}_{}", id, i), || 0.0f32))
@@ -319,10 +315,11 @@ pub fn ScrollableTabRow(
     );
     let edge_px = config.edge_padding.to_px().0;
 
-    let total: f32 = cells.iter().sum();
-    let vp = *viewport.get();
+    let total: f32 = cells.iter().sum::<f32>() + edge_px * 2.0;
+    let vp = Dp(*viewport.get()).to_px().0;
     if vp > 0.0 {
-        let center: f32 = cells.iter().take(selected_index).sum::<f32>()
+        let center: f32 = edge_px
+            + cells.iter().take(selected_index).sum::<f32>()
             + cells.get(selected_index).copied().unwrap_or(0.0) / 2.0;
         let target = (center - vp / 2.0).clamp(0.0, (total - vp).max(0.0));
         let animated = animate_f32_from(
