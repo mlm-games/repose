@@ -320,7 +320,11 @@ fn top_app_bar_layout(
             .child(title_column),
         ))
     } else {
-        Row(root_m.padding_values(content_padding).align_items(AlignItems::CENTER).then(config.modifier)).child((
+        Row(root_m
+            .padding_values(content_padding)
+            .align_items(AlignItems::CENTER)
+            .then(config.modifier))
+        .child((
             nav,
             Box(Modifier::new()
                 .padding_values(PaddingValues {

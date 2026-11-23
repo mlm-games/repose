@@ -744,19 +744,21 @@ fn outlined_field_decoration(
                 .clip_rounded(radius)
                 .background(container_bg)),
             if has_label {
-                let mut bm = Modifier::new()
-                    .fill_max_size()
-                    .clip_rounded(radius)
-                    .border(Dp(border_w), border_color, radius);
+                let mut bm = Modifier::new().fill_max_size().clip_rounded(radius).border(
+                    Dp(border_w),
+                    border_color,
+                    radius,
+                );
                 if let Some((l, t, r, b)) = label_cutout {
                     bm = bm.clip_rect(l, t, r, b, ClipOp::Difference);
                 }
                 Box(bm)
             } else {
-                Box(Modifier::new()
-                    .fill_max_size()
-                    .clip_rounded(radius)
-                    .border(Dp(border_w), border_color, radius))
+                Box(Modifier::new().fill_max_size().clip_rounded(radius).border(
+                    Dp(border_w),
+                    border_color,
+                    radius,
+                ))
             },
             Row(Modifier::new()
                 .fill_max_size()

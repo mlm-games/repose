@@ -75,7 +75,11 @@ fn measured_bar(bar: View, measured: Rc<Signal<f32>>, placement: Modifier) -> Vi
     .child(bar)
 }
 
-fn scaffold_inner(content: impl Fn(PaddingValues) -> View, config: ScaffoldConfig, instance_id: u64) -> View {
+fn scaffold_inner(
+    content: impl Fn(PaddingValues) -> View,
+    config: ScaffoldConfig,
+    instance_id: u64,
+) -> View {
     let insets = window_insets();
     let (itop, ibottom, iime, ileft, iright) = if config.owns_window_insets {
         (
@@ -129,10 +133,12 @@ fn scaffold_inner(content: impl Fn(PaddingValues) -> View, config: ScaffoldConfi
         measured_bar(
             bar,
             top_height,
-            Modifier::new()
-                .key(*key)
-                .absolute()
-                .inset(Some(Dp::ZERO), Some(itop), Some(Dp::ZERO), None),
+            Modifier::new().key(*key).absolute().inset(
+                Some(Dp::ZERO),
+                Some(itop),
+                Some(Dp::ZERO),
+                None,
+            ),
         )
     });
     let bottom_bar = config.bottom_bar.map(|bar| {

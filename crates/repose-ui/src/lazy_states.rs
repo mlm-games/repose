@@ -937,8 +937,9 @@ impl LazyColumnState {
                 if after == count {
                     return Some(padding);
                 }
-                return Some(padding + geometry.total() - geometry.top(after)
-                    + self.core.spacing_main.get());
+                return Some(
+                    padding + geometry.total() - geometry.top(after) + self.core.spacing_main.get(),
+                );
             }
             return Some(padding + self.core.uniform_offset_for_index(index) - self.core.pad());
         }

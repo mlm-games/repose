@@ -1359,10 +1359,18 @@ fn reversed_lazy_column_anchors_short_content_to_bottom() {
         &Interactions::default(),
         None,
     );
-    let item = scene.nodes.iter().find_map(|node| match node {
-        SceneNode::Rect { rect, brush: Brush::Solid(color), .. } if *color == newest => Some(rect),
-        _ => None,
-    }).expect("newest row is visible");
+    let item = scene
+        .nodes
+        .iter()
+        .find_map(|node| match node {
+            SceneNode::Rect {
+                rect,
+                brush: Brush::Solid(color),
+                ..
+            } if *color == newest => Some(rect),
+            _ => None,
+        })
+        .expect("newest row is visible");
     assert!((item.y - 80.0).abs() < 1.0);
 }
 
