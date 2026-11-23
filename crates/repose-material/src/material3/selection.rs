@@ -7,7 +7,7 @@ use crate::{Icon, Symbol};
 use repose_core::*;
 use repose_ui::{
     Box, TextStyle, ViewExt,
-    anim::{animate_color, animate_color_directional, animate_f32},
+    anim::{animate_color, animate_color_directional, animate_f32, animate_f32_snapping},
 };
 
 use super::util::{apply_enabled_click, apply_m3_clickable_ex};
@@ -589,8 +589,9 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
     };
     let spring = th.motion.fast_spatial;
 
-    let thumb_left = animate_f32(format!("sw_pos_{}", id), thumb_target_pos, spring);
-    let thumb_d = animate_f32(format!("sw_d_{}", id), thumb_target_d, spring);
+    let thumb_left =
+        animate_f32_snapping(format!("sw_pos_{}", id), thumb_target_pos, pressed, spring);
+    let thumb_d = animate_f32_snapping(format!("sw_d_{}", id), thumb_target_d, pressed, spring);
     let thumb_top = (track_h - Dp(thumb_d)) * 0.5;
 
     let is_enabled = config.enabled;

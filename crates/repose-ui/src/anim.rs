@@ -65,6 +65,50 @@ pub fn animate_f32(key: impl Into<String>, target: f32, spec: AnimationSpec) -> 
     animate_f32_from(key, target, target, spec)
 }
 
+/// Animate f32 to target, snapping immediately while `snap` is true.
+pub fn animate_f32_snapping(
+    key: impl Into<String>,
+    target: f32,
+    snap: bool,
+    spec: AnimationSpec,
+) -> f32 {
+    let key = key.into();
+    let anim_key = format!("anim:f32:{key}");
+    let anim = remember_state_with_key(&anim_key, || AnimatedValue::new(target, spec));
+    let last = remember_state_with_key(format!("anim:f32_last:{key}"), || f32::NAN);
+    animation_driver::touch(&anim_key);
+    let should_set = {
+        let last = last.borrow();
+        last.is_nan() || (*last - target).abs() > 1e-6
+    };
+    if should_set {
+        *last.borrow_mut() = target;
+        {
+            let mut value = anim.borrow_mut();
+            value.set_spec(spec);
+            if snap {
+                value.snap_to(target);
+            } else {
+                value.set_target(target);
+            }
+        }
+        let registration = anim.clone();
+        animation_driver::register(
+            anim_key.clone(),
+            Rc::new(RefCell::new(move || registration.borrow_mut().update())),
+        );
+        request_frame();
+    } else if !animation_driver::is_registered(&anim_key) && anim.borrow().is_animating() {
+        let registration = anim.clone();
+        animation_driver::register(
+            anim_key.clone(),
+            Rc::new(RefCell::new(move || registration.borrow_mut().update())),
+        );
+        request_frame();
+    }
+    *anim.borrow().get()
+}
+
 macro_rules! animate_from_impl {
     ($name:ident, $type:ty, $prefix:expr) => {
         pub fn $name(
