@@ -1035,7 +1035,7 @@ pub struct SearchBarDefaults;
 impl SearchBarDefaults {
     pub const HEIGHT: Dp = Dp(56.0);
     pub const EXPANDED_WIDTH: Dp = Dp(360.0);
-    pub const COLLAPSED_WIDTH: Dp = Dp(240.0);
+    pub const COLLAPSED_WIDTH: Dp = Dp(360.0);
     pub const DOCKED_HEIGHT: Dp = Dp(400.0);
     pub const TONAL_ELEVATION: Dp = Dp(0.0);
     pub const SHADOW_ELEVATION: Dp = Dp(0.0);
@@ -1060,7 +1060,7 @@ impl SearchBarDefaults {
     };
 
     pub fn container_color() -> Color {
-        theme().surface_container
+        theme().surface_container_high
     }
     pub fn active_container_color() -> Color {
         theme().surface_container_high
@@ -1072,7 +1072,7 @@ impl SearchBarDefaults {
         theme().on_surface_variant
     }
     pub fn divider_color() -> Color {
-        theme().outline_variant
+        theme().outline
     }
     pub fn scrim_color() -> Color {
         theme().scrim.with_alpha(85)
@@ -1177,9 +1177,9 @@ impl TooltipDefaults {
 pub struct PullToRefreshDefaults;
 
 impl PullToRefreshDefaults {
-    pub const THRESHOLD: Dp = Dp(64.0);
+    pub const THRESHOLD: Dp = Dp(80.0);
     pub fn indicator_color() -> Color {
-        theme().primary
+        theme().on_surface_variant
     }
     pub fn container_color() -> Color {
         Color::TRANSPARENT

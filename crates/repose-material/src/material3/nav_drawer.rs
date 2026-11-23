@@ -78,14 +78,15 @@ pub fn ModalNavigationDrawer(
 ) -> View {
     let _th = theme();
 
+    let is_open = drawer_state.is_open();
     let drawer_offset = animate_f32(
         drawer_state.key("modal-offset"),
-        if drawer_state.is_open() {
-            0.0
+        if is_open { 0.0 } else { -config.width.0 },
+        if is_open {
+            theme().motion.default_spatial
         } else {
-            -config.width.0
+            theme().motion.fast_effects
         },
-        theme().motion.spring,
     );
 
     let mut drawer_m = Modifier::new()
@@ -147,14 +148,15 @@ pub fn DismissibleNavigationDrawer(
 ) -> View {
     let _th = theme();
     config.shape_radius = Dp::ZERO;
+    let is_open = drawer_state.is_open();
     let drawer_offset = animate_f32(
         drawer_state.key("dismissible-offset"),
-        if drawer_state.is_open() {
-            0.0
+        if is_open { 0.0 } else { -config.width.0 },
+        if is_open {
+            theme().motion.default_spatial
         } else {
-            -config.width.0
+            theme().motion.fast_effects
         },
-        theme().motion.spring,
     );
 
     let mut drawer_m = Modifier::new()

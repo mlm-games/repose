@@ -311,6 +311,7 @@ pub fn AssistChip(
     mut config: ChipConfig,
 ) -> View {
     config.colors.label_color = theme().on_surface;
+    config.colors.trailing_icon_color = theme().primary;
     chip_impl(
         ChipStyle::Bordered,
         false,
@@ -334,6 +335,7 @@ pub fn ElevatedAssistChip(
     mut config: ChipConfig,
 ) -> View {
     config.colors.label_color = theme().on_surface;
+    config.colors.trailing_icon_color = theme().primary;
     chip_impl(
         ChipStyle::Elevated,
         false,
@@ -449,8 +451,10 @@ pub fn InputChip(
     leading_icon: Option<View>,
     avatar: Option<View>,
     trailing_icon: Option<View>,
-    config: ChipConfig,
+    mut config: ChipConfig,
 ) -> View {
+    config.colors.leading_icon_color = theme().on_surface_variant;
+    config.colors.selected_leading_icon_color = theme().primary;
     let id = remember(|| FILTERCHIP_COUNTER.fetch_add(1, Ordering::Relaxed));
     chip_impl(
         ChipStyle::Bordered,

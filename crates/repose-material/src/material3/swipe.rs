@@ -69,8 +69,8 @@ impl SwipeToDismissState {
     }
 
     pub fn with_config(config: SwipeToDismissConfig) -> Self {
-        let one_third = 1.0 / 3.0;
-        let positional_threshold = (config.dismiss_threshold * one_third) / config.dismissed_offset;
+        let positional_threshold =
+            SwipeToDismissDefaults::POSITIONAL_THRESHOLD.0 / config.dismissed_offset.max(1.0);
         let mut anchors = vec![(0.0, DismissValue::Default)];
         if config.enable_dismiss_from_end_to_start {
             anchors.push((-config.dismissed_offset, DismissValue::DismissedToStart));
@@ -85,6 +85,7 @@ impl SwipeToDismissState {
             repose_core::SwipeableConfig {
                 animation_spec: config.animation_spec,
                 positional_threshold,
+                velocity_threshold: Dp(125.0).to_px().0,
                 ..Default::default()
             },
         );

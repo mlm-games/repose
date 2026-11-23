@@ -509,7 +509,7 @@ pub fn TimeInput(state: Rc<TimePickerState>, config: TimeInputConfig) -> View {
                 ..Default::default()
             },
         ),
-        Text(":").size(theme().typography.headline_small),
+        Text(":").size(theme().typography.display_medium),
         OutlinedTextField(
             Modifier::new().width(Dp(96.0)),
             minute_text,

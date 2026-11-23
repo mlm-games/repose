@@ -117,10 +117,7 @@ pub fn NavigationRail(
     }
 
     if has_header || has_fab {
-        top_children.push(Box(Modifier::new()
-            .fill_max_width()
-            .height(Dp(1.0))
-            .background(th.outline_variant)));
+        top_children.push(Box(Modifier::new().fill_max_width().height(Dp(8.0))));
     }
 
     for (i, item) in items.into_iter().enumerate() {
@@ -171,7 +168,7 @@ pub fn NavigationRail(
             } else {
                 0.0
             },
-            default_effects,
+            th.motion.fast_spatial,
         ));
 
         let cb = item.on_click.clone();

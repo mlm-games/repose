@@ -495,11 +495,11 @@ impl SearchBarState {
             id,
             anim: Rc::new(RefCell::new(AnimatedValue::new(
                 0.0,
-                AnimationSpec::spring_gentle(),
+                theme().motion.slow_spatial,
             ))),
             content_anim: Rc::new(RefCell::new(AnimatedValue::new(
                 0.0,
-                AnimationSpec::spring_gentle(),
+                theme().motion.default_spatial,
             ))),
             anim_signal: signal(0.0),
             content_signal: signal(0.0),
@@ -959,7 +959,7 @@ pub fn SearchBar(
             .align_items(AlignItems::CENTER))
         .child((
             leading_icon.unwrap_or(Box(Modifier::new().size(Dp(24.0), Dp(24.0)))),
-            Box(Modifier::new().width(Dp(8.0)).fill_max_height()),
+            Box(Modifier::new().width(Dp(4.0)).fill_max_height()),
             with_content_color(colors.content_color, move || input_field),
             trailing_icon.unwrap_or(Box(Modifier::new())),
         )),
@@ -988,6 +988,11 @@ pub fn SearchBarWithContent(
     let instance_id = remember(unique_component_id);
     let animation_identity = search_animation_key(&modifier, "with-content", *instance_id);
     let th = theme();
+    let anim_spec = if expanded {
+        th.motion.slow_spatial
+    } else {
+        th.motion.default_spatial
+    };
     let insets = config.window_insets;
     let width_target = if expanded {
         config.expanded_width.0
@@ -998,7 +1003,7 @@ pub fn SearchBarWithContent(
         format!("{animation_identity}:width"),
         width_target,
         width_target,
-        theme().motion.expand,
+        anim_spec,
     );
 
     let bar_bg = if expanded {
@@ -1049,7 +1054,7 @@ pub fn SearchBarWithContent(
             .align_items(AlignItems::CENTER))
         .child((
             leading_icon.unwrap_or(Box(Modifier::new().size(Dp(24.0), Dp(24.0)))),
-            Box(Modifier::new().width(Dp(8.0)).fill_max_height()),
+            Box(Modifier::new().width(Dp(4.0)).fill_max_height()),
             with_content_color(config.colors.content_color, move || input_field),
             trailing_icon.unwrap_or(Box(Modifier::new())),
         )),
@@ -1110,7 +1115,7 @@ pub fn DockedSearchBar(
         format!("{animation_identity}:height"),
         content_target,
         content_target,
-        theme().motion.expand,
+        theme().motion.default_spatial,
     );
     let content_alpha = animate_search_value(
         format!("{animation_identity}:alpha"),

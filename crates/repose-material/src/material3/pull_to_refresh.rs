@@ -55,7 +55,7 @@ impl PullToRefreshState {
         Self {
             refreshing: signal(false),
             scroll_state: RefCell::new(None),
-            threshold: 64.0,
+            threshold: 80.0,
             triggered: Cell::new(false),
             id: unique_component_id(),
         }

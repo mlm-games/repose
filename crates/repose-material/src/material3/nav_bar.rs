@@ -144,7 +144,7 @@ pub fn NavigationBar(
                         } else {
                             0.0
                         },
-                        default_effects,
+                        th.motion.fast_spatial,
                     ));
                     let indicator_bg = config
                         .indicator_color

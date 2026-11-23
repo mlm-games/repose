@@ -24,7 +24,7 @@ use parking_lot::RwLock;
 use std::rc::Rc;
 
 use crate::Color;
-use crate::animation::{AnimationSpec, Easing};
+use crate::animation::{AnimationSpec, Easing, SpringSpec};
 use crate::indication::IndicationNodeFactory;
 use web_time::Duration;
 
@@ -624,6 +624,14 @@ pub struct MotionScheme {
     /// Large layout transitions (bottom sheet height, scaffold reflow).
     /// M3 standard: 300 ms EaseOut.
     pub layout: AnimationSpec,
+    /// M3 DefaultSpatial spring (0.9, 700).
+    pub default_spatial: AnimationSpec,
+    /// M3 FastSpatial spring (0.9, 1400).
+    pub fast_spatial: AnimationSpec,
+    /// M3 SlowSpatial spring (0.9, 300).
+    pub slow_spatial: AnimationSpec,
+    /// M3 FastEffects spring (1.0, 3800).
+    pub fast_effects: AnimationSpec,
 }
 
 impl Default for MotionScheme {
@@ -636,6 +644,10 @@ impl Default for MotionScheme {
             spring: AnimationSpec::spring_gentle(),
             expand: AnimationSpec::tween(Duration::from_millis(250), Easing::FastOutSlowIn),
             layout: AnimationSpec::tween(Duration::from_millis(300), Easing::EaseOut),
+            default_spatial: AnimationSpec::spring(SpringSpec::new(0.9, 700.0)),
+            fast_spatial: AnimationSpec::spring(SpringSpec::new(0.9, 1400.0)),
+            slow_spatial: AnimationSpec::spring(SpringSpec::new(0.9, 300.0)),
+            fast_effects: AnimationSpec::spring(SpringSpec::new(1.0, 3800.0)),
         }
     }
 }

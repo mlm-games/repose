@@ -75,7 +75,7 @@ pub fn BottomSheet(
         format!("{identity}:opacity"),
         if visible { 0.0 } else { 1.0 },
         if visible { 1.0 } else { 0.0 },
-        th.motion.layout,
+        AnimationSpec::spring_crit(40.0),
     );
 
     if !visible && opacity <= 0.01 {
@@ -792,12 +792,7 @@ pub fn ModalBottomSheet(
                                 .background(config.drag_handle_color)
                                 .clip_rounded(Dp(2.0))
                                 .interaction_source(&dh_source)
-                                .indication(ripple(RippleConfig {
-                                    color: Some(config.content_color),
-                                    bounded: true,
-                                    ..Default::default()
-                                }))
-                                .on_pointer_down(|_| {}))),
+                                .hit_passthrough())),
                             with_content_color(config.content_color, move || content),
                         )),
                     );

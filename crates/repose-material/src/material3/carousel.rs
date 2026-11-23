@@ -151,8 +151,7 @@ where
                 right: peek,
                 top: Dp::ZERO,
                 bottom: Dp::ZERO,
-            })
-            .gap(peek),
+            }),
     )
     .with_children(
         items

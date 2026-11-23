@@ -142,7 +142,7 @@ fn indicator_view(row_id: u64, left_px: f32, width_px: f32, height: Dp, color: C
     if width_px <= 1.0 {
         return Box(Modifier::new());
     }
-    let spec = AnimationSpec::spring_crit(40.0);
+    let spec = theme().motion.default_spatial;
     let left = animate_f32_from(format!("tab_ind_x_{row_id}"), left_px, left_px, spec);
     let width = animate_f32_from(format!("tab_ind_w_{row_id}"), width_px, width_px, spec);
     Box(Modifier::new()
@@ -331,7 +331,7 @@ pub fn ScrollableTabRow(
             format!("stab_off_{id}"),
             0.0,
             target,
-            AnimationSpec::spring_crit(40.0),
+            th.motion.default_spatial,
         );
         scroll.set_offset(animated);
     }
@@ -364,7 +364,7 @@ pub fn ScrollableTabRow(
     if width <= 1.0 {
         children.push(Box(Modifier::new()));
     } else {
-        let spec = AnimationSpec::spring_crit(40.0);
+        let spec = theme().motion.default_spatial;
         let ind_left = animate_f32_from(
             format!("stab_ind_x_{id}"),
             left + edge_px,

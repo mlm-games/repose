@@ -406,11 +406,12 @@ pub fn DatePicker(
                 prev_year,
             ),
             Box(Modifier::new()
+                .size(Dp(72.0), Dp(36.0))
                 .background(config.colors.year_selected_container_color)
                 .clip_rounded(Dp(4.0)))
             .child(
                 Text(year.to_string())
-                    .size(th.typography.body_small)
+                    .size(th.typography.body_large)
                     .color(config.colors.year_selected_content_color),
             ),
             navigation_button(
@@ -424,7 +425,7 @@ pub fn DatePicker(
     } else {
         Box(Modifier::new()).child(
             Text(year.to_string())
-                .size(th.typography.body_small)
+                .size(th.typography.body_large)
                 .color(config.colors.year_unselected_content_color),
         )
     };
@@ -433,6 +434,7 @@ pub fn DatePicker(
         config
             .modifier
             .background(config.colors.container_color)
+            .min_width(DatePickerDefaults::CONTAINER_WIDTH)
             .padding(DatePickerDefaults::HORIZONTAL_PADDING)
             .semantics(Semantics {
                 role: Role::Container,
@@ -485,7 +487,7 @@ pub fn DatePicker(
                         .justify_content(JustifyContent::CENTER))
                     .child(
                         Text(d.to_string())
-                            .size(th.typography.label_small)
+                            .size(th.typography.body_large)
                             .color(config.colors.weekday_color),
                     )
                 })
@@ -553,7 +555,7 @@ pub fn DatePicker(
                                     }))
                                 .child({
                                     let mut t = Text(day_num.to_string())
-                                        .size(th.typography.body_medium)
+                                        .size(th.typography.body_large)
                                         .color(day_color);
                                     if is_today && !is_selected {
                                         t = t.modifier(Modifier::new().border(
@@ -800,6 +802,7 @@ pub fn DateRangePicker(
         config
             .modifier
             .background(config.colors.container_color)
+            .min_width(DatePickerDefaults::CONTAINER_WIDTH)
             .padding(DatePickerDefaults::HORIZONTAL_PADDING)
             .semantics(Semantics {
                 role: Role::Container,
@@ -848,7 +851,7 @@ pub fn DateRangePicker(
                                 .justify_content(JustifyContent::CENTER))
                             .child(
                                 Text(d.to_string())
-                                    .size(th.typography.label_small)
+                                    .size(th.typography.body_large)
                                     .color(config.colors.weekday_color),
                             )
                         })
@@ -912,7 +915,7 @@ pub fn DateRangePicker(
                                     }))
                                 .child(
                                     Text(day_num.to_string())
-                                        .size(th.typography.body_medium)
+                                        .size(th.typography.body_large)
                                         .color(day_color),
                                 ),
                             );

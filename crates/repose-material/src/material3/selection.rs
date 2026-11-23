@@ -393,7 +393,7 @@ pub fn RadioButton(
 
     let id = remember(|| RADIO_COUNTER.fetch_add(1, Ordering::Relaxed));
     let color_spec = th.motion.color_fast;
-    let spring = th.motion.spring;
+    let spring = th.motion.fast_spatial;
 
     let ring_col = animate_color(
         format!("rb_ring_{}", id),
@@ -555,9 +555,15 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
     let track_h = SwitchDefaults::TRACK_HEIGHT;
 
     let id = remember(|| SWITCH_COUNTER.fetch_add(1, Ordering::Relaxed));
+    let sw_source: Rc<MutableInteractionSource> = config
+        .interaction_source
+        .clone()
+        .map(Rc::new)
+        .unwrap_or_else(|| remember(MutableInteractionSource::new));
 
     // Thumb: spring-animated position and size
     let has_content = config.thumb_content.is_some();
+    let pressed = sw_source.source().collect_is_pressed();
     let thumb_target_pos = if checked {
         (track_w - SwitchDefaults::THUMB_CHECKED_SIZE - Dp(4.0)).0
     } else if has_content {
@@ -565,12 +571,14 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
     } else {
         8.0
     };
-    let thumb_target_d = if checked || has_content {
+    let thumb_target_d = if pressed {
+        28.0
+    } else if checked || has_content {
         SwitchDefaults::THUMB_CHECKED_SIZE.0
     } else {
         SwitchDefaults::THUMB_UNCHECKED_SIZE.0
     };
-    let spring = th.motion.spring;
+    let spring = th.motion.fast_spatial;
 
     let thumb_left = animate_f32(format!("sw_pos_{}", id), thumb_target_pos, spring);
     let thumb_d = animate_f32(format!("sw_d_{}", id), thumb_target_d, spring);
@@ -635,12 +643,6 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
         },
         color_spec,
     );
-
-    let sw_source: Rc<MutableInteractionSource> = config
-        .interaction_source
-        .clone()
-        .map(Rc::new)
-        .unwrap_or_else(|| remember(MutableInteractionSource::new));
 
     // Compose reserves a 48dp minimum interactive size while the visual
     // pill stays 32dp tall, centred inside the touch host.
