@@ -505,27 +505,36 @@ pub fn RichTooltip(
         .action_content_color
         .resolve(TooltipDefaults::rich_action_color());
 
+    let has_title = title.is_some();
+    let has_action = action.is_some();
     let mut rows: Vec<View> = Vec::new();
     if let Some(title) = title {
         rows.push(
             Box(Modifier::new()
                 .fill_max_width()
-                .padding_values(PaddingValues {
-                    top: TooltipDefaults::RICH_TITLE_TOP,
-                    ..PaddingValues::default()
-                }))
+                .padding_from_baseline(TooltipDefaults::RICH_TITLE_TOP))
             .child(title.color(title_color).size(th.typography.title_small)),
         );
     }
-    rows.push(
-        Box(Modifier::new()
+    let text_modifier = if has_title || has_action {
+        Modifier::new()
+            .fill_max_width()
+            .padding_from_baseline(TooltipDefaults::RICH_TEXT_BASELINE_TOP)
+            .padding_values(PaddingValues {
+                bottom: TooltipDefaults::RICH_TEXT_BASELINE_BOTTOM,
+                ..PaddingValues::default()
+            })
+    } else {
+        Modifier::new()
             .fill_max_width()
             .padding_values(PaddingValues {
                 top: TooltipDefaults::RICH_TEXT_TOP,
                 bottom: TooltipDefaults::RICH_TEXT_BOTTOM,
                 ..PaddingValues::default()
-            }))
-        .child(
+            })
+    };
+    rows.push(
+        Box(text_modifier).child(
             Text(text.into())
                 .color(content)
                 .size(th.typography.body_medium),

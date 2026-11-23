@@ -1141,9 +1141,11 @@ impl TooltipDefaults {
     pub const PLAIN_MAX_WIDTH: Dp = Dp(200.0);
     pub const RICH_MAX_WIDTH: Dp = Dp(320.0);
     pub const RICH_HORIZONTAL_PADDING: Dp = Dp(16.0);
-    pub const RICH_TITLE_TOP: Dp = Dp(8.0);
+    pub const RICH_TITLE_TOP: Dp = Dp(28.0);
     pub const RICH_TEXT_TOP: Dp = Dp(4.0);
     pub const RICH_TEXT_BOTTOM: Dp = Dp(4.0);
+    pub const RICH_TEXT_BASELINE_TOP: Dp = Dp(24.0);
+    pub const RICH_TEXT_BASELINE_BOTTOM: Dp = Dp(16.0);
     pub const RICH_ACTION_MIN_HEIGHT: Dp = Dp(36.0);
     pub const RICH_ACTION_BOTTOM: Dp = Dp(8.0);
     pub const RICH_SHADOW_ELEVATION: Dp = Dp(3.0);
