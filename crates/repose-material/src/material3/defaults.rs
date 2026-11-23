@@ -254,7 +254,7 @@ impl CardDefaults {
         theme().on_surface
     }
     pub fn disabled_container_color() -> Color {
-        theme().on_surface.with_alpha_f32(0.04)
+        theme().surface_variant.with_alpha_f32(0.38)
     }
     pub fn disabled_content_color() -> Color {
         theme().on_surface.with_alpha_f32(0.38)
@@ -313,12 +313,11 @@ impl IconButtonDefaults {
     }
 
     pub fn colors() -> super::IconButtonColors {
-        let th = theme();
         super::IconButtonColors {
             container_color: Color::TRANSPARENT,
             content_color: Self::content_color(),
             disabled_container_color: Color::TRANSPARENT,
-            disabled_content_color: th.on_surface.with_alpha_f32(0.38),
+            disabled_content_color: Self::disabled_content_color(),
         }
     }
 
@@ -333,7 +332,7 @@ impl IconButtonDefaults {
                 .on_surface
                 .with_alpha_f32(0.12)
                 .composite_over(th.surface),
-            disabled_content_color: th.on_surface.with_alpha_f32(0.38),
+            disabled_content_color: Self::disabled_content_color(),
         }
     }
 
@@ -347,7 +346,7 @@ impl IconButtonDefaults {
                 .on_surface
                 .with_alpha_f32(0.12)
                 .composite_over(th.surface),
-            disabled_content_color: th.on_surface.with_alpha_f32(0.38),
+            disabled_content_color: Self::disabled_content_color(),
         }
     }
 
@@ -590,7 +589,7 @@ impl ListItemDefaults {
     pub const TWO_LINE_HEIGHT: Dp = Dp(72.0);
     pub const THREE_LINE_HEIGHT: Dp = Dp(88.0);
     pub const HORIZONTAL_PADDING: Dp = Dp(16.0);
-    pub const TRAILING_PADDING: Dp = Dp(24.0);
+    pub const TRAILING_PADDING: Dp = Dp(16.0);
     pub fn headline_color() -> Color {
         theme().on_surface
     }
@@ -608,7 +607,7 @@ impl ListItemDefaults {
     }
     // disabled
     pub fn disabled_container_color() -> Color {
-        theme().on_surface.with_alpha_f32(0.04)
+        theme().surface
     }
     pub fn disabled_headline_color() -> Color {
         theme().on_surface.with_alpha_f32(0.38)
@@ -627,41 +626,41 @@ impl ListItemDefaults {
     }
     // selected
     pub fn selected_container_color() -> Color {
-        theme().surface_container_high
+        theme().secondary_container
     }
     pub fn selected_headline_color() -> Color {
-        theme().on_surface
+        theme().on_secondary_container
     }
     pub fn selected_supporting_color() -> Color {
-        theme().on_surface_variant
+        theme().on_secondary_container
     }
     pub fn selected_overline_color() -> Color {
-        theme().on_surface_variant
+        theme().on_secondary_container
     }
     pub fn selected_leading_icon_color() -> Color {
-        theme().on_surface_variant
+        theme().on_secondary_container
     }
     pub fn selected_trailing_icon_color() -> Color {
-        theme().on_surface_variant
+        theme().on_secondary_container
     }
     // dragged
     pub fn dragged_container_color() -> Color {
-        theme().surface_container_high
+        theme().tertiary_container
     }
     pub fn dragged_headline_color() -> Color {
-        theme().on_surface
+        theme().on_tertiary_container
     }
     pub fn dragged_supporting_color() -> Color {
-        theme().on_surface_variant
+        theme().on_tertiary_container
     }
     pub fn dragged_overline_color() -> Color {
-        theme().on_surface_variant
+        theme().on_tertiary_container
     }
     pub fn dragged_leading_icon_color() -> Color {
-        theme().on_surface_variant
+        theme().on_tertiary_container
     }
     pub fn dragged_trailing_icon_color() -> Color {
-        theme().on_surface_variant
+        theme().on_tertiary_container
     }
     pub fn state_colors_default() -> StateColors {
         let th = theme();

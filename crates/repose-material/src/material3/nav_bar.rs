@@ -7,7 +7,7 @@ use repose_core::animation::AnimationSpec;
 use repose_core::*;
 use repose_ui::{
     Box, Column, Row, Text, TextStyle, ViewExt,
-    anim::{animate_color, animate_f32},
+    anim::{animate_color, animate_f32, animate_f32_from},
 };
 
 use crate::ripple::{RippleConfig, ripple};
@@ -35,6 +35,7 @@ pub struct NavigationBarConfig {
     pub item_spacing: Dp,
     pub indicator_width: Dp,
     pub indicator_height: Dp,
+    pub always_show_label: bool,
 }
 
 impl Default for NavigationBarConfig {
@@ -55,6 +56,7 @@ impl Default for NavigationBarConfig {
             item_spacing: NavigationBarDefaults::ITEM_SPACING,
             indicator_width: NavigationBarDefaults::ACTIVE_INDICATOR_WIDTH,
             indicator_height: NavigationBarDefaults::ACTIVE_INDICATOR_HEIGHT,
+            always_show_label: true,
         }
     }
 }
@@ -100,21 +102,32 @@ pub fn NavigationBar(
                     let selected = i == selected_index;
                     let is_enabled = item.enabled;
                     let default_effects = AnimationSpec::spring_crit(40.0);
-                    let fg_icon = animate_color(
-                        format!("nb_fi_{}_{}", id, i),
-                        if selected {
-                            config.selected_icon_color
+                    let disabled_icon = config.unselected_icon_color.with_alpha_f32(0.38);
+                    let disabled_text = config.unselected_text_color.with_alpha_f32(0.38);
+                    let icon_target = if !is_enabled {
+                        disabled_icon
+                    } else if selected {
+                        config.selected_icon_color
+                    } else {
+                        config.unselected_icon_color
+                    };
+                    let label_target = if !is_enabled {
+                        disabled_text
+                    } else if selected {
+                        config.selected_text_color
+                    } else {
+                        config.unselected_text_color
+                    };
+                    let fg_icon =
+                        animate_color(format!("nb_fi_{}_{}", id, i), icon_target, default_effects);
+                    let fg_label =
+                        animate_color(format!("nb_fl_{}_{}", id, i), label_target, default_effects);
+                    let label_alpha = animate_f32(
+                        format!("nb_la_{}_{}", id, i),
+                        if config.always_show_label || selected {
+                            1.0
                         } else {
-                            config.unselected_icon_color
-                        },
-                        default_effects,
-                    );
-                    let fg_label = animate_color(
-                        format!("nb_fl_{}_{}", id, i),
-                        if selected {
-                            config.selected_text_color
-                        } else {
-                            config.unselected_text_color
+                            0.0
                         },
                         default_effects,
                     );
@@ -123,6 +136,16 @@ pub fn NavigationBar(
                         if selected { 1.0 } else { 0.0 },
                         default_effects,
                     );
+                    let indicator_w = Dp(animate_f32_from(
+                        format!("nb_iw_{}_{}", id, i),
+                        0.0,
+                        if selected {
+                            config.indicator_width.0
+                        } else {
+                            0.0
+                        },
+                        default_effects,
+                    ));
                     let indicator_bg = config
                         .indicator_color
                         .with_alpha_f32(bg_alpha * config.indicator_opacity);
@@ -139,14 +162,14 @@ pub fn NavigationBar(
                         });
 
                     let item_width =
-                        remember_state_with_key(format!("nb_w_{}_{}", id, i), || 0.0f32);
+                        remember_mutable_with_key(format!("nb_w_{}_{}", id, i), || 0.0f32);
                     let mut item_m = Modifier::new()
                         .flex_grow(1.0)
                         .fill_max_height()
                         .propagate_min_constraints(true)
                         .on_size_changed({
                             let w = item_width.clone();
-                            move |size| *w.borrow_mut() = size.x
+                            move |size| w.set_neq(size.x)
                         })
                         .semantics(Semantics::new(Role::Tab).with_label(&item.label));
 
@@ -156,10 +179,9 @@ pub fn NavigationBar(
                             move || cb()
                         });
 
-                    // Pill-sized ripple host - hover/focus now pill-bounded, not full item.
-                    // Map press pos from outer item (full width) to pill local via MappedInteractionSource offset.
-                    let pill_dx = (Dp(*item_width.borrow()) - config.indicator_width) / 2.0;
-                    let pill_dy = Dp(14.0);
+                    let measured_width = *item_width.get();
+                    let pill_dx = (Dp(measured_width) - config.indicator_width) / 2.0;
+                    let pill_dy = Dp(12.0);
                     let pill_m = Modifier::new()
                         .absolute()
                         .inset(
@@ -175,8 +197,7 @@ pub fn NavigationBar(
                         .indication(ripple(RippleConfig {
                             color: Some(theme().on_surface_variant),
                             bounded: true,
-                            press_offset: if *item_width.borrow() > 0.0 {
-                                // Ripple offsets are px; pill geometry is Dp.
+                            press_offset: if measured_width > 0.0 {
                                 Some(Vec2 {
                                     x: pill_dx.to_px().0,
                                     y: pill_dy.to_px().0,
@@ -189,12 +210,12 @@ pub fn NavigationBar(
                     let bg_m = Modifier::new()
                         .absolute()
                         .inset(
-                            Some((Dp(24.0) - config.indicator_width) / 2.0),
+                            Some((Dp(24.0) - indicator_w) / 2.0),
                             Some((Dp(24.0) - config.indicator_height) / 2.0),
                             None,
                             None,
                         )
-                        .width(config.indicator_width)
+                        .width(indicator_w)
                         .height(config.indicator_height)
                         .background(indicator_bg)
                         .clip_rounded(config.indicator_radius)
@@ -207,7 +228,7 @@ pub fn NavigationBar(
                             disabled: Color::TRANSPARENT,
                         });
 
-                    Box(item_m).child(
+                    let view = Box(item_m).child(
                         Column(
                             Modifier::new()
                                 .fill_max_size()
@@ -225,14 +246,15 @@ pub fn NavigationBar(
                                 with_content_color(fg_icon, move || item.icon),
                                 Box(pill_m),
                             )),
-                            // 8dp gap: 4dp IndicatorVerticalPadding + 4dp IndicatorToLabelPadding
                             Box(Modifier::new().height(Dp(8.0))),
                             Text(item.label)
                                 .color(fg_label)
                                 .size(th.typography.label_medium)
-                                .single_line(),
+                                .single_line()
+                                .modifier(Modifier::new().alpha(label_alpha)),
                         )),
-                    )
+                    );
+                    with_content_color(config.content_color, move || view)
                 })
                 .collect::<Vec<_>>(),
         ),

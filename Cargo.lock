@@ -3403,6 +3403,7 @@ dependencies = [
  "repose-text",
  "repose-tree",
  "repose-ui",
+ "repose-ui-test",
  "web-time",
 ]
 

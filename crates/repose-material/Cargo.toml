@@ -13,3 +13,6 @@ repose-canvas.workspace = true
 repose-text.workspace = true
 repose-tree.workspace = true
 web-time.workspace = true
+
+[dev-dependencies]
+repose-ui-test.workspace = true

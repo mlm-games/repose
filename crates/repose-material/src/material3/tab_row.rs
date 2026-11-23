@@ -7,7 +7,7 @@ use repose_core::animation::AnimationSpec;
 use repose_core::*;
 use repose_ui::{
     Box, Column, Row, Text, TextStyle, ViewExt,
-    anim::{animate_color, animate_f32},
+    anim::{animate_color, animate_f32_from},
     textfield::{TextMeasureConfig, measure_text},
 };
 
@@ -51,16 +51,22 @@ impl Default for TabRowConfig {
 
 static TABROW_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-enum TabCellWidth {
-    Fill,
-    Min(Dp),
-}
-
 #[derive(Clone, Copy)]
 enum IndicatorWidth {
     Tab,
     Content,
     Fraction(f32),
+}
+
+fn label_width_px(label: &str, style_px: f32, has_icon: bool) -> f32 {
+    let metrics = measure_text(label, style_px, TextMeasureConfig::default());
+    let text = metrics.positions.last().copied().unwrap_or_default();
+    let icon = if has_icon {
+        Dp(24.0).to_px().0 + Dp(4.0).to_px().0
+    } else {
+        0.0
+    };
+    (text + icon).max(Dp(24.0).to_px().0)
 }
 
 fn tab_cell(
@@ -69,8 +75,9 @@ fn tab_cell(
     tab: Tab,
     selected: bool,
     config: &TabRowConfig,
-    width: TabCellWidth,
-    indicator_width: IndicatorWidth,
+    fill: bool,
+    min_width: Option<Dp>,
+    width_state: Mutable<f32>,
 ) -> View {
     let th = theme();
     let default_effects = AnimationSpec::spring_crit(40.0);
@@ -80,15 +87,6 @@ fn tab_cell(
             config.selected_content_color
         } else {
             config.unselected_content_color
-        },
-        default_effects,
-    );
-    let indicator_h = animate_f32(
-        format!("tab_ind_h_{}_{}", row_id, index),
-        if selected {
-            config.indicator_height.0
-        } else {
-            0.0
         },
         default_effects,
     );
@@ -111,72 +109,146 @@ fn tab_cell(
             dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         })
+        .on_size_changed({
+            let width = width_state.clone();
+            move |size| width.set_neq(size.x)
+        })
         .semantics(Semantics::new(Role::Tab).with_label(&tab.label));
-    match width {
-        TabCellWidth::Fill => tab_m = tab_m.flex_grow(1.0),
-        TabCellWidth::Min(w) => tab_m = tab_m.min_width(w),
+    if fill {
+        tab_m = tab_m.flex_grow(1.0);
+    }
+    if let Some(w) = min_width {
+        tab_m = tab_m.min_width(w);
     }
 
-    tab_m = apply_m3_clickable(tab_m, &tab_source, th.on_surface, tab.enabled, move || cb());
-
-    let label_size = th.typography.title_small;
-    let width = match indicator_width {
-        IndicatorWidth::Tab => Modifier::new().fill_max_width(),
-        IndicatorWidth::Fraction(fraction) => Modifier::new().fill_max_width_frac(fraction),
-        IndicatorWidth::Content => {
-            let metrics = measure_text(&tab.label, label_size.to_px().0, TextMeasureConfig::default());
-            let label_width = Px(metrics.positions.last().copied().unwrap_or_default()).to_dp();
-            Modifier::new().width(Dp(label_width.0.max(24.0)))
-        }
-    };
-    let indicator = Row(Modifier::new()
-        .absolute()
-        .inset(Some(Dp::ZERO), None, Some(Dp::ZERO), Some(Dp::ZERO))
-        .justify_content(JustifyContent::CENTER))
-        .child(Box(width.height(Dp(indicator_h))
-            .clip_rounded(TabDefaults::INDICATOR_CORNER)
-            .background(config.indicator_color)));
+    tab_m = apply_m3_clickable(
+        tab_m,
+        &tab_source,
+        config.selected_content_color,
+        tab.enabled,
+        move || cb(),
+    );
 
     Column(tab_m.gap(Dp(4.0))).child((
         tab.icon.unwrap_or(Box(Modifier::new())),
-        Text(tab.label).color(color).size(label_size).single_line(),
-        indicator,
+        Text(tab.label)
+            .color(color)
+            .size(th.typography.title_small)
+            .single_line(),
     ))
 }
 
-/// M3 Tab Row -> a horizontal row of tabs with per-tab animated-height indicators.
-/// Text colors animate with DefaultEffects (spring_crit 40.0).
-/// Indicator height animates with DefaultEffects (spring_crit 40.0).
-pub fn TabRow(selected_index: usize, tabs: Vec<Tab>, config: TabRowConfig) -> View {
-    fixed_tab_row(selected_index, tabs, config, IndicatorWidth::Tab)
+fn indicator_view(row_id: u64, left_px: f32, width_px: f32, height: Dp, color: Color) -> View {
+    if width_px <= 1.0 {
+        return Box(Modifier::new());
+    }
+    let spec = AnimationSpec::spring_crit(40.0);
+    let left = animate_f32_from(format!("tab_ind_x_{row_id}"), left_px, left_px, spec);
+    let width = animate_f32_from(format!("tab_ind_w_{row_id}"), width_px, width_px, spec);
+    Box(Modifier::new()
+        .absolute()
+        .inset(Some(Px(left).to_dp()), None, None, Some(Dp::ZERO))
+        .width(Px(width).to_dp())
+        .height(height)
+        .clip_rounded(TabDefaults::INDICATOR_CORNER)
+        .background(color))
 }
 
-fn fixed_tab_row(selected_index: usize, tabs: Vec<Tab>, config: TabRowConfig, width: IndicatorWidth) -> View {
+fn indicator_geometry(
+    cells: &[f32],
+    content_widths: &[f32],
+    selected: usize,
+    mode: IndicatorWidth,
+) -> (f32, f32) {
+    if cells.is_empty() {
+        return (0.0, 0.0);
+    }
+    let i = selected.min(cells.len() - 1);
+    let cell = cells[i].max(1.0);
+    let width = match mode {
+        IndicatorWidth::Tab => cell,
+        IndicatorWidth::Fraction(f) => cell * f.clamp(0.0, 1.0),
+        IndicatorWidth::Content => content_widths.get(i).copied().unwrap_or(cell).min(cell),
+    };
+    let left: f32 = cells.iter().take(i).sum::<f32>() + (cell - width) / 2.0;
+    (left, width)
+}
+
+/// M3 Tab Row. A single indicator slides and resizes between tabs, matching Compose.
+pub fn TabRow(selected_index: usize, tabs: Vec<Tab>, config: TabRowConfig) -> View {
+    fixed_tab_row(selected_index, tabs, config, IndicatorWidth::Tab, false)
+}
+
+fn fixed_tab_row(
+    selected_index: usize,
+    tabs: Vec<Tab>,
+    config: TabRowConfig,
+    mode: IndicatorWidth,
+    scrollable: bool,
+) -> View {
     let th = theme();
     let id = remember(|| TABROW_COUNTER.fetch_add(1, Ordering::Relaxed));
-    let config_modifier = config.modifier.clone();
-    Column(Modifier::new().fill_max_width().then(config_modifier)).child((
-        Row(Modifier::new()
+    let label_size = th.typography.title_small;
+    let content_widths: Vec<f32> = tabs
+        .iter()
+        .map(|tab| label_width_px(&tab.label, label_size.to_px().0, tab.icon.is_some()))
+        .collect();
+    let row_height = if tabs
+        .iter()
+        .any(|tab| tab.icon.is_some() && !tab.label.is_empty())
+    {
+        Dp(72.0)
+    } else {
+        config.height
+    };
+
+    let widths: Vec<Mutable<f32>> = (0..tabs.len())
+        .map(|i| remember_mutable_with_key(format!("tab_w_{}_{}", id, i), || 0.0f32))
+        .collect();
+    let cells: Vec<f32> = widths.iter().map(|w| *w.get()).collect();
+    let (left, width) = indicator_geometry(&cells, &content_widths, selected_index, mode);
+
+    let mut children: Vec<View> = tabs
+        .into_iter()
+        .enumerate()
+        .map(|(i, tab)| {
+            tab_cell(
+                *id,
+                i,
+                tab,
+                i == selected_index,
+                &config,
+                true,
+                None,
+                widths[i].clone(),
+            )
+        })
+        .collect();
+    children.push(indicator_view(
+        *id,
+        left,
+        width,
+        config.indicator_height,
+        config.indicator_color,
+    ));
+
+    let row = Row(Modifier::new()
+        .fill_max_width()
+        .height(row_height)
+        .background(config.container_color)
+        .semantics(Semantics::new(Role::Container).with_selectable_group()))
+    .with_children(children);
+
+    if scrollable {
+        return row;
+    }
+    Column(
+        Modifier::new()
             .fill_max_width()
-            .height(config.height)
-            .background(config.container_color)
-            .semantics(Semantics::new(Role::Container).with_selectable_group()))
-        .child(
-            tabs.into_iter()
-                .enumerate()
-                .map(|(i, tab)| {
-                    tab_cell(
-                        *id,
-                        i,
-                        tab,
-                        i == selected_index,
-                        &config,
-                        TabCellWidth::Fill,
-                        width,
-                    )
-                })
-                .collect::<Vec<_>>(),
-        ),
+            .then(config.modifier.clone()),
+    )
+    .child((
+        row,
         Box(Modifier::new()
             .fill_max_width()
             .height(Dp(1.0))
@@ -185,11 +257,11 @@ fn fixed_tab_row(selected_index: usize, tabs: Vec<Tab>, config: TabRowConfig, wi
 }
 
 pub fn PrimaryTabRow(selected_index: usize, tabs: Vec<Tab>, config: TabRowConfig) -> View {
-    fixed_tab_row(selected_index, tabs, config, IndicatorWidth::Content)
+    fixed_tab_row(selected_index, tabs, config, IndicatorWidth::Content, false)
 }
 
 pub fn SecondaryTabRow(selected_index: usize, tabs: Vec<Tab>, config: TabRowConfig) -> View {
-    fixed_tab_row(selected_index, tabs, config, IndicatorWidth::Fraction(0.6))
+    fixed_tab_row(selected_index, tabs, config, IndicatorWidth::Tab, false)
 }
 
 #[derive(Clone, Debug)]
@@ -228,6 +300,42 @@ pub fn ScrollableTabRow(
 ) -> View {
     let th = theme();
     let id = remember(|| TABROW_COUNTER.fetch_add(1, Ordering::Relaxed));
+    let scroll: Rc<HorizontalScrollState> =
+        remember_with_key(format!("stab_scroll_{id}"), HorizontalScrollState::new);
+    let viewport = remember_mutable_with_key(format!("stab_vp_{id}"), || 0.0f32);
+
+    let label_size = th.typography.title_small;
+    let content_widths: Vec<f32> = tabs
+        .iter()
+        .map(|tab| label_width_px(&tab.label, label_size.to_px().0, tab.icon.is_some()))
+        .collect();
+    let widths: Vec<Mutable<f32>> = (0..tabs.len())
+        .map(|i| remember_mutable_with_key(format!("stab_w_{}_{}", id, i), || 0.0f32))
+        .collect();
+    let cells: Vec<f32> = widths.iter().map(|w| *w.get()).collect();
+    let (left, width) = indicator_geometry(
+        &cells,
+        &content_widths,
+        selected_index,
+        IndicatorWidth::Content,
+    );
+    let edge_px = config.edge_padding.to_px().0;
+
+    let total: f32 = cells.iter().sum();
+    let vp = *viewport.get();
+    if vp > 0.0 {
+        let center: f32 = cells.iter().take(selected_index).sum::<f32>()
+            + cells.get(selected_index).copied().unwrap_or(0.0) / 2.0;
+        let target = (center - vp / 2.0).clamp(0.0, (total - vp).max(0.0));
+        let animated = animate_f32_from(
+            format!("stab_off_{id}"),
+            0.0,
+            target,
+            AnimationSpec::spring_crit(40.0),
+        );
+        scroll.set_offset(animated);
+    }
+
     let base = TabRowConfig {
         modifier: Modifier::new(),
         container_color: config.container_color,
@@ -237,8 +345,42 @@ pub fn ScrollableTabRow(
         height: config.height,
         indicator_height: config.indicator_height,
     };
-    let scroll: Rc<HorizontalScrollState> =
-        remember_with_key(format!("stab_scroll_{id}"), HorizontalScrollState::new);
+    let mut children: Vec<View> = tabs
+        .into_iter()
+        .enumerate()
+        .map(|(i, tab)| {
+            tab_cell(
+                *id,
+                i,
+                tab,
+                i == selected_index,
+                &base,
+                false,
+                Some(config.min_tab_width),
+                widths[i].clone(),
+            )
+        })
+        .collect();
+    if width <= 1.0 {
+        children.push(Box(Modifier::new()));
+    } else {
+        let spec = AnimationSpec::spring_crit(40.0);
+        let ind_left = animate_f32_from(
+            format!("stab_ind_x_{id}"),
+            left + edge_px,
+            left + edge_px,
+            spec,
+        );
+        let ind_width = animate_f32_from(format!("stab_ind_w_{id}"), width, width, spec);
+        children.push(Box(Modifier::new()
+            .absolute()
+            .inset(Some(Px(ind_left).to_dp()), None, None, Some(Dp::ZERO))
+            .width(Px(ind_width).to_dp())
+            .height(config.indicator_height)
+            .clip_rounded(TabDefaults::INDICATOR_CORNER)
+            .background(config.indicator_color)));
+    }
+
     let row = Row(Modifier::new()
         .fill_max_height()
         .background(config.container_color)
@@ -249,25 +391,17 @@ pub fn ScrollableTabRow(
             bottom: Dp::ZERO,
         })
         .semantics(Semantics::new(Role::Container).with_selectable_group()))
-    .child(
-        tabs.into_iter()
-            .enumerate()
-            .map(|(i, tab)| {
-                tab_cell(
-                    *id,
-                    i,
-                    tab,
-                    i == selected_index,
-                    &base,
-                    TabCellWidth::Min(config.min_tab_width),
-                    IndicatorWidth::Tab,
-                )
-            })
-            .collect::<Vec<_>>(),
-    );
+    .with_children(children);
+
     Column(Modifier::new().fill_max_width().then(config.modifier)).child((
         repose_ui::scroll::HorizontalScrollArea(
-            Modifier::new().fill_max_width().height(config.height),
+            Modifier::new()
+                .fill_max_width()
+                .height(config.height)
+                .on_size_changed({
+                    let vp = viewport.clone();
+                    move |size| vp.set_neq(size.x)
+                }),
             scroll,
             row,
         ),

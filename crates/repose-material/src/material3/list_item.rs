@@ -114,7 +114,7 @@ impl ListItemColors {
 impl Default for ListItemColors {
     fn default() -> Self {
         Self {
-            container_color: Color::TRANSPARENT,
+            container_color: theme().surface,
             headline_color: ListItemDefaults::headline_color(),
             supporting_color: ListItemDefaults::supporting_color(),
             overline_color: ListItemDefaults::overline_color(),
@@ -257,7 +257,7 @@ pub fn ListItem(
     };
     let top_bottom_padding = match line_count {
         3 => 12.0,
-        _ => 8.0,
+        _ => 10.0,
     };
 
     let vert_align = if min_h >= config.three_line_height {

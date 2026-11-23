@@ -102,19 +102,22 @@ pub fn SegmentedButton(
             .enumerate()
             .map(|(i, seg)| {
                 let is_selected = selected.contains(&i);
+                let is_enabled = seg.enabled;
 
                 let bg = animate_color(
                     format!("sb_bg_{}_{}", id, i),
-                    if is_selected {
-                        config.selected_container_color
-                    } else {
+                    if !is_enabled || !is_selected {
                         Color::TRANSPARENT
+                    } else {
+                        config.selected_container_color
                     },
                     spec,
                 );
                 let fg = animate_color(
                     format!("sb_fg_{}_{}", id, i),
-                    if is_selected {
+                    if !is_enabled {
+                        config.unselected_content_color.with_alpha_f32(0.38)
+                    } else if is_selected {
                         config.selected_content_color
                     } else {
                         config.unselected_content_color
@@ -124,7 +127,6 @@ pub fn SegmentedButton(
 
                 let cb = seg.on_click.clone();
                 let radii = segment_radii(i);
-                let is_enabled = seg.enabled;
                 let seg_source: Rc<MutableInteractionSource> = seg
                     .interaction_source
                     .clone()
