@@ -1202,7 +1202,7 @@ pub fn DockedSearchBar(
             .align_items(AlignItems::CENTER))
         .child((
             leading_icon.unwrap_or(Box(Modifier::new().size(Dp(24.0), Dp(24.0)))),
-            Box(Modifier::new().width(Dp(12.0)).fill_max_height()),
+            Box(Modifier::new().width(Dp(4.0)).fill_max_height()),
             with_content_color(colors.content_color, move || input_field),
             clear_btn,
         )),

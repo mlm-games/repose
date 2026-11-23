@@ -459,7 +459,7 @@ pub fn DatePicker(
             Spacer(),
             Column(Modifier::new().align_items(AlignItems::CENTER)).child((
                 Text(MONTH_NAMES[(month - 1) as usize].to_string())
-                    .size(th.typography.title_medium)
+                    .size(th.typography.headline_large)
                     .color(config.colors.header_color),
                 year_controls,
             )),
@@ -825,7 +825,7 @@ pub fn DateRangePicker(
             ),
             Spacer(),
             Text(format!("{} {}", MONTH_NAMES[(month - 1) as usize], year))
-                .size(th.typography.title_medium)
+                .size(th.typography.headline_large)
                 .color(config.colors.header_color),
             Spacer(),
             navigation_button(
