@@ -256,25 +256,31 @@ pub fn DropdownMenu(
     .child(trigger);
 
     let anim = remember_state_with_key(format!("ddm_anim_{ddm_id}"), || {
-        AnimatedValue::new(0.0, theme().motion.overlay)
+        AnimatedValue::new(0.0, theme().motion.fast_spatial)
+    });
+    let anim_alpha = remember_state_with_key(format!("ddm_anim_alpha_{ddm_id}"), || {
+        AnimatedValue::new(0.0, theme().motion.fast_effects)
     });
     let last_target = remember_state_with_key(format!("ddm_lt_{ddm_id}"), || f32::NAN);
     let anim_target = if state.is_open() { 1.0 } else { 0.0 };
 
     {
         let mut a = anim.borrow_mut();
+        let mut alpha_a = anim_alpha.borrow_mut();
         let mut lt = last_target.borrow_mut();
         if lt.is_nan() || (*lt - anim_target).abs() > 1e-6 {
             a.set_target(anim_target);
+            alpha_a.set_target(anim_target);
             *lt = anim_target;
         }
         drop(lt);
-        if a.update() {
+        if a.update() || alpha_a.update() {
             request_frame();
         }
     }
 
     let progress = *anim.borrow().get();
+    let alpha_progress = *anim_alpha.borrow().get();
     let menu_visible = state.is_open() || progress > 0.01;
     if !state.is_open() {
         submenu_open.borrow_mut().take();
@@ -293,6 +299,7 @@ pub fn DropdownMenu(
             && let Some(overlay) = overlay.clone()
         {
             let anim = anim.clone();
+            let anim_alpha = anim_alpha.clone();
             let current_items = current_items.clone();
             let state = state.clone();
             let current_config = current_config.clone();
@@ -315,7 +322,7 @@ pub fn DropdownMenu(
                     let config = current_config.borrow().clone();
                     let p = *anim.borrow().get();
                     let scale = DDM_SCALE_FROM + (1.0 - DDM_SCALE_FROM) * p;
-                    let alpha = p;
+                    let alpha = *anim_alpha.borrow().get();
 
                     let explicit_anchor = state.anchor.get();
                     let rect = explicit_anchor
@@ -752,7 +759,7 @@ fn render_dropdown_submenu(
         animation_key.clone(),
         0.0,
         animation_target,
-        th.motion.overlay,
+        th.motion.fast_spatial,
     );
     let visible = open || progress > 0.01;
     let anchor_rect = parent.anchor_rects.borrow().get(&sub.text).cloned();
@@ -814,10 +821,16 @@ fn render_dropdown_submenu(
                     animation_key.clone(),
                     0.0,
                     animation_target,
-                    th.motion.overlay,
+                    th.motion.fast_spatial,
+                );
+                let alpha_progress = animate_f32_from(
+                    format!("{}:alpha", animation_key),
+                    0.0,
+                    animation_target,
+                    th.motion.fast_effects,
                 );
                 let scale = DDM_SCALE_FROM + (1.0 - DDM_SCALE_FROM) * progress;
-                let alpha = progress;
+                let alpha = alpha_progress;
                 let win_w = get_window_container_width();
                 let win_h = get_window_container_height();
                 let horizontal_margin = DropdownMenuDefaults::HORIZONTAL_MARGIN.0;

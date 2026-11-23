@@ -247,7 +247,7 @@ pub fn FloatingActionButtonMenu(
     let reveal = repose_ui::anim::animate_f32(
         format!("fabmenu:{id}:reveal"),
         if expanded { 1.0 } else { 0.0 },
-        th.motion.overlay,
+        th.motion.fast_effects,
     );
     let on_expanded_change = Rc::new(on_expanded_change);
     if reveal <= 0.01 && !expanded {

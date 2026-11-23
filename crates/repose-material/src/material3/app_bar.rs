@@ -455,7 +455,7 @@ pub fn FloatingToolbar(expanded: bool, content: View, config: FloatingToolbarCon
     let reveal = repose_ui::anim::animate_f32(
         format!("floating-toolbar:{id}:reveal"),
         if expanded { 1.0 } else { 0.0 },
-        th.motion.overlay,
+        th.motion.fast_spatial,
     );
     if reveal <= 0.01 {
         return Box(Modifier::new());
