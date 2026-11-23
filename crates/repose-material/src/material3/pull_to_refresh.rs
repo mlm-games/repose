@@ -96,6 +96,15 @@ impl PullToRefreshState {
             0.0
         }
     }
+
+    /// Trigger a refresh if the gesture ended past the threshold.
+    pub fn on_release(&self, on_refresh: impl Fn()) {
+        if !self.refreshing.get() && self.pull_offset() >= self.threshold {
+            self.triggered.set(true);
+            self.refreshing.set_neq(true);
+            on_refresh();
+        }
+    }
 }
 
 impl Drop for PullToRefreshState {
@@ -126,12 +135,6 @@ pub fn PullToRefresh(
 
     if state.triggered.get() && !refreshing && pull < threshold {
         state.triggered.set(false);
-    }
-
-    if !refreshing && !state.triggered.get() && pull >= threshold {
-        state.triggered.set(true);
-        state.refreshing.set_neq(true);
-        (on_refresh)();
     }
 
     let frac_key = state.key("fraction");
@@ -176,7 +179,19 @@ pub fn PullToRefresh(
     } else {
         0.3
     };
-    Column(modifier.align_items(config.content_alignment)).child((
+    let release_state = state.clone();
+    let release_cb = on_refresh.clone();
+    Column(
+        modifier
+            .align_items(config.content_alignment)
+            .on_pointer_up(move |e| {
+                if e.kind != PointerKind::Mouse {
+                    let cb = release_cb.clone();
+                    release_state.on_release(move || cb());
+                }
+            }),
+    )
+    .child((
         if distance_fraction > 0.01 {
             Box(Modifier::new()
                 .fill_max_width()
