@@ -3,6 +3,8 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
+use web_time::Duration;
+
 use repose_core::animation::AnimationSpec;
 use repose_core::*;
 use repose_ui::{Box, Column, ViewExt};
@@ -27,7 +29,7 @@ impl Default for SwipeToDismissConfig {
             modifier: Modifier::new(),
             dismiss_threshold: SwipeToDismissDefaults::DISMISS_THRESHOLD.0,
             dismissed_offset: SwipeToDismissDefaults::DISMISSED_OFFSET.0,
-            animation_spec: AnimationSpec::spring_gentle(),
+            animation_spec: AnimationSpec::tween(Duration::from_millis(300), Easing::FastOutSlowIn),
             gestures_enabled: true,
             enable_dismiss_from_start_to_end: true,
             enable_dismiss_from_end_to_start: true,
