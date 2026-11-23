@@ -86,13 +86,13 @@ impl Default for BadgedBoxConfig {
 pub fn BadgedBox(badge: View, content: View, config: BadgedBoxConfig) -> View {
     let (top, right) = if config.has_content {
         (
-            config.content_offset_y - BadgeDefaults::LABEL_HEIGHT, // 14 - 16 = -2
-            config.content_offset_x - BadgeDefaults::LABEL_MIN_WIDTH, // 12 - 16 = -4
+            (config.content_offset_y - BadgeDefaults::LABEL_HEIGHT).max(Dp::ZERO),
+            (config.content_offset_x - BadgeDefaults::LABEL_MIN_WIDTH).max(Dp::ZERO),
         )
     } else {
         (
-            config.dot_offset_y - BadgeDefaults::DOT_SIZE, // 6 - 6 = 0
-            config.dot_offset_x - BadgeDefaults::DOT_SIZE, // 6 - 6 = 0
+            (config.dot_offset_y - BadgeDefaults::DOT_SIZE).max(Dp::ZERO),
+            (config.dot_offset_x - BadgeDefaults::DOT_SIZE).max(Dp::ZERO),
         )
     };
 

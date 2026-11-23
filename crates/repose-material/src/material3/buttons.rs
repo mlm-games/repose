@@ -147,7 +147,7 @@ fn button_impl(
     interaction_source: Option<MutableInteractionSource>,
 ) -> View {
     let mut m = Modifier::new()
-        .min_height(height.max(Dp(48.0)))
+        .min_height(height)
         .min_width(ButtonDefaults::MIN_WIDTH.max(Dp(48.0)))
         .flex_shrink(0.0);
     if let Some(bg) = container_color {
