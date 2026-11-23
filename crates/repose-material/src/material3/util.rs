@@ -21,20 +21,13 @@ pub(crate) fn apply_tonal_elevation(m: Modifier, elevation: Dp, container: Color
     if container != th.surface {
         return m;
     }
-    let overlay_alpha = match elevation {
-        e if e < 0.5 => 0.0,
-        e if e < 1.5 => 0.05,
-        e if e < 2.5 => 0.08,
-        e if e < 3.5 => 0.11,
-        e if e < 4.5 => 0.12,
-        _ => 0.14,
-    };
+    let overlay_alpha = ((4.5 * (elevation + 1.0).ln() + 2.0) / 100.0).clamp(0.0, 1.0);
     if overlay_alpha <= 0.0 {
         return m;
     }
     m.background(
         th.colors
-            .primary
+            .surface_tint
             .with_alpha_f32(overlay_alpha)
             .composite_over(container),
     )

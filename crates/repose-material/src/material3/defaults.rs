@@ -173,6 +173,19 @@ impl ButtonDefaults {
         top: Dp(8.0),
         bottom: Dp(8.0),
     };
+    pub const ICON_CONTENT_PADDING: PaddingValues = PaddingValues {
+        left: Dp(16.0),
+        right: Dp(24.0),
+        top: Dp(8.0),
+        bottom: Dp(8.0),
+    };
+    pub const TEXT_BUTTON_ICON_CONTENT_PADDING: PaddingValues = PaddingValues {
+        left: Dp(12.0),
+        right: Dp(16.0),
+        top: Dp(8.0),
+        bottom: Dp(8.0),
+    };
+    pub const ICON_SPACING: Dp = Dp(8.0);
     pub const SHAPE_RADIUS: Dp = Dp(20.0);
     pub fn state_colors_default() -> StateColors {
         let th = theme();

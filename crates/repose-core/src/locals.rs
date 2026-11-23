@@ -823,23 +823,12 @@ pub fn content_color() -> Color {
 }
 
 /// Compose `@Composable contentColorFor(backgroundColor)`.
-/// Scheme role pair if known. Otherwise current `LocalContentColor`, then a
-/// luminance fallback so custom fills never inherit a same-luma icon color.
+/// Scheme role pair if known, otherwise the current `LocalContentColor`.
 pub fn content_color_for(background: Color) -> Color {
     if let Some(c) = theme().colors.content_color_for(background) {
         return c;
     }
-    let local = content_color();
-    // If ambient content would sit on a similarly light/dark fill, flip.
-    if (background.relative_luminance() - local.relative_luminance()).abs() < 0.25 {
-        if background.is_dark() {
-            Color::WHITE
-        } else {
-            Color::BLACK
-        }
-    } else {
-        local
-    }
+    content_color()
 }
 
 /// Composition-local default text size ([`Sp`]). Bare `Text(...)`
