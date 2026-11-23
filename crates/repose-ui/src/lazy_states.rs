@@ -506,6 +506,37 @@ pub(crate) struct LazyScrollCore {
     last_axis_velocity: Cell<f32>,
     /// Guards against dispatching the same clamped fling more than once.
     fling_dispatched: Rc<Cell<bool>>,
+    scroll_axis: Rc<Cell<ScrollAxis>>,
+}
+
+fn axis_main(axis: ScrollAxis, v: Vec2) -> f32 {
+    match axis {
+        ScrollAxis::Horizontal => v.x,
+        ScrollAxis::Vertical => v.y,
+        ScrollAxis::Both => {
+            if v.y.abs() >= v.x.abs() {
+                v.y
+            } else {
+                v.x
+            }
+        }
+    }
+}
+
+fn with_axis_main(axis: ScrollAxis, v: Vec2, value: f32) -> Vec2 {
+    match axis {
+        ScrollAxis::Horizontal => Vec2 { x: value, y: v.y },
+        ScrollAxis::Vertical => Vec2 { x: v.x, y: value },
+        ScrollAxis::Both => {
+            let mut result = v;
+            if v.y.abs() >= v.x.abs() {
+                result.y = value;
+            } else {
+                result.x = value;
+            }
+            result
+        }
+    }
 }
 
 impl LazyScrollCore {
@@ -526,7 +557,12 @@ impl LazyScrollCore {
             pending_fling: Rc::new(Cell::new(0.0)),
             last_axis_velocity: Cell::new(0.0),
             fling_dispatched: Rc::new(Cell::new(false)),
+            scroll_axis: Rc::new(Cell::new(ScrollAxis::Vertical)),
         }
+    }
+
+    pub(crate) fn set_scroll_axis(&self, axis: ScrollAxis) {
+        self.scroll_axis.set(axis);
     }
 
     pub(crate) fn pad(&self) -> f32 {
@@ -612,46 +648,37 @@ impl LazyScrollCore {
         let parent = Rc::clone(&self.parent_connection);
         let fling_target = Rc::clone(&self.pending_fling);
         let fling_guard = Rc::clone(&self.fling_dispatched);
+        let scroll_axis = Rc::clone(&self.scroll_axis);
+        let post_axis = Rc::clone(&scroll_axis);
         NestedScrollConnection::new()
             .on_post_scroll(
                 move |consumed: Vec2, available: Vec2, source: NestedScrollSource| -> Vec2 {
-                    if available.y.abs() < 0.001 {
+                    let axis_kind = post_axis.get();
+                    let available_main = axis_main(axis_kind, available);
+                    if available_main.abs() < 0.001 {
                         return Vec2::ZERO;
                     }
-                    let leftover = axis.scroll_nested(available.y, axis.content.get(), &physics);
-                    let own_consumed = available.y - leftover;
+                    let leftover = axis.scroll_nested(available_main, axis.content.get(), &physics);
+                    let own_consumed = available_main - leftover;
+                    let consumed_main = axis_main(axis_kind, consumed) + own_consumed;
                     let after = repose_core::scroll::run_post_scroll(
                         &parent,
-                        Vec2 {
-                            x: consumed.x,
-                            y: consumed.y + own_consumed,
-                        },
-                        Vec2 {
-                            x: available.x,
-                            y: leftover,
-                        },
+                        with_axis_main(axis_kind, consumed, consumed_main),
+                        with_axis_main(axis_kind, available, leftover),
                         source,
                     );
-                    Vec2 {
-                        x: available.x - after.x,
-                        y: available.y - after.y,
-                    }
+                    available - after
                 },
             )
             .on_post_fling(
                 move |_consumed: Vec2, available: Vec2, _source: NestedScrollSource| -> Vec2 {
-                    if available.x.abs() < 0.001 && available.y.abs() < 0.001 {
-                        return Vec2::ZERO;
-                    }
-                    let velocity = if available.x.abs() > available.y.abs() {
-                        available.x
-                    } else {
-                        available.y
-                    };
+                    let axis_kind = scroll_axis.get();
+                    let velocity = axis_main(axis_kind, available);
                     if velocity.abs() >= 50.0 {
                         fling_target.set(velocity.clamp(-8000.0, 8000.0));
                         fling_guard.set(false);
                         request_frame();
+                        return with_axis_main(axis_kind, Vec2::ZERO, velocity);
                     }
                     available
                 },
@@ -763,10 +790,7 @@ impl LazyScrollCore {
             self.fling_dispatched.set(true);
             parent.dispatch_post_fling(
                 Vec2::ZERO,
-                Vec2 {
-                    x: 0.0,
-                    y: velocity,
-                },
+                with_axis_main(self.scroll_axis.get(), Vec2::ZERO, velocity),
                 NestedScrollSource::SideEffect,
             );
         }
@@ -1035,9 +1059,13 @@ impl Default for LazyRowState {
 
 impl LazyRowState {
     pub fn new() -> Self {
-        Self {
-            core: LazyScrollCore::new(),
-        }
+        let core = LazyScrollCore::new();
+        core.set_scroll_axis(ScrollAxis::Horizontal);
+        Self { core }
+    }
+
+    pub fn set_vp_width(&self, w_px: f32) {
+        self.core.axis.set_viewport(w_px);
     }
 
     pub fn set_nested_scroll_parent(&self, conn: NestedScrollConnection) {

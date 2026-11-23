@@ -14,8 +14,8 @@ fn item_scope_key(state_id: usize, key: u64) -> String {
     format!("lazy_{:x}_item_{}", state_id, key)
 }
 
-fn exit_scope_key(state_id: usize, key: u64, version: u64) -> String {
-    format!("lazy_{:x}_exit_{}_{}", state_id, key, version)
+fn reverse_delta(value: f32, reverse: bool) -> f32 {
+    if reverse { -value } else { value }
 }
 
 fn scoped_item_with_key<F>(full_key: String, item_key: u64, revision: u64, build: F) -> View
@@ -140,6 +140,7 @@ where
         sticky_keys,
         content_type: _,
     } = config;
+    state.core.set_scroll_axis(ScrollAxis::Vertical);
 
     let items = items;
     let src_len = items.len();
@@ -375,38 +376,41 @@ where
                         exit.key,
                         &exit.item as *const T as usize,
                         exit.height_px,
-                        alpha.to_bits() as u64,
+                        0,
                     )
                 } else {
                     state.cache_revision_for_with(
                         exit.key,
                         &exit.item as *const T as usize,
                         exit.height_px,
-                        alpha.to_bits() as u64,
+                        0,
                     )
                 };
-                let full_key = exit_scope_key(state_id, exit.key, exit.version);
                 let top = Px(exit.top_px).to_dp().0.max(0.0);
                 let height = Px(exit.height_px).to_dp().0.max(0.0);
                 let exiting_item = &exit.item;
                 let data_index = exit.data_index;
                 let item_builder_ref = &item_builder;
-                exit_views.push(scoped_item_with_key(
-                    full_key,
+                let item_view = scoped_item_with_key(
+                    item_scope_key(state_id, exit.key),
                     exit.key,
                     revision,
                     move || {
-                        crate::Box(
-                            Modifier::new()
-                                .absolute()
-                                .inset(Some(Dp::ZERO), Some(Dp(top)), None, None)
-                                .fill_max_width()
-                                .height(Dp(height))
-                                .alpha(alpha),
-                        )
-                        .child(item_builder_ref(exiting_item.clone(), data_index))
+                        crate::Box(Modifier::new().fill_max_width().height(Dp(height)))
+                            .child(item_builder_ref(exiting_item.clone(), data_index))
                     },
-                ));
+                );
+                exit_views.push(
+                    crate::Box(
+                        Modifier::new()
+                            .absolute()
+                            .inset(Some(Dp::ZERO), Some(Dp(top)), None, None)
+                            .fill_max_width()
+                            .height(Dp(height))
+                            .alpha(alpha),
+                    )
+                    .child(item_view),
+                );
             }
             still_exiting.push(exit);
         }
@@ -582,7 +586,10 @@ where
             let d = run_pre_scroll(&st.core.parent_connection, d);
             let ch = st.core.axis.content.get();
             let ch = if ch > 0.0 { ch } else { content_height_px };
-            let leftover_y_px = st.scroll_immediate(d.y, ch);
+            let leftover_y_px = reverse_delta(
+                st.scroll_immediate(reverse_delta(d.y, reverse_layout), ch),
+                reverse_layout,
+            );
             let result = repose_core::Vec2 {
                 x: d.x,
                 y: leftover_y_px,
@@ -599,7 +606,7 @@ where
             );
             repose_core::Vec2 {
                 x: after_parent.x,
-                y: st.apply_overscroll(after_parent.y, ch),
+                y: st.apply_overscroll(reverse_delta(after_parent.y, reverse_layout), ch),
             }
         })
     };
@@ -795,6 +802,7 @@ where
         reverse_layout,
         user_scroll_enabled,
     } = config;
+    state.core.set_scroll_axis(ScrollAxis::Vertical);
 
     let columns = columns.max(1);
     let item_h_px = Dp(item_height_dp).to_px().0.max(1.0);
@@ -901,7 +909,10 @@ where
             let ch = if ch > 0.0 { ch } else { content_height_px };
             let result = Vec2 {
                 x: d.x,
-                y: st.scroll_immediate(d.y, ch),
+                y: reverse_delta(
+                    st.scroll_immediate(reverse_delta(d.y, reverse_layout), ch),
+                    reverse_layout,
+                ),
             };
             let consumed = d - result;
             let after_parent = run_post_scroll(
@@ -912,7 +923,7 @@ where
             );
             Vec2 {
                 x: after_parent.x,
-                y: st.apply_overscroll(after_parent.y, ch),
+                y: st.apply_overscroll(reverse_delta(after_parent.y, reverse_layout), ch),
             }
         })
     };
@@ -1045,6 +1056,7 @@ where
         reverse_layout,
         user_scroll_enabled,
     } = config;
+    state.core.set_scroll_axis(ScrollAxis::Horizontal);
 
     let rows = rows.max(1);
     let item_w_px = Dp(item_width_dp).to_px().0.max(1.0);
@@ -1177,7 +1189,10 @@ where
             let cw = st.core.axis.content.get();
             let cw = if cw > 0.0 { cw } else { content_width_px };
             let result = Vec2 {
-                x: st.scroll_immediate(d.x, cw),
+                x: reverse_delta(
+                    st.scroll_immediate(reverse_delta(d.x, reverse_layout), cw),
+                    reverse_layout,
+                ),
                 y: d.y,
             };
             let consumed = d - result;
@@ -1188,7 +1203,7 @@ where
                 NestedScrollSource::UserInput,
             );
             Vec2 {
-                x: st.apply_overscroll(after_parent.x, cw),
+                x: st.apply_overscroll(reverse_delta(after_parent.x, reverse_layout), cw),
                 y: after_parent.y,
             }
         })
@@ -1326,6 +1341,7 @@ where
         sticky_keys,
         content_type: _,
     } = config;
+    state.core.set_scroll_axis(ScrollAxis::Horizontal);
 
     let items = items;
     let src_len = items.len();
@@ -1523,7 +1539,10 @@ where
             let cw = st.core.axis.content.get();
             let cw = if cw > 0.0 { cw } else { content_width_px };
             let result = Vec2 {
-                x: st.scroll_immediate(d.x, cw),
+                x: reverse_delta(
+                    st.scroll_immediate(reverse_delta(d.x, reverse_layout), cw),
+                    reverse_layout,
+                ),
                 y: d.y,
             };
             let consumed = d - result;
@@ -1534,7 +1553,7 @@ where
                 NestedScrollSource::UserInput,
             );
             Vec2 {
-                x: st.apply_overscroll(after_parent.x, cw),
+                x: st.apply_overscroll(reverse_delta(after_parent.x, reverse_layout), cw),
                 y: after_parent.y,
             }
         })
@@ -1747,6 +1766,7 @@ where
         reverse_layout,
         user_scroll_enabled,
     } = config;
+    state.core.set_scroll_axis(ScrollAxis::Vertical);
 
     let columns = columns.max(1);
     let gap_dp = modifier.row_gap.or(modifier.gap).unwrap_or(Dp::ZERO);
@@ -1901,7 +1921,10 @@ where
             let ch = st.core.axis.content.get().max(st.core.axis.viewport.get());
             let result = Vec2 {
                 x: d.x,
-                y: st.scroll_immediate(d.y, ch),
+                y: reverse_delta(
+                    st.scroll_immediate(reverse_delta(d.y, reverse_layout), ch),
+                    reverse_layout,
+                ),
             };
             let consumed = d - result;
             let after_parent = run_post_scroll(
@@ -1912,7 +1935,7 @@ where
             );
             Vec2 {
                 x: after_parent.x,
-                y: st.apply_overscroll(after_parent.y, ch),
+                y: st.apply_overscroll(reverse_delta(after_parent.y, reverse_layout), ch),
             }
         })
     };
