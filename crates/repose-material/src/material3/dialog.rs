@@ -547,7 +547,10 @@ pub fn Dialog(
         *platform_state.borrow_mut() = desired_platform;
     }
 
-    let spec = AnimationSpec::tween(Duration::from_millis(200), Easing::FastOutSlowIn);
+    let spec = AnimationSpec::tween(
+        Duration::from_millis(if visible_now { 200 } else { 100 }),
+        Easing::EaseOut,
+    );
     let anim_key = state.key("anim");
     let anim = remember_state_with_key(anim_key.clone(), || AnimatedValue::new(0.0, spec));
     let last_target = remember_state_with_key(state.key("atarget"), || f32::NAN);
@@ -558,7 +561,15 @@ pub fn Dialog(
         let mut a = anim.borrow_mut();
         let mut lt = last_target.borrow_mut();
         if lt.is_nan() || (*lt - anim_target).abs() > 1e-6 {
-            a.set_spec(spec);
+            let active_spec = if anim_target == 0.0 {
+                AnimationSpec::tween(
+                    Duration::from_millis((100.0 * *a.get()).round().max(1.0) as u64),
+                    Easing::EaseOut,
+                )
+            } else {
+                spec
+            };
+            a.set_spec(active_spec);
             a.set_target(anim_target);
             *lt = anim_target;
             drop(lt);
@@ -630,7 +641,7 @@ pub fn Dialog(
                 let focus_requested = focus_requested.clone();
                 move || {
                     let progress_outer = *anim.borrow().get();
-                    let alpha_outer = progress_outer.min(1.0);
+                    let alpha_outer = 0.2 + 0.8 * progress_outer.min(1.0);
                     let (measure, focus_probe, platform) = {
                         let prepared_ref = prepared.borrow();
                         let Some(prepared) = prepared_ref.as_ref() else {
@@ -657,7 +668,8 @@ pub fn Dialog(
                     let mut animated_modifier = dialog.modifier.clone();
                     animated_modifier.alpha = Some(alpha_outer);
                     animated_modifier = animated_modifier
-                        .scale(0.8 + 0.2 * progress_outer)
+                        .scale(0.95 + 0.05 * progress_outer)
+                        .translate(0.0, Dp(10.0).to_px().0 * (1.0 - progress_outer))
                         .transform_origin(0.5, 0.5);
                     dialog.modifier = animated_modifier;
 

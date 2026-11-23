@@ -133,6 +133,17 @@ pub fn animate_color(key: impl Into<String>, target: Color, spec: AnimationSpec)
     animate_color_from(key, target, target, spec)
 }
 
+/// Animate Color with a different spec when entering and leaving `active`.
+pub fn animate_color_directional(
+    key: impl Into<String>,
+    target: Color,
+    active: bool,
+    enter_spec: AnimationSpec,
+    exit_spec: AnimationSpec,
+) -> Color {
+    animate_color(key, target, if active { enter_spec } else { exit_spec })
+}
+
 /// Animate Vec2 to target. Starts at target on first mount.
 pub fn animate_vec2(key: impl Into<String>, target: Vec2, spec: AnimationSpec) -> Vec2 {
     animate_vec2_from(key, target, target, spec)

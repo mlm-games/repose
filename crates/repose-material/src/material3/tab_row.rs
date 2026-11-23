@@ -3,11 +3,10 @@
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use repose_core::animation::AnimationSpec;
 use repose_core::*;
 use repose_ui::{
     Box, Column, Row, Text, TextStyle, ViewExt,
-    anim::{animate_color, animate_f32_from},
+    anim::{animate_color_directional, animate_f32_from},
     textfield::{TextMeasureConfig, measure_text},
 };
 
@@ -80,15 +79,16 @@ fn tab_cell(
     width_state: Mutable<f32>,
 ) -> View {
     let th = theme();
-    let default_effects = AnimationSpec::spring_crit(40.0);
-    let color = animate_color(
+    let color = animate_color_directional(
         format!("tab_clr_{}_{}", row_id, index),
         if selected {
             config.selected_content_color
         } else {
             config.unselected_content_color
         },
-        default_effects,
+        selected,
+        th.motion.color,
+        th.motion.fast_effects,
     );
     let cb = tab.on_click.clone();
     let tab_source: Rc<MutableInteractionSource> = tab

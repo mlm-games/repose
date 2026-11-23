@@ -280,7 +280,6 @@ pub fn DropdownMenu(
     }
 
     let progress = *anim.borrow().get();
-    let alpha_progress = *anim_alpha.borrow().get();
     let menu_visible = state.is_open() || progress > 0.01;
     if !state.is_open() {
         submenu_open.borrow_mut().take();

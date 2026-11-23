@@ -607,10 +607,10 @@ pub struct MotionScheme {
     /// M3 standard: 200 ms FastOutSlowIn.
     pub shape: AnimationSpec,
     /// Color state transitions (e.g., label, tab text, selection).
-    /// M3 standard: 150 ms FastOutSlowIn.
+    /// M3 DefaultEffects spring.
     pub color: AnimationSpec,
     /// Quick color changes (e.g., checkbox fill, switch track, radio ring).
-    /// M3 standard: 100 ms FastOutSlowIn.
+    /// M3 FastEffects spring.
     pub color_fast: AnimationSpec,
     /// Overlay / popup enter‑exit (menus, dialogs, tooltips).
     /// M3 standard: 120 ms FastOutSlowIn.
@@ -638,8 +638,8 @@ impl Default for MotionScheme {
     fn default() -> Self {
         Self {
             shape: AnimationSpec::tween(Duration::from_millis(200), Easing::FastOutSlowIn),
-            color: AnimationSpec::tween(Duration::from_millis(150), Easing::FastOutSlowIn),
-            color_fast: AnimationSpec::tween(Duration::from_millis(100), Easing::FastOutSlowIn),
+            color: AnimationSpec::spring_crit(40.0),
+            color_fast: AnimationSpec::spring(SpringSpec::new(1.0, 3800.0)),
             overlay: AnimationSpec::tween(Duration::from_millis(120), Easing::FastOutSlowIn),
             spring: AnimationSpec::spring_gentle(),
             expand: AnimationSpec::tween(Duration::from_millis(250), Easing::FastOutSlowIn),

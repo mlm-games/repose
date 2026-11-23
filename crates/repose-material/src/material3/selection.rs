@@ -7,7 +7,7 @@ use crate::{Icon, Symbol};
 use repose_core::*;
 use repose_ui::{
     Box, TextStyle, ViewExt,
-    anim::{animate_color, animate_f32},
+    anim::{animate_color, animate_color_directional, animate_f32},
 };
 
 use super::util::{apply_enabled_click, apply_m3_clickable_ex};
@@ -74,7 +74,7 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: Check
 
     let is_enabled = config.enabled;
 
-    let fill = animate_color(
+    let fill = animate_color_directional(
         format!("cb_fill_{}", id),
         if !is_enabled {
             if checked {
@@ -87,7 +87,9 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: Check
         } else {
             Color::TRANSPARENT
         },
-        spec,
+        checked,
+        th.motion.color,
+        th.motion.color_fast,
     );
     let bd_w = animate_f32(
         format!("cb_bw_{}", id),
@@ -102,7 +104,7 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: Check
         },
         spec,
     );
-    let bd = animate_color(
+    let bd = animate_color_directional(
         format!("cb_bd_{}", id),
         if !is_enabled {
             if checked {
@@ -115,7 +117,9 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: Check
         } else {
             config.unchecked_border_color
         },
-        spec,
+        checked,
+        th.motion.color,
+        th.motion.color_fast,
     );
     let check_alpha = animate_f32(
         format!("cb_ca_{}", id),
@@ -392,10 +396,9 @@ pub fn RadioButton(
     let d = RadioButtonDefaults::OUTER_RADIUS * 2.0;
 
     let id = remember(|| RADIO_COUNTER.fetch_add(1, Ordering::Relaxed));
-    let color_spec = th.motion.color_fast;
     let spring = th.motion.fast_spatial;
 
-    let ring_col = animate_color(
+    let ring_col = animate_color_directional(
         format!("rb_ring_{}", id),
         if !config.enabled {
             if selected {
@@ -408,7 +411,9 @@ pub fn RadioButton(
         } else {
             config.unselected_color
         },
-        color_spec,
+        selected,
+        th.motion.color,
+        th.motion.color_fast,
     );
     let dot_size = animate_f32(
         format!("rb_dot_{}", id),
