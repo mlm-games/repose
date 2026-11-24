@@ -104,6 +104,8 @@ pub struct DialogProperties {
     pub use_platform_default_width: bool,
     /// Compose `usePlatformInsets` (+ IME). Default: true.
     pub use_platform_insets: bool,
+    /// Override the maximum dialog width. Default: `None` (use `DialogDefaults::MAX_WIDTH`).
+    pub max_width: Option<Dp>,
 }
 
 impl Default for DialogProperties {
@@ -114,6 +116,7 @@ impl Default for DialogProperties {
             dismiss_on_back_press: true,
             use_platform_default_width: true,
             use_platform_insets: true,
+            max_width: None,
         }
     }
 }
@@ -156,12 +159,15 @@ fn platform_dialog_state(properties: &DialogProperties) -> (Dp, Dp, PaddingValue
     };
     let avail_w = (win_w - pad.left - pad.right).max(Dp::ZERO);
     let avail_h = (win_h - pad.top - pad.bottom).max(Dp::ZERO);
+    let max_w = properties
+        .max_width
+        .unwrap_or(super::DialogDefaults::MAX_WIDTH);
     let platform_max_w = if properties.use_platform_default_width {
         preferred_dialog_width_dp(win_w, win_h)
             .min(avail_w)
-            .min(super::DialogDefaults::MAX_WIDTH)
+            .min(max_w)
     } else {
-        avail_w.min(super::DialogDefaults::MAX_WIDTH)
+        avail_w.min(max_w)
     };
     (platform_max_w, avail_h, pad)
 }
@@ -326,11 +332,14 @@ fn prepare_dialog(
         measure_key,
         Modifier::new().fill_max_size().hit_passthrough(),
         move |scope| {
-            let (use_platform_default_width, use_platform_insets) = {
+            let (use_platform_default_width, use_platform_insets, max_w) = {
                 let properties = measure_props.borrow();
                 (
                     properties.use_platform_default_width,
                     properties.use_platform_insets,
+                    properties
+                        .max_width
+                        .unwrap_or(super::DialogDefaults::MAX_WIDTH),
                 )
             };
             let mut pad = PaddingValues::default();
@@ -356,9 +365,9 @@ fn prepare_dialog(
             let platform_max_w = if use_platform_default_width {
                 preferred_dialog_width_dp(win_w, win_h)
                     .min(avail_w)
-                    .min(super::DialogDefaults::MAX_WIDTH)
+                    .min(max_w)
             } else {
-                avail_w.min(super::DialogDefaults::MAX_WIDTH)
+                avail_w.min(max_w)
             };
             *measure_state.borrow_mut() = (platform_max_w, avail_h, pad);
             Box(Modifier::new().size(Dp(0.0), Dp(0.0)))

@@ -1686,6 +1686,14 @@ fn shape_vector_inner(
     ) {
         return Ok(value);
     }
+    // FontWeight alone only affects metrics: the glyph cache key needs the wght
+    // axis too, otherwise the rasterizer uses the default (regular) outlines.
+    let synthesized = if options.font_variation_settings.is_none() && options.font_weight != 400 {
+        Some(format!("\"wght\" {}", options.font_weight))
+    } else {
+        None
+    };
+    let variation_settings = synthesized.as_deref().or(options.font_variation_settings);
     let mut eng = engine().lock().unwrap();
     let layout = build_layout(
         &mut eng,
@@ -1696,7 +1704,7 @@ fn shape_vector_inner(
         options.font_weight,
         options.font_style,
         options.letter_spacing,
-        options.font_variation_settings,
+        variation_settings,
     );
     report_unresolved_codepoints(&layout, text);
     let resolved_direction = if layout.is_rtl() {
@@ -1704,7 +1712,7 @@ fn shape_vector_inner(
     } else {
         TextDirection::Ltr
     };
-    let variation = canonical_variation(options.font_variation_settings);
+    let variation = canonical_variation(variation_settings);
     let (glyphs, runs) = collect_shaped_layout(&mut eng, layout, px, collect_runs, variation);
     validate_shape_options(options, resolved_direction, &runs)?;
     let value = Arc::new(SharedShapedText {
