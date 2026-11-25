@@ -23,6 +23,8 @@ pub struct CircularProgressIndicatorConfig {
     pub stroke_width: Dp,
     pub stroke_cap: StrokeCap,
     pub gap_size: Dp,
+    /// Optional two-colour angular gradient for the determinate indicator arc.
+    pub arc_gradient: Option<(Color, Color)>,
 }
 
 impl Default for CircularProgressIndicatorConfig {
@@ -36,6 +38,7 @@ impl Default for CircularProgressIndicatorConfig {
             stroke_width: ProgressIndicatorDefaults::CIRCULAR_STROKE_WIDTH,
             stroke_cap: StrokeCap::Round,
             gap_size: ProgressIndicatorDefaults::CIRCULAR_TRACK_ACTIVE_SPACE,
+            arc_gradient: None,
         }
     }
 }
@@ -312,12 +315,20 @@ pub fn CircularProgressIndicator(
 
                     // Indicator arc
                     if p > 0.0 {
+                        let brush = match config.arc_gradient {
+                            Some((start, end)) => Brush::Sweep {
+                                center: Vec2 { x: r, y: r },
+                                start_color: mul_c(start),
+                                end_color: mul_c(end),
+                            },
+                            None => Brush::Solid(mul_c(config.color)),
+                        };
                         scene.nodes.push(SceneNode::Arc {
                             rect: circle,
                             start_angle,
                             sweep_angle: sweep_rad,
                             stroke_width: Px(stroke_px),
-                            brush: Brush::Solid(mul_c(config.color)),
+                            brush,
                             cap: config.stroke_cap,
                         });
                     }
