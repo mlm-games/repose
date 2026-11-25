@@ -602,6 +602,124 @@ pub fn ModalBottomSheet(
                             ..Default::default()
                         });
 
+                    if config.gestures_enabled && state.is_visible() {
+                        // Compose's ConsumeSwipeWithinBottomSheetBoundsNestedScrollConnection:
+                        // a scrollable child first moves the sheet, and only uses its own
+                        // remaining scroll once the sheet reached an anchor.
+                        let settle_sheet = {
+                            let (anim, distance, partial, state) = (
+                                anim.clone(),
+                                anim_distance_px.clone(),
+                                partial_offset_px.clone(),
+                                state.clone(),
+                            );
+                            let (release, last_target, last_spatial) = (
+                                drag_release_in_flight.clone(),
+                                last_target.clone(),
+                                last_spatial_motion.clone(),
+                            );
+                            Rc::new(move |velocity: f32| {
+                                let distance_px = distance.get();
+                                let current =
+                                    modal_sheet_drag_offset(*anim.borrow().get(), distance_px);
+                                let (anchor, target) = modal_sheet_drag_anchor(
+                                    current,
+                                    distance_px,
+                                    partial.get(),
+                                    velocity,
+                                    positional_threshold_px,
+                                    velocity_threshold_px,
+                                );
+                                {
+                                    let mut animation = anim.borrow_mut();
+                                    animation.set_spec(modal_sheet_spatial_spec(target - current));
+                                    animation.set_target_with_velocity(target, velocity);
+                                }
+                                *last_target.borrow_mut() = target;
+                                last_spatial.set(true);
+                                release.set(anchor == SheetAnchor::Hidden);
+                                state.anchor.set_neq(anchor);
+                                request_frame();
+                            })
+                        };
+                        let push_sheet = {
+                            let (anim, distance) = (anim.clone(), anim_distance_px.clone());
+                            Rc::new(move |delta: f32| -> f32 {
+                                let distance_px = distance.get();
+                                let current =
+                                    modal_sheet_drag_offset(*anim.borrow().get(), distance_px);
+                                let next = modal_sheet_drag_offset(current + delta, distance_px);
+                                let consumed = next - current;
+                                if consumed.abs() > 0.001 {
+                                    anim.borrow_mut().snap_to(next);
+                                    request_frame();
+                                }
+                                consumed
+                            })
+                        };
+                        let connection = NestedScrollConnection::new()
+                            .on_pre_scroll({
+                                let push = push_sheet.clone();
+                                move |available: Vec2, source: NestedScrollSource| {
+                                    if source == NestedScrollSource::UserInput && available.y < 0.0
+                                    {
+                                        Vec2 {
+                                            x: 0.0,
+                                            y: push(available.y),
+                                        }
+                                    } else {
+                                        Vec2::ZERO
+                                    }
+                                }
+                            })
+                            .on_post_scroll({
+                                let push = push_sheet.clone();
+                                move |_consumed: Vec2,
+                                      available: Vec2,
+                                      source: NestedScrollSource| {
+                                    if source == NestedScrollSource::UserInput {
+                                        Vec2 {
+                                            x: 0.0,
+                                            y: push(available.y),
+                                        }
+                                    } else {
+                                        Vec2::ZERO
+                                    }
+                                }
+                            })
+                            .on_pre_fling({
+                                let (settle, anim, distance) =
+                                    (settle_sheet.clone(), anim.clone(), anim_distance_px.clone());
+                                move |available: Vec2, source: NestedScrollSource| {
+                                    let current = modal_sheet_drag_offset(
+                                        *anim.borrow().get(),
+                                        distance.get(),
+                                    );
+                                    if source == NestedScrollSource::UserInput
+                                        && available.y < 0.0
+                                        && current > 0.01
+                                    {
+                                        settle(available.y);
+                                        available
+                                    } else {
+                                        Vec2::ZERO
+                                    }
+                                }
+                            })
+                            .on_post_fling({
+                                let settle = settle_sheet.clone();
+                                move |_consumed: Vec2, available: Vec2, _: NestedScrollSource| {
+                                    if available.y.abs() > 0.001 {
+                                        settle(available.y);
+                                        available
+                                    } else {
+                                        Vec2::ZERO
+                                    }
+                                }
+                            });
+                        sheet_mod = sheet_mod.nested_scroll(connection);
+                    }
+
                     if config.gestures_enabled {
                         let drag_distance = anim_distance_px.clone();
                         sheet_mod = sheet_mod
