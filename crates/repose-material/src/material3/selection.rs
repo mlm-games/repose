@@ -66,6 +66,15 @@ impl Default for CheckboxConfig {
 /// Fill, border, and check mark animate with 100ms FastOutSlowIn.
 static CHECKBOX_COUNTER: AtomicU64 = AtomicU64::new(0);
 pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: CheckboxConfig) -> View {
+    checkbox(checked, Some(Rc::new(on_change)), config)
+}
+
+/// A checkbox visual for rows that handle the toggle interaction themselves.
+pub fn CheckboxIndicator(checked: bool, config: CheckboxConfig) -> View {
+    checkbox(checked, None, config)
+}
+
+fn checkbox(checked: bool, on_change: Option<Rc<dyn Fn(bool)>>, config: CheckboxConfig) -> View {
     let th = theme();
     let sz = CheckboxDefaults::BOX_SIZE;
 
@@ -132,50 +141,43 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: Check
         config.checkmark_color
     };
 
-    let cb = move || {
-        if config.enabled {
-            on_change(!checked)
-        }
-    };
-
-    let cb_source: Rc<MutableInteractionSource> = config
-        .interaction_source
-        .clone()
-        .map(Rc::new)
-        .unwrap_or_else(|| remember(MutableInteractionSource::new));
-
-    // Compose: unbounded state-layer (StateLayerSize/2 = 20dp), color = indicator
-    // (checked container / on_surface when unchecked). Matches Checkbox.kt + tokens.
-    let ripple_col = if checked {
-        config.checked_color
+    let target_size = if on_change.is_some() {
+        CheckboxDefaults::TOUCH_TARGET_SIZE
     } else {
-        th.on_surface
+        Dp(24.0)
     };
-
     let mut m = Modifier::new()
-        .width(CheckboxDefaults::TOUCH_TARGET_SIZE)
-        .height(CheckboxDefaults::TOUCH_TARGET_SIZE)
-        .padding(Dp(0.0))
-        .background(Color::TRANSPARENT)
-        .state_colors(config.state_colors) // keep for dragged/disabled overlays if any
-        .align_items(AlignItems::CENTER)
-        .justify_content(JustifyContent::CENTER);
+        .size(target_size, target_size)
+        .content_alignment(Alignment::Center);
 
-    m = apply_m3_clickable_ex(
-        m,
-        &cb_source,
-        ripple_col,
-        is_enabled,
-        cb,
-        false, // unbounded
-        Some(Dp(20.0)),
-    );
-    m = m.semantics(Semantics {
-        role: Role::Checkbox,
-        enabled: is_enabled,
-        checked: Some(checked),
-        ..Default::default()
-    });
+    if let Some(on_change) = on_change {
+        let interaction = config
+            .interaction_source
+            .clone()
+            .map(Rc::new)
+            .unwrap_or_else(|| remember(MutableInteractionSource::new));
+        let ripple_color = if checked {
+            config.checked_color
+        } else {
+            th.on_surface
+        };
+        m = apply_m3_clickable_ex(
+            m.background(Color::TRANSPARENT)
+                .state_colors(config.state_colors),
+            &interaction,
+            ripple_color,
+            is_enabled,
+            move || on_change(!checked),
+            false,
+            Some(Dp(20.0)),
+        )
+        .semantics(Semantics {
+            role: Role::Checkbox,
+            enabled: is_enabled,
+            checked: Some(checked),
+            ..Default::default()
+        });
+    }
     Box(m.then(config.modifier)).child(
         Box(Modifier::new()
             .size(sz, sz)
