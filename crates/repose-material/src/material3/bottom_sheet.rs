@@ -603,9 +603,8 @@ pub fn ModalBottomSheet(
                         });
 
                     if config.gestures_enabled && state.is_visible() {
-                        // Compose's ConsumeSwipeWithinBottomSheetBoundsNestedScrollConnection:
-                        // a scrollable child first moves the sheet, and only uses its own
-                        // remaining scroll once the sheet reached an anchor.
+                        // Nested scroll deltas advance the content offset. The sheet tracks
+                        // pointer motion, so use the opposite sign at the sheet boundary.
                         let settle_sheet = {
                             let (anim, distance, partial, state) = (
                                 anim.clone(),
@@ -661,11 +660,11 @@ pub fn ModalBottomSheet(
                             .on_pre_scroll({
                                 let push = push_sheet.clone();
                                 move |available: Vec2, source: NestedScrollSource| {
-                                    if source == NestedScrollSource::UserInput && available.y < 0.0
+                                    if source == NestedScrollSource::UserInput && available.y > 0.0
                                     {
                                         Vec2 {
                                             x: 0.0,
-                                            y: push(available.y),
+                                            y: -push(-available.y),
                                         }
                                     } else {
                                         Vec2::ZERO
@@ -680,7 +679,7 @@ pub fn ModalBottomSheet(
                                     if source == NestedScrollSource::UserInput {
                                         Vec2 {
                                             x: 0.0,
-                                            y: push(available.y),
+                                            y: -push(-available.y),
                                         }
                                     } else {
                                         Vec2::ZERO
@@ -696,10 +695,10 @@ pub fn ModalBottomSheet(
                                         distance.get(),
                                     );
                                     if source == NestedScrollSource::UserInput
-                                        && available.y < 0.0
+                                        && available.y > 0.0
                                         && current > 0.01
                                     {
-                                        settle(available.y);
+                                        settle(-available.y);
                                         available
                                     } else {
                                         Vec2::ZERO
@@ -710,7 +709,7 @@ pub fn ModalBottomSheet(
                                 let settle = settle_sheet.clone();
                                 move |_consumed: Vec2, available: Vec2, _: NestedScrollSource| {
                                     if available.y.abs() > 0.001 {
-                                        settle(available.y);
+                                        settle(-available.y);
                                         available
                                     } else {
                                         Vec2::ZERO
