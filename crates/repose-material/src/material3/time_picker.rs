@@ -1,10 +1,10 @@
 #![allow(non_snake_case)]
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use repose_core::*;
-use repose_ui::{Box, Column, Row, Spacer, Text, TextStyle, ViewExt};
+use repose_ui::{Box, Column, Row, Spacer, Text, TextStyle, ViewExt, ZStack};
 
 use super::*;
 
@@ -441,6 +441,306 @@ pub fn TimePicker(
             ),
         )),
     ))
+}
+
+/// Material 3 clock face for a 24-hour selection.
+pub fn TimePicker24Hour(state: Rc<TimePickerState>, layout: TimePickerLayoutType) -> View {
+    const DIAL: f32 = 256.0;
+    const OUTER: f32 = 101.0;
+    const INNER: f32 = 69.0;
+    let colors = TimePickerColors::default();
+    let (hour, minute) = state.selected_time();
+    let field = state.selected_field.get();
+    let selecting_hour = field == TimePickerField::Hour;
+    let selected = if selecting_hour { hour } else { minute };
+    let divisions = if selecting_hour { 12 } else { 60 };
+    let angle = |value: u32| (value % divisions) as f32 * std::f32::consts::TAU / divisions as f32;
+    let point = |value: u32, radius: f32| {
+        let (x, y) = angle(value).sin_cos();
+        (x * radius, -y * radius)
+    };
+    let radius = if selecting_hour && hour >= 12 {
+        INNER
+    } else {
+        OUTER
+    };
+    let (x, y) = point(selected, radius);
+    let circle = |diameter: f32, x: f32, y: f32, color: Color| {
+        Modifier::new()
+            .size(Dp(diameter), Dp(diameter))
+            .offset(Dp(x), Dp(y))
+            .clip_rounded(Dp(diameter / 2.0))
+            .background(color)
+    };
+    let center = DIAL / 2.0;
+    let (normal_x, normal_y) = (-y / radius, x / radius);
+    let track = ShapePath::new()
+        .move_to(Dp(center + normal_x), Dp(center + normal_y))
+        .line_to(Dp(center + x + normal_x), Dp(center + y + normal_y))
+        .line_to(Dp(center + x - normal_x), Dp(center + y - normal_y))
+        .line_to(Dp(center - normal_x), Dp(center - normal_y))
+        .close();
+    let mut face = vec![
+        Box(Modifier::new()
+            .size(Dp(DIAL), Dp(DIAL))
+            .background_shape_color(colors.selector_color, Shape::path(track))),
+        Box(circle(48.0, x, y, colors.selector_color)),
+        Box(circle(8.0, 0.0, 0.0, colors.selector_color)),
+    ];
+    if !selecting_hour && minute % 5 != 0 {
+        face.push(Box(circle(
+            4.0,
+            x,
+            y,
+            colors.clock_dial_selected_content_color,
+        )));
+    }
+
+    let values: Vec<u32> = if selecting_hour {
+        (0..24).collect()
+    } else {
+        (0..60).step_by(5).collect()
+    };
+    for value in values {
+        let (x, y) = point(
+            value,
+            if selecting_hour && value >= 12 {
+                INNER
+            } else {
+                OUTER
+            },
+        );
+        let label = if selecting_hour {
+            value.to_string()
+        } else {
+            format!("{value:02}")
+        };
+        let state = state.clone();
+        face.push(
+            Box(Modifier::new()
+                .size(Dp(32.0), Dp(32.0))
+                .offset(Dp(x), Dp(y))
+                .content_alignment(Alignment::Center)
+                .clickable()
+                .on_click(move || {
+                    if selecting_hour {
+                        state.set_period(value < 12);
+                        state.set_hour(value);
+                        state.selected_field.set_neq(TimePickerField::Minute);
+                    } else {
+                        state.set_minute(value);
+                    }
+                })
+                .semantics(Semantics {
+                    role: Role::Button,
+                    label: Some(label.clone()),
+                    selected: Some(value == selected),
+                    enabled: true,
+                    ..Default::default()
+                }))
+            .child(Text(label).size(theme().typography.body_large).color(
+                if value == selected {
+                    colors.clock_dial_selected_content_color
+                } else {
+                    colors.clock_dial_unselected_content_color
+                },
+            )),
+        );
+    }
+
+    let selector = |part, value| {
+        let active = field == part;
+        let state = state.clone();
+        Box(Modifier::new()
+            .size(Dp(96.0), Dp(80.0))
+            .content_alignment(Alignment::Center)
+            .clip_rounded(Dp(8.0))
+            .background(if active {
+                colors.time_selector_selected_container_color
+            } else {
+                colors.time_selector_unselected_container_color
+            })
+            .clickable()
+            .on_click(move || state.selected_field.set_neq(part))
+            .semantics(Semantics {
+                role: Role::Button,
+                label: Some(match part {
+                    TimePickerField::Hour => "Hour".into(),
+                    TimePickerField::Minute => "Minute".into(),
+                }),
+                value: Some(format!("{value:02}")),
+                selected: Some(active),
+                enabled: true,
+                ..Default::default()
+            }))
+        .child(Text(format!("{value:02}")).size(Sp(57.0)).color(if active {
+            colors.time_selector_selected_content_color
+        } else {
+            colors.time_selector_unselected_content_color
+        }))
+    };
+    let display = Row(Modifier::new().align_items(AlignItems::CENTER)).child((
+        selector(TimePickerField::Hour, hour),
+        Box(Modifier::new()
+            .width(Dp(24.0))
+            .content_alignment(Alignment::Center))
+        .child(Text(":").size(Sp(57.0))),
+        selector(TimePickerField::Minute, minute),
+    ));
+
+    let active_pointer = remember(|| Cell::new(None::<(PointerId, Vec2, bool)>));
+    let center = Dp(DIAL / 2.0).to_px().0;
+    let drag_slop = Dp(4.0).to_px().0;
+    let inner_threshold = Dp(74.0).to_px().0;
+    let select = {
+        let state = state.clone();
+        move |position: Vec2, dragged: bool, finished: bool| {
+            let x = position.x - center;
+            let y = position.y - center;
+            let turns = x.atan2(-y) / std::f32::consts::TAU;
+            if selecting_hour {
+                let hour = (turns * 12.0).round() as i32;
+                let inner = x.hypot(y) < inner_threshold;
+                batch(|| {
+                    state.set_period(!inner);
+                    state.set_hour(hour.rem_euclid(12) as u32);
+                    if finished {
+                        state.selected_field.set_neq(TimePickerField::Minute);
+                    }
+                });
+            } else {
+                let step = if dragged { 1 } else { 5 };
+                let tick = (turns * (60 / step) as f32).round() as i32;
+                state.set_minute((tick * step).rem_euclid(60) as u32);
+            }
+        }
+    };
+    let dial = ZStack(
+        Modifier::new()
+            .size(Dp(DIAL), Dp(DIAL))
+            .clip_rounded(Dp(DIAL / 2.0))
+            .background(colors.clock_dial_color)
+            .on_pointer_down({
+                let active_pointer = active_pointer.clone();
+                move |event| {
+                    if active_pointer.get().is_none()
+                        && matches!(event.event, PointerEventKind::Down(PointerButton::Primary))
+                    {
+                        active_pointer.set(Some((event.id, event.position, false)));
+                    }
+                }
+            })
+            .on_pointer_move({
+                let active_pointer = active_pointer.clone();
+                let select = select.clone();
+                move |event| {
+                    if let Some((id, origin, dragged)) = active_pointer.get()
+                        && id == event.id
+                        && (dragged
+                            || (event.position.x - origin.x).hypot(event.position.y - origin.y)
+                                > drag_slop)
+                    {
+                        active_pointer.set(Some((id, origin, true)));
+                        select(event.position, true, false);
+                        event.consume();
+                    }
+                }
+            })
+            .on_pointer_up({
+                let active_pointer = active_pointer.clone();
+                move |event| {
+                    if let Some((id, _, dragged)) = active_pointer.get()
+                        && id == event.id
+                        && matches!(event.event, PointerEventKind::Up(PointerButton::Primary))
+                    {
+                        active_pointer.set(None);
+                        select(event.position, dragged, true);
+                        event.consume();
+                    }
+                }
+            })
+            .on_pointer_cancel(move |_| active_pointer.set(None)),
+    )
+    .with_children(face);
+
+    match layout {
+        TimePickerLayoutType::Horizontal => Row(Modifier::new()
+            .align_items(AlignItems::CENTER)
+            .gap(Dp(36.0)))
+        .child((display, dial)),
+        TimePickerLayoutType::Vertical => Column(
+            Modifier::new()
+                .width(Dp(DIAL))
+                .align_items(AlignItems::CENTER)
+                .gap(Dp(36.0)),
+        )
+        .child((display, dial)),
+    }
+}
+
+/// A Material 3 time picker dialog with a 24-hour clock face.
+pub fn TimePicker24HourDialog(
+    dialog: Rc<DialogState>,
+    time: Rc<TimePickerState>,
+    title: View,
+    dismiss_button: View,
+    confirm_button: View,
+) -> View {
+    let width = get_window_container_width();
+    let height = get_window_container_height();
+    let landscape = width > height && width >= 556.0 && height >= 340.0;
+    let layout = if landscape {
+        TimePickerLayoutType::Horizontal
+    } else {
+        TimePickerLayoutType::Vertical
+    };
+    let panel_width = Dp(if landscape { 556.0 } else { 304.0 });
+    let picker = TimePicker24Hour(time, layout);
+    let actions = Row(Modifier::new()
+        .fill_max_width()
+        .justify_content(JustifyContent::END)
+        .gap(Dp(8.0)))
+    .child((dismiss_button, confirm_button));
+    let content = if landscape {
+        let bottom = if height >= 384.0 { 24.0 } else { 8.0 };
+        let picker_top = (height - 256.0) / 2.0 - 22.0;
+        Column(
+            Modifier::new()
+                .fill_max_width()
+                .height(Dp(height))
+                .padding_values(PaddingValues {
+                    left: Dp(24.0),
+                    right: Dp(24.0),
+                    top: Dp(24.0),
+                    bottom: Dp(bottom),
+                }),
+        )
+        .child((
+            Box(Modifier::new().height(Dp(24.0))).child(title),
+            Box(Modifier::new().height(Dp((picker_top - 48.0).max(0.0)))),
+            picker,
+            Box(Modifier::new().height(Dp((height - bottom - 48.0 - picker_top - 256.0).max(0.0)))),
+            actions,
+        ))
+    } else {
+        Column(Modifier::new().fill_max_width().padding(Dp(24.0))).child((
+            title,
+            Box(Modifier::new().height(Dp(20.0))),
+            picker,
+            Box(Modifier::new().height(Dp(24.0))),
+            actions,
+        ))
+    };
+    Dialog(
+        dialog,
+        Modifier::new().width(panel_width),
+        DialogProperties {
+            use_platform_default_width: false,
+            use_platform_insets: false,
+            ..Default::default()
+        },
+        content,
+    )
 }
 
 #[cfg(test)]
