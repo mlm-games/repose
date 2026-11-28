@@ -557,6 +557,15 @@ impl Default for SwitchConfig {
 /// Thumb position and size animate with a spring; colors snap like Compose.
 static SWITCH_COUNTER: AtomicU64 = AtomicU64::new(0);
 pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchConfig) -> View {
+    switch(checked, Some(Rc::new(on_change)), config)
+}
+
+/// A switch visual for rows that handle the toggle interaction themselves.
+pub fn SwitchIndicator(checked: bool, config: SwitchConfig) -> View {
+    switch(checked, None, config)
+}
+
+fn switch(checked: bool, on_change: Option<Rc<dyn Fn(bool)>>, config: SwitchConfig) -> View {
     let th = theme();
     let track_w = SwitchDefaults::TRACK_WIDTH;
     let track_h = SwitchDefaults::TRACK_HEIGHT;
@@ -638,21 +647,24 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
         .background(track_bg)
         .border(Dp(2.0), border_color, track_h * 0.5);
 
-    let mut host = Modifier::new()
-        .size(track_w, Dp(48.0))
-        .align_items(AlignItems::CENTER)
-        .interaction_source(&sw_source);
-
-    host = apply_enabled_click(host, is_enabled, {
-        let cb = on_change;
-        move || cb(!checked)
-    });
-    host = host.semantics(Semantics {
-        role: Role::Switch,
-        enabled: is_enabled,
-        checked: Some(checked),
-        ..Default::default()
-    });
+    let host = if let Some(on_change) = on_change {
+        apply_enabled_click(
+            Modifier::new()
+                .size(track_w, Dp(48.0))
+                .align_items(AlignItems::CENTER)
+                .interaction_source(&sw_source),
+            is_enabled,
+            move || on_change(!checked),
+        )
+        .semantics(Semantics {
+            role: Role::Switch,
+            enabled: is_enabled,
+            checked: Some(checked),
+            ..Default::default()
+        })
+    } else {
+        Modifier::new().size(track_w, track_h).hit_passthrough()
+    };
 
     Box(host.then(config.modifier)).child(
         Box(track_visual).child((

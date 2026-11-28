@@ -410,10 +410,15 @@ fn build_dialog(
     th: Theme,
 ) -> View {
     let (platform_max_w, platform_max_h, _) = platform;
+    let child_width = if modifier.fill_max_w.is_some() || modifier.width.is_some() {
+        Modifier::new().fill_max_width()
+    } else {
+        Modifier::new()
+    };
     let mut content = content;
     if !attach_focus_requester(&mut content, focus_requester, Some(&focus_pending)) {
         let pending = focus_pending.clone();
-        content = Box(Modifier::new()
+        content = Box(child_width.clone()
             .focusable(true)
             .focus_requester(focus_requester.clone())
             .on_focus_changed(move |focused| {
@@ -428,7 +433,7 @@ fn build_dialog(
         repose_core::scroll::ScrollBinding::Vertical(binding) => binding,
         _ => unreachable!(),
     };
-    let scrollable_body = Box(Modifier::new()
+    let scrollable_body = Box(child_width
         .max_height(platform_max_h)
         .vertical_scroll(axis_binding))
     .child(content);
@@ -807,6 +812,7 @@ pub fn AlertDialog(
     state.set_scrim_color(Some(config.scrim_color));
 
     let content = Box(Modifier::new()
+        .fill_max_width()
         .background(config.container_color)
         .clip_rounded(
             config
@@ -1049,6 +1055,44 @@ mod tests {
                 node,
                 SceneNode::Text { text, .. } if text.as_ref() == "Settings"
             )));
+        });
+        drop(guard);
+        scope.dispose();
+    }
+
+    #[test]
+    fn full_width_dialog_gives_its_content_the_panel_width() {
+        let scope = Scope::new();
+        let guard = ComposeGuard::begin();
+        scope.run(|| {
+            let marker = Color::from_rgb(255, 0, 127);
+            let state = Rc::new(DialogState::new());
+            let panel = build_dialog(
+                state,
+                Box(Modifier::new().fill_max_width().height(Dp(16.0)).background(marker)),
+                Modifier::new().fill_max_width().max_width(Dp(560.0)),
+                Rc::new(RefCell::new(DialogProperties::default())),
+                (Dp(560.0), Dp(600.0), PaddingValues::default()),
+                Rc::new(repose_core::scroll::ScrollState::new()),
+                &FocusRequester::new(),
+                Rc::new(Cell::new(false)),
+                theme(),
+            );
+            let root = ZStack(Modifier::new().fill_max_size()).child(panel);
+            let (scene, _, _) = LayoutEngine::new().layout_frame(
+                &root,
+                (800, 600),
+                &HashMap::new(),
+                &repose_ui::Interactions::default(),
+                None,
+            );
+            let width = scene.nodes.iter().find_map(|node| match node {
+                SceneNode::Rect { rect, brush: Brush::Solid(color), .. } if *color == marker => {
+                    Some(rect.w)
+                }
+                _ => None,
+            });
+            assert_eq!(width, Some(560.0));
         });
         drop(guard);
         scope.dispose();

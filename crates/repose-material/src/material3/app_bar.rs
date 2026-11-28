@@ -276,15 +276,22 @@ fn top_app_bar_layout(
             .collect::<Vec<_>>(),
     );
 
-    let title_column = Column(Modifier::new().content_alignment(Alignment::Center)).child({
-        let mut children: Vec<View> = Vec::new();
-        children.push(
-            Box(Modifier::new()).child(with_content_color(colors.title_content_color, || title)),
-        );
-        if let Some(s) = subtitle {
-            children.push(
-                Box(Modifier::new()).child(with_content_color(colors.subtitle_content_color, || s)),
-            );
+    let title_width = if centered {
+        Modifier::new()
+    } else {
+        Modifier::new().fill_max_width()
+    };
+    let title_column = Column(
+        title_width.clone().content_alignment(Alignment::Center),
+    )
+    .child({
+        let mut children = vec![Box(title_width.clone())
+            .child(with_content_color(colors.title_content_color, || title))];
+        if let Some(subtitle) = subtitle {
+            children.push(Box(title_width).child(with_content_color(
+                colors.subtitle_content_color,
+                || subtitle,
+            )));
         }
         children
     });
@@ -333,6 +340,7 @@ fn top_app_bar_layout(
                     top: Dp(0.0),
                     bottom: Dp(0.0),
                 })
+                .min_width(Dp::ZERO)
                 .weight(1.0))
             .child(title_column),
             actions_row,
@@ -478,4 +486,42 @@ pub fn FloatingToolbar(expanded: bool, content: View, config: FloatingToolbarCon
             .align_items(AlignItems::CENTER))
         .child(with_content_color(config.content_color, move || content)),
     )
+}
+
+#[cfg(test)]
+mod title_slot_tests {
+    use super::*;
+    use repose_core::runtime::ComposeGuard;
+    use repose_core::scope::Scope;
+    use repose_ui::layout::LayoutEngine;
+
+    #[test]
+    fn custom_title_can_fill_the_remaining_width() {
+        let scope = Scope::new();
+        let guard = ComposeGuard::begin();
+        scope.run(|| {
+            let marker = Color::from_rgb(255, 0, 127);
+            let title = Row(Modifier::new().fill_max_width()).child((
+                Box(Modifier::new().weight(1.0)),
+                Box(Modifier::new().size(Dp(40.0), Dp(20.0)).background(marker)),
+            ));
+            let view = TopAppBar(title, None, None, vec![], Default::default());
+            let (scene, _, _) = LayoutEngine::new().layout_frame(
+                &view,
+                (800, 64),
+                &std::collections::HashMap::new(),
+                &repose_ui::Interactions::default(),
+                None,
+            );
+            let trailing = scene.nodes.iter().find_map(|node| match node {
+                SceneNode::Rect { rect, brush: Brush::Solid(color), .. } if *color == marker => {
+                    Some(rect.x + rect.w)
+                }
+                _ => None,
+            });
+            assert_eq!(trailing, Some(796.0));
+        });
+        drop(guard);
+        scope.dispose();
+    }
 }
