@@ -738,10 +738,17 @@ impl LazyScrollCore {
             match guard.as_mut() {
                 None => false,
                 Some(anim) => {
-                    if anim.update() {
-                        let max = (content_px - self.axis.viewport.get()).max(0.0);
-                        self.axis.offset.set(anim.get().clamp(0.0, max));
+                    let active = anim.update();
+                    let max = (content_px - self.axis.viewport.get()).max(0.0);
+                    let offset = anim.get().clamp(0.0, max);
+                    if offset != self.axis.offset.get() {
+                        self.clear_anchor();
+                        self.axis.offset.set(offset);
                         repose_core::request_frame();
+                    } else if active {
+                        repose_core::request_frame();
+                    }
+                    if active {
                         return true;
                     }
                     true
@@ -1377,6 +1384,23 @@ mod tests {
         assert_eq!(state.offset_for_index(3), None);
         assert_eq!(state.scroll_target(0, 0.0), Some(0.0));
         assert_eq!(state.scroll_target(1, 12.0), Some(56.0));
+    }
+
+    #[test]
+    fn animated_scroll_publishes_its_target_and_releases_the_previous_anchor() {
+        use repose_core::animation::{ManualClock, SystemClock, set_clock};
+
+        let clock = ManualClock::new(Instant::now());
+        set_clock(std::boxed::Box::new(clock.clone()));
+        let state = seeded();
+        state.core.set_offset(400.0, 4000.0);
+        state.core.animate_offset_to(0.0, 4000.0);
+        state.core.set_anchor(4, 0.0);
+        clock.advance(std::time::Duration::from_secs(10));
+        state.tick(4000.0);
+        set_clock(std::boxed::Box::new(SystemClock));
+        assert_eq!(state.core.axis.offset.get(), 0.0);
+        assert_eq!(state.core.anchor(), None);
     }
 
     #[test]
