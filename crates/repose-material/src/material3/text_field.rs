@@ -26,31 +26,26 @@ fn label_box_top(ink_center_px: f32, font_px: f32) -> Dp {
     Px(ink_center_px - (font_px + TEXT_LINE_LEADING_PX) / 2.0).to_dp()
 }
 
-/// Tint a leading icon with the M3 icon color (12dp gap to the input, Compose style).
-fn tint_icon(color: Color, icon: Option<View>) -> View {
-    match icon {
-        Some(v) => Box(Modifier::new().padding_values(PaddingValues {
-            left: Dp(0.0),
-            right: Dp(12.0),
-            top: Dp(0.0),
-            bottom: Dp(0.0),
-        }))
-        .child(with_content_color(color, move || v)),
-        None => Box(Modifier::new()),
-    }
+const TEXT_FIELD_PADDING: Dp = Dp(16.0);
+const TEXT_FIELD_ICON_PADDING: Dp = Dp(4.0);
+const TEXT_FIELD_ICON_SLOT: Dp = IconButtonDefaults::MIN_INTERACTIVE_SIZE;
+
+fn text_field_icon(color: Color, icon: Option<View>) -> View {
+    let Some(icon) = icon else {
+        return Box(Modifier::new());
+    };
+    Box(Modifier::new()
+        .min_width(TEXT_FIELD_ICON_SLOT)
+        .align_items(AlignItems::CENTER)
+        .justify_content(JustifyContent::CENTER))
+    .child(with_content_color(color, move || icon))
 }
 
-/// Tint a trailing icon with the M3 icon color (12dp gap to the input, Compose style).
-fn tint_trailing_icon(color: Color, icon: Option<View>) -> View {
-    match icon {
-        Some(v) => Box(Modifier::new().padding_values(PaddingValues {
-            left: Dp(12.0),
-            right: Dp(0.0),
-            top: Dp(0.0),
-            bottom: Dp(0.0),
-        }))
-        .child(with_content_color(color, move || v)),
-        None => Box(Modifier::new()),
+fn text_field_side_padding(has_icon: bool) -> Dp {
+    if has_icon {
+        TEXT_FIELD_ICON_PADDING
+    } else {
+        TEXT_FIELD_PADDING
     }
 }
 
@@ -629,16 +624,13 @@ fn outlined_field_decoration(
     };
     let label_y = Dp(label_start_y.0 + (label_end_y.0 - label_start_y.0) * float_t);
 
-    // Label X: expanded at text-input start (~24dp) -> minimized at border-start (~20dp)
-    let label_start_x = if has_label && config.leading_icon.is_some() {
-        48.0
-    } else if has_label {
-        24.0
-    } else {
-        0.0
-    };
-    let label_end_x = if has_label { 20.0 } else { 0.0 };
-    let label_x = Dp(label_start_x - (label_start_x - label_end_x) * float_t);
+    // The expanded label shares the input inset; the cutout sits at the border padding.
+    let has_leading_icon = config.leading_icon.is_some();
+    let has_trailing_icon = config.trailing_icon.is_some();
+    let label_start_x = text_field_side_padding(has_leading_icon)
+        + if has_leading_icon { TEXT_FIELD_ICON_SLOT } else { Dp::ZERO };
+    let label_end_x = TEXT_FIELD_PADDING;
+    let label_x = label_start_x - (label_start_x - label_end_x) * float_t;
 
     // Container padding matches reference: 8dp top/bottom with label, 16dp without
     let (top_pad, bottom_pad) = if has_label {
@@ -763,14 +755,15 @@ fn outlined_field_decoration(
             Row(Modifier::new()
                 .fill_max_size()
                 .padding_values(PaddingValues {
-                    left: Dp(16.0),
-                    right: Dp(16.0),
+                    left: Dp::ZERO,
+                    right: Dp::ZERO,
                     top: top_pad,
                     bottom: bottom_pad,
                 })
                 .align_items(AlignItems::CENTER))
             .child((
-                tint_icon(lead_c, config.leading_icon.clone()),
+                text_field_icon(lead_c, config.leading_icon.clone()),
+                Box(Modifier::new().width(text_field_side_padding(has_leading_icon))),
                 config
                     .prefix
                     .as_ref()
@@ -792,7 +785,8 @@ fn outlined_field_decoration(
                             .single_line()
                     })
                     .unwrap_or(Box(Modifier::new())),
-                tint_trailing_icon(trail_c, config.trailing_icon.clone()),
+                Box(Modifier::new().width(text_field_side_padding(has_trailing_icon))),
+                text_field_icon(trail_c, config.trailing_icon.clone()),
             )),
             if let Some(lbl) = label_str {
                 Box(Modifier::new()
@@ -959,15 +953,11 @@ pub fn TextField(
     };
     let label_y = Dp(label_start_y.0 + (label_end_y.0 - label_start_y.0) * float_t);
 
-    let label_start_x = if has_label && config.leading_icon.is_some() {
-        48.0
-    } else if has_label {
-        24.0
-    } else {
-        0.0
-    };
-    let label_end_x = if has_label { 20.0 } else { 0.0 };
-    let label_x = Dp(label_start_x - (label_start_x - label_end_x) * float_t);
+    let has_leading_icon = config.leading_icon.is_some();
+    let has_trailing_icon = config.trailing_icon.is_some();
+    let label_start_x = text_field_side_padding(has_leading_icon)
+        + if has_leading_icon { TEXT_FIELD_ICON_SLOT } else { Dp::ZERO };
+    let label_x = label_start_x;
 
     let tf_placeholder = if has_label {
         if should_float {
@@ -1111,8 +1101,8 @@ pub fn TextField(
             Row(Modifier::new()
                 .fill_max_size()
                 .padding_values(PaddingValues {
-                    left: Dp(16.0),
-                    right: Dp(16.0),
+                    left: Dp::ZERO,
+                    right: Dp::ZERO,
                     top: if has_label {
                         top_pad + Dp(8.0)
                     } else {
@@ -1122,7 +1112,8 @@ pub fn TextField(
                 })
                 .align_items(AlignItems::CENTER))
             .child((
-                tint_icon(lead_c, config.leading_icon.clone()),
+                text_field_icon(lead_c, config.leading_icon.clone()),
+                Box(Modifier::new().width(text_field_side_padding(has_leading_icon))),
                 config
                     .prefix
                     .as_ref()
@@ -1144,7 +1135,8 @@ pub fn TextField(
                             .single_line()
                     })
                     .unwrap_or(Box(Modifier::new())),
-                tint_trailing_icon(trail_c, config.trailing_icon.clone()),
+                Box(Modifier::new().width(text_field_side_padding(has_trailing_icon))),
+                text_field_icon(trail_c, config.trailing_icon.clone()),
             )),
             // Bottom indicator line
             Box(Modifier::new()
@@ -1242,6 +1234,28 @@ mod tests {
     }
 
     const LONG: &str = "instruments (comma separated, empty = all)";
+
+    #[test]
+    fn outlined_placeholder_uses_the_same_inset_with_any_small_icon() {
+        for (icon_width, expected_inset) in [(0.0, 16.0), (20.0, 52.0), (24.0, 52.0)] {
+            let (container, placeholder, text) = measure(|| {
+                OutlinedTextField(
+                    Modifier::new(),
+                    String::new(),
+                    |_| {},
+                    OutlinedTextFieldConfig {
+                        placeholder: Some("Search rooms".into()),
+                        leading_icon: (icon_width > 0.0)
+                            .then(|| Box(Modifier::new().size(Dp(icon_width), Dp(icon_width)))),
+                        single_line: true,
+                        ..Default::default()
+                    },
+                )
+            });
+            assert_eq!(text, "Search rooms");
+            assert_eq!(placeholder.x - container.x, expected_inset);
+        }
+    }
 
     #[test]
     fn a_filled_field_truncates_a_label_longer_than_itself() {
