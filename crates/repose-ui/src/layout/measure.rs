@@ -623,6 +623,11 @@ impl LayoutEngine {
                     size_px_val
                 };
                 let line_h_px_val = lh;
+                let regular_line_h = if line_height.0 > 0.0 {
+                    line_h_px_val
+                } else {
+                    line_h_px_val + TEXT_LINE_LEADING_PX
+                };
                 let fw = font_weight.0;
                 let fs = if matches!(font_style, FontStyle::Italic) {
                     1
@@ -1060,7 +1065,6 @@ impl LayoutEngine {
                             .unwrap_or(0.0)
                         })
                         .collect();
-                    let regular_line_h = line_h_px_val + TEXT_LINE_LEADING_PX;
                     let hs = vec![regular_line_h; lines.len()];
                     (ws, hs)
                 };
@@ -1068,7 +1072,7 @@ impl LayoutEngine {
                 let cache_line_h = if has_annotations {
                     line_heights.iter().copied().fold(0.0f32, f32::max)
                 } else {
-                    line_h_px_val + TEXT_LINE_LEADING_PX
+                    regular_line_h
                 };
                 let total_h: f32 = if has_annotations {
                     line_heights.iter().copied().sum()

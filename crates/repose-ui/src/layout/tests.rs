@@ -5,6 +5,23 @@ use repose_core::*;
 use std::collections::HashMap;
 
 #[test]
+fn explicit_text_line_height_sets_the_measured_height() {
+    let root = Column(Modifier::new()).child(Text("Settings").size(Sp(12.0)).line_height(Sp(16.0)));
+    let (scene, _, _) = LayoutEngine::new().layout_frame(
+        &root,
+        (200, 200),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
+    let height = scene.nodes.iter().find_map(|node| match node {
+        SceneNode::Text { rect, text, .. } if text.as_ref() == "Settings" => Some(rect.h),
+        _ => None,
+    });
+    assert_eq!(height, Some(16.0));
+}
+
+#[test]
 fn test_render_z_index_paints_last() {
     // 1. A red box (painted first, no render_z_index)
     // 2. A blue box with render_z_index(100.0) (should be painted last)
