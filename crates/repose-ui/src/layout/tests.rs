@@ -30,8 +30,12 @@ fn fractional_max_width_caps_long_content_and_preserves_short_content() {
             .child(RBox(Modifier::new().size(Dp(width), Dp(24.0))))
     };
     let root = RBox(Modifier::new()).child(
-        Column(Modifier::new().width(Dp(400.0)).align_items(AlignItems::START))
-            .child((row(500.0, long), row(120.0, short))),
+        Column(
+            Modifier::new()
+                .width(Dp(400.0))
+                .align_items(AlignItems::START),
+        )
+        .child((row(500.0, long), row(120.0, short))),
     );
     let (scene, _, _) = LayoutEngine::new().layout_frame(
         &root,
@@ -2500,7 +2504,12 @@ fn animated_visibility_action_does_not_fill_the_row() {
         let guard = ComposeGuard::begin();
         let view = scope.run(|| {
             Row(Modifier::new().fill_max_width()).child((
-                RBox(Modifier::new().weight(1.0).height(Dp(32.0)).background(Color::BLACK)),
+                RBox(
+                    Modifier::new()
+                        .weight(1.0)
+                        .height(Dp(32.0))
+                        .background(Color::BLACK),
+                ),
                 AnimatedVisibility(
                     visible,
                     RBox(Modifier::new().size(Dp(48.0), Dp(32.0))),
@@ -2524,9 +2533,11 @@ fn animated_visibility_action_does_not_fill_the_row() {
         None,
     );
     let field = scene.nodes.iter().find_map(|node| match node {
-        SceneNode::Rect { rect, brush: Brush::Solid(color), .. } if *color == Color::BLACK => {
-            Some(rect.w)
-        }
+        SceneNode::Rect {
+            rect,
+            brush: Brush::Solid(color),
+            ..
+        } if *color == Color::BLACK => Some(rect.w),
         _ => None,
     });
     assert_eq!(field, Some(352.0));

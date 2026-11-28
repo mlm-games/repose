@@ -990,7 +990,8 @@ impl LazyColumnState {
 
     pub fn animate_scroll_to_item(&self, index: usize, scroll_offset_px: f32) {
         if let Some(target) = self.scroll_target(index, scroll_offset_px) {
-            self.core.animate_offset_to(target, self.core.axis.content.get());
+            self.core
+                .animate_offset_to(target, self.core.axis.content.get());
         }
     }
 }

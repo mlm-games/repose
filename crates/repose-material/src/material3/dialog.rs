@@ -418,7 +418,8 @@ fn build_dialog(
     let mut content = content;
     if !attach_focus_requester(&mut content, focus_requester, Some(&focus_pending)) {
         let pending = focus_pending.clone();
-        content = Box(child_width.clone()
+        content = Box(child_width
+            .clone()
             .focusable(true)
             .focus_requester(focus_requester.clone())
             .on_focus_changed(move |focused| {
@@ -1069,7 +1070,10 @@ mod tests {
             let state = Rc::new(DialogState::new());
             let panel = build_dialog(
                 state,
-                Box(Modifier::new().fill_max_width().height(Dp(16.0)).background(marker)),
+                Box(Modifier::new()
+                    .fill_max_width()
+                    .height(Dp(16.0))
+                    .background(marker)),
                 Modifier::new().fill_max_width().max_width(Dp(560.0)),
                 Rc::new(RefCell::new(DialogProperties::default())),
                 (Dp(560.0), Dp(600.0), PaddingValues::default()),
@@ -1087,9 +1091,11 @@ mod tests {
                 None,
             );
             let width = scene.nodes.iter().find_map(|node| match node {
-                SceneNode::Rect { rect, brush: Brush::Solid(color), .. } if *color == marker => {
-                    Some(rect.w)
-                }
+                SceneNode::Rect {
+                    rect,
+                    brush: Brush::Solid(color),
+                    ..
+                } if *color == marker => Some(rect.w),
                 _ => None,
             });
             assert_eq!(width, Some(560.0));

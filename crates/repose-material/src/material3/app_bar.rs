@@ -281,17 +281,17 @@ fn top_app_bar_layout(
     } else {
         Modifier::new().fill_max_width()
     };
-    let title_column = Column(
-        title_width.clone().content_alignment(Alignment::Center),
-    )
-    .child({
-        let mut children = vec![Box(title_width.clone())
-            .child(with_content_color(colors.title_content_color, || title))];
+    let title_column = Column(title_width.clone().content_alignment(Alignment::Center)).child({
+        let mut children = vec![
+            Box(title_width.clone())
+                .child(with_content_color(colors.title_content_color, || title)),
+        ];
         if let Some(subtitle) = subtitle {
-            children.push(Box(title_width).child(with_content_color(
-                colors.subtitle_content_color,
-                || subtitle,
-            )));
+            children.push(
+                Box(title_width).child(with_content_color(colors.subtitle_content_color, || {
+                    subtitle
+                })),
+            );
         }
         children
     });
@@ -514,9 +514,11 @@ mod title_slot_tests {
                 None,
             );
             let trailing = scene.nodes.iter().find_map(|node| match node {
-                SceneNode::Rect { rect, brush: Brush::Solid(color), .. } if *color == marker => {
-                    Some(rect.x + rect.w)
-                }
+                SceneNode::Rect {
+                    rect,
+                    brush: Brush::Solid(color),
+                    ..
+                } if *color == marker => Some(rect.x + rect.w),
                 _ => None,
             });
             assert_eq!(trailing, Some(796.0));

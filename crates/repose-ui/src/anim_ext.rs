@@ -284,12 +284,14 @@ fn flow_mod(content: &View) -> Modifier {
     let m = &content.modifier;
     let mut modifier = Modifier::new();
     let explicit_size = m.size.is_some() || m.required_size.is_some();
-    if !explicit_size && m.width.is_none()
+    if !explicit_size
+        && m.width.is_none()
         && let Some(frac) = m.fill_max_w.or(m.fill_max)
     {
         modifier = modifier.fill_max_width_frac(frac);
     }
-    if !explicit_size && m.height.is_none()
+    if !explicit_size
+        && m.height.is_none()
         && let Some(frac) = m.fill_max_h.or(m.fill_max)
     {
         modifier = modifier.fill_max_height_frac(frac);

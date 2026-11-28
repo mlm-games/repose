@@ -628,7 +628,11 @@ fn outlined_field_decoration(
     let has_leading_icon = config.leading_icon.is_some();
     let has_trailing_icon = config.trailing_icon.is_some();
     let label_start_x = text_field_side_padding(has_leading_icon)
-        + if has_leading_icon { TEXT_FIELD_ICON_SLOT } else { Dp::ZERO };
+        + if has_leading_icon {
+            TEXT_FIELD_ICON_SLOT
+        } else {
+            Dp::ZERO
+        };
     let label_end_x = TEXT_FIELD_PADDING;
     let label_x = label_start_x - (label_start_x - label_end_x) * float_t;
 
@@ -956,7 +960,11 @@ pub fn TextField(
     let has_leading_icon = config.leading_icon.is_some();
     let has_trailing_icon = config.trailing_icon.is_some();
     let label_start_x = text_field_side_padding(has_leading_icon)
-        + if has_leading_icon { TEXT_FIELD_ICON_SLOT } else { Dp::ZERO };
+        + if has_leading_icon {
+            TEXT_FIELD_ICON_SLOT
+        } else {
+            Dp::ZERO
+        };
     let label_x = label_start_x;
 
     let tf_placeholder = if has_label {
