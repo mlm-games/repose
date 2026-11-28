@@ -283,14 +283,15 @@ fn top_app_bar_layout(
     };
     let title_column = Column(title_width.clone().content_alignment(Alignment::Center)).child({
         let mut children = vec![
-            Box(title_width.clone())
+            Column(title_width.clone())
                 .child(with_content_color(colors.title_content_color, || title)),
         ];
         if let Some(subtitle) = subtitle {
             children.push(
-                Box(title_width).child(with_content_color(colors.subtitle_content_color, || {
-                    subtitle
-                })),
+                Column(title_width)
+                    .child(with_content_color(colors.subtitle_content_color, || {
+                        subtitle
+                    })),
             );
         }
         children
@@ -494,6 +495,49 @@ mod title_slot_tests {
     use repose_core::runtime::ComposeGuard;
     use repose_core::scope::Scope;
     use repose_ui::layout::LayoutEngine;
+
+    #[test]
+    fn title_ellipsizes_before_the_actions_in_a_narrow_bar() {
+        let scope = Scope::new();
+        let guard = ComposeGuard::begin();
+        scope.run(|| {
+            let title = Text("Rooms")
+                .size(Sp(22.0))
+                .max_lines(1)
+                .overflow_ellipsize();
+            let actions = (0..5)
+                .map(|_| Box(Modifier::new().size(Dp(48.0), Dp(48.0))))
+                .collect();
+            let view = TopAppBar(title, None, None, actions, Default::default());
+            let mut layout = LayoutEngine::new();
+            let (scene, _, _) = layout.layout_frame(
+                &view,
+                (300, 64),
+                &std::collections::HashMap::new(),
+                &repose_ui::Interactions::default(),
+                None,
+            );
+            let title = scene.nodes.iter().find_map(|node| match node {
+                SceneNode::Text { text, .. } => Some(text.as_ref()),
+                _ => None,
+            });
+            assert!(title.is_some_and(|text| text.ends_with('…')), "{title:?}");
+
+            let (scene, _, _) = layout.layout_frame(
+                &view,
+                (255, 64),
+                &std::collections::HashMap::new(),
+                &repose_ui::Interactions::default(),
+                None,
+            );
+            assert!(!scene.nodes.iter().any(|node| matches!(
+                node,
+                SceneNode::Text { text, .. } if !text.is_empty()
+            )));
+        });
+        drop(guard);
+        scope.dispose();
+    }
 
     #[test]
     fn custom_title_can_fill_the_remaining_width() {

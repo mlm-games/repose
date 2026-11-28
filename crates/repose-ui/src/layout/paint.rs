@@ -1831,22 +1831,25 @@ impl LayoutEngine {
                         line_h_px
                     }
                 };
-                let (first_line, last_line) = if need_clip && content_rect.h > 0.0 {
-                    let clip_top = -1.0;
-                    let clip_bottom = content_rect.h + 2.0;
-                    let mut first = lines.len();
-                    let mut last = 0;
-                    for (index, offset) in line_y_offsets.iter().copied().enumerate() {
-                        let line_bottom = offset + line_h_for(index);
-                        if line_bottom >= clip_top && offset <= clip_bottom {
-                            first = first.min(index);
-                            last = last.max(index + 1);
+                let (first_line, last_line) =
+                    if content_rect.w <= 0.0 && *overflow != TextOverflow::Visible {
+                        (0, 0)
+                    } else if need_clip && content_rect.h > 0.0 {
+                        let clip_top = -1.0;
+                        let clip_bottom = content_rect.h + 2.0;
+                        let mut first = lines.len();
+                        let mut last = 0;
+                        for (index, offset) in line_y_offsets.iter().copied().enumerate() {
+                            let line_bottom = offset + line_h_for(index);
+                            if line_bottom >= clip_top && offset <= clip_bottom {
+                                first = first.min(index);
+                                last = last.max(index + 1);
+                            }
                         }
-                    }
-                    (first, last)
-                } else {
-                    (0, lines.len())
-                };
+                        (first, last)
+                    } else {
+                        (0, lines.len())
+                    };
 
                 let line_align_x = |line_w: f32| -> f32 {
                     match text_align {
