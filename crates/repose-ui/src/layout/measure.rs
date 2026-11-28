@@ -748,7 +748,15 @@ impl LayoutEngine {
                 };
 
                 let max_content_w = if has_annotations {
-                    annotated_width(0, text.len())
+                    let mut start = 0;
+                    text.split('\n')
+                        .map(|line| {
+                            let end = start + line.len();
+                            let width = annotated_width(start, end);
+                            start = end + 1;
+                            width
+                        })
+                        .fold(0.0f32, f32::max)
                 } else {
                     measure_text(
                         text,
@@ -824,7 +832,7 @@ impl LayoutEngine {
                 let (lines, line_ranges): (Vec<String>, Vec<(usize, usize)>) = if *soft_wrap {
                     if has_annotations {
                         let width_of = |s: usize, e: usize| annotated_width(s, e);
-                        if max_content_w <= wrap_w_px + 0.5 {
+                        if !text.contains('\n') && max_content_w <= wrap_w_px + 0.5 {
                             (vec![text.clone()], vec![(0, text.len())])
                         } else {
                             let mut all_ranges: Vec<(usize, usize)> = Vec::new();

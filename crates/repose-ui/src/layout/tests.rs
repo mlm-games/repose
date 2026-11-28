@@ -871,6 +871,34 @@ mod layer_tests {
 }
 
 #[test]
+fn annotated_text_keeps_hard_breaks_when_every_line_fits() {
+    let annotated = build_annotated_string(|builder| {
+        builder.push_with_style("Heading", SpanStyle::default().font_size(Sp(32.0)));
+        builder.push("\nParagraph");
+    });
+    let root = Column(Modifier::new().width(Dp(500.0))).child(crate::AnnotatedText(annotated));
+    let (scene, _, _) = LayoutEngine::new().layout_frame(
+        &root,
+        (500, 200),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
+    let lines: Vec<_> = scene
+        .nodes
+        .iter()
+        .filter_map(|node| match node {
+            SceneNode::Text { rect, text, .. } => Some((text.as_ref(), rect.y)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(lines.len(), 2);
+    assert_eq!(lines[0].0, "Heading");
+    assert_eq!(lines[1].0, "Paragraph");
+    assert!(lines[1].1 - lines[0].1 >= 32.0);
+}
+
+#[test]
 fn test_annotated_text_large_font_not_clipped() {
     use repose_core::SpanStyle;
     let big = SpanStyle::default().font_size(Sp(24.0));
