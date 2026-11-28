@@ -97,7 +97,7 @@ macro_rules! impl_option_fields {
                 merge_opts!(self, other;
                     key, size, width, height, required_size, wrap_content,
                     padding, padding_values,
-                    min_width, min_height, max_width, max_height,
+                    min_width, min_height, max_width, max_width_fraction, max_height,
                     required_min_width, required_max_width,
                     required_min_height, required_max_height,
                     default_min_width, default_min_height,
@@ -738,6 +738,7 @@ pub struct Modifier {
     pub min_width: Option<Dp>,
     pub min_height: Option<Dp>,
     pub max_width: Option<Dp>,
+    pub max_width_fraction: Option<f32>,
     pub max_height: Option<Dp>,
     /// Like [`required_size`] but only for min width. Overrides parent min constraints.
     pub required_min_width: Option<Dp>,
@@ -1031,6 +1032,7 @@ impl std::fmt::Debug for Modifier {
             min_width,
             min_height,
             max_width,
+            max_width_fraction,
             max_height,
             required_min_width,
             required_max_width,
@@ -1417,6 +1419,11 @@ impl Modifier {
     }
     pub fn max_width(mut self, w: Dp) -> Self {
         self.max_width = Some(w);
+        self
+    }
+    /// Cap the width at a fraction of the parent without forcing smaller content to fill it.
+    pub fn max_width_frac(mut self, fraction: f32) -> Self {
+        self.max_width_fraction = Some(fraction.clamp(0.0, 1.0));
         self
     }
     pub fn max_height(mut self, h: Dp) -> Self {

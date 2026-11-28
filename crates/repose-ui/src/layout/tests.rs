@@ -22,6 +22,39 @@ fn explicit_text_line_height_sets_the_measured_height() {
 }
 
 #[test]
+fn fractional_max_width_caps_long_content_and_preserves_short_content() {
+    let long = Color::from_rgb(255, 0, 0);
+    let short = Color::from_rgb(0, 255, 0);
+    let row = |width, color| {
+        Row(Modifier::new().max_width_frac(0.9).background(color))
+            .child(RBox(Modifier::new().size(Dp(width), Dp(24.0))))
+    };
+    let root = RBox(Modifier::new()).child(
+        Column(Modifier::new().width(Dp(400.0)).align_items(AlignItems::START))
+            .child((row(500.0, long), row(120.0, short))),
+    );
+    let (scene, _, _) = LayoutEngine::new().layout_frame(
+        &root,
+        (600, 200),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
+    let width = |color| {
+        scene.nodes.iter().find_map(|node| match node {
+            SceneNode::Rect {
+                rect,
+                brush: Brush::Solid(fill),
+                ..
+            } if *fill == color => Some(rect.w),
+            _ => None,
+        })
+    };
+    assert_eq!(width(long), Some(360.0));
+    assert_eq!(width(short), Some(120.0));
+}
+
+#[test]
 fn test_render_z_index_paints_last() {
     // 1. A red box (painted first, no render_z_index)
     // 2. A blue box with render_z_index(100.0) (should be painted last)

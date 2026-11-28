@@ -747,6 +747,11 @@ impl LayoutEngine {
                 && v.0.is_finite()
             {
                 s.max_size.width = length(px(v.max(Dp::ZERO)));
+            } else if let Some(fraction) = m.max_width_fraction {
+                s.max_size.width = percent(fraction);
+                if s.min_size.width.is_auto() {
+                    s.min_size.width = length(0.0_f32);
+                }
             }
             if let Some(v) = m.max_height
                 && v.0.is_finite()
