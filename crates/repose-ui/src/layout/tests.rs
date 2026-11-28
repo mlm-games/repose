@@ -2412,6 +2412,50 @@ fn children_stretch_on_the_cross_axis_by_default() {
 }
 
 #[test]
+fn animated_visibility_action_does_not_fill_the_row() {
+    use crate::anim_ext::{AnimatedVisibility, AnimatedVisibilityConfig, EnterTransition};
+    use repose_core::runtime::ComposeGuard;
+    use repose_core::scope::Scope;
+
+    let scope = Scope::new();
+    let compose = |visible| {
+        let guard = ComposeGuard::begin();
+        let view = scope.run(|| {
+            Row(Modifier::new().fill_max_width()).child((
+                RBox(Modifier::new().weight(1.0).height(Dp(32.0)).background(Color::BLACK)),
+                AnimatedVisibility(
+                    visible,
+                    RBox(Modifier::new().size(Dp(48.0), Dp(32.0))),
+                    AnimatedVisibilityConfig {
+                        enter: EnterTransition::FadeIn,
+                        ..AnimatedVisibilityConfig::with_key("title:clear-action")
+                    },
+                ),
+            ))
+        });
+        drop(guard);
+        view
+    };
+    let _ = compose(false);
+    let row = compose(true);
+    let (scene, _, _) = LayoutEngine::new().layout_frame(
+        &row,
+        (400, 32),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
+    let field = scene.nodes.iter().find_map(|node| match node {
+        SceneNode::Rect { rect, brush: Brush::Solid(color), .. } if *color == Color::BLACK => {
+            Some(rect.w)
+        }
+        _ => None,
+    });
+    assert_eq!(field, Some(352.0));
+    scope.dispose();
+}
+
+#[test]
 fn animated_visibility_overlay_fills_parent_height() {
     use crate::ZStack;
     use crate::anim_ext::{

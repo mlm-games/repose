@@ -279,17 +279,19 @@ fn transition_child_key(key: &str, version: u64, tag: &str) -> u64 {
     h.finish()
 }
 
-/// In-flow wrapper modifier for enter/exit transitions. Never fills height
-/// unconditionally: that would fight the parent `Column` (fill-max height on a
-/// flex child makes it grow to consume leftover space). The wrapper mirrors
-/// the wrapped view's own height fill instead, so `fill_max_size` overlays
-/// keep their parent's height rather than degrading to content height under
-/// a hug-height wrapper.
+/// Keep the child's fill constraints without expanding wrap-content children.
 fn flow_mod(content: &View) -> Modifier {
     let m = &content.modifier;
-    let mut modifier = Modifier::new().fill_max_width();
-    let explicit_height = m.height.is_some() || m.size.is_some() || m.required_size.is_some();
-    if !explicit_height && let Some(frac) = m.fill_max_h.or(m.fill_max) {
+    let mut modifier = Modifier::new();
+    let explicit_size = m.size.is_some() || m.required_size.is_some();
+    if !explicit_size && m.width.is_none()
+        && let Some(frac) = m.fill_max_w.or(m.fill_max)
+    {
+        modifier = modifier.fill_max_width_frac(frac);
+    }
+    if !explicit_size && m.height.is_none()
+        && let Some(frac) = m.fill_max_h.or(m.fill_max)
+    {
         modifier = modifier.fill_max_height_frac(frac);
     }
     modifier
@@ -375,7 +377,7 @@ fn apply_size_fraction(
         SizeAxis::Vertical | SizeAxis::Both => full_h * progress,
     };
 
-    let mut outer = Modifier::new().fill_max_width().flex_shrink(0.0);
+    let mut outer = flow_mod(&view).flex_shrink(0.0);
     if !have || settled {
         // Not measured yet (first composition): lay out at natural size so
         // `on_size_changed` can capture the true size, staying clipped. The
@@ -411,7 +413,7 @@ fn apply_size_fraction(
         SizeAxis::Horizontal => 0.0,
         SizeAxis::Vertical | SizeAxis::Both => (shown_h - full_h) * align,
     };
-    let mut inner = Modifier::new().fill_max_width().flex_shrink(0.0);
+    let mut inner = flow_mod(&view).flex_shrink(0.0);
     if have && !settled {
         match axis {
             SizeAxis::Vertical => {
@@ -813,9 +815,7 @@ fn apply_exit_single(
     }
 }
 
-/// In-flow variant of `apply_enter`: fade/slide/scale wrappers use
-/// `fill_max_width` instead of `fill_max_size` so the entering view participates
-/// in its parent `Column`/`Row` instead of trying to fill it.
+/// In-flow enter transitions respect the wrapped view's layout constraints.
 fn apply_enter_inflow(
     key: &str,
     version: u64,
