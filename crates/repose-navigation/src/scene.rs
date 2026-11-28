@@ -5,7 +5,9 @@
 //! [`ListDetailSceneStrategy`] keeps the entry below the top beside it on wide
 //! windows; [`DialogSceneStrategy`] lifts matching entries into an overlay.
 
-use std::rc::Rc;
+use std::{cell::RefCell, rc::Rc};
+
+use repose_core::animation::AnimationSpec;
 
 use repose_core::*;
 use repose_ui::{
@@ -15,6 +17,105 @@ use repose_ui::{
 use crate::{
     EntryRenderer, EntryScope, NavBackStack, NavKey, NavTransition, Navigator, TransitionDir,
 };
+
+struct SceneContent<K> {
+    key: K,
+    view: View,
+    layer: u64,
+}
+
+struct SceneTransitionState<K> {
+    current: Option<SceneContent<K>>,
+    outgoing: Option<SceneContent<K>>,
+    direction: TransitionDir,
+}
+
+/// Animate a full-window scene supplied by an external navigator. The outgoing scene uses
+/// its last composed view, so only the current route reads live navigation state.
+pub fn SceneTransitionHost<K: PartialEq + 'static>(
+    host_key: &str,
+    scene_key: K,
+    direction: TransitionDir,
+    spec: AnimationSpec,
+    content: View,
+) -> View {
+    let state = remember_with_key(format!("scene-transition:{host_key}"), || {
+        RefCell::new(SceneTransitionState::<K> {
+            current: None,
+            outgoing: None,
+            direction: TransitionDir::None,
+        })
+    });
+    let mut state = state.borrow_mut();
+    let mut layer = state.current.as_ref().map_or(0, |current| current.layer);
+    if state
+        .current
+        .as_ref()
+        .is_some_and(|current| current.key != scene_key)
+    {
+        layer = layer.wrapping_add(1);
+        state.outgoing = if direction == TransitionDir::None {
+            None
+        } else {
+            state.current.take()
+        };
+        state.direction = direction;
+    }
+    state.current = Some(SceneContent {
+        key: scene_key,
+        view: content.clone(),
+        layer,
+    });
+
+    let scene = |layer, offset, opacity, view| {
+        let frame = Modifier::new()
+            .key(layer)
+            .fill_max_size()
+            .translate(offset, 0.0);
+        let frame = if opacity < 1.0 {
+            frame.graphics_layer(opacity)
+        } else {
+            frame
+        };
+        VBox(frame).child(view)
+    };
+    let mut host = ZStack(Modifier::new().fill_max_size().clip_to_bounds());
+    let Some(old) = &state.outgoing else {
+        return host.child(scene(layer, 0.0, 1.0, content));
+    };
+    let progress = animate_f32_from(
+        format!("scene-transition:{host_key}:{layer}"),
+        0.0,
+        1.0,
+        spec,
+    );
+    if progress >= 1.0 {
+        state.outgoing = None;
+        return host.child(scene(layer, 0.0, 1.0, content));
+    }
+    let width = Dp(repose_core::locals::get_window_container_width())
+        .to_px()
+        .0;
+    let reverse = state.direction == TransitionDir::Pop;
+    let (enter_offset, exit_offset) = if reverse {
+        (-width, width)
+    } else {
+        (width, -width / 3.0)
+    };
+    let incoming = scene(layer, enter_offset * (1.0 - progress), progress, content);
+    let outgoing = scene(
+        old.layer,
+        exit_offset * progress,
+        1.0 - progress,
+        old.view.clone(),
+    );
+    host = if reverse {
+        host.child((incoming, outgoing))
+    } else {
+        host.child((outgoing, incoming))
+    };
+    host.child(VBox(Modifier::new().fill_max_size().input_blocker()))
+}
 
 /// What a scene is doing on screen.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
