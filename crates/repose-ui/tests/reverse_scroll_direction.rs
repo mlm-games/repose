@@ -78,6 +78,41 @@ fn reverse_lazy_column_scrolls_toward_older_items_on_drag_down() {
     assert_eq!(scrolled_visible(&states[2], true, 45.0), vec![0, 1]);
 }
 
+#[test]
+fn reverse_lazy_column_reports_first_item_from_bottom_padding() {
+    let state = Rc::new(LazyColumnState::new());
+    state.set_vp_height(90.0);
+    let compose = || {
+        LazyColumn(
+            (0..6).collect::<Vec<u64>>(),
+            30.0,
+            |item| *item,
+            |_, _| RBox(Modifier::new().height(Dp(30.0))),
+            LazyColumnConfig {
+                state: state.clone(),
+                reverse_layout: true,
+                content_padding: PaddingValues {
+                    top: Dp(12.0),
+                    bottom: Dp(8.0),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        )
+    };
+    let _ = compose();
+    assert_eq!(state.first_visible_item(), Some((0, 0.0)));
+    state.scroll_immediate(15.0, 200.0);
+    let _ = compose();
+    assert_eq!(state.first_visible_item(), Some((0, -15.0)));
+    state.scroll_immediate(30.0, 200.0);
+    let _ = compose();
+    assert_eq!(state.first_visible_item(), Some((1, -15.0)));
+    state.scroll_to_item(0, 0.0);
+    let _ = compose();
+    assert_eq!(state.first_visible_item(), Some((0, 0.0)));
+}
+
 fn scrolled_visible_row(state: &Rc<LazyRowState>, reverse: bool, delta_x: f32) -> Vec<u8> {
     state.set_vp_width(100.0);
     let list = LazyRow(

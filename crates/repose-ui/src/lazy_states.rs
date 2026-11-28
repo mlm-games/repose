@@ -802,6 +802,7 @@ pub struct LazyColumnState {
     geometry: RefCell<LazyColumnGeometryCache>,
     reverse_layout: Cell<bool>,
     padding_bottom_px: Cell<f32>,
+    first_visible_item: Signal<Option<(usize, f32)>>,
 }
 
 impl Default for LazyColumnState {
@@ -817,6 +818,7 @@ impl LazyColumnState {
             geometry: RefCell::new(LazyColumnGeometryCache::new()),
             reverse_layout: Cell::new(false),
             padding_bottom_px: Cell::new(0.0),
+            first_visible_item: signal(None),
         }
     }
 
@@ -917,6 +919,17 @@ impl LazyColumnState {
         self.core.visible_range_signal()
     }
 
+    /// First visible item in data order and its signed offset from the
+    /// viewport start, in physical pixels, excluding before-content padding.
+    /// For a reversed column, the start is the bottom edge.
+    pub fn first_visible_item(&self) -> Option<(usize, f32)> {
+        self.first_visible_item.get()
+    }
+
+    pub(crate) fn set_first_visible_item(&self, item: Option<(usize, f32)>) {
+        self.first_visible_item.set_neq(item);
+    }
+
     pub(crate) fn set_reverse_layout(&self, reverse_layout: bool, padding_bottom_px: f32) {
         self.reverse_layout.set(reverse_layout);
         self.padding_bottom_px.set(padding_bottom_px);
@@ -951,18 +964,26 @@ impl LazyColumnState {
         Some(self.core.uniform_offset_for_index(index))
     }
 
-    pub fn scroll_to_item(&self, index: usize, extra_offset_px: f32) {
-        if let Some(top) = self.offset_for_index(index) {
+    fn scroll_target(&self, index: usize, scroll_offset_px: f32) -> Option<f32> {
+        let before_content_padding = if self.reverse_layout.get() {
+            self.padding_bottom_px.get()
+        } else {
+            self.core.pad()
+        };
+        self.offset_for_index(index)
+            .map(|offset| offset - before_content_padding + scroll_offset_px)
+    }
+
+    pub fn scroll_to_item(&self, index: usize, scroll_offset_px: f32) {
+        if let Some(target) = self.scroll_target(index, scroll_offset_px) {
             self.core.clear_anchor();
-            self.core
-                .set_offset(top + extra_offset_px, self.core.axis.content.get());
+            self.core.set_offset(target, self.core.axis.content.get());
         }
     }
 
-    pub fn animate_scroll_to_item(&self, index: usize, extra_offset_px: f32) {
-        if let Some(top) = self.offset_for_index(index) {
-            self.core
-                .animate_offset_to(top + extra_offset_px, self.core.axis.content.get());
+    pub fn animate_scroll_to_item(&self, index: usize, scroll_offset_px: f32) {
+        if let Some(target) = self.scroll_target(index, scroll_offset_px) {
+            self.core.animate_offset_to(target, self.core.axis.content.get());
         }
     }
 }
@@ -1336,6 +1357,7 @@ mod tests {
         assert_eq!(state.offset_for_index(10), None);
         state.set_visible_range(2, 5);
         assert_eq!(state.visible_range(), (2, 5));
+        assert_eq!(state.scroll_target(2, 3.0), Some(111.0));
     }
 
     #[test]
@@ -1353,6 +1375,8 @@ mod tests {
         assert_eq!(state.offset_for_index(1), Some(50.0));
         assert_eq!(state.offset_for_index(2), Some(84.0));
         assert_eq!(state.offset_for_index(3), None);
+        assert_eq!(state.scroll_target(0, 0.0), Some(0.0));
+        assert_eq!(state.scroll_target(1, 12.0), Some(56.0));
     }
 
     #[test]

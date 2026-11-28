@@ -253,6 +253,30 @@ where
         (0, 0)
     };
     state.set_visible_range(first_visible, last_visible);
+    let first_item = (first_visible < last_visible && viewport_height_px > 0.0).then(|| {
+        if reverse_layout {
+            let visual_index = last_visible - 1;
+            let item_end = if visual_index + 1 == src_len {
+                padding_top_px + items_total_px
+            } else {
+                item_top_px(visual_index + 1) - spacing_px
+            };
+            (
+                data_idx_of(visual_index),
+                scroll_offset_px + viewport_height_px
+                    - padding_bottom_px
+                    - item_end
+                    - (viewport_height_px - content_height_px).max(0.0),
+            )
+        } else {
+            (
+                first_visible,
+                item_top_px(first_visible) - scroll_offset_px - padding_top_px,
+            )
+        }
+    });
+    state.set_first_visible_item(first_item);
+
     if reverse_layout && state.core.axis.offset.get() <= f32::EPSILON {
         state.core.clear_anchor();
     } else if let Some(&key) = current_keys.get(first_visible) {
